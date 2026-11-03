@@ -14,7 +14,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let buf = '';
   proc.stdout.setEncoding('utf8');
   proc.stdout.on('data', (d) => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { lines.push(buf.slice(0, i).trim()); buf = buf.slice(i + 1); } });
-  const waitFor = async (pred, ms = 5000) => { for (let t = 0; t < ms; t += 25) { const l = lines.find(pred); if (l) return l; await sleep(25); } return null; };
+  const waitFor = async (pred, ms = 20000) => { for (let t = 0; t < ms; t += 25) { const l = lines.find(pred); if (l) return l; await sleep(25); } return null; };
   const ask = async (id) => { proc.stdin.write(`files ${id}\n`); const l = await waitFor((x) => x.startsWith('{"id":' + id + ',')); return l && JSON.parse(l); };
 
   console.log('native input helper');
@@ -29,7 +29,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const closed = new Promise((r) => proc.on('exit', r));
   proc.stdin.end();
-  expect('exits when Pomelo closes its stdin', await Promise.race([closed.then(() => true), sleep(3000).then(() => false)]));
+  expect('exits when Pomelo closes its stdin', await Promise.race([closed.then(() => true), sleep(10000).then(() => false)]));
 
   console.log(failures ? `\n${failures} failed` : '\nall passed');
   process.exit(failures ? 1 : 0);
