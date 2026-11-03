@@ -2,7 +2,7 @@
 ; Pomelo installer: per-user (no administrator rights), three screens: location, conversion engines, shortcuts.
 ; Build it with:  npm run package  then  npm run build:installer      (needs Inno Setup 6.3 or later)
 ;
-; Silent install:   Pomelo-Setup-x64.exe /SILENT                      app only, no engines
+; Silent install:   Pomelo-Setup-x64.exe /SILENT                      app only, no engines (this is how Pomelo updates itself)
 ;                   Pomelo-Setup-x64.exe /SILENT /ENGINES=pdf2docx,soffice,pandoc
 
 #ifndef AppVersion

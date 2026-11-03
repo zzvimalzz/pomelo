@@ -12,6 +12,7 @@ const { Toast } = require('./toast');
 const { Jobs } = require('./jobs');
 const { Timings } = require('./progress');
 const updater = require('./updater');
+const updateInstall = require('./updateInstall');
 const { AutoUpdate } = require('./autoUpdate');
 const log = require('./log');
 const { killAll } = require('./convert/util');
@@ -166,9 +167,51 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('updates:check', async () => { const r = await updater.check(); autoUpdate.remember(r); updateTray(); return r; });
   ipcMain.handle('updates:download', (_e, url) => updater.openDownload(url));
+  // "Download update": fetch the installer inside Pomelo, check it against the release's checksum, run it quietly and come
+  // back. What to download comes from the check Pomelo itself made, never from the Settings window.
+  let updating = false;
+  ipcMain.handle('updates:install', async () => {
+    const found = autoUpdate.available;
+    if (!found) return { ok: false, message: 'Check for updates first' };
+    if (!app.isPackaged) return { ok: false, message: 'Updating in place only works in the installed app', fallback: true };
+    if (!found.installable) return { ok: false, message: 'This release cannot be installed from here', fallback: true };
+    if (updating) return { ok: false, message: 'The update is already downloading' };
+    updating = true;
+    const tell = (p) => settingsWindow.getWindow()?.webContents.send('updates:progress', p);
+    const startedAt = Date.now();
+    try {
+      log('update: downloading', found.latest);
+      const file = await updateInstall.download({
+        url: found.url, sha256: found.sha256, size: found.size, rules: updater.downloadRules(),
+        onProgress: ({ received, total, fraction }) => {
+          const secs = (Date.now() - startedAt) / 1000;
+          const left = fraction > 0.02 && secs > 1 ? Math.round(secs * (1 - fraction) / fraction) : null;
+          tell({ phase: 'download', received, total, fraction, left });
+        },
+      });
+      tell({ phase: 'install' });
+      log('update: installing', found.latest);
+      updateInstall.launch(file, process.execPath, { version: found.latest });
+      setTimeout(() => app.exit(0), 400);          // out of the installer's way; will-quit does not run on exit(), so stop the helpers here
+      helper?.stop(); killAll();
+      return { ok: true };
+    } catch (e) {
+      updating = false;
+      log('update failed:', e.message);
+      return { ok: false, message: e.message, fallback: true };
+    }
+  });
 
   applySettings();
   autoUpdate.apply();
+  // Started again by an in-app update: say how it went, and drop the downloaded installer.
+  const updated = process.argv.find((a) => a.startsWith('--updated'));
+  if (updated) {
+    const to = updated.split('=')[1];
+    updateInstall.cleanup();
+    if (!to || to === app.getVersion()) jobs.addInfo({ title: `Pomelo is now on version ${app.getVersion()}`, detail: 'The update is installed.' });
+    else { log('update did not install; still on', app.getVersion(), 'wanted', to); jobs.addInfo({ title: 'The update could not be installed', detail: `Pomelo is still on version ${app.getVersion()}. Open Settings from the tray icon and try again.` }); }
+  }
   // Show the window on every manual launch so there is always a visible way in; login starts stay in the tray.
   if (!process.argv.includes('--hidden')) openSettings();
 });

@@ -94,11 +94,20 @@ function renderUpdate() {
       // "Version 0.1.0 > Version 0.2.0"
       line.className = 'new';
       line.replaceChildren(document.createTextNode(`Version ${current}`), el('span', 'vnew', '>'), document.createTextNode(`Version ${update.latest}`));
-      btn.textContent = 'Download update'; btn.className = 'btn primary';
+      btn.textContent = update.installable ? 'Update now' : 'Download update'; btn.className = 'btn primary';
       status.textContent = 'A new version is available'; status.className = 'ok';
       break;
+    case 'downloading': {
+      const p = update.progress || {};
+      const pct = p.fraction ? `${Math.floor(p.fraction * 100)}%` : '';
+      btn.textContent = p.phase === 'install' ? 'Installing…' : `Downloading ${pct}`.trim(); btn.disabled = true;
+      status.textContent = p.phase === 'install' ? 'Pomelo will restart in a moment' : `${mb(p.received)} of ${mb(p.total)}${p.left ? ` · about ${p.left} s left` : ''}`;
+      line.className = 'new';
+      line.replaceChildren(document.createTextNode(`Version ${current}`), el('span', 'vnew', '>'), document.createTextNode(`Version ${update.latest}`));
+      break;
+    }
     case 'unconfigured': btn.textContent = 'Check for updates'; status.textContent = 'Update checks start once Pomelo is released'; break;
-    case 'error': btn.textContent = 'Try again'; status.textContent = `Update check failed. ${update.message}`; status.className = 'bad'; break;
+    case 'error': btn.textContent = 'Try again'; status.textContent = `${update.retry ? 'The update failed' : 'Update check failed'}. ${update.message}`; status.className = 'bad'; break;
     default: btn.textContent = 'Check for updates'; status.hidden = true;
   }
   fit();
@@ -111,14 +120,29 @@ async function checkNow() {
   renderUpdate();
 }
 
+const mb = (n) => `${((n || 0) / 1048576).toFixed(n > 10485760 ? 0 : 1)} MB`;
+
 $('updateBtn').onclick = async () => {
   if (update.state === 'available') {                       // the download starts only here, when the user presses the button
-    const r = await window.settingsApi.downloadUpdate(update.url);
-    if (!r.ok) { update = { state: 'error', message: r.message }; renderUpdate(); }
+    if (!update.installable) {                              // no checksum to verify against: the browser download instead
+      const r = await window.settingsApi.downloadUpdate(update.url);
+      if (!r.ok) { update = { state: 'error', message: r.message }; renderUpdate(); }
+      return;
+    }
+    const found = update;
+    update = { ...found, state: 'downloading', progress: { phase: 'download' } };
+    renderUpdate();
+    const r = await window.settingsApi.installUpdate();     // on success Pomelo restarts itself, so this rarely returns
+    if (!r.ok) {
+      update = { state: 'error', message: r.message, retry: found };
+      renderUpdate();
+    }
     return;
   }
+  if (update.state === 'error' && update.retry) { update = update.retry; renderUpdate(); return; }
   checkNow();
 };
+window.settingsApi.onUpdateProgress((p) => { if (update.state === 'downloading') { update = { ...update, progress: p }; renderUpdate(); } });
 
 // The automatic check found something (or the Settings window opened after it did): show the button, do not download.
 window.settingsApi.onUpdateFound((result) => { update = result; renderUpdate(); });

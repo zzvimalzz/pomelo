@@ -7,6 +7,7 @@
 // With neither set, the check reports "not configured" and makes no network request.
 const { app, shell } = require('electron');
 const pkg = require('../../package.json');
+const { allowedUrl } = require('./updateInstall');
 
 const CONFIG = pkg.pomelo || {};
 const TIMEOUT_MS = 10000;
@@ -34,9 +35,12 @@ function parseRelease(json) {
   if (json && json.tag_name) {
     const assets = Array.isArray(json.assets) ? json.assets : [];
     const installer = assets.find((a) => /setup.*\.exe$/i.test(a.name)) || assets.find((a) => /\.(exe|msi)$/i.test(a.name));
-    return { version: String(json.tag_name).replace(/^v/i, ''), url: (installer && installer.browser_download_url) || json.html_url, notes: json.body || '' };
+    // GitHub publishes each asset's SHA-256 as "sha256:<hex>": that is what an in-app install is checked against
+    const digest = installer && /^sha256:([0-9a-f]{64})$/i.exec(installer.digest || '');
+    return { version: String(json.tag_name).replace(/^v/i, ''), url: (installer && installer.browser_download_url) || json.html_url, notes: json.body || '',
+      sha256: digest ? digest[1].toLowerCase() : '', size: (installer && installer.size) || 0, installer: !!installer };
   }
-  if (json && json.version) return { version: String(json.version).replace(/^v/i, ''), url: json.url || '', notes: json.notes || '' };
+  if (json && json.version) return { version: String(json.version).replace(/^v/i, ''), url: json.url || '', notes: json.notes || '', sha256: String(json.sha256 || '').toLowerCase(), size: Number(json.size) || 0, installer: /\.exe$/i.test(json.url || '') };
   throw new Error('The update feed has an unexpected format');
 }
 
@@ -52,7 +56,7 @@ async function check({ feed = feedUrl(), current = app.getVersion() } = {}) {
     let json;
     try { json = await res.json(); } catch { throw new Error('The update server returned an unexpected response'); }
     const rel = parseRelease(json);
-    if (compareVersions(rel.version, current) > 0) return { state: 'available', current, latest: rel.version, url: rel.url, notes: rel.notes.slice(0, 600) };
+    if (compareVersions(rel.version, current) > 0) return { state: 'available', current, latest: rel.version, url: rel.url, notes: rel.notes.slice(0, 600), sha256: rel.sha256, size: rel.size, installable: rel.installer && !!rel.sha256 };
     return { state: 'uptodate', current };
   } catch (e) {
     const message = e.name === 'AbortError' ? 'The update server did not answer in time'
@@ -61,18 +65,20 @@ async function check({ feed = feedUrl(), current = app.getVersion() } = {}) {
   } finally { clearTimeout(timer); }
 }
 
-// Opens the download in the browser. Only https, and only hosts we expect (GitHub, or the configured feed's host).
-function allowedHost(host) {
-  if (host === 'github.com' || host.endsWith('.githubusercontent.com')) return true;
-  try { return new URL(feedUrl() || 'http://none.invalid').host === host; } catch { return false; }
+// Where a download may come from: https on GitHub, or the configured feed's own host.
+function downloadRules() {
+  let feedHost = null;
+  try { feedHost = new URL(feedUrl() || 'http://none.invalid').host; } catch { /* none */ }
+  return { feedHost, testing: !!process.env.POMELO_UPDATE_FEED };
 }
 
+// Opens the download page or file in the browser: the fallback when an update cannot be installed from inside Pomelo.
 async function openDownload(url) {
   let u;
   try { u = new URL(url); } catch { return { ok: false, message: 'Not a valid link' }; }
-  if (u.protocol !== 'https:' || !allowedHost(u.host)) return { ok: false, message: 'Refusing to open an unexpected link' };
+  if (!allowedUrl(u.href, downloadRules())) return { ok: false, message: 'Refusing to open an unexpected link' };
   await shell.openExternal(u.href);
   return { ok: true };
 }
 
-module.exports = { check, openDownload, compareVersions };
+module.exports = { check, openDownload, compareVersions, downloadRules };

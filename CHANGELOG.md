@@ -2,6 +2,11 @@
 
 All notable changes to Pomelo are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **Update now**: updating no longer sends you to the browser to run the installer again. Pomelo downloads the new version itself (with progress and time left), checks it against the SHA-256 published with the release, installs it quietly over the current one and starts again. It only downloads from GitHub, follows redirects only to GitHub's own hosts, throws away a download that is incomplete or does not match, and falls back to the download page when a release has no checksum. Settings, shortcuts and engines are left as they are.
+
 ## [0.1.1] - 03-11-2026
 
 ### Added
