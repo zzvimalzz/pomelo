@@ -129,8 +129,7 @@ function createInstaller({ root = enginesRoot(), run = exec, redetect = () => ({
     for (const [cmd, args] of [['py', ['-3.12']], ['py', ['-3.13']], ['py', ['-3.11']], ['py', ['-3.10']], ['python', []], ['py', ['-3']]]) {
       const r = await run(cmd, [...args, '-c', 'import sys; print(sys.version_info[0] * 100 + sys.version_info[1]); print(sys.executable)']);
       if (r.code !== 0) continue;
-      const [version, exe] = r.out.trim().split(/?
-/).slice(-2);
+      const [version, exe] = r.out.trim().split(/\r?\n/).slice(-2);
       if (+version >= 309 && +version <= 313 && exe && fs.existsSync(exe.trim())) return exe.trim();   // skips the Microsoft Store stub, which prints nothing useful
     }
     return null;
