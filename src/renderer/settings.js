@@ -57,6 +57,9 @@ function render() {
   $('openAtLogin').checked = settings.openAtLogin;
   $('keycap').textContent = cap(settings.key);
   for (const b of document.querySelectorAll('#key button')) b.setAttribute('aria-checked', String(b.dataset.key === settings.key));
+  const layout = settings.pdfLayout === 'editable' ? 'editable' : 'exact';
+  for (const b of document.querySelectorAll('#layout button')) b.setAttribute('aria-checked', String(b.dataset.layout === layout));
+  $('layoutNote').textContent = layout === 'exact' ? 'Every position, font and picture stays exactly as in the PDF' : 'Text is rebuilt as flowing paragraphs: easier to rework, less exact';
   $('status').classList.toggle('off', !settings.enabled);
   $('statusText').textContent = settings.enabled ? 'Running' : 'Paused';
 
@@ -119,7 +122,7 @@ function fit() {
 
 // ---- diagnostics ---------------------------------------------------------------------------------
 function diagnostics() {
-  const lines = [`Pomelo ${state.version}`, state.os || '', `Trigger key: ${state.settings.key}`, 'Engines:'];
+  const lines = [`Pomelo ${state.version}`, state.os || '', `Trigger key: ${state.settings.key}`, `PDF to Word layout: ${state.settings.pdfLayout || 'exact'}`, 'Engines:'];
   for (const e of ENGINES) lines.push(`  ${e.name}: ${e.always ? 'built in' : state.engines[e.key] || 'not found'}`);
   return lines.filter(Boolean).join('\n');
 }
@@ -146,3 +149,4 @@ $('advToggle').onclick = () => save({ advanced: !state.settings.advanced });
 $('enabled').onchange = (e) => save({ enabled: e.target.checked });
 $('openAtLogin').onchange = (e) => save({ openAtLogin: e.target.checked });
 $('key').onclick = (e) => { const k = e.target.dataset?.key; if (k) save({ key: k }); };
+$('layout').onclick = (e) => { const l = e.target.dataset?.layout; if (l) save({ pdfLayout: l }); };

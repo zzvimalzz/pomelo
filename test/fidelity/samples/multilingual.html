@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@page { size: A4; margin: 20mm }
+body { font: 11pt/1.55 Arial, "Microsoft YaHei", sans-serif; color: #1a202c; margin: 0 }
+h1 { font: 700 22pt Georgia, serif; margin: 0 0 4pt } .sub { color: #718096; margin-bottom: 14pt }
+h2 { font: 700 13pt Arial; margin: 14pt 0 4pt; color: #2b6cb0 }
+.ar { direction: rtl; text-align: right; font: 13pt "Segoe UI", Arial, sans-serif }
+.zh { font: 12pt "Microsoft YaHei", "SimSun", sans-serif }
+.row { display: flex; gap: 16pt } .row > div { flex: 1; border: 1pt solid #cbd5e0; border-radius: 6pt; padding: 8pt 10pt }
+.sym { font-size: 14pt; letter-spacing: 4px }
+table { border-collapse: collapse; width: 100% } td, th { border: 0.75pt solid #a0aec0; padding: 4pt 8pt } th { background: #ebf8ff }
+</style></head><body>
+<h1>Un café à São Paulo — 国际文档测试</h1><div class="sub">Accents, CJK, right-to-left and symbols in one file</div>
+<h2>Latin with diacritics</h2><p>Voilà l’été: crème brûlée, jalapeño, Ångström, Łódź, naïve façade, Größe, çağdaş, œuvre. “Quotes”, ‘single’, — dashes – and … ellipses; 5 × 3 ≠ 15 ÷ 2 ≤ 10 €.</p>
+<h2>中文 (Chinese)</h2><p class="zh">本文件用于测试多语言文本的转换效果，包括标点符号、数字 12345 和英文单词 Pomelo 混排。字体、间距和换行都应保持一致。</p>
+<h2>日本語 (Japanese)</h2><p class="zh">これは変換テストのための短い文章です。ひらがな、カタカナ、漢字が混在しています。</p>
+<h2>العربية (Arabic)</h2><p class="ar">هذا نص تجريبي لاختبار تحويل الملفات من صيغة إلى أخرى مع الحفاظ على اتجاه الكتابة من اليمين إلى اليسار.</p>
+<h2>Symbols and boxes</h2><p class="sym">★ ☆ ✓ ✗ ♥ ♦ ☀ ☂ → ← ↑ ↓ ©</p>
+<div class="row"><div><b>Left box</b><br>Rounded border with <i>italic</i> and <b>bold</b>.</div><div><b>Right box</b><br>Second column with a <a href="https://example.com/ünïcode">link</a>.</div></div>
+<h2>Table</h2><table><tr><th>Language</th><th>Hello</th><th>Thanks</th></tr><tr><td>Malay</td><td>Selamat pagi</td><td>Terima kasih</td></tr><tr><td>Chinese</td><td>你好</td><td>谢谢</td></tr><tr><td>Arabic</td><td dir="rtl">مرحبا</td><td dir="rtl">شكرا</td></tr><tr><td>French</td><td>Bonjour</td><td>Merci</td></tr></table>
+</body></html>

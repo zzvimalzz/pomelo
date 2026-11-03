@@ -83,6 +83,8 @@ The wheel offers up to 8 targets per file.
 | Archives | ZIP 7Z TAR GZ (tar.gz or single file) RAR | FOLDER (extract next to the archive), ZIP 7Z TAR GZ (RAR is input only) |
 | Folders | any folder | ZIP 7Z TAR GZ (tar.gz) |
 
+**PDF to Word** keeps the page exactly: size, positions, fonts, sizes, colours, spacing, links, pictures, shapes, rules and backgrounds. Text stays real, editable text in place; pictures, shapes and backgrounds sit behind it as the page background. Settings > Advanced > **PDF to Word** can switch to **Editable**, which rebuilds flowing paragraphs and real lists (easier to rework, less exact; designed pages are still converted exactly).
+
 Not supported: Apple Pages (`.pages`) and RTFD, because Apple's own software is the only thing that can write them reliably. RAR is input only: creating RAR needs WinRAR's closed-source compressor.
 
 ## Privacy and security
@@ -120,7 +122,7 @@ npm run setup:pdf                                  # developer setup: PDF to Wor
 | Windows `tar.exe` (libarchive) | BSD | Reading RAR |
 | [LibreOffice](https://www.libreoffice.org) (optional) | MPL-2.0 | DOC/DOCX/RTF/ODT/XLS/XLSX/ODS/PPT/PPTX to PDF and between each other; PDF to PPTX with editable text |
 | [Pandoc](https://pandoc.org) (optional) | GPL-2.0-or-later, separate process | Markdown / HTML / RTF / ODT / DOCX / EPUB |
-| [pdf2docx](https://github.com/ArtifexSoftware/pdf2docx) (optional, Python) | MIT | PDF to DOCX keeping fonts, colours, tables, images and spacing. `scripts/pdf2docx_run.py` adds real font names and re-creates divider rules |
+| [pdf2docx](https://github.com/ArtifexSoftware/pdf2docx) (optional, Python) | MIT | PDF to DOCX in **Editable** layout (flowing paragraphs, fonts, colours, tables). `scripts/pdf2docx_run.py` adds real font names, divider rules, valid hyperlinks and real bullet lists |
 | [PyMuPDF](https://pymupdf.readthedocs.io) and [PyMuPDF4LLM](https://github.com/pymupdf/pymupdf4llm) (optional, Python) | AGPL-3.0-or-later or Artifex commercial; separate process | PDF to XLSX (tables) and PDF to Markdown (and HTML via Markdown) |
 | [pillow-heif](https://github.com/bigcat88/pillow_heif) (optional, Python) | BSD-3 (bundles libheif and the GPL x265 encoder) | Writing HEIC. Reading HEIC works without it |
 
@@ -142,6 +144,7 @@ Settings shows your version and a **Check for updates** button. If a newer versi
 
 - Only drags that start in File Explorer or on the desktop are detected, and not from windows running as administrator.
 - Scanned PDFs have no OCR yet, so they fail with a clear message (planned).
+- Exact PDF to Word keeps right-to-left text, rotated text and symbol-font glyphs in the page background (they look right but are not editable text), and its text lines are separate frames: editing a line does not reflow the paragraph.
 - Without the optional engines: PDF to Word rebuilds headings and paragraphs only (no fonts or tables), `.doc` input is text-only, and `.ppt/.pptx` cannot be converted.
 - RAR: no encrypted or multi-part archives.
 - Large files are processed in memory by the built-in engines.
@@ -174,6 +177,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). In short:
 npm run check      # ESLint plus unused-code scan
 npm test           # job logic, input helper, updater, full conversion matrix, edge cases
 npm run test:ui    # wheel, toast and settings windows (also regenerates the screenshots in test/shots)
+npm run fidelity:samples && npm run test:fidelity   # PDF to Word: convert, print back to PDF, score against the original (needs the engines)
 ```
 
 Dev tools in `tools/`: `build-helper.js` (compiles the input helper), `package.js` and `build-installer.js` (release build), `pdf-inspect.mjs` (what is inside a PDF), `render-docx.sh` (DOCX to images, to eyeball fidelity), `make-notices.js` (regenerates the third-party list), `py-licenses.py`, `unused-exports.js`.

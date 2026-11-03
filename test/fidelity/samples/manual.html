@@ -1,0 +1,40 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@page { size: A4; margin: 24mm 22mm 24mm 22mm; }
+body { font: 10.5pt/1.5 Calibri, "Segoe UI", sans-serif; color: #222; margin: 0 }
+h1 { font: 700 26pt Calibri; color: #0b5394; margin: 0 0 4pt; border-bottom: 3pt solid #0b5394; padding-bottom: 6pt }
+h2 { font: 700 16pt Calibri; color: #0b5394; margin: 20pt 0 6pt; break-after: avoid } h3 { font: 700 12pt Calibri; margin: 12pt 0 4pt; break-after: avoid }
+p { margin: 0 0 8pt } code, pre { font: 9.5pt Consolas, "Courier New", monospace } pre { background: #f3f3f3; border: 0.75pt solid #d0d0d0; padding: 8pt; margin: 6pt 0 10pt; white-space: pre-wrap }
+.note { background: #e8f1fa; border-left: 4pt solid #0b5394; padding: 8pt 10pt; margin: 8pt 0 }
+.warn { background: #fdecea; border-left: 4pt solid #c0392b; padding: 8pt 10pt; margin: 8pt 0 }
+table { border-collapse: collapse; width: 100%; margin: 8pt 0 } th, td { border: 0.75pt solid #999; padding: 4pt 7pt; text-align: left; vertical-align: top } th { background: #0b5394; color: #fff }
+ol li, ul li { margin-bottom: 4pt } kbd { border: 0.75pt solid #888; border-radius: 3pt; padding: 0 4pt; background: #f5f5f5; font: 9pt Consolas }
+.pb { break-before: page } .toc a { color: #0b5394; text-decoration: none } .toc li { list-style: none; margin: 0 } .toc { padding-left: 0 } .toc span { float: right }
+</style></head><body>
+<h1>Beacon Router — Administrator’s Guide</h1><p style="color:#666">Version 4.2 · Document BR-ADM-042 · November 2026</p>
+<h3>Contents</h3><ul class="toc"><li><a href="#">1. Getting started</a><span>2</span></li><li><a href="#">2. Network configuration</a><span>2</span></li><li><a href="#">3. Security</a><span>3</span></li><li><a href="#">4. Troubleshooting</a><span>4</span></li></ul>
+<h2>1. Getting started</h2>
+<p>Beacon Router is a dual-band wireless router designed for small offices. This guide explains how to install, configure and maintain it. Read the safety notice in the box before powering the device.</p>
+<div class="note"><b>Note.</b> The default administrator address is <code>192.168.8.1</code>. Change the password at first sign-in.</div>
+<h3>1.1 Connecting the hardware</h3>
+<ol><li>Attach both antennas and place the router away from metal surfaces.</li><li>Connect the WAN port to your modem with the yellow cable.</li><li>Connect the power adapter and wait until the status light turns steady green.</li><li>Join the network named <b>Beacon-Setup</b> from your computer.</li></ol>
+<h3>1.2 Signing in</h3>
+<p>Open a browser and go to <code>http://192.168.8.1</code>. Enter the default user name <code>admin</code> and the password printed on the label. Press <kbd>Enter</kbd> to continue. If the page does not load, see <a href="https://support.example.com/beacon">support.example.com/beacon</a>.</p>
+<h2>2. Network configuration</h2>
+<table><tr><th>Setting</th><th>Default</th><th>Range</th><th>Notes</th></tr>
+<tr><td>Channel (2.4 GHz)</td><td>Auto</td><td>1–13</td><td>Use 1, 6 or 11 in crowded areas.</td></tr>
+<tr><td>Channel (5 GHz)</td><td>Auto</td><td>36–165</td><td>DFS channels may pause service briefly.</td></tr>
+<tr><td>Transmit power</td><td>High</td><td>Low / Medium / High</td><td>Lower it to reduce interference.</td></tr>
+<tr><td>DHCP pool</td><td>192.168.8.100–199</td><td>—</td><td>Reserve addresses for printers.</td></tr></table>
+<pre>$ beacon-cli set wifi.5g.channel 44
+$ beacon-cli set wifi.5g.width 80
+$ beacon-cli commit</pre>
+<div class="pb"></div>
+<h2>3. Security</h2>
+<p>Enable WPA3 where all your devices support it; otherwise choose WPA2/WPA3 mixed mode. Turn off WPS once every device is connected, and enable automatic firmware updates so security fixes arrive without delay.</p>
+<div class="warn"><b>Warning.</b> Never expose the administration page to the internet. Remote management should be used only through the built-in VPN.</div>
+<h3>3.1 Guest network</h3>
+<ul><li>Isolates guests from your devices.</li><li>Limits bandwidth to protect your own traffic.<ul><li>Default limit: 20 Mbit/s per guest.</li></ul></li><li>Expires automatically after 24 hours.</li></ul>
+<h2>4. Troubleshooting</h2>
+<table><tr><th>Symptom</th><th>Likely cause</th><th>Action</th></tr><tr><td>Status light is red</td><td>No WAN link</td><td>Check the yellow cable and restart the modem.</td></tr><tr><td>Slow speeds on 5 GHz</td><td>DFS channel in use</td><td>Select channel 36–48.</td></tr><tr><td>Cannot reach admin page</td><td>Wrong address</td><td>Hold the reset button for 10 seconds.</td></tr></table>
+<p>Contact support at <a href="mailto:support@example.com">support@example.com</a> and include the serial number found under the device.</p>
+</body></html>

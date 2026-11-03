@@ -36,6 +36,13 @@ const detect = () => find('pdf2docx, fitz');
 const detectMarkdown = () => find('pymupdf4llm');
 const detectHeic = () => find('pillow_heif, PIL');
 
+// "exact" keeps every position, font and picture of the PDF page; "editable" rebuilds flowing Word paragraphs.
+// POMELO_PDF_MODE overrides the setting (the fidelity harness uses it).
+function pdfLayout() {
+  if (process.env.POMELO_PDF_MODE) return process.env.POMELO_PDF_MODE;
+  try { return require('../settings').get().pdfLayout || 'exact'; } catch { return 'exact'; }   // no Electron: the default
+}
+
 const isNumber = (s) => /^-?(0|[1-9]\d{0,14})([.,]\d+)?$/.test(s);
 
 async function pdfToXlsx({ src, dir, base, engines }) {
@@ -67,7 +74,7 @@ module.exports = {
     const { src, to, dir, base, engines } = job;
     if (to === 'xlsx') return pdfToXlsx(job);
     const out = uniquePath(dir, base, to);
-    if (to === 'docx') await run(engines.pdf2docx, ['-W', 'ignore', script('pdf2docx_run.py'), src, out], { timeout: 600000 });
+    if (to === 'docx') await run(engines.pdf2docx, ['-W', 'ignore', script('pdf2docx_run.py'), src, out], { timeout: 600000, env: { POMELO_PDF_MODE: pdfLayout() } });
     else await run(engines.pdfmd, ['-W', 'ignore', script('pdf_markdown_run.py'), src, out], { timeout: 600000 });
     if (!fs.existsSync(out)) throw new Error('PDF engine produced no output');
     return [out];

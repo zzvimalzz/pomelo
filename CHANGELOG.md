@@ -2,6 +2,18 @@
 
 All notable changes to Pomelo are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- PDF to Word is now exact by default: every page keeps its size, positions, fonts, sizes, colours, spacing, links, pictures, shapes, rules and backgrounds. Text stays editable in place; whatever is not text (pictures, shapes, gradients, rules) sits behind it as the page background, and text that cannot be re-typed faithfully (right-to-left, rotated, symbol-font glyphs) stays in that background so it still looks right. A new **PDF to Word > Layout** setting (Advanced) switches to **Editable**, which rebuilds flowing paragraphs; designed pages (shapes or pictures behind text, columns, rotated text) are still converted exactly.
+- The built-in DOCX to PDF (used without LibreOffice) now takes the page size, margins, default font and size from the document and no longer prints to the very edge of the sheet; Markdown, text and HTML copies get proper page margins too.
+
+### Fixed
+- Editable PDF to Word: hyperlinks were written inside text runs, which the file format forbids, so link text vanished in LibreOffice and could trip Word. Bullet lists and skill lines were turned into fixed-height two-column tables that clipped text (about 7% of the words in a test résumé); lone spaces between styled words were dropped (Stack:PHP); bullets are now real Word lists.
+
+### Added
+- A fidelity harness, `npm run fidelity:samples` then `npm run test:fidelity`, that converts PDFs, prints the result back to PDF and scores text, positions, fonts, colours, links and look against the original.
+
 ## [0.1.0] - 03-11-2026
 
 ### Added

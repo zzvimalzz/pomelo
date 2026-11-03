@@ -25,37 +25,10 @@ except Exception as e:  # not installed
     sys.exit(2)
 
 # ---- font name clean-up ----------------------------------------------------------------------------
-KNOWN = {
-    "TIMESNEWROMAN": "Times New Roman", "TIMESNEWROMANPS": "Times New Roman", "TIMESNEWROMANPSMT": "Times New Roman",
-    "ARIAL": "Arial", "ARIALMT": "Arial", "ARIALNARROW": "Arial Narrow", "ARIALBLACK": "Arial Black",
-    "COURIERNEW": "Courier New", "COURIERNEWPS": "Courier New", "COURIERNEWPSMT": "Courier New",
-    "TAHOMA": "Tahoma", "VERDANA": "Verdana", "GEORGIA": "Georgia", "TREBUCHETMS": "Trebuchet MS",
-    "SEGOEUI": "Segoe UI", "CALIBRILIGHT": "Calibri Light", "CAMBRIAMATH": "Cambria Math",
-    "LIBERATIONSERIF": "Liberation Serif", "LIBERATIONSANS": "Liberation Sans", "LIBERATIONMONO": "Liberation Mono",
-    "HELVETICA": "Arial", "HELVETICANEUE": "Helvetica Neue", "TIMES": "Times New Roman", "COURIER": "Courier New",
-}
-STYLE_TAIL = re.compile(r"[-,_ ]?(BoldItalic|BoldOblique|Bold|Italic|Oblique|Regular|Roman|Semibold|Medium|BdIt|It|Bd|MT|PS)+$", re.I)
+import os
 
-
-def word_family(name: str) -> str:
-    base = (name or "").split("+")[-1].strip()
-    if not base:
-        return base
-    key = re.sub(r"[^A-Za-z]", "", base).upper()
-    stripped = base
-    for _ in range(3):  # peel -Bold, -Italic, MT, PS ... repeatedly (TimesNewRomanPS-BoldItalicMT)
-        new = STYLE_TAIL.sub("", stripped)
-        if new == stripped or not new:
-            break
-        stripped = new
-    skey = re.sub(r"[^A-Za-z]", "", stripped).upper()
-    if skey in KNOWN:
-        return KNOWN[skey]
-    if key in KNOWN:
-        return KNOWN[key]
-    stripped = stripped.replace("-", " ").replace("_", " ")
-    stripped = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", stripped) if " " not in stripped and len(stripped) > 14 else stripped
-    return stripped.strip()
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pdf_fonts import word_family  # noqa: E402
 
 
 # 1) never let a font record with an empty name override a span's own font name
@@ -167,12 +140,94 @@ def _make_docx(self, p):
 
 TextBlock.make_docx = _make_docx
 
+# ---- hyperlinks --------------------------------------------------------------------------------------
+# Stock pdf2docx nests <w:hyperlink> INSIDE a <w:r>, which the file format does not allow: LibreOffice then drops the
+# link text and Word may complain. A hyperlink belongs directly under the paragraph, with its run inside it.
+import pdf2docx.common.docx as _docx_helpers
+from docx.opc.constants import RELATIONSHIP_TYPE
+from docx.text.run import Run
+
+
+def _add_hyperlink(paragraph, url, text):
+    r_id = paragraph.part.relate_to(url, RELATIONSHIP_TYPE.HYPERLINK, is_external=True)
+    link = OxmlElement("w:hyperlink")
+    link.set(qn("r:id"), r_id)
+    link.set(qn("w:history"), "1")
+    run = OxmlElement("w:r")
+    link.append(run)
+    paragraph._p.append(link)
+    docx_run = Run(run, paragraph)
+    docx_run.text = text          # python-docx keeps leading and trailing blanks (xml:space="preserve")
+    return docx_run
+
+
+_docx_helpers.add_hyperlink = _add_hyperlink
+
+# ---- blanks between styled runs ------------------------------------------------------------------------
+# A lone blank in its own span ("Tech Stack:" bold, " " regular, "PHP" italic) was dropped, gluing the words together.
+# It now joins the span before it.
+from pdf2docx.image.ImageSpan import ImageSpan
+from pdf2docx.text.Spans import Spans
+
+
+def _restore(self, raws):
+    for raw_span in raws:
+        if "image" in raw_span:
+            span = ImageSpan(raw_span)
+        else:
+            span = TextSpan(raw_span)
+            if not span.text.strip() and not span.style:
+                previous = self._instances[-1] if self._instances else None
+                if isinstance(previous, TextSpan) and span.text and previous.text.strip():
+                    for ch in span.chars:
+                        previous.add(ch)
+                span = None
+        self.append(span)
+    return self
+
+
+Spans.restore = _restore
+
 # ---- run ---------------------------------------------------------------------------------------------
+# Stream tables (borderless "tables" guessed from the alignment of text) turned bullet lists and skill lines into
+# two-column tables with a fixed height, which clipped text; ruled (lattice) tables are still detected.
+# POMELO_PDF2DOCX can override any setting while experimenting, e.g. {"parse_stream_table": true}.
+import json
+import os
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pdf2docx_post import fix_docx  # noqa: E402
+
 src, dst = sys.argv[1], sys.argv[2]
+# exact (default): every page keeps its exact look, text stays editable in place; editable: text is rebuilt as
+# flowing Word paragraphs, which reflows when edited but cannot match a designed page exactly.
+MODE = os.environ.get("POMELO_PDF_MODE", "exact")
+if MODE == "editable":
+    # a designed page would come out with lost backgrounds, columns in the wrong place or invisible text, so those
+    # documents are converted exactly, whatever was asked
+    from pdf_fixed_layout import design_reason  # noqa: E402
+    try:
+        reason = design_reason(src)
+    except Exception:
+        reason = None
+    if reason:
+        sys.stderr.write("layout kept exact: %s\n" % reason)
+        MODE = "exact"
+if MODE in ("exact", "fixed"):
+    from pdf_fixed_layout import convert as fixed_convert  # noqa: E402
+    try:
+        fixed_convert(src, dst)
+    except Exception as e:
+        sys.stderr.write("fixed-layout conversion failed: %s\n" % str(e).replace("\n", " ")[:300])
+        sys.exit(1)
+    print("OK")
+    sys.exit(0)
 try:
     cv = Converter(src)
     try:
         settings = cv.default_settings
+        settings["parse_stream_table"] = False
+        settings.update(json.loads(os.environ.get("POMELO_PDF2DOCX") or "{}"))
         cv.parse(**settings)
         try:
             apply_rules(cv)
@@ -181,6 +236,10 @@ try:
         cv.make_docx(dst, **settings)
     finally:
         cv.close()
+    try:
+        fix_docx(dst)
+    except Exception as e:  # the passes tidy the file; a failure leaves the converted DOCX as it was
+        sys.stderr.write("clean-up pass skipped: %s\n" % e)
 except Exception as e:
     sys.stderr.write("pdf2docx failed: %s\n" % str(e).replace("\n", " ")[:300])
     sys.exit(1)

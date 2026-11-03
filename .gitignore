@@ -28,4 +28,5 @@ Start Pomelo.bat
 /PLAN*.md
 /ROADMAP*.md
 STAMP.md
-/site/
+/test/fidelity/out/
+

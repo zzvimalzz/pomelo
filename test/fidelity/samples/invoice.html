@@ -1,0 +1,37 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@page { size: A4; margin: 16mm 16mm 14mm 16mm; }
+body { font: 9.5pt/1.4 "Segoe UI", Arial, sans-serif; color: #222; margin: 0; position: relative }
+.top { display: flex; justify-content: space-between; align-items: flex-start }
+.top img { width: 62pt; height: 62pt }
+.co { text-align: right; font-size: 9pt; line-height: 1.5 } .co b { font-size: 13pt; color: #1a202c }
+h1 { font: 300 30pt "Segoe UI Light", "Segoe UI", sans-serif; letter-spacing: 6px; margin: 14pt 0 2pt; color: #2d3748 }
+.rule { height: 3pt; background: linear-gradient(90deg, #e8506f, #f6ad55); margin: 4pt 0 14pt }
+.cols { display: flex; gap: 24pt; margin-bottom: 14pt } .cols > div { flex: 1 }
+.lbl { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 1.5px; color: #718096; margin-bottom: 2pt }
+table { width: 100%; border-collapse: collapse }
+thead th { background: #2d3748; color: #fff; font-weight: 600; padding: 6pt 8pt; text-align: left; font-size: 8.5pt }
+thead th:nth-child(n+3) { text-align: right }
+tbody td { padding: 6pt 8pt; border-bottom: 0.75pt solid #e2e8f0 } tbody td:nth-child(n+3) { text-align: right }
+tbody tr:nth-child(odd) td { background: #f7fafc }
+.sub { font-size: 8pt; color: #718096 }
+.tot { width: 46%; margin-left: auto; margin-top: 10pt } .tot td { padding: 4pt 8pt; border: 0 } .tot tr.g td { font-weight: 700; font-size: 12pt; border-top: 1.5pt solid #2d3748; background: #fff5f7; color: #c53030 }
+.stamp { position: absolute; left: 118pt; top: 360pt; transform: rotate(-18deg); border: 3pt solid #38a169; color: #38a169; font: 800 26pt Arial; padding: 2pt 14pt; letter-spacing: 4px; opacity: 0.8; border-radius: 6pt }
+.pay { display: flex; gap: 16pt; align-items: center; margin-top: 22pt; padding: 10pt; border: 1pt dashed #a0aec0; border-radius: 6pt } .pay img { width: 64pt }
+.note { margin-top: 16pt; font-size: 8pt; color: #4a5568; border-top: 0.5pt solid #cbd5e0; padding-top: 6pt } a { color: #2b6cb0 }
+</style></head><body>
+<div class="top"><img src="{{ASSETS}}/logo.png"><div class="co"><b>Aurora Studio Sdn. Bhd.</b><br>Level 12, Menara Cahaya<br>50450 Kuala Lumpur, Malaysia<br>SST ID W10-1808-32000123<br><a href="https://aurora.example">aurora.example</a></div></div>
+<h1>INVOICE</h1><div class="rule"></div>
+<div class="cols"><div><div class="lbl">Billed to</div><b>Northwind Traders</b><br>Attn: Accounts Payable<br>88 Jalan Ampang<br>50450 Kuala Lumpur</div>
+<div><div class="lbl">Invoice no.</div><b>INV-2026-0417</b><div class="lbl" style="margin-top:6pt">Issued</div>3 November 2026</div>
+<div><div class="lbl">Due</div><b>17 November 2026</b><div class="lbl" style="margin-top:6pt">Terms</div>Net 14 days</div></div>
+<table><thead><tr><th>Description</th><th>Period</th><th>Qty</th><th>Rate (RM)</th><th>Amount (RM)</th></tr></thead><tbody>
+<tr><td><b>Brand identity system</b><div class="sub">Logo, colour, type, guidelines</div></td><td>Oct 2026</td><td>1</td><td>6,500.00</td><td>6,500.00</td></tr>
+<tr><td><b>Website design</b><div class="sub">12 templates, responsive</div></td><td>Oct 2026</td><td>1</td><td>9,800.00</td><td>9,800.00</td></tr>
+<tr><td><b>Front-end development</b><div class="sub">Hourly, senior engineer</div></td><td>Oct 2026</td><td>64</td><td>180.00</td><td>11,520.00</td></tr>
+<tr><td><b>Copywriting</b><div class="sub">Home, About, Services</div></td><td>Oct 2026</td><td>3</td><td>450.00</td><td>1,350.00</td></tr>
+<tr><td><b>Hosting and care plan</b><div class="sub">Monthly retainer</div></td><td>Nov 2026</td><td>1</td><td>350.00</td><td>350.00</td></tr></tbody></table>
+<table class="tot"><tr><td>Subtotal</td><td style="text-align:right">29,520.00</td></tr><tr><td>SST (8%)</td><td style="text-align:right">2,361.60</td></tr><tr><td>Discount</td><td style="text-align:right">−500.00</td></tr><tr class="g"><td>Total due</td><td style="text-align:right">RM 31,381.60</td></tr></table>
+<div class="stamp">PAID</div>
+<div class="pay"><img src="{{ASSETS}}/qr.png"><div><b>Pay by bank transfer or DuitNow QR</b><br>Aurora Studio Sdn. Bhd. · Maybank 5144 0012 3456<br>Reference: <b>INV-2026-0417</b><br><span class="sub">Scan the code with any banking app to pay instantly.</span></div></div>
+<div class="note">Late payments incur a 1.5% monthly charge. Questions about this invoice? Write to <a href="mailto:billing@aurora.example">billing@aurora.example</a> or see our <a href="https://aurora.example/terms">terms of service</a>. Thank you for your business.</div>
+</body></html>

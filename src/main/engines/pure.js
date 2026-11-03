@@ -6,8 +6,10 @@ const { uniquePath, tempPath, esc, readText } = require('../convert/util');
 const pdf = require('./pdf');
 const epub = require('./epub');
 
+// The page margin has to be here: a CSS @page rule beats the margins passed to printToPDF, and with `margin: 0` the
+// text used to run to the very edge of the sheet.
 const BASE_CSS = `
-  @page { margin: 0 }
+  @page { margin: 17.8mm 20.3mm }
   body { font: 11pt/1.5 Calibri, "Segoe UI", Arial, sans-serif; color: #111; margin: 0 }
   h1 { font-size: 22pt; margin: 18pt 0 8pt } h2 { font-size: 16pt; margin: 14pt 0 6pt } h3 { font-size: 13pt }
   p { margin: 0 0 8pt } img { max-width: 100% } pre, code { font-family: Consolas, monospace; font-size: 10pt }
@@ -47,7 +49,7 @@ async function htmlToPdf(html, out, { landscape = false } = {}) {
   try {
     await win.loadFile(file);
     const buf = await win.webContents.printToPDF({
-      pageSize: 'A4', landscape, printBackground: true,
+      pageSize: 'A4', landscape, printBackground: true, preferCSSPageSize: true,   // a document that states its own page size keeps it
       margins: { top: 0.7, bottom: 0.7, left: 0.8, right: 0.8 },
     });
     fs.writeFileSync(out, buf);
@@ -107,10 +109,34 @@ function htmlToTxt(html) {
 const txtToHtml = (text, title) => wrapHtml(
   text.replace(/\r\n?/g, '\n').split(/\n{2,}/).map((p) => `<p>${esc(p).replace(/\n/g, '<br>')}</p>`).join(''), title);
 
+// What a .docx says about its own page and default text, so a printed copy gets the same paper size, margins, font and
+// size instead of Pomelo's defaults. Anything missing or odd is simply left out.
+async function docxLook(src) {
+  try {
+    const zip = await require('jszip').loadAsync(fs.readFileSync(src));
+    const doc = await zip.file('word/document.xml').async('string');
+    const styles = zip.file('word/styles.xml') ? await zip.file('word/styles.xml').async('string') : '';
+    const attr = (tag, name) => { const m = new RegExp(`${name}="(-?\\d+)"`).exec(tag || ''); return m ? +m[1] : null; };
+    const mm = (twips) => `${(twips / 1440 * 25.4).toFixed(1)}mm`;
+    const tags = (re, text) => [...text.matchAll(re)].map((m) => m[0]);
+    const pgSz = tags(/<w:pgSz\b[^>]*>/g, doc).pop();
+    const pgMar = tags(/<w:pgMar\b[^>]*>/g, doc).pop();
+    let css = '';
+    const w = attr(pgSz, 'w:w'), h = attr(pgSz, 'w:h');
+    if (w > 4000 && h > 4000) css += `@page { size: ${mm(w)} ${mm(h)}; margin: ${['top', 'right', 'bottom', 'left'].map((s) => mm(Math.max(0, attr(pgMar, `w:${s}`) ?? 1134))).join(' ')} }`;
+    const normal = /<w:style\b[^>]*w:styleId="Normal"[\s\S]*?<\/w:style>/.exec(styles)?.[0] || '';
+    const defaults = /<w:docDefaults>[\s\S]*?<\/w:docDefaults>/.exec(styles)?.[0] || '';
+    const font = /w:ascii="([^"]+)"/.exec(normal)?.[1] || /w:ascii="([^"]+)"/.exec(defaults)?.[1];
+    const half = attr(/<w:sz\b[^>]*>/.exec(normal)?.[0], 'w:val') || attr(/<w:sz\b[^>]*>/.exec(defaults)?.[0], 'w:val');
+    if (font || half) css += ` body { ${font ? `font-family: "${font.replace(/"/g, '')}", Calibri, "Segoe UI", Arial, sans-serif;` : ''} ${half ? `font-size: ${half / 2}pt;` : ''} }`;
+    return css;
+  } catch { return ''; }
+}
+
 // Normalised HTML for any document source.
 async function sourceToHtml(src, from) {
   const title = path.basename(src);
-  if (from === 'docx') return wrapHtml((await require('mammoth').convertToHtml({ path: src })).value, title);
+  if (from === 'docx') return wrapHtml((await require('mammoth').convertToHtml({ path: src })).value, title, await docxLook(src));
   if (from === 'md') return wrapHtml(require('marked').marked.parse(readText(src)), title, '', baseHrefOf(src));
   if (from === 'html') return withBase(readText(src), baseHrefOf(src));
   if (from === 'txt') return txtToHtml(readText(src), title);

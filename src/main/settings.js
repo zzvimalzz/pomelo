@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
 
-const DEFAULTS = { enabled: true, key: 'ctrl', openAtLogin: true, advanced: false };
+const DEFAULTS = { enabled: true, key: 'ctrl', openAtLogin: true, advanced: false, pdfLayout: 'exact' };
 let cache = null;
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');
