@@ -73,10 +73,10 @@ jobs:
           Write-Host $out
           if ($code -ne 0) {
             $log = Join-Path $env:APPDATA 'Pomelo\debug.log'
-            $logTail = if (Test-Path $log) { (Get-Content $log -Tail 8) -join '%0A' } else { 'no debug.log' }
+            Write-Host "::error title=exit code::$code"
+            if (Test-Path $log) { Get-Content $log -Tail 7 | ForEach-Object { Write-Host "::error title=debug.log::$_" } } else { Write-Host '::error title=debug.log::none' }
             $py = ((py -3 --version 2>&1 | Out-String).Trim()) + ' / ' + ((python --version 2>&1 | Out-String).Trim())
-            $tail = ((($out -split "`n" | Where-Object { $_ -match '\S' -and $_ -notmatch 'Using cached|Downloading|^npm ' } | Select-Object -Last 6) -join '%0A') + '%0A--- debug.log ---%0A' + $logTail + '%0A--- python: ' + $py)
-            Write-Host "::error title=engine install failed::$tail"
+            Write-Host "::error title=python::$py"
             exit 1
           }
       - run: node test/pdf-layout-test.js
