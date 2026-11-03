@@ -30,12 +30,11 @@ function build(id) {
   return el;
 }
 
-// Progress ring. The middle shows the percentage; pointing at it swaps that for the cancel X.
+// Progress ring with the cancel X in its centre (the percentage is in the text beside it).
 function ringEl() {
   const wrap = make('div', 'ring');
   wrap.innerHTML = '<svg viewBox="0 0 44 44" aria-hidden="true"><circle class="track" cx="22" cy="22" r="18"/><circle class="value" cx="22" cy="22" r="18"/></svg>';
-  const cancel = make('button', 'cancel');
-  cancel.append(make('span', 'pct'), make('span', 'x', '✕'));
+  const cancel = make('button', 'cancel', '✕');
   cancel.setAttribute('aria-label', 'Cancel');
   cancel.title = 'Cancel';
   wrap.append(cancel);
@@ -75,7 +74,6 @@ function paint(c, data) {
     const value = ring.querySelector('.value');
     value.style.strokeDasharray = String(RING);
     value.style.strokeDashoffset = String(RING * (1 - progress));
-    ring.querySelector('.pct').textContent = `${Math.round(progress * 100)}`;
     ring.setAttribute('aria-label', `${Math.round(progress * 100)} percent`);
   } else {
     if (!lead.classList.contains('icon')) lead.replaceWith(make('div', 'icon'));
