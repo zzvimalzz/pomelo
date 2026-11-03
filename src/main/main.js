@@ -12,6 +12,7 @@ const { Toast } = require('./toast');
 const { Jobs } = require('./jobs');
 const { Timings } = require('./progress');
 const updater = require('./updater');
+const { AutoUpdate } = require('./autoUpdate');
 const log = require('./log');
 const { killAll } = require('./convert/util');
 const settingsWindow = require('./settingsWindow');
@@ -30,6 +31,21 @@ let installing = null;   // { keys: [engine keys being installed], note } while 
 const installer = createInstaller({ redetect: () => convert.detectEngines() });
 
 const openSettings = () => settingsWindow.open(asset);
+
+// Looks for a newer version when the user has switched "Check automatically" on, and only says so: the download
+// starts when the user presses the button in Settings.
+const autoUpdate = new AutoUpdate({
+  getSettings: () => settings.get(),
+  setSettings: (patch) => settings.set(patch),
+  check: () => updater.check(),
+  onAvailable: (r) => {
+    log('update available:', r.latest);
+    settingsWindow.getWindow()?.webContents.send('updates:found', r);          // an open Settings window switches to "Download update"
+    jobs?.addInfo({ title: `Pomelo ${r.latest} is available`, detail: 'Open Settings from the tray icon and press Download update.' });
+    updateTray();
+  },
+});
+const updateTray = () => tray?.setToolTip(autoUpdate.available ? `Pomelo: version ${autoUpdate.available.latest} is available` : 'Pomelo');
 
 // Login starts are silent (tray only). Running from source, Windows must be told which app folder to open.
 const setLoginItem = (openAtLogin) => app.setLoginItemSettings({ openAtLogin, args: [...(app.isPackaged ? [] : [app.getAppPath()]), '--hidden'] });
@@ -116,7 +132,7 @@ app.whenReady().then(async () => {
   tray.setToolTip('Pomelo');
   tray.on('click', openSettings);
 
-  ipcMain.handle('settings:get', () => ({ settings: settings.get(), engines: convert.getEngines(), installing, version: app.getVersion(), os: `Windows ${process.getSystemVersion()} ${process.arch}` }));
+  ipcMain.handle('settings:get', () => ({ settings: settings.get(), engines: convert.getEngines(), installing, version: app.getVersion(), os: `Windows ${process.getSystemVersion()} ${process.arch}`, update: autoUpdate.available }));
   ipcMain.handle('engines:install', async (_e, key) => {
     if (!PACK[key]) return { ok: false, message: 'Unknown engine' };
     if (installing) return { ok: false, message: 'Another engine is still installing' };
@@ -128,7 +144,7 @@ app.whenReady().then(async () => {
     log('engine install', key, result.ok ? 'ok' : `failed: ${result.message}`);
     return { ok: result.ok, message: result.message, engines: convert.getEngines() };
   });
-  ipcMain.handle('settings:set', (_e, patch) => { settings.set(patch); applySettings(); return settings.get(); });
+  ipcMain.handle('settings:set', (_e, patch) => { settings.set(patch); applySettings(); if ('autoUpdate' in patch) autoUpdate.apply(); return settings.get(); });
   ipcMain.handle('app:uninstall', async () => {
     const win = settingsWindow.getWindow();
     const what = uninstaller.plan(installer);
@@ -148,10 +164,11 @@ app.whenReady().then(async () => {
     app.quit();                                                       // the Windows uninstaller carries on by itself
     return { ok: true };
   });
-  ipcMain.handle('updates:check', () => updater.check());
+  ipcMain.handle('updates:check', async () => { const r = await updater.check(); autoUpdate.remember(r); updateTray(); return r; });
   ipcMain.handle('updates:download', (_e, url) => updater.openDownload(url));
 
   applySettings();
+  autoUpdate.apply();
   // Show the window on every manual launch so there is always a visible way in; login starts stay in the tray.
   if (!process.argv.includes('--hidden')) openSettings();
 });

@@ -12,4 +12,5 @@ contextBridge.exposeInMainWorld('settingsApi', {
   onEngineProgress: (fn) => ipcRenderer.on('engines:progress', (_e, installing) => fn(installing)),
   checkUpdates: () => ipcRenderer.invoke('updates:check'),
   downloadUpdate: (url) => ipcRenderer.invoke('updates:download', url),
+  onUpdateFound: (fn) => ipcRenderer.on('updates:found', (_e, result) => fn(result)),
 });

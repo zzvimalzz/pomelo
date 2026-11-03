@@ -3,7 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
 
-const DEFAULTS = { enabled: true, key: 'ctrl', openAtLogin: true, advanced: false, pdfLayout: 'exact' };
+// autoUpdate is off by default: Pomelo goes online only when asked. lastUpdateCheck / updateNotified belong to autoUpdate.js.
+const DEFAULTS = { enabled: true, key: 'ctrl', openAtLogin: true, advanced: false, pdfLayout: 'exact', autoUpdate: false, lastUpdateCheck: 0, updateNotified: '' };
 let cache = null;
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');

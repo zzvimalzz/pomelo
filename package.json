@@ -1,7 +1,7 @@
 {
   "name": "pomelo",
   "productName": "Pomelo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Drag a file, tap Ctrl, drop it on a format. A zero-click, offline file converter wheel for Windows.",
   "keywords": [
     "file-converter",
@@ -44,7 +44,7 @@
     "lint": "eslint .",
     "check": "npm run lint && node tools/unused-exports.js",
     "pretest": "npm run build:helper",
-    "test": "node test/jobs-test.js && node test/helper-test.js && node test/engine-cli-test.js && node test/installer-test.js && node test/uninstall-test.js && electron test/updater-test.js && electron test/entry.js && electron test/edge-cases.js && node test/pdf-layout-test.js && node test/pdf-formats-test.js",
+    "test": "node test/jobs-test.js && node test/helper-test.js && node test/engine-cli-test.js && node test/installer-test.js && node test/uninstall-test.js && electron test/updater-test.js && electron test/entry.js && electron test/edge-cases.js && node test/pdf-layout-test.js && node test/pdf-formats-test.js && node test/autoupdate-test.js",
     "test:fidelity": "node test/fidelity/run.js",
     "fidelity:samples": "electron test/fidelity/make-samples.js",
     "test:ui": "electron test/pipeline.js && electron test/overlay-shot.js && electron test/toast-shot.js && electron test/settings-shot.js"

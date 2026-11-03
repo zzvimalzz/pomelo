@@ -2,7 +2,10 @@
 
 All notable changes to Pomelo are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.1] - 03-11-2026
+
+### Added
+- **Check automatically** in Settings (off by default). When on, Pomelo looks for a newer version 30 seconds after it starts and then once a day, and says so in a toast and on the tray icon when one exists. It never downloads or installs anything: the download starts only when you press **Download update**. A failed check is silent and retried a couple of hours later.
 
 ### Changed
 - PDF to Word is now exact by default: every page keeps its size, positions, fonts, sizes, colours, spacing, links, pictures, shapes, rules and backgrounds. Text stays editable in place; whatever is not text (pictures, shapes, gradients, rules) sits behind it as the page background, and text that cannot be re-typed faithfully (right-to-left, rotated, symbol-font glyphs) stays in that background so it still looks right. A new **PDF to Word > Layout** setting (Advanced) switches to **Editable**, which rebuilds flowing paragraphs; designed pages (shapes or pictures behind text, columns, rotated text) are still converted exactly.

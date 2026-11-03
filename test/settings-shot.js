@@ -75,7 +75,7 @@ app.whenReady().then(async () => {
         check('engines, log and diagnostics are hidden', ui.advancedHidden && !ui.enginesShown && !ui.hasLogButtonVisible);
         check('no Quit button', !ui.hasQuit);
         check('real logo image is shown (not the orange circle)', ui.logoLoaded);
-        check('3 steps, 3 preference controls, update button', ui.steps === 3 && ui.toggles === 2 && ui.updateBtn);
+        check('3 steps, 3 preference controls, update button and its automatic-check switch', ui.steps === 3 && ui.toggles === 3 && ui.updateBtn);
         check('version lives in the Updates row, not the header', ui.version === 'Version 0.1.0' && !/Version/.test(ui.subtitle), `${ui.version} | header: "${ui.subtitle}"`);
         check(`space between a main line and its sub-text is at least 3px`, ui.gap >= 3, `${ui.gap.toFixed(1)}px`);
       }

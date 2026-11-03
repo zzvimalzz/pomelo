@@ -55,6 +55,7 @@ function render() {
   const { settings, engines } = state;
   $('enabled').checked = settings.enabled;
   $('openAtLogin').checked = settings.openAtLogin;
+  $('autoUpdate').checked = !!settings.autoUpdate;
   $('keycap').textContent = cap(settings.key);
   for (const b of document.querySelectorAll('#key button')) b.setAttribute('aria-checked', String(b.dataset.key === settings.key));
   const layout = settings.pdfLayout === 'editable' ? 'editable' : 'exact';
@@ -103,17 +104,24 @@ function renderUpdate() {
   fit();
 }
 
-$('updateBtn').onclick = async () => {
-  if (update.state === 'available') {
-    const r = await window.settingsApi.downloadUpdate(update.url);
-    if (!r.ok) { update = { state: 'error', message: r.message }; renderUpdate(); }
-    return;
-  }
+async function checkNow() {
   update = { state: 'checking' };
   renderUpdate();
   update = await window.settingsApi.checkUpdates();
   renderUpdate();
+}
+
+$('updateBtn').onclick = async () => {
+  if (update.state === 'available') {                       // the download starts only here, when the user presses the button
+    const r = await window.settingsApi.downloadUpdate(update.url);
+    if (!r.ok) { update = { state: 'error', message: r.message }; renderUpdate(); }
+    return;
+  }
+  checkNow();
 };
+
+// The automatic check found something (or the Settings window opened after it did): show the button, do not download.
+window.settingsApi.onUpdateFound((result) => { update = result; renderUpdate(); });
 
 // ---- window fitting: the window sizes itself to this height ---------------------------------------
 function fit() {
@@ -129,7 +137,7 @@ function diagnostics() {
 
 async function save(patch) { state = { ...state, settings: await window.settingsApi.set(patch) }; render(); }
 
-window.settingsApi.get().then((s) => { state = s; render(); });
+window.settingsApi.get().then((s) => { state = s; if (s.update) update = s.update; render(); });
 window.settingsApi.onEngineProgress((installing) => {
   if (!state || !installing) return;
   if (!installing.keys.length) { $('uninstallNote').textContent = installing.note; return; }   // progress of an uninstall
@@ -148,5 +156,9 @@ $('diag').onclick = () => { window.settingsApi.copy(diagnostics()); $('diag').te
 $('advToggle').onclick = () => save({ advanced: !state.settings.advanced });
 $('enabled').onchange = (e) => save({ enabled: e.target.checked });
 $('openAtLogin').onchange = (e) => save({ openAtLogin: e.target.checked });
+$('autoUpdate').onchange = async (e) => {
+  await save({ autoUpdate: e.target.checked });
+  if (e.target.checked && update.state !== 'available') checkNow();    // switching it on looks straight away, so the answer is on screen
+};
 $('key').onclick = (e) => { const k = e.target.dataset?.key; if (k) save({ key: k }); };
 $('layout').onclick = (e) => { const l = e.target.dataset?.layout; if (l) save({ pdfLayout: l }); };

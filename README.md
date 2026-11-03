@@ -22,7 +22,7 @@
 </p>
 
 > ### Fully offline, fully on your device
-> Every conversion happens on your computer. There is no account, no upload, no cloud service and no telemetry, so **your files never leave your PC**. Pomelo only goes online when you ask it to: installing an optional engine, or clicking **Check for updates**.
+> Every conversion happens on your computer. There is no account, no upload, no cloud service and no telemetry, so **your files never leave your PC**. Pomelo only goes online when you ask it to: installing an optional engine, clicking **Check for updates**, or, if you switch on **Check automatically**, a once-a-day look for a newer version (it never downloads one by itself).
 
 ## How it works
 
@@ -93,7 +93,7 @@ Not supported: Apple Pages (`.pages`) and RTFD, because Apple's own software is 
 
 - **On your device.** Files are converted locally and nothing is uploaded. There is no telemetry and no account.
 - **No remote fetches while converting.** The PDF print window and Pandoc are blocked from loading remote resources, so a document that links to an online image does not make a request. LibreOffice can still fetch linked content in some Office files.
-- **Network use is your choice.** The only requests Pomelo makes itself are installing an optional engine and the update check, which runs only when you click **Check for updates**.
+- **Network use is your choice.** The only requests Pomelo makes itself are installing an optional engine and the update check, which runs when you click **Check for updates** or, only if you turn it on, once a day (**Check automatically**, off by default; it only tells you, the download starts when you press the button).
 - **No keylogging.** Drag detection uses a Windows input hook in a small helper, `pomelo-input.exe` ([source](native/pomelo-input.cs), one short file, no network code). It reports only the left mouse button and the mouse position while that button is held, plus your trigger key and Esc while that button is held. Other keys are never recorded, and nothing it sees is stored or logged.
 
 Found a vulnerability? Please report it privately, see [SECURITY.md](SECURITY.md).
@@ -134,7 +134,7 @@ Engine order per conversion lives in `src/main/convert/index.js`; if one engine 
 
 ## Updates
 
-Settings shows your version and a **Check for updates** button. If a newer version exists the button becomes **Download update** and opens the installer from the latest [GitHub release](https://github.com/zzvimalzz/pomelo/releases) in your browser. Forks can point it at their own releases in `package.json`:
+Settings shows your version, a **Check for updates** button and a **Check automatically** switch. If a newer version exists the button becomes **Download update** and opens the installer from the latest [GitHub release](https://github.com/zzvimalzz/pomelo/releases) in your browser. Forks can point it at their own releases in `package.json`:
 
 ```json
 "pomelo": { "updateRepo": "owner/name" }
