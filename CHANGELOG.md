@@ -2,7 +2,7 @@
 
 All notable changes to Pomelo are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0] - 03-11-2026
 
 ### Added
 - Drag a file, folder or desktop icon, tap Ctrl, and drop it on a format wheel to convert it next to the original.
