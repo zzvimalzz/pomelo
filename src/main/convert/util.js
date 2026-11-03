@@ -74,8 +74,21 @@ function removeOutputs(paths) {
   for (const p of paths) { try { fs.rmSync(p, { recursive: true, force: true }); } catch { /* best effort */ } }
 }
 
+// Calls onLine(line) for every line a stream produces as it arrives (a carriage return ends a line too, which is how
+// console progress bars redraw themselves).
+function watchLines(stream, onLine) {
+  let rest = '';
+  stream.setEncoding('utf8');
+  stream.on('data', (chunk) => {
+    const parts = (rest + chunk).split(/\r\n|\r|\n/);
+    rest = parts.pop();
+    for (const line of parts) if (line) { try { onLine(line); } catch { /* a bad progress parser must never fail a conversion */ } }
+  });
+}
+
 // Run a program, resolve with its stdout. env: extra environment variables for the child.
-function run(cmd, args, { timeout = 180000, cwd, env } = {}) {
+// onLine: called with each output line while the program runs (progress reports).
+function run(cmd, args, { timeout = 180000, cwd, env, onLine } = {}) {
   if (context.getStore()?.signal?.aborted) return Promise.reject(new CancelledError());
   return new Promise((resolve, reject) => {
     let stop = () => {};
@@ -93,6 +106,7 @@ function run(cmd, args, { timeout = 180000, cwd, env } = {}) {
     });
     track(child);
     stop = killOnCancel(child);
+    if (onLine) { watchLines(child.stdout, onLine); watchLines(child.stderr, onLine); }
     child.on('error', reject);
   });
 }

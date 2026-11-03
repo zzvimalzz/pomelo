@@ -10,6 +10,7 @@ const { Trigger } = require('./trigger');
 const { Overlay } = require('./overlay');
 const { Toast } = require('./toast');
 const { Jobs } = require('./jobs');
+const { Timings } = require('./progress');
 const updater = require('./updater');
 const log = require('./log');
 const { killAll } = require('./convert/util');
@@ -92,6 +93,7 @@ app.whenReady().then(async () => {
   overlay = new Overlay({ onDrop: handleDrop });
   overlay.create();
   jobs = new Jobs({
+    timings: new Timings(path.join(app.getPath('userData'), 'timings.json')),
     convert: (src, to, opts) => convert.convertFile(src, to, opts).catch((e) => { log('convert failed:', path.basename(src), e.message); throw e; }),
   });
   toast = new Toast({ onRemove: (id) => jobs.remove(id), onCancel: (id) => jobs.cancel(id) });

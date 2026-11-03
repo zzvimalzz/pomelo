@@ -29,10 +29,13 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 .ring { flex: none; position: relative; width: 44px; height: 44px; }
 .ring svg { width: 44px; height: 44px; transform: rotate(-90deg); }
 .ring .track { fill: none; stroke: var(--track); stroke-width: 4.5; }
-.ring .value { fill: none; stroke: var(--accent); stroke-width: 4.5; stroke-linecap: round; transition: stroke-dashoffset 0.3s linear; }
-.ring.spin svg { animation: ring-spin 1s linear infinite; }
-@keyframes ring-spin { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }
-.cancel { position: absolute; inset: 8px; border: 0; border-radius: 50%; background: none; color: var(--sub); font-size: 12px; line-height: 1; cursor: pointer; display: grid; place-items: center; padding: 0; transition: background 0.12s, color 0.12s; }
+.ring .value { fill: none; stroke: var(--accent); stroke-width: 4.5; stroke-linecap: round; transition: stroke-dashoffset 0.5s linear; }
+.cancel { position: absolute; inset: 6px; border: 0; border-radius: 50%; background: none; color: var(--txt); font-size: 12px; line-height: 1; cursor: pointer; display: grid; place-items: center; padding: 0; transition: background 0.12s, color 0.12s; }
+.cancel > span { grid-area: 1 / 1; }
+.cancel .pct { font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.2px; }
+.cancel .x { opacity: 0; }
+.cancel:hover .pct, .cancel:focus-visible .pct { opacity: 0; }
+.cancel:hover .x, .cancel:focus-visible .x { opacity: 1; }
 .cancel:hover { background: rgba(229, 72, 61, 0.14); color: var(--err); }
 .cancel:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 

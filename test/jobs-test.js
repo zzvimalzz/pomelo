@@ -15,7 +15,9 @@ function controlled() {
   });
   return { fn, pending };
 }
-const make = () => { const c = controlled(); const jobs = new Jobs({ convert: c.fn, concurrency: 3, maxStack: 3 }); return { jobs, c }; };
+// A clock the test moves by hand, so estimated progress and "time left" are exact.
+const clock = { t: 1_000_000 };
+const make = (extra = {}) => { const c = controlled(); const jobs = new Jobs({ convert: c.fn, concurrency: 3, maxStack: 3, now: () => clock.t, ...extra }); return { jobs, c }; };
 const titles = (jobs) => jobs.view().cards.map((x) => x.title);
 
 (async () => {
@@ -26,7 +28,7 @@ const titles = (jobs) => jobs.view().cards.map((x) => x.title);
     await tick();
     let v = jobs.view();
     expect('shows one card in stack mode', v.mode === 'stack' && v.cards.length === 1);
-    expect('card says Converting to PDF…', v.cards[0].title === 'Converting to PDF…' && v.cards[0].detail === 'report.docx');
+    expect('card says Converting to PDF…, with the percentage from the first moment', v.cards[0].title === 'Converting to PDF…' && v.cards[0].detail === 'report.docx · 0%', v.cards[0].detail);
     c.pending[0].onProgress(0.5);
     expect('progress is shown', jobs.view().cards[0].progress === 0.5 && /50%/.test(jobs.view().cards[0].detail));
     c.pending[0].resolve(); await tick();
@@ -116,6 +118,52 @@ const titles = (jobs) => jobs.view().cards.map((x) => x.title);
     expect('a new conversion after a finished batch starts a fresh stack', jobs.mode === 'stack' && jobs.view().cards.length === 1 && jobs.view().cards[0].title === 'Converting to PDF…', titles(jobs).join(' | '));
   }
 
+  console.log('progress is always a number, and the time left is honest');
+  {
+    const { jobs, c } = make();
+    jobs.addConversion('C:/x/slow.docx', 'pdf', 'PDF');
+    await tick();
+    const first = jobs.view().cards[0];
+    expect('a job that reports nothing starts at 0% with a ring, not a spinner', first.progress === 0 && first.ring === true && /· 0%/.test(first.detail), first.detail);
+    clock.t += 3000;
+    const a = jobs.view().cards[0];
+    expect('with no report from the engine the figure still moves with time', a.progress > 0.05 && a.progress < 0.99 && new RegExp(`· ${Math.round(a.progress * 100)}%`).test(a.detail), a.detail);
+    clock.t += 5000;
+    const b = jobs.view().cards[0];
+    expect('and never goes backwards', b.progress > a.progress, `${a.progress} -> ${b.progress}`);
+    expect('an estimate says how long is left, in words', /about \d+ s left|finishing up|almost done|min/.test(b.detail), b.detail);
+    c.pending[0].onProgress(0.2);
+    expect('a measured figure below the estimate does not pull the ring back', jobs.view().cards[0].progress >= b.progress);
+    clock.t += 20000;
+    c.pending[0].onProgress(0.9);
+    const d = jobs.view().cards[0];
+    expect('a measured figure above it takes over', d.progress === 0.9 && /· 90% · /.test(d.detail), d.detail);
+    c.pending[0].resolve(); await tick();
+  }
+  {
+    const { jobs, c } = make();
+    jobs.addConversion('C:/x/clip.mov', 'mp4', 'MP4');
+    await tick();
+    clock.t += 10000;
+    c.pending[0].onProgress(0.25);
+    const left = jobs.view().cards[0].detail;
+    expect('measured 25% after 10 s means about 30 s left', /· 25% · about (2\d|3\d|4\d) s left/.test(left), left);
+    clock.t += 10000;
+    c.pending[0].onProgress(0.5);
+    expect('the estimate follows the pace', /· 50% · about (1\d|2\d) s left/.test(jobs.view().cards[0].detail), jobs.view().cards[0].detail);
+    c.pending[0].resolve(); await tick();
+  }
+  {
+    const { jobs, c } = make();
+    for (const f of ['a', 'b', 'c', 'd']) jobs.addConversion(`C:/x/${f}.mov`, 'mp4', 'MP4');
+    await tick();
+    clock.t += 10000;
+    c.pending[0].onProgress(0.5);
+    const s = jobs.view().cards[0];
+    expect('the summary shows its percentage too', /^\d+% · /.test(s.detail), s.detail);
+    c.pending.forEach((p) => p.resolve()); await tick(); await tick();
+  }
+
   console.log('cancelling');
   {
     const { jobs, c } = make();
@@ -126,7 +174,7 @@ const titles = (jobs) => jobs.view().cards.map((x) => x.title);
     const oldest = jobs.view().cards[1];
     jobs.cancel(oldest.id); await tick();
     expect('the cancel signal reaches the converter', c.pending[0].signal.aborted === true && c.pending[1].signal.aborted === false);
-    expect('the cancelled card disappears at once', jobs.view().cards.length === 1 && jobs.view().cards[0].detail === 'b.docx');
+    expect('the cancelled card disappears at once', jobs.view().cards.length === 1 && /^b\.docx/.test(jobs.view().cards[0].detail));
     c.pending[1].resolve(); await tick(); await tick();
     expect('the other job still finishes normally', jobs.view().cards[0].state === 'done');
   }

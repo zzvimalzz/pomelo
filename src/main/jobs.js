@@ -5,13 +5,22 @@
 // - The toast shows up to `maxStack` cards, newest on top. A running card has a progress ring with a cancel (X) in it.
 // - When more than `maxStack` conversions are in flight, everything collapses into ONE summary card
 //   ("Converting 1/4 files", ring + X cancels what is left) until that batch is finished.
+const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
+const { shownProgress, remaining, guessMs, middle } = require('./progress');
+
+const sizeOf = (file) => { try { const st = fs.statSync(file); return st.isFile() ? st.size : 0; } catch { return 0; } };
+const extOf = (file) => path.extname(file).slice(1).toLowerCase() || 'folder';
 
 class Jobs extends EventEmitter {
-  constructor({ convert, concurrency = 3, maxStack = 3 }) {
+  // timings: learns how long each kind of conversion takes here (see progress.js); now: the clock, for tests.
+  constructor({ convert, concurrency = 3, maxStack = 3, timings = null, now = Date.now }) {
     super();
     this.convert = convert;          // async (src, to, { onProgress, signal }) => [output paths]
+    this.timings = timings;
+    this.now = now;
+    this.ticker = null;              // redraws the cards twice a second while something runs, so the ring and the time left move
     this.concurrency = concurrency;
     this.maxStack = maxStack;
     this.items = [];                 // cards, newest first: conversion jobs and info messages
@@ -95,11 +104,20 @@ class Jobs extends EventEmitter {
 
   async start(job) {
     job.state = 'working';
+    job.startedAt = this.now();
+    job.from = extOf(job.src);
+    job.size = sizeOf(job.src);
+    job.expected = this.timings ? this.timings.expected(job.from, job.to, job.size) : guessMs(job.from, job.to, job.size);
     this.running++;
+    this.startTicker();
     this.changed();
     try {
-      const outs = await this.convert(job.src, job.to, { signal: job.controller.signal, onProgress: (f) => { if (job.state === 'working') { job.progress = f; this.changed(); } } });
-      if (job.state === 'working') { job.outPath = outs[0]; job.state = 'done'; }
+      const outs = await this.convert(job.src, job.to, { signal: job.controller.signal, onProgress: (f) => { if (job.state === 'working' && Number.isFinite(f)) { job.progress = Math.max(job.progress || 0, Math.min(1, f)); this.changed(); } } });
+      if (job.state === 'working') {
+        job.outPath = outs[0];
+        job.state = 'done';
+        this.timings?.record(job.from, job.to, job.size, this.now() - job.startedAt);
+      }
     } catch (e) {
       if (job.state === 'working') { job.error = e.message; job.state = 'error'; }
     } finally {
@@ -108,6 +126,24 @@ class Jobs extends EventEmitter {
       this.changed();
       this.pump();
     }
+  }
+
+  startTicker() {
+    if (this.ticker) return;
+    this.ticker = setInterval(() => {
+      if (!this.batch.some((j) => j.state === 'working')) { clearInterval(this.ticker); this.ticker = null; return; }
+      this.changed();
+    }, 500);
+    this.ticker.unref?.();
+  }
+
+  // { value 0..1, left: text or null } for a running job, from what the engine reported or from the clock.
+  measure(job) {
+    const elapsed = this.now() - job.startedAt;
+    job.shown = shownProgress(job.progress, elapsed, job.expected, job.shown || 0);
+    const r = remaining({ reported: job.progress, elapsed, expected: job.expected, previous: job.leftMs });
+    job.leftMs = r.ms;
+    return { value: job.shown, left: r.text };
   }
 
   changed() { this.emit('change', this.view()); }
@@ -119,7 +155,7 @@ class Jobs extends EventEmitter {
       const summary = this.summaryCard();
       return { mode: 'summary', cards: summary ? [summary, ...infos] : infos };
     }
-    return { mode: 'stack', cards: this.items.slice(0, this.maxStack).map((i) => (i.kind === 'info' ? infoCard(i) : jobCard(i))) };
+    return { mode: 'stack', cards: this.items.slice(0, this.maxStack).map((i) => (i.kind === 'info' ? infoCard(i) : jobCard(i, this))) };
   }
 
   summaryCard() {
@@ -131,13 +167,17 @@ class Jobs extends EventEmitter {
     const ok = finished.length - failed.length;
     const working = b.filter((j) => j.state === 'working');
     const queued = b.filter((j) => j.state === 'queued');
-    const partial = working.reduce((sum, j) => sum + (j.progress || 0), 0);
+    const partial = working.reduce((sum, j) => sum + this.measure(j).value, 0);
     const progress = Math.min(1, (finished.length + partial) / total);
     const firstOut = b.find((j) => j.state === 'done');
     const base = { id: 'summary', ring: true, progress };
     if (working.length || queued.length) {
+      // time left for the whole batch: the pace so far, once there is a pace to speak of
+      const began = Math.min(...b.filter((j) => j.startedAt).map((j) => j.startedAt));
+      const left = Number.isFinite(began) ? remaining({ reported: progress, elapsed: this.now() - began, expected: 0, previous: this.batchLeft }) : { ms: null, text: null };
+      this.batchLeft = left.ms;
       return { ...base, state: 'working', title: `Converting ${finished.length}/${total} files`,
-        detail: `${working.length} in progress${queued.length ? ` · ${queued.length} waiting` : ''}${failed.length ? ` · ${failed.length} failed` : ''}` };
+        detail: [`${Math.round(progress * 100)}%`, left.text, `${working.length} in progress${queued.length ? ` · ${queued.length} waiting` : ''}${failed.length ? ` · ${failed.length} failed` : ''}`].filter(Boolean).join(' · ') };
     }
     if (failed.length === total) return { ...base, state: 'error', title: 'Conversion failed', detail: failed[0].error || 'Nothing could be converted' };
     return { ...base, state: 'done', title: failed.length ? `${ok} converted · ${failed.length} failed` : `${ok} files converted`,
@@ -147,10 +187,14 @@ class Jobs extends EventEmitter {
 
 function infoCard(i) { return { id: i.id, state: 'info', title: i.title, detail: i.detail, progress: null, outPath: '' }; }
 
-function jobCard(j) {
-  const pct = j.progress == null ? '' : ` · ${Math.round(j.progress * 100)}%`;
-  if (j.state === 'queued') return { id: j.id, state: 'working', ring: true, title: `Waiting to convert to ${j.label}`, detail: j.name, progress: null, outPath: '' };
-  if (j.state === 'working') return { id: j.id, state: 'working', ring: true, title: `Converting to ${j.label}…`, detail: j.name + pct, progress: j.progress, outPath: '' };
+// "name · 42% · about 12 s left". The name is shortened in the middle so the figures are never the part that is cut off.
+function jobCard(j, jobs) {
+  if (j.state === 'queued') return { id: j.id, state: 'working', ring: true, title: `Waiting to convert to ${j.label}`, detail: `${j.name} · 0%`, progress: 0, outPath: '' };
+  if (j.state === 'working') {
+    const m = jobs.measure(j);
+    const detail = [middle(j.name, 30), `${Math.round(m.value * 100)}%`, m.left].filter(Boolean).join(' · ');
+    return { id: j.id, state: 'working', ring: true, title: `Converting to ${j.label}…`, detail, progress: m.value, outPath: '' };
+  }
   if (j.state === 'done') return { id: j.id, state: 'done', title: path.basename(j.outPath), detail: 'Saved next to the original · click to show', progress: null, outPath: j.outPath };
   return { id: j.id, state: 'error', title: 'Conversion failed', detail: `${j.name}: ${j.error}`, progress: null, outPath: '' };
 }

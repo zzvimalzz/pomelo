@@ -133,7 +133,7 @@ function fake(script = () => null) {
     const r = await inst.install('pdf2docx');
     const pip = f.calls.find((c) => c.includes('pip'));
     expect('uses the Python already on the PC (no winget)', r.ok && f.named('winget').length === 0);
-    expect('pip installs the three packages with the pinned, open-source pymupdf4llm', pip && pip.includes('pdf2docx') && pip.includes('pymupdf4llm==0.3.4') && pip.includes('pillow-heif'), String(pip));
+    expect('pip installs the two packages (PyMuPDF comes with pdf2docx)', pip && pip.includes('pdf2docx') && pip.includes('pillow-heif') && !pip.includes('pymupdf4llm'), String(pip));
     expect('environment lives under the engines folder and is on the manifest', inst.readManifest().pyenv === true && fs.existsSync(path.join(root, 'pyenv', 'Scripts', 'python.exe')));
     expect('Python itself was not recorded (the user already had it)', inst.readManifest().winget.length === 0);
   }

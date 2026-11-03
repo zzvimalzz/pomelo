@@ -268,11 +268,11 @@ async function imageRun({ src, from, to, dir, base }) {
 
 // ---- PDF source -----------------------------------------------------------------------------
 // One image per slide, slide size = page size. Looks identical but is not editable text (LibreOffice gives editable slides).
-async function pdfToPptx({ src, dir, base }) {
+async function pdfToPptx({ src, dir, base, onProgress }) {
   const PptxGenJS = require('pptxgenjs');
   const sharp = require('sharp');
   const DPI = 150;
-  const pages = await pdf.renderPages(src, 'jpg', DPI);
+  const pages = await pdf.renderPages(src, 'jpg', DPI, onProgress);
   const meta = await sharp(pages[0]).metadata();
   const pptx = new PptxGenJS();
   pptx.defineLayout({ name: 'PDF', width: meta.width / DPI, height: meta.height / DPI });
@@ -286,16 +286,16 @@ async function pdfToPptx({ src, dir, base }) {
   return [out];
 }
 
-async function pdfRun({ src, to, dir, base }) {
-  if (to === 'pptx') return pdfToPptx({ src, dir, base });
+async function pdfRun({ src, to, dir, base, onProgress }) {
+  if (to === 'pptx') return pdfToPptx({ src, dir, base, onProgress });
   if (to === 'png' || to === 'jpg') {
-    const pages = await pdf.renderPages(src, to);
+    const pages = await pdf.renderPages(src, to, 200, onProgress);
     if (pages.length === 1) { const out = uniquePath(dir, base, to); fs.writeFileSync(out, pages[0]); return [out]; }
     const folder = uniquePath(dir, `${base} (${to.toUpperCase()})`, '');
     fs.mkdirSync(folder);
     return pages.map((buf, i) => { const out = path.join(folder, `${base}-${i + 1}.${to}`); fs.writeFileSync(out, buf); return out; });
   }
-  const { pages } = await pdf.extractBlocks(src);
+  const { pages } = await pdf.extractBlocks(src, onProgress);
   const out = uniquePath(dir, base, to);
   if (to === 'epub') { await epub.write(blocksToHtml(pages, base), { title: base }, out); return [out]; }
   if (to === 'txt') fs.writeFileSync(out, blocksToTxt(pages), 'utf8');

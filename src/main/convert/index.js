@@ -14,7 +14,7 @@ const subtitle = require('../engines/subtitle');
 const archive = require('../engines/archive');
 const { enginesRoot } = require('../enginesDir');
 
-let engines = { soffice: null, pandoc: null, pdf2docx: null, pdfmd: null, heic: null, ffmpeg: null, sevenZip: null };
+let engines = { soffice: null, pandoc: null, pdf2docx: null, heic: null, ffmpeg: null, sevenZip: null };
 
 // Looks in Pomelo's own folders first (vendor/ is where a release can ship portable copies, and the engines folder holds
 // the LibreOffice that Pomelo unpacked), then the usual install spots and PATH.
@@ -35,7 +35,6 @@ function detectEngines() {
     soffice: findExe('soffice.exe', ['LibreOffice/program', 'libreoffice/program']),
     pandoc: findExe('pandoc.exe', ['Pandoc', 'pandoc', '']),
     pdf2docx: pdfhifi.detect(),
-    pdfmd: pdfhifi.detectMarkdown(),
     heic: pdfhifi.detectHeic(),
     ffmpeg: ffmpeg.detect(),
     sevenZip: archive.detect(),
@@ -53,8 +52,9 @@ const CHAINS = [
   { from: ['txt', 'md', 'html', 'epub'], to: ['rtf', 'odt', 'doc'], via: 'docx', first: [pandoc, pure], second: [soffice] },
   { from: ['pptx', 'ppt'], to: ['png', 'jpg'], via: 'pdf', first: [soffice], second: [pure] },
   { from: DOCS, to: ['png', 'jpg'], via: 'pdf', first: [soffice, pure], second: [pure] },          // pages as images
-  { from: ['pdf'], to: ['doc', 'rtf', 'odt'], via: 'docx', first: [pdfhifi, pure], second: [soffice] },
-  { from: ['pdf'], to: ['html', 'epub'], via: 'md', first: [pdfhifi], second: [pandoc, pure] },
+  { from: ['pdf'], to: ['doc', 'odt'], via: 'docx', first: [pdfhifi, pure], second: [soffice] },
+  // RTF has no page frames: LibreOffice would fold every page of an exact layout into one. It needs the flowing rebuild.
+  { from: ['pdf'], to: ['rtf'], via: 'docx', first: [pdfhifi, pure], second: [soffice], layout: 'flow' },
 ];
 
 function plansFor(from, to) {
@@ -67,7 +67,7 @@ function plansFor(from, to) {
     if (!c.from.includes(from) || !c.to.includes(to)) continue;
     for (const a of c.first) {
       for (const b of c.second) {
-        if (a.supports(from, c.via, engines) && b.supports(c.via, to, engines)) plans.push([{ engine: a, from, to: c.via }, { engine: b, from: c.via, to }]);
+        if (a.supports(from, c.via, engines) && b.supports(c.via, to, engines)) plans.push([{ engine: a, from, to: c.via, layout: c.layout }, { engine: b, from: c.via, to }]);
       }
     }
   }
@@ -89,7 +89,7 @@ async function runPlan(plan, src, dir, base, onProgress) {
   try {
     const [first, second] = plan;
     const half = (offset) => onProgress && ((f) => onProgress(offset + f / 2));
-    const [mid] = await first.engine.run({ src, from: first.from, to: first.to, dir: tmp, base, engines, onProgress: half(0) });
+    const [mid] = await first.engine.run({ src, from: first.from, to: first.to, dir: tmp, base, engines, layout: first.layout, onProgress: half(0) });
     return await second.engine.run({ src: mid, from: second.from, to: second.to, dir, base, engines, onProgress: half(0.5) });
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 }

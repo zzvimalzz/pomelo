@@ -5,7 +5,6 @@ const stack = document.getElementById('stack');
 const ICON = { done: '✓', error: '!', info: 'i' };
 const LINGER = { done: 5500, info: 6000, error: 9000 };     // working cards stay until they finish
 const RING = 2 * Math.PI * 18;                              // circumference of the progress ring (r = 18)
-const SPIN_ARC = RING * 0.28;                               // length of the arc that spins when progress is unknown
 
 const cards = new Map();                                    // id -> { el, state, timer, outPath }
 
@@ -31,11 +30,12 @@ function build(id) {
   return el;
 }
 
-// Progress ring with the cancel X in its centre.
+// Progress ring. The middle shows the percentage; pointing at it swaps that for the cancel X.
 function ringEl() {
   const wrap = make('div', 'ring');
   wrap.innerHTML = '<svg viewBox="0 0 44 44" aria-hidden="true"><circle class="track" cx="22" cy="22" r="18"/><circle class="value" cx="22" cy="22" r="18"/></svg>';
-  const cancel = make('button', 'cancel', '✕');
+  const cancel = make('button', 'cancel');
+  cancel.append(make('span', 'pct'), make('span', 'x', '✕'));
   cancel.setAttribute('aria-label', 'Cancel');
   cancel.title = 'Cancel';
   wrap.append(cancel);
@@ -71,11 +71,12 @@ function paint(c, data) {
   if (data.ring) {
     if (!lead.classList.contains('ring')) lead.replaceWith(ringEl());
     const ring = el.firstChild;
-    const known = data.progress != null;
+    const progress = Math.min(1, Math.max(0, data.progress || 0));   // always a figure: measured, or estimated from the clock
     const value = ring.querySelector('.value');
-    ring.classList.toggle('spin', !known);                  // unknown progress: a short arc goes round and round
-    value.style.strokeDasharray = known ? String(RING) : `${SPIN_ARC} ${RING}`;
-    value.style.strokeDashoffset = known ? String(RING * (1 - data.progress)) : '0';
+    value.style.strokeDasharray = String(RING);
+    value.style.strokeDashoffset = String(RING * (1 - progress));
+    ring.querySelector('.pct').textContent = `${Math.round(progress * 100)}`;
+    ring.setAttribute('aria-label', `${Math.round(progress * 100)} percent`);
   } else {
     if (!lead.classList.contains('icon')) lead.replaceWith(make('div', 'icon'));
     el.firstChild.textContent = ICON[data.state] ?? '';

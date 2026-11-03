@@ -20,7 +20,7 @@ const PROGRAMS = [
 // Installed by `npm run setup:pdf` into vendor/pyenv (not part of this repository).
 const PYTHON = [
   ['pdf2docx', '0.5.13', 'MIT'], ['PyMuPDF', '1.28.2', 'AGPL-3.0-or-later or Artifex commercial'],
-  ['pymupdf4llm', '0.3.4', 'AGPL-3.0-or-later or Artifex commercial'], ['pillow-heif', '1.8.1', 'BSD-3-Clause (wheels bundle libheif LGPL-3.0, libde265 LGPL-3.0 and the x265 encoder GPL-2.0-or-later)'],
+  ['pillow-heif', '1.8.1', 'BSD-3-Clause (wheels bundle libheif LGPL-3.0, libde265 LGPL-3.0 and the x265 encoder GPL-2.0-or-later)'],
   ['Pillow', '13.0.0', 'MIT-CMU'], ['NumPy', '2.5.4', 'BSD-3-Clause and others'], ['opencv-python-headless', '5.0.0.93', 'Apache-2.0'],
   ['fonttools', '4.68.0', 'MIT'], ['python-docx', '1.2.0', 'MIT'], ['lxml', '6.1.3', 'BSD-3-Clause'], ['tabulate', '0.10.0', 'MIT'],
   ['fire', '0.7.1', 'Apache-2.0'], ['termcolor', '3.3.0', 'MIT'], ['typing_extensions', '4.16.0', 'PSF-2.0'],
@@ -53,7 +53,7 @@ checker.init({ start: root, production: true, excludePrivatePackages: true }, (e
     '',
     '## Python packages (optional PDF and HEIC engines)',
     '',
-    'Installed by `npm run setup:pdf`. `pymupdf4llm` is pinned to 0.3.4 because later releases depend on `pymupdf-layout`, which is licensed PolyForm Noncommercial or commercial and is therefore not open source.',
+    'Installed by `npm run setup:pdf`.',
     '',
     '| Package | Version | Licence |',
     '| --- | --- | --- |',

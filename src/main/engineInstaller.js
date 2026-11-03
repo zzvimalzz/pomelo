@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // One-click install of the optional engines, and removal of exactly what Pomelo installed.
 //
-//   PDF fidelity + HEIC export  a private Python environment (pdf2docx, pymupdf4llm, pillow-heif). Python itself is
+//   PDF fidelity + HEIC export  a private Python environment (pdf2docx with PyMuPDF, pillow-heif). Python itself is
 //                               added with winget only if the PC has none.
 //   LibreOffice                 its official MSI is fetched with `winget download` (hash-checked) and unpacked into Pomelo's
 //                               own folder. Nothing is installed, so no administrator permission, no shortcuts, no registry
@@ -22,7 +22,7 @@ const WINGET = {
 const LIBREOFFICE = 'TheDocumentFoundation.LibreOffice';
 const LO_UNPACKED_BYTES = 1.5e9;                       // size of the unpacked MSI, to turn "bytes written so far" into a percentage
 const PYTHON = { id: 'Python.Python.3.12', name: 'Python' };
-const PY_PACKAGES = ['pdf2docx', 'pymupdf4llm==0.3.4', 'pillow-heif'];   // pymupdf4llm stays below 1.0: later releases need a non-open-source layout package
+const PY_PACKAGES = ['pdf2docx', 'pillow-heif'];                          // pdf2docx brings PyMuPDF, which reads every PDF here
 // Engines that come from the same install: adding either PDF or HEIC adds both.
 const PACK = { pdf2docx: 'python', heic: 'python', soffice: 'soffice', pandoc: 'pandoc' };
 const WINGET_FLAGS = ['--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'];
@@ -187,7 +187,7 @@ function createInstaller({ root = enginesRoot(), run = exec, redetect = () => ({
       r = await run(pyenvPython(root), ['-m', 'pip', 'install', '--disable-pip-version-check', '--no-input', ...PY_PACKAGES], { onLine: (l) => note(l.slice(0, 90)) });
       if (r.code !== 0) throw new Error(`Could not download the components: ${lastLine(r.out)}`);
       note('Checking the components…', 0.95);
-      r = await run(pyenvPython(root), ['-W', 'ignore', '-c', 'import pdf2docx, fitz, pymupdf4llm, pillow_heif']);
+      r = await run(pyenvPython(root), ['-W', 'ignore', '-c', 'import pdf2docx, fitz, pillow_heif']);
       if (r.code !== 0) throw new Error(`The components did not start: ${lastLine(r.out)}`);
     } catch (e) {
       fs.rmSync(env, { recursive: true, force: true });                              // no half-installed environment left behind

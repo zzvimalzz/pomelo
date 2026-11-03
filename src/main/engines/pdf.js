@@ -71,12 +71,13 @@ function pageToBlocks(items, bodySize) {
 }
 
 // -> { pages: [[{type:'h1'|'h2'|'p'|'li', text}]], count }
-async function extractBlocks(file) {
+async function extractBlocks(file, onProgress) {
   const doc = await openPdf(file);
   try {
     const contents = [];
     const sizes = [];
     for (let n = 1; n <= doc.numPages; n++) {
+      onProgress?.((n - 1) / doc.numPages * 0.95);
       const page = await doc.getPage(n);
       const tc = await page.getTextContent();
       contents.push(tc.items);
@@ -92,11 +93,12 @@ async function extractBlocks(file) {
 }
 
 // Render pages to image buffers. format: 'png' | 'jpg'. dpi default 200.
-async function renderPages(file, format, dpi = 200) {
+async function renderPages(file, format, dpi = 200, onProgress) {
   const doc = await openPdf(file);
   try {
     const bufs = [];
     for (let n = 1; n <= doc.numPages; n++) {
+      onProgress?.((n - 1) / doc.numPages * 0.95);
       const page = await doc.getPage(n);
       const viewport = page.getViewport({ scale: dpi / 72 });
       const { canvas, context } = doc.canvasFactory.create(Math.ceil(viewport.width), Math.ceil(viewport.height));

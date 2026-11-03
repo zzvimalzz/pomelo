@@ -85,6 +85,8 @@ The wheel offers up to 8 targets per file.
 
 **PDF to Word** keeps the page exactly: size, positions, fonts, sizes, colours, spacing, links, pictures, shapes, rules and backgrounds. Text stays real, editable text in place; pictures, shapes and backgrounds sit behind it as the page background. Settings > Advanced > **PDF to Word** can switch to **Editable**, which rebuilds flowing paragraphs and real lists (easier to rework, less exact; designed pages are still converted exactly).
 
+**PDF to Markdown, HTML, text and EPUB** read the PDF once and agree: all of the text in reading order (columns one after the other, a title and its date on one line), headings, bullet and numbered lists, tables, links, bold and italic, code, and pictures (saved next to the Markdown, embedded in HTML and EPUB). Headers, footers and page numbers that repeat on every page are left out. **PDF to Excel** takes ruled tables as they are drawn, finds the aligned rows of borderless ones, and for a PDF with no table at all gives each page's text lines. **PDF to PowerPoint** is exact like Word: text boxes on a picture of everything else, links kept. **PDF to RTF** uses the flowing rebuild, because RTF cannot hold an exact page.
+
 Not supported: Apple Pages (`.pages`) and RTFD, because Apple's own software is the only thing that can write them reliably. RAR is input only: creating RAR needs WinRAR's closed-source compressor.
 
 ## Privacy and security
@@ -120,13 +122,13 @@ npm run setup:pdf                                  # developer setup: PDF to Wor
 | [FFmpeg](https://ffmpeg.org) via `ffmpeg-static` | GPL-3.0-or-later build, separate process | All video and audio, with progress |
 | [7-Zip](https://www.7-zip.org) via `7zip-bin` | LGPL, separate process | ZIP, 7Z and TAR, including accented and CJK file names |
 | Windows `tar.exe` (libarchive) | BSD | Reading RAR |
-| [LibreOffice](https://www.libreoffice.org) (optional) | MPL-2.0 | DOC/DOCX/RTF/ODT/XLS/XLSX/ODS/PPT/PPTX to PDF and between each other; PDF to PPTX with editable text |
+| [LibreOffice](https://www.libreoffice.org) (optional) | MPL-2.0 | DOC/DOCX/RTF/ODT/XLS/XLSX/ODS/PPT/PPTX to PDF and between each other; the fallback for PDF to PPTX and for PDF to DOC/ODT/RTF |
 | [Pandoc](https://pandoc.org) (optional) | GPL-2.0-or-later, separate process | Markdown / HTML / RTF / ODT / DOCX / EPUB |
 | [pdf2docx](https://github.com/ArtifexSoftware/pdf2docx) (optional, Python) | MIT | PDF to DOCX in **Editable** layout (flowing paragraphs, fonts, colours, tables). `scripts/pdf2docx_run.py` adds real font names, divider rules, valid hyperlinks and real bullet lists |
-| [PyMuPDF](https://pymupdf.readthedocs.io) and [PyMuPDF4LLM](https://github.com/pymupdf/pymupdf4llm) (optional, Python) | AGPL-3.0-or-later or Artifex commercial; separate process | PDF to XLSX (tables) and PDF to Markdown (and HTML via Markdown) |
+| [PyMuPDF](https://pymupdf.readthedocs.io) (optional, Python) | AGPL-3.0-or-later or Artifex commercial; separate process | Exact PDF to Word and PowerPoint, PDF to Markdown, HTML, text, EPUB and Excel (`scripts/pdf_structure_run.py`, `pdf_fixed_layout.py`, `pdf_tables_run.py`) |
 | [pillow-heif](https://github.com/bigcat88/pillow_heif) (optional, Python) | BSD-3 (bundles libheif and the GPL x265 encoder) | Writing HEIC. Reading HEIC works without it |
 
-`pymupdf4llm` is pinned to 0.3.4: newer releases depend on `pymupdf-layout`, which is licensed PolyForm Noncommercial or commercial and so is not open source. Engine order per conversion lives in `src/main/convert/index.js`; if one engine fails, the next is tried.
+Engine order per conversion lives in `src/main/convert/index.js`; if one engine fails, the next is tried.
 
 </details>
 

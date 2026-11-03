@@ -23,7 +23,20 @@ function detect() {
   } catch { return null; }
 }
 
-const sevenZip = (engines, args, opts) => run(engines.sevenZip, ['-bd', '-y', ...args], { timeout: 3600000, ...opts });
+// 7-Zip prints "  42%" while it works (-bsp1 sends that to stdout); report(0..1) gets it.
+const sevenZip = (engines, args, { report, ...opts } = {}) => run(engines.sevenZip, ['-bsp1', '-y', ...args], {
+  timeout: 3600000,
+  onLine: report && ((line) => { const m = /(?:^|\s)(\d{1,3})%/.exec(line); if (m) report(Math.min(100, +m[1]) / 100); }),
+  ...opts,
+});
+
+// A read stream that reports how much of the file has been read (for the steps zlib does itself).
+function watched(file, report) {
+  const size = fs.statSync(file).size || 1;
+  const stream = fs.createReadStream(file);
+  if (report) stream.on('data', () => report(Math.min(1, stream.bytesRead / size)));
+  return stream;
+}
 
 // Is this .gz a tar archive (tar.gz / tgz) rather than one compressed file?
 async function gzIsTar(src) {
@@ -58,23 +71,24 @@ function assertContained(root) {
   walk(base);
 }
 
-async function extract(src, from, dest, engines) {
+async function extract(src, from, dest, engines, report) {
   if (from === 'rar') {
     // tar.exe cannot open non-ASCII paths, so read a copy that has an ASCII name
     const staged = tempPath('rar');
     fs.copyFileSync(src, staged);
     try { await run(BSDTAR, ['-xf', staged, '-C', dest], { timeout: 3600000 }); } finally { fs.rmSync(staged, { force: true }); }
+    report?.(1);
   } else if (from === 'gz' && !(await gzIsTar(src))) {
     const name = path.basename(src).replace(/\.gz$/i, '') || 'file';
-    await pipeline(fs.createReadStream(src), zlib.createGunzip(), fs.createWriteStream(path.join(dest, name)));
+    await pipeline(watched(src, report), zlib.createGunzip(), fs.createWriteStream(path.join(dest, name)));
   } else if (from === 'gz') {
     const tar = tempPath('tar');
     try {
-      await pipeline(fs.createReadStream(src), zlib.createGunzip(), fs.createWriteStream(tar));
-      await sevenZip(engines, ['x', `-o${dest}`, tar]);
+      await pipeline(watched(src, report && ((f) => report(f * 0.5))), zlib.createGunzip(), fs.createWriteStream(tar));
+      await sevenZip(engines, ['x', `-o${dest}`, tar], { report: report && ((f) => report(0.5 + f * 0.5)) });
     } finally { fs.rmSync(tar, { force: true }); }
   } else {
-    await sevenZip(engines, ['x', `-o${dest}`, src]);                        // zip, 7z, tar
+    await sevenZip(engines, ['x', `-o${dest}`, src], { report });             // zip, 7z, tar
   }
   assertContained(dest);
 }
@@ -83,46 +97,46 @@ async function extract(src, from, dest, engines) {
 const safeName = (n) => (/^[-@]/.test(n) ? './' + n : n);
 
 // Compress `names` (relative to cwd) into `out`.
-async function compress(names, to, out, cwd, engines) {
+async function compress(names, to, out, cwd, engines, report) {
   const list = names.map(safeName);
   if (to === 'gz') {                                                         // tar.gz
     const tar = tempPath('tar');
     try {
-      await sevenZip(engines, ['a', '-ttar', tar, ...list], { cwd });
-      await pipeline(fs.createReadStream(tar), zlib.createGzip({ level: 9 }), fs.createWriteStream(out));
+      await sevenZip(engines, ['a', '-ttar', tar, ...list], { cwd, report: report && ((f) => report(f * 0.5)) });
+      await pipeline(watched(tar, report && ((f) => report(0.5 + f * 0.5))), zlib.createGzip({ level: 9 }), fs.createWriteStream(out));
     } finally { fs.rmSync(tar, { force: true }); }
     return;
   }
-  await sevenZip(engines, ['a', `-t${to}`, ...(to === 'tar' ? [] : ['-mx=5']), out, ...list], { cwd });
+  await sevenZip(engines, ['a', `-t${to}`, ...(to === 'tar' ? [] : ['-mx=5']), out, ...list], { cwd, report });
 }
 
-async function pack(dir, to, outDir, base, engines) {
+async function pack(dir, to, outDir, base, engines, report) {
   const entries = fs.readdirSync(dir);
   if (!entries.length) throw new Error('The archive is empty');
   if (to === 'gz' && entries.length === 1 && fs.statSync(path.join(dir, entries[0])).isFile()) {
     const out = uniquePath(outDir, entries[0], 'gz');                       // report.txt -> report.txt.gz
-    await pipeline(fs.createReadStream(path.join(dir, entries[0])), zlib.createGzip({ level: 9 }), fs.createWriteStream(out));
+    await pipeline(watched(path.join(dir, entries[0]), report), zlib.createGzip({ level: 9 }), fs.createWriteStream(out));
     return out;
   }
   const out = uniquePath(outDir, base, to === 'gz' ? 'tar.gz' : to);
-  await compress(entries.length > 150 ? ['.'] : entries, to, out, dir, engines);
+  await compress(entries.length > 150 ? ['.'] : entries, to, out, dir, engines, report);
   return out;
 }
 
 // A folder -> zip / 7z / tar / tar.gz, stored next to the folder.
-async function packFolder(src, to, outDir, base, engines) {
+async function packFolder(src, to, outDir, base, engines, report) {
   const out = uniquePath(outDir, base, to === 'gz' ? 'tar.gz' : to);
-  await compress([path.basename(src)], to, out, path.dirname(src), engines);
+  await compress([path.basename(src)], to, out, path.dirname(src), engines, report);
   return out;
 }
 
 // An archive -> a folder next to it. If everything sits inside one top-level folder, that folder is used
 // directly (photos.zip containing photos/ gives photos/, not photos/photos/).
-async function extractToFolder(src, from, outDir, base, engines) {
+async function extractToFolder(src, from, outDir, base, engines, report) {
   const work = tempPath('d');
   fs.mkdirSync(work);
   try {
-    await extract(src, from, work, engines);
+    await extract(src, from, work, engines, report && ((f) => report(f * 0.9)));
     const entries = fs.readdirSync(work);
     if (!entries.length) throw new Error('The archive is empty');
     const single = entries.length === 1 && fs.statSync(path.join(work, entries[0])).isDirectory();
@@ -137,14 +151,14 @@ module.exports = {
   detect,
   supports: (from, to, engines) => !!engines.sevenZip && from !== to
     && ((FROM.has(from) && (TO.has(to) || to === 'folder')) || (from === 'folder' && TO.has(to))),
-  async run({ src, from, to, dir, base, engines }) {
-    if (to === 'folder') return [await extractToFolder(src, from, dir, base, engines)];
-    if (from === 'folder') return [await packFolder(src, to, dir, base, engines)];
+  async run({ src, from, to, dir, base, engines, onProgress }) {
+    if (to === 'folder') return [await extractToFolder(src, from, dir, base, engines, onProgress)];
+    if (from === 'folder') return [await packFolder(src, to, dir, base, engines, onProgress)];
     const work = tempPath('d');
     fs.mkdirSync(work);
     try {
-      await extract(src, from, work, engines);
-      return [await pack(work, to, dir, base, engines)];
+      await extract(src, from, work, engines, onProgress && ((f) => onProgress(f * 0.5)));       // unpacking is the first half,
+      return [await pack(work, to, dir, base, engines, onProgress && ((f) => onProgress(0.5 + f * 0.5)))];   // packing the second
     } finally { fs.rmSync(work, { recursive: true, force: true }); }
   },
 };

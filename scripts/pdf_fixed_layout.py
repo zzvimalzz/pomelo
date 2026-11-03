@@ -10,6 +10,7 @@ Each page becomes one Word section of the same size, made of two layers:
 Text that cannot be reproduced faithfully (right-to-left, rotated, symbol fonts) is left in the picture instead of
 being re-typed wrongly, so it still looks right.
 """
+import os
 import re
 import sys
 
@@ -169,7 +170,7 @@ def frame_xml(seg, page_w, links, doc_part, meter):
     line_h = size * (asc - desc)
     base = first["origin"][1]
     top = base - asc * size
-    width = max(last["bbox"][2] - x, 4) * 1.1 + 10      # room to spare: a wider substitute font must not wrap
+    width = max(last["bbox"][2] - x, 4) * 1.4 + 24      # room to spare: a wider substitute font must not wrap
     runs = ""
     for s in seg:
         link = next((uri for rect, uri in links if rect.intersects(pymupdf.Rect(s["bbox"])) and (rect & pymupdf.Rect(s["bbox"])).get_area() >= 0.5 * pymupdf.Rect(s["bbox"]).get_area()), None)
@@ -250,6 +251,49 @@ def design_reason(src, max_pages=40):
     return None
 
 
+def export_layout(src, outdir, progress=lambda f: None):
+    """The same reading of each page as convert() makes, but handed back as data for another writer (PowerPoint):
+    {"pages": [{"w", "h" (points), "background": file or None, "texts": [{"x", "y" (baseline), "size", "runs": [...]}]}]}.
+    The background pictures are written into `outdir`."""
+    doc = pymupdf.open(src)
+    work = pymupdf.open(src)
+    os.makedirs(outdir, exist_ok=True)
+    pages = []
+    for pno in range(len(doc)):
+        progress(0.95 * pno / len(doc))
+        page, wpage = doc[pno], work[pno]
+        segments = collect(page)
+        kept = [s for seg in segments for s in seg]
+        for s in kept:
+            r = pymupdf.Rect(s["bbox"])
+            inset = r.height * 0.2
+            wpage.add_redact_annot(pymupdf.Rect(r.x0, r.y0 + inset, r.x1, r.y1 - inset), fill=False)
+        if kept:
+            wpage.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE, text=pymupdf.PDF_REDACT_TEXT_REMOVE)
+        links = links_of(page)
+        texts = []
+        for seg in segments:
+            runs = []
+            for s in seg:
+                link = next((uri for rect, uri in links if (rect & pymupdf.Rect(s["bbox"])).get_area() >= 0.5 * pymupdf.Rect(s["bbox"]).get_area()), None)
+                name = s["font"].lower()
+                runs.append({"text": BAD_XML.sub("", s["text"]), "font": word_family(s["font"]) or "Arial", "size": s["size"],
+                             "bold": bool(s["flags"] & 16) or "bold" in name or "black" in name, "italic": bool(s["flags"] & 2) or "italic" in name or "oblique" in name,
+                             "color": hexcolor(s["color"]), "link": link})
+            first, last = seg[0], seg[-1]
+            texts.append({"x": first["origin"][0], "baseline": first["origin"][1], "width": last["bbox"][2] - first["origin"][0],
+                          "size": max(s["size"] for s in seg), "ascender": first.get("ascender", 0.9) or 0.9, "runs": runs})
+        native = max((i["width"] / max(i["bbox"][2] - i["bbox"][0], 1) * 72 for i in page.get_image_info() if i["width"] > 16), default=0)
+        bg = background(wpage, int(min(300, max(BG_DPI, native))))
+        bg_file = None
+        if bg:
+            bg_file = f"page{pno + 1}.{bg[1]}"
+            with open(os.path.join(outdir, bg_file), "wb") as f:
+                f.write(bg[0])
+        pages.append({"w": page.rect.width, "h": page.rect.height, "background": bg_file, "texts": texts})
+    return {"pages": pages, "title": (doc.metadata or {}).get("title") or ""}
+
+
 def convert(src, dst):
     doc = pymupdf.open(src)
     work = pymupdf.open(src)             # a copy to take the text out of
@@ -263,6 +307,8 @@ def convert(src, dst):
     n_pages = len(doc)
     stats = {"frames": 0, "bg_pages": 0}
     for pno in range(n_pages):
+        # Pomelo shows these as the conversion's progress (about 95% of the time is spent on the pages)
+        print("POMELO_PROGRESS %.3f" % (0.95 * pno / n_pages), flush=True)
         page, wpage = doc[pno], work[pno]
         w_pt, h_pt = page.rect.width, page.rect.height
         segments = collect(page)
