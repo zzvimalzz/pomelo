@@ -72,7 +72,10 @@ jobs:
           $code = $LASTEXITCODE
           Write-Host $out
           if ($code -ne 0) {
-            $tail = (($out -split "`n" | Where-Object { $_ -match '\S' -and $_ -notmatch 'Using cached|Downloading|^npm ' } | Select-Object -Last 12) -join '%0A')
+            $log = Join-Path $env:APPDATA 'Pomelo\debug.log'
+            $logTail = if (Test-Path $log) { (Get-Content $log -Tail 8) -join '%0A' } else { 'no debug.log' }
+            $py = ((py -3 --version 2>&1 | Out-String).Trim()) + ' / ' + ((python --version 2>&1 | Out-String).Trim())
+            $tail = ((($out -split "`n" | Where-Object { $_ -match '\S' -and $_ -notmatch 'Using cached|Downloading|^npm ' } | Select-Object -Last 6) -join '%0A') + '%0A--- debug.log ---%0A' + $logTail + '%0A--- python: ' + $py)
             Write-Host "::error title=engine install failed::$tail"
             exit 1
           }

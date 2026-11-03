@@ -66,7 +66,7 @@ Check "Windows lists it as version $version" ((Installed-Version) -eq $version) 
 Check 'the program files are the new version' (((Get-Item (Join-Path $dir 'Pomelo.exe')).VersionInfo.FileVersion) -like "$version*") "$((Get-Item (Join-Path $dir 'Pomelo.exe')).VersionInfo.FileVersion)"
 Check 'the old copy was stopped (it would hold the files and answer for the new one)' ($proc.HasExited -or -not (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue))
 Check 'it went into the same folder (one copy only)' ((Get-ChildItem $work -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'Pomelo.exe') }).Count -eq 1)
-Check 'settings were kept' ((Get-Content (Join-Path $appData 'settings.json') -Raw) -match '"key":"alt"')
+Check 'settings were kept' ((Get-Content (Join-Path $appData 'settings.json') -Raw) -match '"key"\s*:\s*"alt"')
 Check 'the conversion engines folder was kept' (Test-Path (Join-Path $engines 'keep-me.txt'))
 
 Write-Host 'the new Pomelo starts'

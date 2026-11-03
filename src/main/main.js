@@ -97,7 +97,8 @@ function handleDrop(paths, to) {
 app.whenReady().then(async () => {
   if (cli) {
     const say = (line) => { console.log(line); log('cli:', line); };
-    app.exit(await engineCli.run(cli, { installer, setLoginItem, say, progress: engineCli.fileProgress(cli.progressFile) }));
+    const code = await engineCli.run(cli, { installer, setLoginItem, say, progress: engineCli.fileProgress(cli.progressFile) });
+    setTimeout(() => app.exit(code), 500);                  // lets the last lines of output reach a pipe before the process ends
     return;
   }
   settings.set({}); // materialise defaults
