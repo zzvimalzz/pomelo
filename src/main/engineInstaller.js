@@ -123,12 +123,15 @@ function createInstaller({ root = enginesRoot(), run = exec, redetect = () => ({
     writeManifest(m);
   };
 
+  // A Python the engine's packages ship wheels for (3.9 to 3.13). A newer one (a pre-release such as 3.15 is what `py -3` can
+  // pick) has no ONNX Runtime yet, so it is skipped and Python 3.12 is added instead, for this user only.
   async function findPython() {
-    for (const [cmd, args] of [['py', ['-3']], ['python', []]]) {
+    for (const [cmd, args] of [['py', ['-3.12']], ['py', ['-3.13']], ['py', ['-3.11']], ['py', ['-3.10']], ['python', []], ['py', ['-3']]]) {
       const r = await run(cmd, [...args, '-c', 'import sys; print(sys.version_info[0] * 100 + sys.version_info[1]); print(sys.executable)']);
       if (r.code !== 0) continue;
-      const [version, exe] = r.out.trim().split(/\r?\n/).slice(-2);
-      if (+version >= 309 && exe && fs.existsSync(exe.trim())) return exe.trim();   // skips the Microsoft Store stub, which prints nothing useful
+      const [version, exe] = r.out.trim().split(/?
+/).slice(-2);
+      if (+version >= 309 && +version <= 313 && exe && fs.existsSync(exe.trim())) return exe.trim();   // skips the Microsoft Store stub, which prints nothing useful
     }
     return null;
   }
