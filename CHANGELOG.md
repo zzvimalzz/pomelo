@@ -9,6 +9,10 @@ All notable changes to Pomelo are listed here. The format follows [Keep a Change
 ### Changed
 - **Update now**: updating no longer sends you to the browser to run the installer again. Pomelo downloads the new version itself (with progress and time left), checks it against the SHA-256 published with the release, installs it quietly over the current one and starts again. It only downloads from GitHub, follows redirects only to GitHub's own hosts, throws away a download that is incomplete or does not match, and falls back to the download page when a release has no checksum. Settings, shortcuts and engines are left as they are.
 
+### Fixed
+- Installing over an older Pomelo could leave the old version running: a copy started from somewhere else (or not called `Pomelo.exe`) kept Pomelo's "only one copy" lock, so opening the new one just showed the old one's window and its old version number. The installer now stops whichever process holds that lock, and stops with a clear message if it cannot.
+- The installer now says when Pomelo is already installed: which version, where, and that it will be updated (or reinstalled). An update goes into the folder Pomelo is already in and no longer asks about the folder or the conversion engines again; settings, shortcuts and engines are kept.
+
 ## [0.1.1] - 03-11-2026
 
 ### Added

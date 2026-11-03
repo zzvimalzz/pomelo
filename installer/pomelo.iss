@@ -78,6 +78,10 @@ type
 
 function GetTickCount: Cardinal;
   external 'GetTickCount@kernel32.dll stdcall';
+function FindWindowEx(Parent, ChildAfter: Longint; ClassName, WindowName: String): Longint;
+  external 'FindWindowExW@user32.dll stdcall';
+function GetWindowThreadProcessId(Wnd: Longint; var ProcessId: DWORD): DWORD;
+  external 'GetWindowThreadProcessId@user32.dll stdcall';
 function PeekMessage(var Msg: TMsg; hWnd: HWND; MsgFilterMin, MsgFilterMax, RemoveMsg: UINT): BOOL;
   external 'PeekMessageW@user32.dll stdcall';
 function TranslateMessage(const Msg: TMsg): BOOL;
@@ -100,10 +104,75 @@ end;
 var
   EnginePage: TInputOptionWizardPage;
   FailedEngines: String;      // engines that could not be installed (shown on the finish page) or removed (shown after uninstalling)
+  Updating: Boolean;          // a copy of Pomelo is already installed: this run replaces its program files and leaves everything else
+  InstalledDir, InstalledVersion: String;
+
+// ---- an existing copy -----------------------------------------------------------------------------------------
+
+// Where the installed copy lives and which version it is. Windows' own record of the install (written by the installer)
+// comes first; a copy that has no record (unpacked by hand, record lost) is found by looking in the default folder.
+procedure FindInstalled;
+var
+  Key, Exe: String;
+begin
+  InstalledDir := '';
+  InstalledVersion := '';
+  Key := ExpandConstant('Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1');
+  if not RegQueryStringValue(HKCU, Key, 'Inno Setup: App Path', InstalledDir) then
+    if not RegQueryStringValue(HKLM, Key, 'Inno Setup: App Path', InstalledDir) then
+      InstalledDir := '';
+  if (InstalledDir = '') or not FileExists(AddBackslash(InstalledDir) + '{#AppExe}') then
+  begin
+    InstalledDir := ExpandConstant('{autopf}\{#AppName}');
+    if not FileExists(AddBackslash(InstalledDir) + '{#AppExe}') then
+    begin
+      InstalledDir := '';
+      Exit;
+    end;
+  end;
+  Exe := AddBackslash(InstalledDir) + '{#AppExe}';
+  if not GetVersionNumbersString(Exe, InstalledVersion) then InstalledVersion := '';
+  // The file version has four parts (0.1.2.0); Pomelo's versions have three.
+  if (Length(InstalledVersion) > 2) and (Copy(InstalledVersion, Length(InstalledVersion) - 1, 2) = '.0') then
+    Delete(InstalledVersion, Length(InstalledVersion) - 1, 2);
+end;
+
+// What Setup is about to do to the copy that is there, in words.
+function ExistingCopyText: String;
+var
+  Have, Mine: Int64;
+  Compared: Integer;
+  Which: String;
+begin
+  if InstalledVersion = '' then Which := 'Pomelo' else Which := 'Pomelo ' + InstalledVersion;
+  Result := Which + ' is already installed in:' + #13#10 + InstalledDir + #13#10#13#10;
+  Compared := 0;
+  if StrToVersion(InstalledVersion, Have) and StrToVersion('{#AppVersion}', Mine) then Compared := ComparePackedVersion(Have, Mine);
+  if Compared > 0 then
+    Result := Result + 'That is newer than this Setup (version {#AppVersion}). Continuing replaces it with the older version.'
+  else if (Compared = 0) and (InstalledVersion <> '') then
+    Result := Result + 'That is the same version as this Setup. Continuing installs it again over the existing files.'
+  else
+    Result := Result + 'Setup will update it to version {#AppVersion}.';
+  Result := Result + #13#10#13#10 +
+    'The program files are replaced. Your settings, shortcuts and conversion engines are kept. If Pomelo is running, Setup closes it first.';
+end;
+
+function InitializeSetup: Boolean;
+begin
+  FindInstalled;
+  Updating := InstalledDir <> '';
+  Result := True;
+end;
 
 procedure InitializeWizard;
 begin
-  EnginePage := CreateInputOptionPage(wpSelectDir, 'Conversion engines',
+  if Updating then
+  begin
+    CreateOutputMsgPage(wpWelcome, 'Update Pomelo', 'A copy of Pomelo is already installed', ExistingCopyText);
+    WizardForm.DirEdit.Text := RemoveBackslashUnlessRoot(InstalledDir);
+  end;
+  EnginePage :=CreateInputOptionPage(wpSelectDir, 'Conversion engines',
     'Optional extras for higher-quality conversions',
     'Pomelo works without these, and once installed everything runs offline. They are downloaded now, so you need an internet connection. You can add or remove them later in Settings.',
     False, False);
@@ -124,6 +193,7 @@ begin
     Exit;
   end;
   Result := '';
+  if Updating then Exit;      // the engines page is skipped for an update: engines stay as they are
   if EnginePage.Values[0] then Result := Result + ',pdf2docx';
   if EnginePage.Values[1] then Result := Result + ',soffice';
   if EnginePage.Values[2] then Result := Result + ',pandoc';
@@ -220,20 +290,59 @@ begin
   Bar.Position := OldPosition;
 end;
 
-procedure StopPomelo;
+// The process that owns Pomelo's "only one copy" lock, whatever it is called and wherever it was started from, or 0. Pomelo
+// keeps that lock as a hidden window named after its data folder, so a copy that was started from source (electron.exe)
+// or from another folder is found just like the installed Pomelo.exe.
+function LockOwner: DWORD;
+var
+  Wnd: Longint;
+begin
+  Result := 0;
+  Wnd := FindWindowEx(-3, 0, 'Chrome_MessageWindow', ExpandConstant('{userappdata}\{#AppName}'));     // -3 = HWND_MESSAGE
+  if Wnd <> 0 then GetWindowThreadProcessId(Wnd, Result);
+end;
+
+procedure Kill(const Args: String);
 var
   Code: Integer;
 begin
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), Args, '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
+procedure StopPomelo;
+var
+  Owner: DWORD;
+  Tries: Integer;
+begin
+  Tries := 0;
+  Owner := LockOwner;
+  while (Owner <> 0) and (Tries < 5) do
+  begin
+    Kill('/F /T /PID ' + IntToStr(Owner));
+    Sleep(300);
+    Owner := LockOwner;
+    Tries := Tries + 1;
+  end;
+  Kill('/F /T /IM {#AppExe}');
+  Kill('/F /IM pomelo-input.exe');          // the mouse helper; it can outlive a Pomelo that was ended abruptly
 end;
 
 // ---- install -------------------------------------------------------------------------------------------------
 
-// Pomelo cannot be replaced while it runs.
+// Pomelo cannot be replaced while it runs, and a copy left running would keep answering when the new one is started
+// (it holds the lock), so the old version would still be what opens. Better to stop here than to finish like that.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   StopPomelo;
   Result := '';
+  if LockOwner <> 0 then
+    Result := 'Pomelo is still running and Setup could not close it. Quit Pomelo from its tray icon (or end it in Task Manager), then run Setup again.';
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  // An update goes into the folder Pomelo is already in, and leaves the engines as they are.
+  Result := Updating and ((PageID = wpSelectDir) or ((EnginePage <> nil) and (PageID = EnginePage.ID)));
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
