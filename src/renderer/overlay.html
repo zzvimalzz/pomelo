@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:">
+  <title>Pomelo</title>
+  <link rel="stylesheet" href="overlay.css">
+</head>
+<body>
+  <div id="stage" class="stage">
+    <svg id="wheel" viewBox="0 0 400 400" width="400" height="400" aria-hidden="true">
+      <circle id="plate" cx="200" cy="200" r="170"/>
+      <g id="segments"></g>
+      <g id="center"></g>
+    </svg>
+  </div>
+  <script src="overlay.js"></script>
+</body>
+</html>

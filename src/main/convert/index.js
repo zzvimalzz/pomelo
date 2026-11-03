@@ -1,0 +1,130 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Conversion orchestrator: picks the engine(s) for a (from -> to) pair and runs them.
+const fs = require('fs');
+const path = require('path');
+const { execFileSync } = require('child_process');
+const { extOf, baseOf, targetsForFiles, labelOf } = require('../formats');
+const { tempPath, withContext, removeOutputs, CancelledError } = require('./util');
+const { soffice, pandoc } = require('../engines/external');
+const pure = require('../engines/pure');
+const pdfhifi = require('../engines/pdfhifi');
+const ffmpeg = require('../engines/ffmpeg');
+const heic = require('../engines/heic');
+const subtitle = require('../engines/subtitle');
+const archive = require('../engines/archive');
+const { enginesRoot } = require('../enginesDir');
+
+let engines = { soffice: null, pandoc: null, pdf2docx: null, pdfmd: null, heic: null, ffmpeg: null, sevenZip: null };
+
+// Looks in Pomelo's own folders first (vendor/ is where a release can ship portable copies, and the engines folder holds
+// the LibreOffice that Pomelo unpacked), then the usual install spots and PATH.
+function findExe(name, subdirs) {
+  const roots = [path.join(__dirname, '..', '..', '..', 'vendor'), process.resourcesPath && path.join(process.resourcesPath, 'vendor'), enginesRoot()].filter(Boolean);
+  const pf = [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA, process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs')].filter(Boolean);
+  const candidates = [
+    ...roots.flatMap((r) => subdirs.map((d) => path.join(r, d, name))),
+    ...pf.flatMap((p) => subdirs.map((d) => path.join(p, d, name))),
+  ];
+  const hit = candidates.find((c) => fs.existsSync(c));
+  if (hit) return hit;
+  try { return execFileSync('where', [name], { windowsHide: true }).toString().split(String.fromCharCode(10))[0].trim() || null; } catch { return null; }
+}
+
+function detectEngines() {
+  engines = {
+    soffice: findExe('soffice.exe', ['LibreOffice/program', 'libreoffice/program']),
+    pandoc: findExe('pandoc.exe', ['Pandoc', 'pandoc', '']),
+    pdf2docx: pdfhifi.detect(),
+    pdfmd: pdfhifi.detectMarkdown(),
+    heic: pdfhifi.detectHeic(),
+    ffmpeg: ffmpeg.detect(),
+    sevenZip: archive.detect(),
+  };
+  return engines;
+}
+
+// Targets where look and layout matter prefer LibreOffice; text-like targets prefer Pandoc, then the built-in code.
+const FIDELITY = new Set(['pdf', 'docx', 'doc', 'rtf', 'odt', 'xlsx', 'xls', 'ods', 'pptx', 'ppt']);
+const DOCS = ['docx', 'doc', 'rtf', 'odt', 'md', 'txt', 'html', 'epub'];
+
+// Pairs with no direct engine go through an intermediate format: first.run(from -> via), then second.run(via -> to).
+const CHAINS = [
+  { from: ['doc', 'rtf', 'odt'], to: ['txt', 'md', 'html', 'epub'], via: 'docx', first: [soffice], second: [pandoc, pure] },
+  { from: ['txt', 'md', 'html', 'epub'], to: ['rtf', 'odt', 'doc'], via: 'docx', first: [pandoc, pure], second: [soffice] },
+  { from: ['pptx', 'ppt'], to: ['png', 'jpg'], via: 'pdf', first: [soffice], second: [pure] },
+  { from: DOCS, to: ['png', 'jpg'], via: 'pdf', first: [soffice, pure], second: [pure] },          // pages as images
+  { from: ['pdf'], to: ['doc', 'rtf', 'odt'], via: 'docx', first: [pdfhifi, pure], second: [soffice] },
+  { from: ['pdf'], to: ['html', 'epub'], via: 'md', first: [pdfhifi], second: [pandoc, pure] },
+];
+
+function plansFor(from, to) {
+  // pdf -> docx/md/xlsx: the Python engines keep fonts, colours, tables and structure; the built-in extractor is the fallback
+  const order = from === 'pdf' ? [pdfhifi, soffice, pure]
+    : FIDELITY.has(to) ? [soffice, pandoc, pure] : [pandoc, pure, soffice];
+  const direct = [ffmpeg, heic, subtitle, archive, ...order];
+  const plans = direct.filter((e) => e.supports(from, to, engines)).map((e) => [{ engine: e, from, to }]);
+  for (const c of CHAINS) {
+    if (!c.from.includes(from) || !c.to.includes(to)) continue;
+    for (const a of c.first) {
+      for (const b of c.second) {
+        if (a.supports(from, c.via, engines) && b.supports(c.via, to, engines)) plans.push([{ engine: a, from, to: c.via }, { engine: b, from: c.via, to }]);
+      }
+    }
+  }
+  // High-fidelity PDF routes (including chains that start with them) beat the built-in extractor.
+  if (from === 'pdf') plans.sort((a, b) => (b[0].engine === pdfhifi) - (a[0].engine === pdfhifi));
+  // The built-in .doc reader only extracts text, so it is the last resort for that format.
+  if (from === 'doc') plans.sort((a, b) => (a[0].engine === pure && a.length === 1) - (b[0].engine === pure && b.length === 1));
+  return plans;
+}
+
+const canConvert = (from, to) => plansFor(from, to).length > 0;
+const targetsFor = (files) => targetsForFiles(files, canConvert);
+
+// onProgress(fraction 0..1) is forwarded by engines that can report it (video/audio); for a two-step chain it is split in half.
+async function runPlan(plan, src, dir, base, onProgress) {
+  if (plan.length === 1) return plan[0].engine.run({ src, from: plan[0].from, to: plan[0].to, dir, base, engines, onProgress });
+  const tmp = tempPath('d');
+  fs.mkdirSync(tmp);
+  try {
+    const [first, second] = plan;
+    const half = (offset) => onProgress && ((f) => onProgress(offset + f / 2));
+    const [mid] = await first.engine.run({ src, from: first.from, to: first.to, dir: tmp, base, engines, onProgress: half(0) });
+    return await second.engine.run({ src: mid, from: second.from, to: second.to, dir, base, engines, onProgress: half(0.5) });
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
+
+// Convert one file next to the original. Resolves with the list of files written.
+// signal (AbortSignal): cancel it to kill the helper programs and delete any partial output.
+async function convertFile(src, to, { onProgress, signal } = {}) {
+  const from = extOf(src);
+  const dir = path.dirname(src);
+  const base = baseOf(src);
+  const plans = plansFor(from, to);
+  if (!plans.length) throw new Error(`No converter available for .${from} to ${labelOf(to)}`);
+  if (from !== 'folder' && fs.statSync(src).size === 0) throw new Error('This file is empty');
+  if (signal?.aborted) throw new CancelledError();
+
+  const ctx = { signal, outputs: [] };
+  return withContext(ctx, async () => {
+    let lastErr;
+    for (const plan of plans) {
+      const mark = ctx.outputs.length;
+      try {
+        const outs = await runPlan(plan, src, dir, base, onProgress);
+        if (signal?.aborted) { removeOutputs(ctx.outputs); throw new CancelledError(); }   // an engine that cannot be interrupted finished anyway
+        return outs;
+      } catch (e) {
+        if (e instanceof CancelledError || signal?.aborted) { removeOutputs(ctx.outputs); throw new CancelledError(); }
+        removeOutputs(ctx.outputs.splice(mark));                                          // leftovers of a failed attempt
+        lastErr = e;
+        console.warn(`[convert] ${plan.map((s) => s.engine.name).join('+')} failed: ${e.message}`);
+      }
+    }
+    throw lastErr;
+  });
+}
+
+const getEngines = () => engines;
+
+module.exports = { detectEngines, getEngines, canConvert, targetsFor, convertFile, CancelledError };

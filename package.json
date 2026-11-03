@@ -1,0 +1,81 @@
+{
+  "name": "pomelo",
+  "productName": "Pomelo",
+  "version": "0.1.0",
+  "description": "Drag a file, tap Ctrl, drop it on a format. A zero-click, offline file converter wheel for Windows.",
+  "keywords": [
+    "file-converter",
+    "converter",
+    "pdf",
+    "docx",
+    "ffmpeg",
+    "offline",
+    "windows",
+    "electron",
+    "radial-menu"
+  ],
+  "homepage": "https://github.com/zzvimalzz/pomelo#readme",
+  "bugs": {
+    "url": "https://github.com/zzvimalzz/pomelo/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zzvimalzz/pomelo.git"
+  },
+  "license": "AGPL-3.0-or-later",
+  "author": "Pomelo contributors",
+  "private": true,
+  "main": "src/main/main.js",
+  "pomelo": {
+    "updateRepo": "zzvimalzz/pomelo"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "prestart": "npm run build:helper",
+    "start": "electron .",
+    "build:helper": "node tools/build-helper.js",
+    "prepackage": "npm run build:helper",
+    "package": "node tools/package.js",
+    "build:installer": "node tools/build-installer.js",
+    "icons": "node tools/make-icons.js",
+    "setup:pdf": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-pdf-engine.ps1",
+    "lint": "eslint .",
+    "check": "npm run lint && node tools/unused-exports.js",
+    "pretest": "npm run build:helper",
+    "test": "node test/jobs-test.js && node test/helper-test.js && node test/engine-cli-test.js && node test/installer-test.js && node test/uninstall-test.js && electron test/updater-test.js && electron test/entry.js && electron test/edge-cases.js",
+    "test:ui": "electron test/pipeline.js && electron test/overlay-shot.js && electron test/toast-shot.js && electron test/settings-shot.js"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "@eslint/js": "^10.0.1",
+    "electron": "^45.2.1",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
+    "license-checker-rseidelsohn": "^4.4.2"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.1.0",
+    "7zip-bin": "^5.2.0",
+    "docx": "^9.15.1",
+    "ffmpeg-static": "^5.3.0",
+    "heic-convert": "^2.1.0",
+    "html-to-docx": "^1.8.0",
+    "html-to-text": "^10.0.1",
+    "jszip": "^3.10.2",
+    "mammoth": "^1.13.0",
+    "marked": "^18.1.2",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.5.438",
+    "pptxgenjs": "^4.0.1",
+    "sharp": "^0.35.5",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2",
+    "word-extractor": "^1.0.4",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "overrides": {
+    "image-size": "^2.0.3"
+  }
+}

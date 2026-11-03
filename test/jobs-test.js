@@ -1,0 +1,164 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Logic tests for the toast stack and the "Converting 1/4 files" summary.   node test/jobs-test.js
+const { Jobs } = require('../src/main/jobs');
+
+let failures = 0;
+const expect = (name, ok, extra = '') => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
+const tick = () => new Promise((r) => setImmediate(r));
+
+// A convert function whose jobs finish only when the test says so.
+function controlled() {
+  const pending = [];
+  const fn = (src, to, { onProgress, signal }) => new Promise((resolve, reject) => {
+    pending.push({ src, to, onProgress, signal, resolve: () => resolve([`C:/out/${src.split('/').pop().split('.')[0]}.${to}`]), reject });
+    signal.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true });
+  });
+  return { fn, pending };
+}
+const make = () => { const c = controlled(); const jobs = new Jobs({ convert: c.fn, concurrency: 3, maxStack: 3 }); return { jobs, c }; };
+const titles = (jobs) => jobs.view().cards.map((x) => x.title);
+
+(async () => {
+  console.log('one conversion');
+  {
+    const { jobs, c } = make();
+    jobs.addConversion('C:/a/report.docx', 'pdf', 'PDF');
+    await tick();
+    let v = jobs.view();
+    expect('shows one card in stack mode', v.mode === 'stack' && v.cards.length === 1);
+    expect('card says Converting to PDF…', v.cards[0].title === 'Converting to PDF…' && v.cards[0].detail === 'report.docx');
+    c.pending[0].onProgress(0.5);
+    expect('progress is shown', jobs.view().cards[0].progress === 0.5 && /50%/.test(jobs.view().cards[0].detail));
+    c.pending[0].resolve(); await tick();
+    v = jobs.view();
+    expect('finishes as a done card with the output name', v.cards[0].state === 'done' && v.cards[0].title === 'report.pdf' && v.cards[0].outPath === 'C:/out/report.pdf');
+  }
+
+  console.log('same file to two targets at once, plus a third');
+  {
+    const { jobs, c } = make();
+    jobs.addConversion('C:/a/clip.mov', 'mp4', 'MP4');
+    jobs.addConversion('C:/a/clip.mov', 'gif', 'GIF');
+    jobs.addConversion('C:/a/clip.mov', 'mp3', 'MP3');
+    await tick();
+    expect('all three run at the same time', c.pending.length === 3);
+    expect('stack of 3, newest on top', jobs.view().mode === 'stack' && titles(jobs).join('|') === 'Converting to MP3…|Converting to GIF…|Converting to MP4…');
+  }
+
+  console.log('a 4th conversion collapses everything into one summary');
+  {
+    const { jobs, c } = make();
+    for (const [f, to] of [['a.docx', 'pdf'], ['b.docx', 'pdf'], ['c.docx', 'pdf'], ['d.docx', 'pdf']]) jobs.addConversion('C:/x/' + f, to, 'PDF');
+    await tick();
+    let v = jobs.view();
+    expect('summary mode with a single card', v.mode === 'summary' && v.cards.length === 1);
+    expect('only 3 run in parallel, the 4th waits', c.pending.length === 3);
+    expect('title reads "Converting 0/4 files"', v.cards[0].title === 'Converting 0/4 files', v.cards[0].title);
+    expect('detail: 3 in progress, 1 waiting', /3 in progress · 1 waiting/.test(v.cards[0].detail), v.cards[0].detail);
+    expect('summary has a progress ring (the cancel X sits in it)', v.cards[0].ring === true && v.cards[0].state === 'working');
+    c.pending[0].resolve(); await tick(); await tick();
+    v = jobs.view();
+    expect('after one finishes: "Converting 1/4 files"', v.cards[0].title === 'Converting 1/4 files', v.cards[0].title);
+    expect('the waiting job started', c.pending.length === 4);
+    c.pending[1].onProgress(0.5);
+    expect('ring progress = (1 done + 0.5)/4', Math.abs(jobs.view().cards[0].progress - 1.5 / 4) < 1e-9, String(jobs.view().cards[0].progress));
+    for (const p of c.pending.slice(1)) p.resolve();
+    await tick(); await tick();
+    v = jobs.view();
+    expect('all done: "4 files converted", clickable', v.cards[0].state === 'done' && v.cards[0].title === '4 files converted' && !!v.cards[0].outPath, v.cards[0].title);
+    jobs.remove('summary');
+    expect('dismissing the summary clears the batch', jobs.view().cards.length === 0 && jobs.mode === 'stack');
+  }
+
+  console.log('failures are counted');
+  {
+    const { jobs, c } = make();
+    for (const f of ['a', 'b', 'c', 'd']) jobs.addConversion(`C:/x/${f}.docx`, 'pdf', 'PDF');
+    await tick();
+    c.pending[0].reject(new Error('boom')); c.pending[1].resolve(); c.pending[2].resolve(); await tick(); await tick();
+    c.pending[3].resolve(); await tick(); await tick();
+    const card = jobs.view().cards[0];
+    expect('3 converted · 1 failed', card.title === '3 converted · 1 failed' && card.state === 'done', card.title);
+  }
+  {
+    const { jobs, c } = make();
+    for (const f of ['a', 'b', 'c', 'd']) jobs.addConversion(`C:/x/${f}.docx`, 'pdf', 'PDF');
+    await tick();
+    c.pending.slice(0, 3).forEach((p) => p.reject(new Error('no engine')));
+    await tick(); await tick(); c.pending[3].reject(new Error('no engine')); await tick(); await tick();
+    const card = jobs.view().cards[0];
+    expect('all failed -> error card with the reason', card.state === 'error' && /no engine/.test(card.detail), card.title + ' | ' + card.detail);
+  }
+
+  console.log('stack housekeeping');
+  {
+    const { jobs, c } = make();
+    jobs.addConversion('C:/x/a.docx', 'pdf', 'PDF');
+    await tick(); c.pending[0].resolve(); await tick(); await tick();
+    jobs.addInfo({ title: "Can't convert .lnk", detail: 'x' });
+    jobs.addConversion('C:/x/b.docx', 'pdf', 'PDF');
+    jobs.addConversion('C:/x/c.docx', 'pdf', 'PDF');
+    await tick();
+    const v = jobs.view();
+    expect('never more than 3 cards; oldest finished card dropped', v.cards.length === 3 && v.mode === 'stack', titles(jobs).join(' | '));
+    expect('newest first', /Converting to PDF/.test(v.cards[0].title) && v.cards[2].title === "Can't convert .lnk");
+    jobs.remove(v.cards[2].id);
+    expect('remove() takes a card away', jobs.view().cards.length === 2);
+  }
+  {
+    const { jobs, c } = make();
+    for (const f of ['a', 'b', 'c', 'd']) jobs.addConversion(`C:/x/${f}.docx`, 'pdf', 'PDF');
+    await tick();
+    c.pending.slice(0, 3).forEach((p) => p.resolve()); await tick(); await tick();
+    c.pending[3].resolve(); await tick(); await tick();
+    expect('summary is showing', jobs.mode === 'summary');
+    jobs.addConversion('C:/x/e.docx', 'pdf', 'PDF'); await tick();
+    expect('a new conversion after a finished batch starts a fresh stack', jobs.mode === 'stack' && jobs.view().cards.length === 1 && jobs.view().cards[0].title === 'Converting to PDF…', titles(jobs).join(' | '));
+  }
+
+  console.log('cancelling');
+  {
+    const { jobs, c } = make();
+    jobs.addConversion('C:/x/a.docx', 'pdf', 'PDF');
+    jobs.addConversion('C:/x/b.docx', 'pdf', 'PDF');
+    await tick();
+    expect('running cards carry a ring (so they can be cancelled)', jobs.view().cards.every((x) => x.ring === true));
+    const oldest = jobs.view().cards[1];
+    jobs.cancel(oldest.id); await tick();
+    expect('the cancel signal reaches the converter', c.pending[0].signal.aborted === true && c.pending[1].signal.aborted === false);
+    expect('the cancelled card disappears at once', jobs.view().cards.length === 1 && jobs.view().cards[0].detail === 'b.docx');
+    c.pending[1].resolve(); await tick(); await tick();
+    expect('the other job still finishes normally', jobs.view().cards[0].state === 'done');
+  }
+  {
+    const { jobs, c } = make();
+    for (const f of ['a', 'b', 'c', 'd']) jobs.addConversion(`C:/x/${f}.docx`, 'pdf', 'PDF');
+    await tick();
+    const fourth = jobs.batch[3];
+    jobs.cancel(fourth.id); await tick();
+    expect('a waiting job can be cancelled before it starts', c.pending.length === 3 && fourth.state === 'cancelled');
+    expect('the summary no longer counts it', jobs.view().cards[0].title === 'Converting 0/3 files', jobs.view().cards[0].title);
+  }
+  {
+    const { jobs, c } = make();
+    for (const f of ['a', 'b', 'c', 'd', 'e']) jobs.addConversion(`C:/x/${f}.docx`, 'pdf', 'PDF');
+    await tick();
+    c.pending[0].resolve(); await tick(); await tick();
+    jobs.cancel('summary'); await tick(); await tick();
+    expect('X on the summary cancels everything still running', jobs.active().length === 0 && c.pending.slice(1).every((p) => p.signal.aborted));
+    const card = jobs.view().cards[0];
+    expect('what already finished is kept', card.state === 'done' && /^1 files? converted/.test(card.title), card.title);
+  }
+  {
+    const { jobs, c } = make();
+    for (const f of ['a', 'b', 'c', 'd']) jobs.addConversion(`C:/x/${f}.docx`, 'pdf', 'PDF');
+    await tick();
+    jobs.cancel('summary'); await tick(); await tick();
+    expect('cancelling everything leaves nothing to show', jobs.view().cards.length === 0 && c.pending.every((p) => p.signal.aborted));
+    jobs.addConversion('C:/x/e.docx', 'pdf', 'PDF'); await tick();
+    expect('and new conversions start fresh afterwards', jobs.view().cards.length === 1 && jobs.mode === 'stack');
+  }
+
+  console.log(failures ? `\n${failures} failed` : '\nall passed');
+  process.exit(failures ? 1 : 0);
+})();

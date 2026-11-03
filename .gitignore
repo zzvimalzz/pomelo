@@ -1,0 +1,31 @@
+# dependencies and local tooling
+node_modules/
+vendor/
+
+# build output and generated test artefacts
+dist/
+out/
+native/bin/
+test/shots/
+*.log
+
+# editors and OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.swp
+
+# personal double-click launcher (contributors use npm start)
+Start Pomelo.bat
+
+# local environment
+.env
+.env.*
+
+# private planning notes and the stamp passphrase: never committed
+/docs/
+/PLAN*.md
+/ROADMAP*.md
+STAMP.md
+/site/

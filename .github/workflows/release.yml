@@ -1,0 +1,49 @@
+name: Release
+
+# Push a tag like v0.2.0 (it must match "version" in package.json). The workflow builds the installer from that tag and
+# attaches it, with its SHA-256, to a DRAFT release. Check the draft, then publish it: only a published release becomes
+# what the website's download button and Pomelo's "Check for updates" point at.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  installer:
+    name: Build the installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: The tag matches package.json
+        shell: bash
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run package
+      # Code signing goes here once a certificate (or SignPath) is set up: sign dist/Pomelo-win32-x64/Pomelo.exe and
+      # resources/app/native/bin/pomelo-input.exe before the next steps, then the installer after them.
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - run: npm run build:installer
+      - name: SHA-256 checksum
+        shell: pwsh
+        run: |
+          $f = 'dist/installer/Pomelo-Setup-x64.exe'
+          "$((Get-FileHash $f -Algorithm SHA256).Hash.ToLower())  Pomelo-Setup-x64.exe" | Set-Content dist/installer/SHA256SUMS.txt
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/installer/Pomelo-Setup-x64.exe
+      - name: Draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" dist/installer/Pomelo-Setup-x64.exe dist/installer/SHA256SUMS.txt --draft --generate-notes --title "Pomelo $GITHUB_REF_NAME"

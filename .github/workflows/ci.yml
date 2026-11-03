@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint and unit tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build:helper
+      - run: node test/jobs-test.js
+      - run: node test/helper-test.js
+      - run: node test/engine-cli-test.js
+      - run: node test/installer-test.js
+      - run: node test/uninstall-test.js
+
+  conversions:
+    name: Conversion tests (built-in engines)
+    runs-on: windows-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # LibreOffice, Pandoc and the Python PDF engine are not installed here, so tests that need them are skipped.
+      - run: npx electron test/updater-test.js
+      - run: npx electron test/entry.js
+      - run: npx electron test/edge-cases.js
