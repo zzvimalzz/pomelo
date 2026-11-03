@@ -66,7 +66,16 @@ jobs:
       # The same code behind the Install button and the installer's engine page: a private Python environment with PyMuPDF,
       # python-docx, RapidOCR (its models are fetched here) and pillow-heif.
       - name: Install the PDF engine with Pomelo's own installer code
-        run: npx electron . --install-engines=pdf
+        shell: pwsh
+        run: |
+          $out = (npx electron . --install-engines=pdf 2>&1 | Out-String)
+          $code = $LASTEXITCODE
+          Write-Host $out
+          if ($code -ne 0) {
+            $tail = (($out -split "`n" | Where-Object { $_ -match '\S' -and $_ -notmatch 'Using cached|Downloading|^npm ' } | Select-Object -Last 12) -join '%0A')
+            Write-Host "::error title=engine install failed::$tail"
+            exit 1
+          }
       - run: node test/pdf-layout-test.js
       - run: node test/pdf-formats-test.js
 

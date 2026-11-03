@@ -10,6 +10,7 @@ param(
   [string]$New = (Join-Path $PSScriptRoot '..\dist\installer\Pomelo-Setup-x64.exe')
 )
 $ErrorActionPreference = 'Stop'
+trap { Write-Host "::error title=installer test crashed::$($_.Exception.Message) at line $($_.InvocationInfo.ScriptLineNumber)"; exit 1 }
 $root = Split-Path -Parent $PSScriptRoot
 $new = (Resolve-Path $New).Path
 $version = (Get-Content (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).version
@@ -22,7 +23,7 @@ $engines = Join-Path $env:LOCALAPPDATA 'Pomelo\engines'
 $failed = 0
 
 function Check($name, $ok, $detail = '') {
-  if ($ok) { Write-Host "  ok   $name" } else { Write-Host "  FAIL $name  $detail"; $script:failed++ }
+  if ($ok) { Write-Host "  ok   $name" } else { Write-Host "  FAIL $name  $detail"; Write-Host "::error title=installer::$name $detail"; $script:failed++ }
 }
 function Run-Setup($exe, $log) {
   $p = Start-Process -FilePath $exe -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS=', "/DIR=`"$dir`"", "/LOG=`"$log`"") -Wait -PassThru
