@@ -6,7 +6,8 @@ const cap = (s) => s[0].toUpperCase() + s.slice(1);
 const ENGINES = [
   { key: 'builtin', name: 'Built-in', role: 'Documents, images, subtitles, archives', always: true },
   { key: 'ffmpeg', name: 'FFmpeg', role: 'Video and audio (comes with Pomelo)' },
-  { key: 'pdf2docx', name: 'PDF fidelity', role: 'PDF to Word and Excel, keeping fonts and tables', install: true },
+  { key: 'pdf', name: 'PDF engine', role: 'PDF to editable Word, Excel, slides and text', install: true },
+  { key: 'ocr', name: 'OCR', role: 'Reads scanned PDFs as text', install: true },
   { key: 'heic', name: 'HEIC export', role: 'Write HEIC photos (reading is built in)', install: true },
   { key: 'soffice', name: 'LibreOffice', role: 'Office formats and high-fidelity PDF export', install: true },
   { key: 'pandoc', name: 'Pandoc', role: 'Markdown, HTML, RTF and ODT', install: true },
@@ -58,9 +59,6 @@ function render() {
   $('autoUpdate').checked = !!settings.autoUpdate;
   $('keycap').textContent = cap(settings.key);
   for (const b of document.querySelectorAll('#key button')) b.setAttribute('aria-checked', String(b.dataset.key === settings.key));
-  const layout = settings.pdfLayout === 'editable' ? 'editable' : 'exact';
-  for (const b of document.querySelectorAll('#layout button')) b.setAttribute('aria-checked', String(b.dataset.layout === layout));
-  $('layoutNote').textContent = layout === 'exact' ? 'Every position, font and picture stays exactly as in the PDF' : 'Text is rebuilt as flowing paragraphs: easier to rework, less exact';
   $('status').classList.toggle('off', !settings.enabled);
   $('statusText').textContent = settings.enabled ? 'Running' : 'Paused';
 
@@ -154,7 +152,7 @@ function fit() {
 
 // ---- diagnostics ---------------------------------------------------------------------------------
 function diagnostics() {
-  const lines = [`Pomelo ${state.version}`, state.os || '', `Trigger key: ${state.settings.key}`, `PDF to Word layout: ${state.settings.pdfLayout || 'exact'}`, 'Engines:'];
+  const lines = [`Pomelo ${state.version}`, state.os || '', `Trigger key: ${state.settings.key}`, 'Engines:'];
   for (const e of ENGINES) lines.push(`  ${e.name}: ${e.always ? 'built in' : state.engines[e.key] || 'not found'}`);
   return lines.filter(Boolean).join('\n');
 }
@@ -185,4 +183,3 @@ $('autoUpdate').onchange = async (e) => {
   if (e.target.checked && update.state !== 'available') checkNow();    // switching it on looks straight away, so the answer is on screen
 };
 $('key').onclick = (e) => { const k = e.target.dataset?.key; if (k) save({ key: k }); };
-$('layout').onclick = (e) => { const l = e.target.dataset?.layout; if (l) save({ pdfLayout: l }); };

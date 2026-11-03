@@ -121,7 +121,7 @@ function fake(script = () => null) {
   }
   expect('unknown engine is refused', !(await createInstaller({ root: tmp(), run: fake().run }).install('rm -rf')).ok);
 
-  console.log('python pack (PDF fidelity + HEIC)');
+  console.log('python pack (PDF engine + OCR + HEIC)');
   {
     const root = tmp(); const py = path.join(root, 'sys-python.exe'); touch(py);
     const f = fake((cmd, args) => {
@@ -129,11 +129,11 @@ function fake(script = () => null) {
       if (args[0] === '-m' && args[1] === 'venv') { touch(path.join(args[2], 'Scripts', 'python.exe')); return null; }
       return null;
     });
-    const inst = createInstaller({ root, run: f.run, redetect: () => ({ pdf2docx: 'x', heic: 'y' }) });
-    const r = await inst.install('pdf2docx');
+    const inst = createInstaller({ root, run: f.run, redetect: () => ({ pdf: 'x', ocr: 'z', heic: 'y' }) });
+    const r = await inst.install('pdf');
     const pip = f.calls.find((c) => c.includes('pip'));
     expect('uses the Python already on the PC (no winget)', r.ok && f.named('winget').length === 0);
-    expect('pip installs the two packages (PyMuPDF comes with pdf2docx)', pip && pip.includes('pdf2docx') && pip.includes('pillow-heif') && !pip.includes('pymupdf4llm'), String(pip));
+    expect('pip installs PyMuPDF (pinned, so its 2.x layout stack is not pulled in), python-docx, OCR and HEIC', pip && pip.includes('pymupdf==1.28.2') && pip.includes('python-docx') && pip.includes('pillow-heif') && pip.some((a) => /^rapidocr==/.test(a)) && !pip.includes('pdf2docx') && !pip.includes('pymupdf4llm'), String(pip));
     expect('environment lives under the engines folder and is on the manifest', inst.readManifest().pyenv === true && fs.existsSync(path.join(root, 'pyenv', 'Scripts', 'python.exe')));
     expect('Python itself was not recorded (the user already had it)', inst.readManifest().winget.length === 0);
   }
@@ -146,7 +146,7 @@ function fake(script = () => null) {
       if (args[0] === '-m' && args[1] === 'venv') { touch(path.join(args[2], 'Scripts', 'python.exe')); return null; }
       return null;
     });
-    const inst = createInstaller({ root, run: f.run, redetect: () => ({ pdf2docx: 'x', heic: 'y' }) });
+    const inst = createInstaller({ root, run: f.run, redetect: () => ({ pdf: 'x', ocr: 'z', heic: 'y' }) });
     const r = await inst.install('heic');
     const w = f.named('winget')[0];
     expect('no Python: adds it for the current user only, then carries on', r.ok && w && w.includes('Python.Python.3.12') && w.includes('--scope') && w.includes('user'), String(w));
@@ -158,10 +158,10 @@ function fake(script = () => null) {
     const f = fake((cmd, args) => {
       if (args.includes('-c') && /sys.executable/.test(args[args.indexOf('-c') + 1])) return { code: 0, out: `311\n${py}\n` };
       if (args[0] === '-m' && args[1] === 'venv') { touch(path.join(args[2], 'Scripts', 'python.exe')); return null; }
-      if (args.includes('pip')) return { code: 1, out: 'ERROR: No matching distribution found for pdf2docx' };
+      if (args.includes('pip')) return { code: 1, out: 'ERROR: No matching distribution found for pymupdf' };
       return null;
     });
-    const r = await createInstaller({ root, run: f.run, redetect: () => ({}) }).install('pdf2docx');
+    const r = await createInstaller({ root, run: f.run, redetect: () => ({}) }).install('pdf');
     expect('pip failure: reason shown, half-built environment removed', !r.ok && /No matching distribution/.test(r.message) && !fs.existsSync(path.join(root, 'pyenv')), r.message);
   }
   {
@@ -214,8 +214,8 @@ function fake(script = () => null) {
   if (process.argv.includes('--real')) {
     console.log('real private Python environment');
     const root = tmp();
-    const inst = createInstaller({ root, redetect: () => ({ pdf2docx: 'ok', heic: 'ok' }) });
-    const r = await inst.install('pdf2docx', (n) => process.stdout.write(`    ${n}\n`));
+    const inst = createInstaller({ root, redetect: () => ({ pdf: 'ok', ocr: 'ok', heic: 'ok' }) });
+    const r = await inst.install('pdf', (n) => process.stdout.write(`    ${n}\n`));
     expect('creates the environment and the packages import', r.ok && fs.existsSync(path.join(root, 'pyenv', 'Scripts', 'python.exe')), r.message || '');
     const u = await inst.uninstall();
     expect('and removes it again', !fs.existsSync(root) && u.failed.length === 0, JSON.stringify(u));

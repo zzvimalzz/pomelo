@@ -2,17 +2,17 @@
 // Headless switches for the Windows installer and uninstaller. Pomelo.exe runs them itself, so the installer reuses the
 // code behind the Settings Install buttons instead of having a second implementation. No window is shown.
 //
-//   Pomelo.exe --install-engines=pdf2docx,soffice,pandoc   installs the named engines one after another
+//   Pomelo.exe --install-engines=pdf,soffice,pandoc        installs the named engines one after another
 //   Pomelo.exe --uninstall-engines                         removes what Pomelo installed and switches off "Start with Windows"
 //   --progress-file=<path>                                 optional: where to keep progress for the wizard (see fileProgress)
 //
-// Engine names are the ones in engineInstaller's PACK (pdf2docx and heic come from the same install).
+// Engine names are the ones in engineInstaller's PACK (pdf, ocr and heic come from the same install).
 // Exit code 0: everything worked. 1: something failed (the message is printed and logged).
 const fs = require('fs');
 const { PACK } = require('./engineInstaller');
 
-const LABEL = { python: 'PDF and HEIC components', soffice: 'LibreOffice', pandoc: 'Pandoc' };
-const WEIGHT = { python: 150, soffice: 450, pandoc: 40 };        // roughly how long each takes, so the bar moves evenly
+const LABEL = { python: 'PDF, OCR and HEIC components', soffice: 'LibreOffice', pandoc: 'Pandoc' };
+const WEIGHT = { python: 220, soffice: 450, pandoc: 40 };        // roughly how long each takes, so the bar moves evenly
 const ascii = (s) => String(s).replace(/[^\x20-\x7e]/g, '').replace(/\s+/g, ' ').trim().slice(0, 70);
 
 // -> { action: 'install', keys, progressFile } | { action: 'uninstall', progressFile } | null when Pomelo was started normally.

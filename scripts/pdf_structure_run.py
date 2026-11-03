@@ -20,11 +20,13 @@ import warnings
 from collections import Counter
 
 warnings.filterwarnings("ignore")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 try:
     import pymupdf
 except Exception as e:
     sys.stderr.write("PyMuPDF is not available: %s\n" % e)
     sys.exit(2)
+import pdf_common  # noqa: E402
 
 BULLETS = set("•●▪◦·‣⁃■○✓✔❖➢–—-*")
 NUMBERED = re.compile(r"^(\(?\d{1,3}[.)]|\(?[a-z][.)])$")
@@ -661,31 +663,36 @@ def write_txt(blocks):
 def main():
     src, dst, fmt = sys.argv[1], sys.argv[2], sys.argv[3]
     images_dir = sys.argv[4] if len(sys.argv) > 4 else None
-    doc = pymupdf.open(src)
-    if doc.needs_pass:
-        sys.stderr.write("This PDF is password protected\n")
-        sys.exit(1)
 
     def progress(x):
-        print("POMELO_PROGRESS %.3f" % x, flush=True)
+        print("POMELO_PROGRESS %.3f" % min(0.99, x), flush=True)
 
+    temp = None
     try:
-        blocks, _ = build(doc, progress)
+        path, temp, share = pdf_common.open_for_work(src, progress)
+        doc = pymupdf.open(path)
+        blocks, _ = build(doc, pdf_common.tail(progress, share))
+    except SystemExit:
+        raise
     except Exception as e:
-        sys.stderr.write("pdf structure failed: %s\n" % str(e).replace("\n", " ")[:300])
-        sys.exit(1)
+        pdf_common.cleanup(temp)
+        pdf_common.fail(e)
     if not any(b["type"] in ("para", "heading", "item", "table", "code") for b in blocks):
-        sys.stderr.write("This PDF has no selectable text (it looks scanned). OCR is not supported yet.\n")
+        pdf_common.cleanup(temp)
+        sys.stderr.write("This PDF has no text to convert" + chr(10))
         sys.exit(3)
     title = (doc.metadata or {}).get("title") or os.path.splitext(os.path.basename(src))[0]
-    if fmt == "md":
-        text = write_md(blocks, images_dir)
-    elif fmt == "html":
-        text = write_html(blocks, title)
-    else:
-        text = write_txt(blocks)
-    with open(dst, "w", encoding="utf-8", newline="\n") as f:
-        f.write(text)
+    try:
+        if fmt == "md":
+            text = write_md(blocks, images_dir)
+        elif fmt == "html":
+            text = write_html(blocks, title)
+        else:
+            text = write_txt(blocks)
+        with open(dst, "w", encoding="utf-8", newline=chr(10)) as f:
+            f.write(text)
+    finally:
+        pdf_common.cleanup(temp)
     print("OK")
 
 

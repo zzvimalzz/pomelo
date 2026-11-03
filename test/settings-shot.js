@@ -13,8 +13,8 @@ const out = path.join(__dirname, 'shots');
 
 const LONG = 'C:\\Users\\someone-with-a-very-long-name\\OneDrive - Contoso Corporation\\Desktop\\Pomelo\\vendor\\pyenv\\Scripts\\python.exe';
 const scenarios = {
-  'all-ready': { settings: { enabled: true, key: 'ctrl', openAtLogin: false, advanced: false }, engines: { soffice: 'C:\\Program Files\\LibreOffice\\program\\soffice.exe', pandoc: 'C:\\Users\\Example\\AppData\\Local\\Pandoc\\pandoc.exe', pdf2docx: LONG, pdfmd: LONG, heic: LONG, ffmpeg: LONG } },
-  'none-installed': { settings: { enabled: false, key: 'shift', openAtLogin: true, advanced: false }, engines: { soffice: null, pandoc: null, pdf2docx: null, pdfmd: null, heic: null, ffmpeg: null } },
+  'all-ready': { settings: { enabled: true, key: 'ctrl', openAtLogin: false, advanced: false }, engines: { soffice: 'C:\\Program Files\\LibreOffice\\program\\soffice.exe', pandoc: 'C:\\Users\\Example\\AppData\\Local\\Pandoc\\pandoc.exe', pdf: LONG, ocr: LONG, pdfmd: LONG, heic: LONG, ffmpeg: LONG } },
+  'none-installed': { settings: { enabled: false, key: 'shift', openAtLogin: true, advanced: false }, engines: { soffice: null, pandoc: null, pdf: null, ocr: null, pdfmd: null, heic: null, ffmpeg: null } },
 };
 let current = scenarios['all-ready'];
 let nextUpdate = { state: 'unconfigured', current: '0.1.0' };

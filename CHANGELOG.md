@@ -4,6 +4,22 @@ All notable changes to Pomelo are listed here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.1.3] - 04-11-2026
+
+### Changed
+- **PDF to Word is always editable.** The new converter rebuilds every page as real paragraphs (indents, alignment, line spacing, fonts, colours, underline, highlight), real bullet and numbered lists, real Word tables (ruled tables, tables drawn with shaded rows, and side-by-side blocks such as columns as borderless tables), shaded and outlined boxes, hyperlinks, a stretched colour for a full-page background, and pictures. Pictures, charts, logos and gradients stay pictures; text on a picture is a positioned paragraph you can still retype. The old "exact" mode, which wrote every line as its own frame, and the **PDF to Word > Layout** switch in Settings are gone.
+- **Scanned PDFs are read with OCR** (RapidOCR, offline, models fetched once at install). A page that is only a picture is turned into text first, so PDF to Word, Excel, PowerPoint, Markdown, HTML, text and EPUB all work on scans.
+- The PDF engine is now PyMuPDF (pinned to 1.28.2), python-docx, RapidOCR and pillow-heif. A fresh install used to pull in PyMuPDF 2.x with its layout-analysis stack and `pdf2docx` (435 MB on disk); it is now 360 MB including OCR. **Settings > Advanced > Conversion engines** has a new **OCR** row; an existing PDF engine is rebuilt when you press Install.
+- The installer's engine page says what the PDF choice contains (PDF to Word and more, OCR, HEIC; about 320 MB).
+- A conversion that fails reports the reason from the best engine instead of the last fallback's.
+
+### Fixed
+- PDF to Word took 5 to 12 seconds for every page that has nothing but text (a per-pixel blank-page check in Python): 30 such pages took 161 seconds and a 110-page document hit the ten-minute limit. 40 pages now convert in about 6 seconds, and the time limit grows with the size of the PDF.
+- A scanned PDF "converted" to a Word file with no text in it. It is now read with OCR, or says plainly that it needs the OCR component.
+- Reasons for failures are plain: a password-protected PDF and a damaged file each say so, without file paths or Python errors.
+- Rotated text over other text lost letters ("PAID" became "PAI"), letter-spaced capitals came out with spaces inside the words ("I NVO I C E"), and white text on a shaded header disappeared.
+- The installer test now installs, updates and uninstalls the real installer in CI.
+
 ## [0.1.2] - 03-11-2026
 
 ### Changed

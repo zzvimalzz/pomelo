@@ -1,8 +1,9 @@
 name: Release
 
-# Push a tag like v0.2.0 (it must match "version" in package.json). The workflow builds the installer from that tag and
-# attaches it, with its SHA-256, to a DRAFT release. Check the draft, then publish it: only a published release becomes
-# what the website's download button and Pomelo's "Check for updates" point at.
+# Push a tag like v0.2.0 (it must match "version" in package.json). The workflow tests the code, builds the installer from
+# that tag, installs, updates and uninstalls it for real, and attaches it, with its SHA-256, to a DRAFT release. The draft is
+# published only when every step before it passed, and after the published file's checksum is checked against the build:
+# only a published release becomes what the website's download button and Pomelo's "Check for updates" point at.
 on:
   push:
     tags: ['v*']
@@ -34,6 +35,9 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
       - run: npm run build:installer
+      - name: Install, update and uninstall the real installer
+        shell: pwsh
+        run: ./tools/installer-e2e.ps1
       - name: SHA-256 checksum
         shell: pwsh
         run: |
@@ -47,3 +51,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release create "$GITHUB_REF_NAME" dist/installer/Pomelo-Setup-x64.exe dist/installer/SHA256SUMS.txt --draft --generate-notes --title "Pomelo $GITHUB_REF_NAME"
+      - name: Publish the release once the uploaded file is the one that was built
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          want=$(cut -d' ' -f1 dist/installer/SHA256SUMS.txt)
+          got=$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[] | select(.name=="Pomelo-Setup-x64.exe") | .digest' | sed 's/^sha256://')
+          echo "built $want"; echo "uploaded $got"
+          test "$want" = "$got"
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest

@@ -47,3 +47,44 @@ jobs:
       - run: npx electron test/updater-test.js
       - run: npx electron test/entry.js
       - run: npx electron test/edge-cases.js
+
+  pdf-engine:
+    name: PDF engine (install it, then convert)
+    runs-on: windows-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: python -m compileall -q scripts
+      # The same code behind the Install button and the installer's engine page: a private Python environment with PyMuPDF,
+      # python-docx, RapidOCR (its models are fetched here) and pillow-heif.
+      - name: Install the PDF engine with Pomelo's own installer code
+        run: npx electron . --install-engines=pdf
+      - run: node test/pdf-layout-test.js
+      - run: node test/pdf-formats-test.js
+
+  installer:
+    name: Installer (silent install, update, uninstall)
+    runs-on: windows-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - run: npm run package
+      - run: npm run build:installer -- --fast
+      - name: Install, update and uninstall the real installer
+        shell: pwsh
+        run: ./tools/installer-e2e.ps1

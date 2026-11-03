@@ -59,7 +59,7 @@ Esc cancels. The trigger key (Ctrl, Alt or Shift) can be changed in Settings. Pr
 Download **Pomelo-Setup-x64.exe** from the [latest release](https://github.com/zzvimalzz/pomelo/releases/latest) and run it. It needs no administrator rights and takes three short screens:
 
 1. **Where to install.** The default is per-user (`%LOCALAPPDATA%\Programs\Pomelo`).
-2. **Conversion engines.** Optional extras for higher-fidelity PDF, Office, Markdown and HEIC conversion. They are downloaded during setup with a progress bar. Pomelo works without them, and you can add or remove them later in Settings.
+2. **Conversion engines.** Optional extras: editable PDF to Word, reading scanned PDFs (OCR), Office, Markdown and HEIC conversion. They are downloaded during setup with a progress bar. Pomelo works without them, and you can add or remove them later in Settings.
 3. **Shortcuts.** A desktop shortcut and "Start Pomelo with Windows", then **Install**.
 
 Every release lists the SHA-256 checksum of the installer. Early releases may not be code-signed yet, in which case Windows SmartScreen can show "Windows protected your PC": check the checksum, then choose **More info > Run anyway**. Uninstall from Windows Settings > Apps, or from Pomelo's own Settings > Advanced. Both remove only what Pomelo installed.
@@ -83,9 +83,9 @@ The wheel offers up to 8 targets per file.
 | Archives | ZIP 7Z TAR GZ (tar.gz or single file) RAR | FOLDER (extract next to the archive), ZIP 7Z TAR GZ (RAR is input only) |
 | Folders | any folder | ZIP 7Z TAR GZ (tar.gz) |
 
-**PDF to Word** keeps the page exactly: size, positions, fonts, sizes, colours, spacing, links, pictures, shapes, rules and backgrounds. Text stays real, editable text in place; pictures, shapes and backgrounds sit behind it as the page background. Settings > Advanced > **PDF to Word** can switch to **Editable**, which rebuilds flowing paragraphs and real lists (easier to rework, less exact; designed pages are still converted exactly).
+**PDF to Word is always editable.** Every page is rebuilt as the document someone would have typed: real paragraphs with their indents, alignment and line spacing, real bullet and numbered lists, real Word tables (ruled ones, and side-by-side blocks such as columns or a header with an address as borderless tables), shaded boxes, hyperlinks, underline and highlight, fonts, sizes and colours, and the same page size and page count. Only what is a picture in the PDF (photos, logos, charts, shapes, gradients) stays a picture, in line with the text or behind it. Text that sits on a picture (a title over a photo) is a positioned paragraph that you can still retype. **Scanned PDFs** are read with OCR first (RapidOCR, offline) and come out as real text too; every PDF conversion benefits, not only Word. A PDF cannot say how its lines wrapped or which font you have, so a page can break differently when the fonts it uses are not installed on the PC that opens the Word file.
 
-**PDF to Markdown, HTML, text and EPUB** read the PDF once and agree: all of the text in reading order (columns one after the other, a title and its date on one line), headings, bullet and numbered lists, tables, links, bold and italic, code, and pictures (saved next to the Markdown, embedded in HTML and EPUB). Headers, footers and page numbers that repeat on every page are left out. **PDF to Excel** takes ruled tables as they are drawn, finds the aligned rows of borderless ones, and for a PDF with no table at all gives each page's text lines. **PDF to PowerPoint** is exact like Word: text boxes on a picture of everything else, links kept. **PDF to RTF** uses the flowing rebuild, because RTF cannot hold an exact page.
+**PDF to Markdown, HTML, text and EPUB** read the PDF once and agree: all of the text in reading order (columns one after the other, a title and its date on one line), headings, bullet and numbered lists, tables, links, bold and italic, code, and pictures (saved next to the Markdown, embedded in HTML and EPUB). Headers, footers and page numbers that repeat on every page are left out. **PDF to Excel** takes ruled tables as they are drawn, finds the aligned rows of borderless ones, and for a PDF with no table at all gives each page's text lines. **PDF to PowerPoint** puts text boxes at the original places on a picture of everything else, links kept.
 
 Not supported: Apple Pages (`.pages`) and RTFD, because Apple's own software is the only thing that can write them reliably. RAR is input only: creating RAR needs WinRAR's closed-source compressor.
 
@@ -100,7 +100,7 @@ Found a vulnerability? Please report it privately, see [SECURITY.md](SECURITY.md
 
 ## Optional engines
 
-Pomelo works out of the box for images, video, audio, archives, subtitles, EPUB, Markdown/HTML/TXT, CSV/XLSX and basic DOCX/PDF. Optional engines add fidelity. Open **Settings > Advanced** and click **Conversion engines** to open the list: anything not installed shows an **Install** button. PDF fidelity and HEIC export share one private Python environment in `%LOCALAPPDATA%\Pomelo\engines`. LibreOffice is the official download, unpacked into that same folder (about 1 GB, no administrator permission, no extra shortcuts), and Pandoc comes from winget. Pomelo remembers what it installed, so **Uninstall** removes only that. Engines you installed yourself are detected automatically (PATH, standard install folders, or a `vendor/` folder) and never removed.
+Pomelo works out of the box for images, video, audio, archives, subtitles, EPUB, Markdown/HTML/TXT, CSV/XLSX and basic DOCX/PDF. Optional engines add fidelity. Open **Settings > Advanced** and click **Conversion engines** to open the list: anything not installed shows an **Install** button. The PDF engine, OCR and HEIC export share one private Python environment in `%LOCALAPPDATA%\Pomelo\engines`. LibreOffice is the official download, unpacked into that same folder (about 1 GB, no administrator permission, no extra shortcuts), and Pandoc comes from winget. Pomelo remembers what it installed, so **Uninstall** removes only that. Engines you installed yourself are detected automatically (PATH, standard install folders, or a `vendor/` folder) and never removed.
 
 <details>
 <summary>Install the engines from a terminal</summary>
@@ -108,7 +108,7 @@ Pomelo works out of the box for images, video, audio, archives, subtitles, EPUB,
 ```bash
 winget install TheDocumentFoundation.LibreOffice   # Office formats, high-fidelity PDF export, PDF to editable PPTX
 winget install JohnMacFarlane.Pandoc               # Markdown / HTML / RTF / ODT / EPUB quality
-npm run setup:pdf                                  # developer setup: PDF to Word/Excel/Markdown plus HEIC export in vendor/pyenv (needs Python 3.9+)
+npm run setup:pdf                                  # developer setup: PDF to Word/Excel/Markdown/slides, OCR and HEIC export in vendor/pyenv (needs Python 3.9+)
 ```
 
 </details>
@@ -124,8 +124,9 @@ npm run setup:pdf                                  # developer setup: PDF to Wor
 | Windows `tar.exe` (libarchive) | BSD | Reading RAR |
 | [LibreOffice](https://www.libreoffice.org) (optional) | MPL-2.0 | DOC/DOCX/RTF/ODT/XLS/XLSX/ODS/PPT/PPTX to PDF and between each other; the fallback for PDF to PPTX and for PDF to DOC/ODT/RTF |
 | [Pandoc](https://pandoc.org) (optional) | GPL-2.0-or-later, separate process | Markdown / HTML / RTF / ODT / DOCX / EPUB |
-| [pdf2docx](https://github.com/ArtifexSoftware/pdf2docx) (optional, Python) | MIT | PDF to DOCX in **Editable** layout (flowing paragraphs, fonts, colours, tables). `scripts/pdf2docx_run.py` adds real font names, divider rules, valid hyperlinks and real bullet lists |
-| [PyMuPDF](https://pymupdf.readthedocs.io) (optional, Python) | AGPL-3.0-or-later or Artifex commercial; separate process | Exact PDF to Word and PowerPoint, PDF to Markdown, HTML, text, EPUB and Excel (`scripts/pdf_structure_run.py`, `pdf_fixed_layout.py`, `pdf_tables_run.py`) |
+| [python-docx](https://github.com/python-openxml/python-docx) (optional, Python) | MIT | Writes the Word file for PDF to DOCX (`scripts/pdf_flow.py`) |
+| [RapidOCR](https://github.com/RapidAI/RapidOCR) with ONNX Runtime (optional, Python) | Apache-2.0 / MIT | Reads scanned PDF pages (`scripts/pdf_ocr.py`); its PP-OCR models are fetched once when the engine is installed |
+| [PyMuPDF](https://pymupdf.readthedocs.io) (optional, Python) | AGPL-3.0-or-later or Artifex commercial; separate process | Reads every PDF: PDF to Word (`scripts/pdf_flow.py`), PowerPoint, Markdown, HTML, text, EPUB and Excel (`scripts/pdf_structure_run.py`, `pdf_fixed_layout.py`, `pdf_tables_run.py`) |
 | [pillow-heif](https://github.com/bigcat88/pillow_heif) (optional, Python) | BSD-3 (bundles libheif and the GPL x265 encoder) | Writing HEIC. Reading HEIC works without it |
 
 Engine order per conversion lives in `src/main/convert/index.js`; if one engine fails, the next is tried.
@@ -145,9 +146,9 @@ Settings shows your version, a **Check for updates** button and a **Check automa
 ## Known limits
 
 - Only drags that start in File Explorer or on the desktop are detected, and not from windows running as administrator.
-- Scanned PDFs have no OCR yet, so they fail with a clear message (planned).
-- Exact PDF to Word keeps right-to-left text, rotated text and symbol-font glyphs in the page background (they look right but are not editable text), and its text lines are separate frames: editing a line does not reflow the paragraph.
-- Without the optional engines: PDF to Word rebuilds headings and paragraphs only (no fonts or tables), `.doc` input is text-only, and `.ppt/.pptx` cannot be converted.
+- OCR reads Latin-script text (English and similar languages) in scans; pictures inside a scanned page are not kept, only its text. Rotated text (a stamp, a margin label), symbol-font glyphs and right-to-left text in a PDF stay as pictures in the Word file.
+- PDF to Word needs the PDF engine; without it a basic rebuild of headings and paragraphs is used.
+- Without the optional engines: `.doc` input is text-only, and `.ppt/.pptx` cannot be converted.
 - RAR: no encrypted or multi-part archives.
 - Large files are processed in memory by the built-in engines.
 

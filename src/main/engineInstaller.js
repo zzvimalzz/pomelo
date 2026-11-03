@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // One-click install of the optional engines, and removal of exactly what Pomelo installed.
 //
-//   PDF fidelity + HEIC export  a private Python environment (pdf2docx with PyMuPDF, pillow-heif). Python itself is
-//                               added with winget only if the PC has none.
+//   PDF engine + OCR + HEIC     a private Python environment (PyMuPDF, python-docx, RapidOCR, pillow-heif). Python itself is
+//                               added with winget only if the PC has none. The OCR models are fetched while it is built.
 //   LibreOffice                 its official MSI is fetched with `winget download` (hash-checked) and unpacked into Pomelo's
 //                               own folder. Nothing is installed, so no administrator permission, no shortcuts, no registry
 //                               entries, and removing it is deleting the folder.
@@ -16,15 +16,18 @@ const { spawn } = require('child_process');
 const { track } = require('./convert/util');
 const { enginesRoot, pyenvPython } = require('./enginesDir');
 
+const WARMUP = path.join(__dirname, '..', '..', 'scripts', 'ocr_warmup.py');
+
 const WINGET = {
   pandoc: { id: 'JohnMacFarlane.Pandoc', name: 'Pandoc' },
 };
 const LIBREOFFICE = 'TheDocumentFoundation.LibreOffice';
 const LO_UNPACKED_BYTES = 1.5e9;                       // size of the unpacked MSI, to turn "bytes written so far" into a percentage
 const PYTHON = { id: 'Python.Python.3.12', name: 'Python' };
-const PY_PACKAGES = ['pdf2docx', 'pillow-heif'];                          // pdf2docx brings PyMuPDF, which reads every PDF here
-// Engines that come from the same install: adding either PDF or HEIC adds both.
-const PACK = { pdf2docx: 'python', heic: 'python', soffice: 'soffice', pandoc: 'pandoc' };
+// PyMuPDF is pinned: its 2.x releases pull in a layout-analysis stack (ONNX models, networkx and more, 120 MB) that nothing here uses.
+const PY_PACKAGES = ['pymupdf==1.28.2', 'python-docx', 'pillow-heif', 'rapidocr==3.10.0', 'onnxruntime'];
+// Engines that come from the same install: adding PDF, OCR or HEIC adds all three. (pdf2docx is the name 0.1.0 to 0.1.2 used for pdf.)
+const PACK = { pdf: 'python', pdf2docx: 'python', ocr: 'python', heic: 'python', soffice: 'soffice', pandoc: 'pandoc' };
 const WINGET_FLAGS = ['--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'];
 
 // Run a program; resolves { code, out } and never throws. onLine gets each line of output (for progress text).
@@ -179,34 +182,37 @@ function createInstaller({ root = enginesRoot(), run = exec, redetect = () => ({
     }
     const env = path.join(root, 'pyenv');
     try {
+      await removeDir(env);                                                          // an older environment (other package versions) is rebuilt, not patched
       note('Creating a private Python environment…', 0.05);
       let r = await run(py, ['-m', 'venv', env]);
       if (r.code !== 0) throw new Error(`Could not create the Python environment: ${lastLine(r.out)}`);
       record({ pyenv: true });
-      note('Downloading PDF and HEIC components…', 0.1);
+      note('Downloading the PDF, OCR and HEIC components…', 0.1);
       r = await run(pyenvPython(root), ['-m', 'pip', 'install', '--disable-pip-version-check', '--no-input', ...PY_PACKAGES], { onLine: (l) => note(l.slice(0, 90)) });
       if (r.code !== 0) throw new Error(`Could not download the components: ${lastLine(r.out)}`);
-      note('Checking the components…', 0.95);
-      r = await run(pyenvPython(root), ['-W', 'ignore', '-c', 'import pdf2docx, fitz, pillow_heif']);
+      note('Checking the components…', 0.85);
+      r = await run(pyenvPython(root), ['-W', 'ignore', '-c', 'import pymupdf, docx, pillow_heif, rapidocr']);
       if (r.code !== 0) throw new Error(`The components did not start: ${lastLine(r.out)}`);
+      note('Downloading the text-recognition models…', 0.92);
+      await run(pyenvPython(root), ['-W', 'ignore', WARMUP], { timeout: 10 * 60 * 1000 });     // best effort: a scan fetches them itself when it first needs them
     } catch (e) {
       fs.rmSync(env, { recursive: true, force: true });                              // no half-installed environment left behind
       throw e;
     }
   }
 
-  // Install what `key` (pdf2docx | heic | soffice | pandoc) needs. Resolves { ok, message, engines }.
+  // Install what `key` (pdf | ocr | heic | soffice | pandoc) needs. Resolves { ok, message, engines }.
   async function install(key, note = () => {}) {
     const pack = PACK[key];
     if (!pack) return { ok: false, message: 'Unknown engine' };
     if (busy) return { ok: false, message: `Still installing ${busy}. Wait for it to finish` };
-    busy = { python: 'the PDF and HEIC engine', soffice: 'LibreOffice', pandoc: 'Pandoc' }[pack];
+    busy = { python: 'the PDF, OCR and HEIC engine', soffice: 'LibreOffice', pandoc: 'Pandoc' }[pack];
     try {
       if (pack === 'python') await installPython(note);
       else if (pack === 'soffice') await installLibreOffice(note);
       else await winget(WINGET[pack], note);
       const engines = redetect();
-      const found = { pdf2docx: engines.pdf2docx, heic: engines.heic, soffice: engines.soffice, pandoc: engines.pandoc }[key];
+      const found = { pdf: engines.pdf, pdf2docx: engines.pdf, ocr: engines.ocr, heic: engines.heic, soffice: engines.soffice, pandoc: engines.pandoc }[key];
       if (!found) throw new Error('The install finished but Pomelo still cannot find it. Restart Pomelo and check again');
       return { ok: true, engines };
     } catch (e) {
@@ -229,7 +235,7 @@ function createInstaller({ root = enginesRoot(), run = exec, redetect = () => ({
       (await removeDir(path.join(root, dir)) ? removed : failed).push(name);
       done++;
     };
-    if (hasPyenv) await folder('pyenv', 'PDF and HEIC components');
+    if (hasPyenv) await folder('pyenv', 'PDF, OCR and HEIC components');
     if (hasOffice) await folder('libreoffice', 'LibreOffice');
     for (const w of [...m.winget].reverse()) {                                        // Python last: the environment above depends on it
       note(`Removing ${w.name}…`, done / steps);
@@ -238,7 +244,7 @@ function createInstaller({ root = enginesRoot(), run = exec, redetect = () => ({
       done++;
     }
     if (!failed.length) { await removeDir(root); await removeEmptyPomeloDir(path.dirname(root)); }
-    else writeManifest({ pyenv: m.pyenv && failed.includes('PDF and HEIC components'), soffice: m.soffice && failed.includes('LibreOffice'), winget: m.winget.filter((w) => failed.includes(w.name)) });   // keep what is still installed on the list
+    else writeManifest({ pyenv: m.pyenv && failed.includes('PDF, OCR and HEIC components'), soffice: m.soffice && failed.includes('LibreOffice'), winget: m.winget.filter((w) => failed.includes(w.name)) });   // keep what is still installed on the list
     return { removed, failed };
   }
 

@@ -55,9 +55,9 @@ const fresh = (name, ext) => path.join(os.tmpdir(), `pomelo-fmt-${process.pid}-$
 
 (async () => {
   const engines = convert.detectEngines();
-  if (!engines.pdf2docx) { console.log('PDF engine not installed: skipped'); return; }
+  if (!engines.pdf) { console.log('PDF engine not installed: skipped'); return; }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pomelo-formats-'));
-  const py = (code, ...args) => { const f = path.join(dir, `m${Math.random().toString(36).slice(2)}.py`); fs.writeFileSync(f, code); execFileSync(engines.pdf2docx, ['-W', 'ignore', f, ...args], { windowsHide: true }); };
+  const py = (code, ...args) => { const f = path.join(dir, `m${Math.random().toString(36).slice(2)}.py`); fs.writeFileSync(f, code); execFileSync(engines.pdf, ['-W', 'ignore', f, ...args], { windowsHide: true }); };
   const pdf = path.join(dir, 'report.pdf');
   const plain = path.join(dir, 'note.pdf');
   py(MAKE_PDF, pdf);
@@ -111,11 +111,14 @@ const fresh = (name, ext) => path.join(os.tmpdir(), `pomelo-fmt-${process.pid}-$
   expect('the link points where it did', /Target="mailto:team@example\.com"/.test(rels));
 
   console.log('RTF');
-  out = await to(pdf, 'rtf');
-  const rtf = fs.readFileSync(out, 'latin1');
-  expect('opens as rich text with its words', rtf.startsWith('{\\rtf') && rtf.includes('Opened the Jakarta office') && rtf.includes('Second page'));
+  if (!engines.soffice) console.log('  LibreOffice not installed: skipped');
+  else {
+    out = await to(pdf, 'rtf');
+    const rtf = fs.readFileSync(out, 'latin1');
+    expect('opens as rich text with its words', rtf.startsWith('{\\rtf') && rtf.includes('Opened the Jakarta office') && rtf.includes('Second page'));
+  }
 
-  console.log('a scan with no text says so');
+  console.log('a blank scan says so');
   const scan = path.join(dir, 'scan.pdf');
   py(`
 import sys, pymupdf
@@ -124,7 +127,7 @@ pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 100, 100), False); pix.s
 p.insert_image(p.rect, pixmap=pix); doc.save(sys.argv[1])`, scan);
   let message = '';
   try { await to(scan, 'md'); } catch (e) { message = e.message; }
-  expect('a clear message, not an empty file', /no selectable text/i.test(message), message);
+  expect('a clear message, not an empty file', /no text|OCR component/i.test(message), message);
   expect('and nothing was left behind', !fs.existsSync(path.join(dir, 'scan.md')) && !fs.existsSync(path.join(dir, 'scan_images')));
 
   fs.rmSync(dir, { recursive: true, force: true });

@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { run, tempPath, uniquePath } = require('../convert/util');
+const { enginesRoot } = require('../enginesDir');
 
 // ---- LibreOffice ----------------------------------------------------------------------------
 const SO_FROM = { doc: ['docx', 'doc', 'rtf', 'odt'], sheet: ['xlsx', 'xls', 'ods'], slide: ['pptx', 'ppt'] };
@@ -12,6 +13,22 @@ const SO_TO = { doc: ['pdf', 'docx', 'doc', 'rtf', 'odt'], sheet: ['xlsx', 'xls'
 const SO_FILTER = { docx: 'docx:MS Word 2007 XML', doc: 'doc:MS Word 97', rtf: 'rtf:Rich Text Format', odt: 'odt:writer8',
   xlsx: 'xlsx:Calc MS Excel 2007 XML', xls: 'xls:MS Excel 97', ods: 'ods:calc8',
   pptx: 'pptx:Impress MS PowerPoint 2007 XML', ppt: 'ppt:MS PowerPoint 97', pdf: 'pdf' };
+// Starting LibreOffice with a brand-new profile costs 8 to 10 seconds every time (it builds its settings first). Pomelo keeps a
+// few private profiles of its own (never the user's) and lends one to each conversion: the first use of a profile is slow, the
+// rest take a few seconds. A profile can only serve one LibreOffice at a time, so concurrent conversions each take a free one.
+const PROFILES = 3;
+const busyProfiles = new Set();
+const waiting = [];
+function acquireProfile() {
+  for (let i = 1; i <= PROFILES; i++) if (!busyProfiles.has(i)) { busyProfiles.add(i); return Promise.resolve(i); }
+  return new Promise((resolve) => waiting.push(resolve));
+}
+function releaseProfile(i) {
+  const next = waiting.shift();
+  if (next) next(i); else busyProfiles.delete(i);
+}
+const profileUrl = (i) => 'file:///' + path.join(enginesRoot(), `lo-profile-${i}`).split(path.sep).join('/');
+
 const soGroup = (from) => Object.keys(SO_FROM).find((g) => SO_FROM[g].includes(from));
 
 const soffice = {
@@ -25,17 +42,16 @@ const soffice = {
   async run({ src, from, to, dir, base, engines }) {
     const work = tempPath('d');
     fs.mkdirSync(work);
+    const slot = await acquireProfile();
     try {
-      // A private profile dir avoids clashing with a LibreOffice the user already has open.
-      const profile = 'file:///' + path.join(work, 'profile').split(path.sep).join('/');
       const importFilter = from === 'pdf' ? ['--infilter=impress_pdf_import'] : [];
-      await run(engines.soffice, [`-env:UserInstallation=${profile}`, '--headless', '--norestore', ...importFilter, '--convert-to', SO_FILTER[to], '--outdir', work, src], { timeout: 300000 });
+      await run(engines.soffice, [`-env:UserInstallation=${profileUrl(slot)}`, '--headless', '--norestore', ...importFilter, '--convert-to', SO_FILTER[to], '--outdir', work, src], { timeout: 300000 });
       const made = fs.readdirSync(work).find((f) => f.toLowerCase().endsWith('.' + to));
       if (!made) throw new Error('LibreOffice produced no output');
       const out = uniquePath(dir, base, to);
       fs.copyFileSync(path.join(work, made), out);
       return [out];
-    } finally { fs.rmSync(work, { recursive: true, force: true }); }
+    } finally { releaseProfile(slot); fs.rmSync(work, { recursive: true, force: true }); }
   },
 };
 

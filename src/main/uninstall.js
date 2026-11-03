@@ -10,7 +10,7 @@ const { spawn } = require('child_process');
 // What the user is told will be removed.
 function plan(installer) {
   const m = installer.readManifest();
-  return { engines: [...(m.pyenv ? ['PDF and HEIC components'] : []), ...(m.soffice ? ['LibreOffice'] : []), ...m.winget.map((w) => w.name)] };
+  return { engines: [...(m.pyenv ? ['PDF, OCR and HEIC components'] : []), ...(m.soffice ? ['LibreOffice'] : []), ...m.winget.map((w) => w.name)] };
 }
 
 function confirmText(p) {

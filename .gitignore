@@ -29,4 +29,5 @@ Start Pomelo.bat
 /ROADMAP*.md
 STAMP.md
 /test/fidelity/out/
-
+__pycache__/
+*.pyc

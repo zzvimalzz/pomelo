@@ -10,18 +10,21 @@ box). A PDF with no table at all still gives something useful: each page's text 
 Prints POMELO_PROGRESS lines while it works.
 """
 import json
+import os
 import re
 import sys
 import warnings
 from collections import Counter
 
 warnings.filterwarnings("ignore")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
     import pymupdf
 except Exception as e:
     sys.stderr.write("PyMuPDF is not available: %s\n" % e)
     sys.exit(2)
+import pdf_common  # noqa: E402
 
 WORD = re.compile(r"\w+", re.U)
 
@@ -84,10 +87,18 @@ def text_rows(page):
 
 src, dst = sys.argv[1], sys.argv[2]
 found = []
+temp = None
+
+
+def progress(f):
+    print("POMELO_PROGRESS %.3f" % min(0.99, f), flush=True)
+
+
 try:
-    doc = pymupdf.open(src)
+    path, temp, share = pdf_common.open_for_work(src, progress)
+    doc = pymupdf.open(path)
     for pno, page in enumerate(doc):
-        print("POMELO_PROGRESS %.3f" % (0.95 * pno / len(doc)), flush=True)
+        progress(share + (1 - share) * 0.95 * pno / len(doc))
         made = 0
         try:
             tables = page.find_tables().tables
@@ -114,9 +125,15 @@ try:
             rows = text_rows(page)
             if rows:
                 found.append({"page": pno + 1, "index": 1, "kind": "text", "rows": rows})
+except SystemExit:
+    raise
 except Exception as e:
-    sys.stderr.write("table extraction failed: %s\n" % str(e).replace("\n", " ")[:300])
-    sys.exit(1)
+    pdf_common.cleanup(temp)
+    pdf_common.fail(e)
+pdf_common.cleanup(temp)
+if not found:
+    sys.stderr.write("This PDF has no text to put in a spreadsheet\n")
+    sys.exit(3)
 
 with open(dst, "w", encoding="utf-8") as f:
     json.dump(found, f, ensure_ascii=False)

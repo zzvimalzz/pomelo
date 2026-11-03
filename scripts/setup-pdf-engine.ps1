@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-# Installs the high-fidelity PDF engine (pdf2docx, MIT) into vendor\pyenv. Needs Python 3.9+ on PATH.
+# Installs the PDF engine (PyMuPDF, python-docx, RapidOCR) and HEIC export into vendor\pyenv. Needs Python 3.9+ on PATH.
 #   npm run setup:pdf
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -10,6 +10,7 @@ if (-not (Test-Path $py)) {
     Write-Host 'Creating Python environment in vendor\pyenv ...'
     python -m venv $env
 }
-Write-Host 'Installing pdf2docx (with PyMuPDF) and pillow-heif ...'
-& $py -m pip install --quiet --upgrade pip pdf2docx pillow-heif
-& $py -W ignore -c "import pdf2docx, fitz, pillow_heif; print('PDF and HEIC engines ready')"
+Write-Host 'Installing PyMuPDF, python-docx, RapidOCR and pillow-heif ...'
+& $py -m pip install --quiet --upgrade pip 'pymupdf==1.28.2' python-docx pillow-heif 'rapidocr==3.10.0' onnxruntime
+& $py -W ignore -c "import pymupdf, docx, pillow_heif, rapidocr; print('PDF, OCR and HEIC engines ready')"
+& $py -W ignore (Join-Path $PSScriptRoot 'ocr_warmup.py')

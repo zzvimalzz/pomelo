@@ -17,13 +17,18 @@ const PROGRAMS = [
   ['bsdtar / libarchive (tar.exe shipped with Windows 10 and 11)', 'BSD-2-Clause', 'https://www.libarchive.org', 'reading RAR archives'],
 ];
 
-// Installed by `npm run setup:pdf` into vendor/pyenv (not part of this repository).
+// Installed by Pomelo's "Install" button (src/main/engineInstaller.js) or `npm run setup:pdf` into a private Python environment
+// (not part of this repository). Versions are the ones the installer pins or resolves to.
 const PYTHON = [
-  ['pdf2docx', '0.5.13', 'MIT'], ['PyMuPDF', '1.28.2', 'AGPL-3.0-or-later or Artifex commercial'],
+  ['PyMuPDF', '1.28.2', 'AGPL-3.0-or-later or Artifex commercial'], ['python-docx', '1.2.0', 'MIT'], ['lxml', '6.1.3', 'BSD-3-Clause'],
+  ['RapidOCR', '3.10.0', 'Apache-2.0 (its PP-OCR models, PaddleOCR / RapidAI: Apache-2.0)'], ['ONNX Runtime', '1.31.1', 'MIT'],
+  ['opencv-python-headless', '5.0.0.93', 'Apache-2.0'], ['NumPy', '2.5.4', 'BSD-3-Clause and others'], ['Shapely', '2.2.0', 'BSD-3-Clause'],
+  ['pyclipper', '1.4.0', 'MIT'], ['PyYAML', '6.0.3', 'MIT'], ['OmegaConf', '2.4.0', 'BSD-3-Clause'], ['colorlog', '6.12.0', 'MIT'],
+  ['tqdm', '4.70.1', 'MPL-2.0 AND MIT'], ['requests', '2.34.2', 'Apache-2.0'], ['urllib3', '2.8.0', 'MIT'], ['idna', '3.20', 'BSD-3-Clause'],
+  ['charset-normalizer', '3.5.2', 'MIT'], ['certifi', '2026.10.23', 'MPL-2.0'], ['flatbuffers', '25.12.19', 'Apache-2.0'], ['protobuf', '7.36.2', 'BSD-3-Clause'],
+  ['packaging', '26.3', 'Apache-2.0 OR BSD-2-Clause'], ['six', '1.17.0', 'MIT'], ['colorama', '0.4.6', 'BSD-3-Clause'],
   ['pillow-heif', '1.8.1', 'BSD-3-Clause (wheels bundle libheif LGPL-3.0, libde265 LGPL-3.0 and the x265 encoder GPL-2.0-or-later)'],
-  ['Pillow', '13.0.0', 'MIT-CMU'], ['NumPy', '2.5.4', 'BSD-3-Clause and others'], ['opencv-python-headless', '5.0.0.93', 'Apache-2.0'],
-  ['fonttools', '4.68.0', 'MIT'], ['python-docx', '1.2.0', 'MIT'], ['lxml', '6.1.3', 'BSD-3-Clause'], ['tabulate', '0.10.0', 'MIT'],
-  ['fire', '0.7.1', 'Apache-2.0'], ['termcolor', '3.3.0', 'MIT'], ['typing_extensions', '4.16.0', 'PSF-2.0'],
+  ['Pillow', '13.0.0', 'MIT-CMU'], ['typing_extensions', '4.16.0', 'PSF-2.0'],
 ];
 
 // Not allowed: licences that are not open source or that conflict with AGPL-3.0-or-later.

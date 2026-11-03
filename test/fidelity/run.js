@@ -53,7 +53,7 @@ function compare(python, original, rendered, tag) {
 
 (async () => {
   const engines = convert.detectEngines();
-  if (!engines.soffice || !engines.pdf2docx) {
+  if (!engines.soffice || !engines.pdf) {
     console.error('The fidelity harness needs LibreOffice and the PDF engine (Settings > Advanced > Conversion engines).');
     process.exit(2);
   }
@@ -78,7 +78,7 @@ function compare(python, original, rendered, tag) {
     const rendered = renderDocx(engines.soffice, docx, dir);
     if (!rendered) { rows.push(`${pad(name, 16)} could not render ${path.basename(docx)}`); continue; }
     try {
-      const m = compare(engines.pdf2docx, src, rendered, name);
+      const m = compare(engines.pdf, src, rendered, name);
       m.seconds = +seconds.toFixed(1);
       report[name] = m;
       const t = m.text;
@@ -94,7 +94,7 @@ function compare(python, original, rendered, tag) {
         const [p2] = await convert.convertFile(d2, 'pdf');
         const [d3] = await convert.convertFile(p2, 'docx');
         const r3 = renderDocx(engines.soffice, d3, rt);
-        const m = compare(engines.pdf2docx, src, r3, `${name}_roundtrip`);
+        const m = compare(engines.pdf, src, r3, `${name}_roundtrip`);
         report[`${name}:roundtrip`] = m;
         rows.push(`${pad('  round trip', 16)} ${pct(m.score)}  text ${pct(m.text.text)}  pos<=4pt ${pct(m.text.pos_4pt)}  visual ${pct(m.visual.similarity)}`);
       } catch (e) { rows.push(`${pad('  round trip', 16)} failed: ${e.message}`); }

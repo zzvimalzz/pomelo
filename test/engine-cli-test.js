@@ -21,15 +21,15 @@ const fake = (failing = [], removalFails = []) => {
 (async () => {
   console.log('reading the command line');
   expect('a normal start is not headless', parse(['Pomelo.exe', '--hidden']) === null);
-  const parsed = parse(['Pomelo.exe', '--install-engines=pdf2docx, soffice,pandoc']);
-  expect('install list', parsed.action === 'install' && parsed.keys.join() === 'pdf2docx,soffice,pandoc');
+  const parsed = parse(['Pomelo.exe', '--install-engines=pdf, soffice,pandoc']);
+  expect('install list', parsed.action === 'install' && parsed.keys.join() === 'pdf,soffice,pandoc');
   expect('empty install list', parse(['--install-engines=']).keys.length === 0);
   expect('uninstall', parse(['--uninstall-engines']).action === 'uninstall');
 
   console.log('installing');
   let installer = fake();
-  let code = await run({ action: 'install', keys: ['pdf2docx', 'heic', 'soffice', 'pandoc'] }, { installer, setLoginItem: () => {}, say: () => {} });
-  expect('installs each engine once (PDF and HEIC are one install)', installer.calls.join() === 'install pdf2docx,install soffice,install pandoc', installer.calls.join());
+  let code = await run({ action: 'install', keys: ['pdf', 'ocr', 'heic', 'soffice', 'pandoc'] }, { installer, setLoginItem: () => {}, say: () => {} });
+  expect('installs each engine once (PDF, OCR and HEIC are one install)', installer.calls.join() === 'install pdf,install soffice,install pandoc', installer.calls.join());
   expect('exit code 0', code === 0);
 
   const said = [];
@@ -52,9 +52,9 @@ const fake = (failing = [], removalFails = []) => {
     const installer = {
       install: async (key, note) => { note(`Downloading ${key}…`, 0.5); note('  ██▒▒ 45%  ünïcode', undefined); seen.push(fs.readFileSync(file, 'utf8')); return key === 'pandoc' ? { ok: false, message: 'boom' } : { ok: true }; },
     };
-    await run({ action: 'install', keys: ['pdf2docx', 'pandoc'] }, { installer, setLoginItem: () => {}, say: () => {}, progress: write });
+    await run({ action: 'install', keys: ['pdf', 'pandoc'] }, { installer, setLoginItem: () => {}, say: () => {}, progress: write });
     const field = (text, name) => (new RegExp(`^${name}=(.*)$`, 'm').exec(text) || [])[1];
-    expect('shows which engine is being installed, out of how many', field(seen[0], 'text') === 'Installing PDF and HEIC components (1 of 2)', field(seen[0], 'text'));
+    expect('shows which engine is being installed, out of how many', field(seen[0], 'text') === 'Installing PDF, OCR and HEIC components (1 of 2)', field(seen[0], 'text'));
     expect('the bar is a fraction of the weighted total, between 0 and 1000', +field(seen[0], 'permille') > 0 && +field(seen[0], 'permille') < 1000, field(seen[0], 'permille'));
     expect('the detail line is plain ASCII (no block characters)', /^[\x20-\x7e]*$/.test(field(seen[0], 'detail')) && /45%/.test(field(seen[0], 'detail')), field(seen[0], 'detail'));
     expect('the bar moves on as engines complete', +field(seen[1], 'permille') > +field(seen[0], 'permille'));

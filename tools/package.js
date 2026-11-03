@@ -14,6 +14,7 @@ const IGNORE = [
   /^\/(README|CHANGELOG|CONTRIBUTING|CODE_OF_CONDUCT|SECURITY)\.md$/,     // LICENSE and THIRD_PARTY_NOTICES.md ship
   /^\/assets\/(screenshots|icon\.ico)/,
   /^\/scripts\/setup-pdf-engine\.ps1$/,
+  /^\/scripts\/__pycache__(\/|$)/,
 ];
 
 packager({

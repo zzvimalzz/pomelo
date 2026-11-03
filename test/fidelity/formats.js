@@ -23,7 +23,7 @@ function pdfs() {
 }
 
 const py = (engines, script, ...a) => {
-  const r = spawnSync(engines.pdf2docx, ['-W', 'ignore', path.join(__dirname, script), ...a], { encoding: 'utf8', maxBuffer: 1 << 26, windowsHide: true, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+  const r = spawnSync(engines.pdf, ['-W', 'ignore', path.join(__dirname, script), ...a], { encoding: 'utf8', maxBuffer: 1 << 26, windowsHide: true, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
   if (r.status !== 0) throw new Error((r.stderr || r.stdout || 'failed').split('\n').filter(Boolean).slice(-1)[0]);
   return JSON.parse(r.stdout.trim().split('\n').pop());
 };
@@ -39,7 +39,7 @@ function renderToPdf(soffice, file, dir) {
 
 (async () => {
   const engines = convert.detectEngines();
-  if (!engines.pdf2docx) { console.error('Needs the PDF engine.'); process.exit(2); }
+  if (!engines.pdf) { console.error('Needs the PDF engine.'); process.exit(2); }
   const work = path.join(OUT, 'work-formats');
   fs.rmSync(work, { recursive: true, force: true });
   const report = {};
@@ -61,7 +61,7 @@ function renderToPdf(soffice, file, dir) {
         if (['pptx', 'doc', 'rtf', 'odt'].includes(to)) {
           const rendered = engines.soffice && renderToPdf(engines.soffice, outs[0], dir);
           if (!rendered) throw new Error('could not be opened by LibreOffice');
-          const r = spawnSync(engines.pdf2docx, ['-W', 'ignore', path.join(__dirname, 'compare.py'), src, rendered], { encoding: 'utf8', maxBuffer: 1 << 26, windowsHide: true });
+          const r = spawnSync(engines.pdf, ['-W', 'ignore', path.join(__dirname, 'compare.py'), src, rendered], { encoding: 'utf8', maxBuffer: 1 << 26, windowsHide: true });
           m = JSON.parse(r.stdout.trim().split('\n').pop());
           line = `score ${pct(m.score)}  text ${pct(m.text.text)}  pos ${pct(m.text.pos_4pt)}  family ${pct(m.text.font_family)}  visual ${pct(m.visual.similarity)}  links ${m.links.count.join('/')}  pages ${m.pages.join('/')}`;
           if (m.text.missing.length) line += `\n${pad('', 19)}missing: ${m.text.missing.slice(0, 3).join(' | ').slice(0, 120)}`;

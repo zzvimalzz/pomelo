@@ -3,7 +3,7 @@
 ; Build it with:  npm run package  then  npm run build:installer      (needs Inno Setup 6.3 or later)
 ;
 ; Silent install:   Pomelo-Setup-x64.exe /SILENT                      app only, no engines (this is how Pomelo updates itself)
-;                   Pomelo-Setup-x64.exe /SILENT /ENGINES=pdf2docx,soffice,pandoc
+;                   Pomelo-Setup-x64.exe /SILENT /ENGINES=pdf,soffice,pandoc
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -176,7 +176,7 @@ begin
     'Optional extras for higher-quality conversions',
     'Pomelo works without these, and once installed everything runs offline. They are downloaded now, so you need an internet connection. You can add or remove them later in Settings.',
     False, False);
-  EnginePage.Add('PDF fidelity and HEIC export (about 150 MB)');
+  EnginePage.Add('PDF to Word and more, scanned PDFs (OCR) and HEIC export (about 320 MB)');
   EnginePage.Add('LibreOffice, for Office formats (about 350 MB download, about 1 GB on disk)');
   EnginePage.Add('Pandoc, for Markdown, HTML, RTF and ODT (about 40 MB)');
   EnginePage.Values[0] := True;
@@ -194,7 +194,7 @@ begin
   end;
   Result := '';
   if Updating then Exit;      // the engines page is skipped for an update: engines stay as they are
-  if EnginePage.Values[0] then Result := Result + ',pdf2docx';
+  if EnginePage.Values[0] then Result := Result + ',pdf';
   if EnginePage.Values[1] then Result := Result + ',soffice';
   if EnginePage.Values[2] then Result := Result + ',pandoc';
   if Result <> '' then Delete(Result, 1, 1);

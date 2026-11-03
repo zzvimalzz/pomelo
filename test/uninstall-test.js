@@ -20,7 +20,7 @@ const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'pomelo-un-'));
 
   console.log('what the confirmation says');
   const p = plan(installer);
-  expect('lists only what Pomelo installed', p.engines.join() === 'PDF and HEIC components,LibreOffice,Python', p.engines.join());
+  expect('lists only what Pomelo installed', p.engines.join() === 'PDF, OCR and HEIC components,LibreOffice,Python', p.engines.join());
   const text = confirmText(p);
   expect('says user-installed software and converted files are safe', /installed yourself is left alone/.test(text) && /converted files are never touched/.test(text));
   expect('nothing installed by Pomelo -> no engine list', !/Also removed/.test(confirmText({ engines: [] })));
