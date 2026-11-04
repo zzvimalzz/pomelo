@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Client for native/pomelo-input.cs: global input events plus "which files are being dragged?".
-const path = require('path');
 const { spawn } = require('child_process');
 const { EventEmitter } = require('events');
 const log = require('./log');
+const { inApp } = require('../shared/node/paths');
 
-const EXE = path.join(__dirname, '..', '..', 'native', 'bin', 'pomelo-input.exe').replace('app.asar', 'app.asar.unpacked');
+const EXE = inApp('native', 'bin', 'pomelo-input.exe');
 
 class ExplorerHelper extends EventEmitter {
   constructor() {

@@ -32,12 +32,6 @@ function segmentPath(mid, step) {
   return `M${x0} ${y0} A${ro} ${ro} 0 ${large} 1 ${x1} ${y1} L${x2} ${y2} A${ri} ${ri} 0 ${large} 0 ${x3} ${y3}Z`;
 }
 
-function middleEllipsis(s, max) {
-  if (s.length <= max) return s;
-  const keep = max - 1, head = Math.ceil(keep * 0.6);
-  return s.slice(0, head) + '…' + s.slice(s.length - (keep - head));
-}
-
 function drawCenter(info) {
   centerEl.replaceChildren();
   el('circle', { class: 'disc', cx: CX, cy: CY, r: R_IN - 8 }, centerEl);
@@ -50,7 +44,7 @@ function drawCenter(info) {
   const badge = el('text', { class: 'badge', x: CX, y: CY - 9 }, centerEl);
   badge.textContent = (info.ext || '?').toUpperCase().slice(0, 4);
   const name = el('text', { class: 'name', x: CX, y: CY + 22 }, centerEl);
-  name.textContent = info.count > 1 ? `${info.count} files` : middleEllipsis(info.name, 15);
+  name.textContent = info.count > 1 ? `${info.count} files` : info.name;      // the main process has already shortened a long name
 }
 
 function buildWheel(data) {

@@ -7,7 +7,7 @@ const path = require('path');
 const zlib = require('zlib');
 const { spawnSync } = require('child_process');
 const convert = require('../src/main/convert');
-const { TARGET_ORDER, extOf } = require('../src/main/formats');
+const { TARGET_ORDER, VIDEO, AUDIO, extOf } = require('../src/main/formats');
 const pdf = require('../src/main/engines/pdf');
 const finish = require('./support/finish');
 const tmp = require('./support/tmp');
@@ -16,7 +16,7 @@ const MARK = 'Pomelo converts files';
 const SUB = 'Hello subtitles';
 const only = process.argv.find((a) => a.startsWith('--only='))?.slice(7).split(',');
 const TAR = path.join(process.env.SystemRoot || 'C:/Windows', 'System32', 'tar.exe');
-const MEDIA = new Set(['mp4', 'mov', 'mkv', 'webm', 'avi', 'wmv', 'mp3', 'wav', 'ogg', 'm4a', 'flac', 'opus', 'aiff', 'wma']);
+const MEDIA = new Set([...VIDEO, ...AUDIO]);
 
 // ---- a tiny stored (uncompressed) RAR5 archive, so the RAR reader can be tested without WinRAR ----
 const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });

@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const { app, Tray, Menu, ipcMain, nativeImage, dialog } = require('electron');
 const settings = require('./settings');
+const { APP_ROOT } = require('../shared/node/paths');
+const { capitalize } = require('../shared/core/text');
 const convert = require('./convert');
 const { labelOf, extOf, groupOf } = require('./formats');
 const { ExplorerHelper } = require('./explorer');
@@ -15,7 +17,7 @@ const updater = require('./updater');
 const updateInstall = require('./updateInstall');
 const { AutoUpdate } = require('./autoUpdate');
 const log = require('./log');
-const { killAll } = require('./convert/util');
+const { killAll } = require('../shared/node/process');
 const settingsWindow = require('./settingsWindow');
 const { createInstaller, PACK } = require('./engineInstaller');
 const uninstaller = require('./uninstall');
@@ -26,7 +28,7 @@ if (!cli && !app.requestSingleInstanceLock()) app.exit(0);
 app.on('window-all-closed', () => { /* tray app: keep running */ });
 app.on('second-instance', () => openSettings());
 
-const asset = (n) => path.join(__dirname, '..', '..', 'assets', n);
+const asset = (n) => path.join(APP_ROOT, 'assets', n);
 let tray, overlay, toast, jobs, trigger, helper;
 let installing = null;   // { keys: [engine keys being installed], note } while an Install button is working
 const installer = createInstaller({ redetect: () => convert.detectEngines() });
@@ -64,7 +66,7 @@ function buildMenu() {
   const s = settings.get();
   return Menu.buildFromTemplate([
     { label: 'Pomelo', enabled: false },
-    { label: `Drag a file, then tap ${s.key[0].toUpperCase() + s.key.slice(1)}`, enabled: false },
+    { label: `Drag a file, then tap ${capitalize(s.key)}`, enabled: false },
     { type: 'separator' },
     { label: 'Enabled', type: 'checkbox', checked: s.enabled, click: (i) => { settings.set({ enabled: i.checked }); applySettings(); } },
     { label: 'Settings…', click: openSettings },

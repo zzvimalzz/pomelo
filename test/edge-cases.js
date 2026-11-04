@@ -95,7 +95,7 @@ app.whenReady().then(async () => {
   console.log('GIF export: whole clip, any source, animation kept');
   {
     const { execFileSync } = require('child_process');
-    const ffmpegBin = require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked');
+    const ffmpegBin = convert.getEngines().ffmpeg;
     const lengthOf = (file) => { try { execFileSync(ffmpegBin, ['-hide_banner', '-i', file], { windowsHide: true, stdio: 'pipe' }); } catch (e) { const m = /Duration:\s*(\d+):(\d+):([\d.]+)/.exec(String(e.stderr)); return m ? +m[1] * 3600 + +m[2] * 60 + parseFloat(m[3]) : 0; } return 0; };
     execFileSync(ffmpegBin, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x240:rate=10', '-t', '45', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', f('clip45.mp4')], { windowsHide: true });
     let gif;
@@ -108,7 +108,7 @@ app.whenReady().then(async () => {
   console.log('cancelling a long conversion stops the helper and leaves nothing behind');
   {
     const { execFileSync } = require('child_process');
-    const ffmpegBin = require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked');
+    const ffmpegBin = convert.getEngines().ffmpeg;
     const src = f('long.mp4');
     execFileSync(ffmpegBin, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=30', '-t', '90', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', src], { windowsHide: true });
     const running = () => execFileSync('tasklist', ['/FI', 'IMAGENAME eq ffmpeg.exe', '/NH'], { windowsHide: true }).toString().includes('ffmpeg.exe');

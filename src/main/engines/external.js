@@ -4,11 +4,13 @@
 //   Pandoc (GPL-2.0)      - document markup conversion, run as a separate process
 const fs = require('fs');
 const path = require('path');
-const { run, tempPath, uniquePath } = require('../convert/util');
-const { enginesRoot } = require('../enginesDir');
+const { run, uniquePath } = require('../convert/util');
+const { OFFICE } = require('../formats');
+const { withTempDir } = require('../../shared/node/fs');
+const { enginesRoot } = require('../../shared/node/paths');
 
 // ---- LibreOffice ----------------------------------------------------------------------------
-const SO_FROM = { doc: ['docx', 'doc', 'rtf', 'odt'], sheet: ['xlsx', 'xls', 'ods'], slide: ['pptx', 'ppt'] };
+const SO_FROM = OFFICE;
 const SO_TO = { doc: ['pdf', 'docx', 'doc', 'rtf', 'odt'], sheet: ['xlsx', 'xls', 'ods', 'pdf'], slide: ['pptx', 'ppt', 'pdf'] };
 const SO_FILTER = { docx: 'docx:MS Word 2007 XML', doc: 'doc:MS Word 97', rtf: 'rtf:Rich Text Format', odt: 'odt:writer8',
   xlsx: 'xlsx:Calc MS Excel 2007 XML', xls: 'xls:MS Excel 97', ods: 'ods:calc8',
@@ -40,18 +42,18 @@ const soffice = {
     return !!g && SO_TO[g].includes(to);
   },
   async run({ src, from, to, dir, base, engines }) {
-    const work = tempPath('d');
-    fs.mkdirSync(work);
     const slot = await acquireProfile();
     try {
-      const importFilter = from === 'pdf' ? ['--infilter=impress_pdf_import'] : [];
-      await run(engines.soffice, [`-env:UserInstallation=${profileUrl(slot)}`, '--headless', '--norestore', ...importFilter, '--convert-to', SO_FILTER[to], '--outdir', work, src], { timeout: 300000 });
-      const made = fs.readdirSync(work).find((f) => f.toLowerCase().endsWith('.' + to));
-      if (!made) throw new Error('LibreOffice produced no output');
-      const out = uniquePath(dir, base, to);
-      fs.copyFileSync(path.join(work, made), out);
-      return [out];
-    } finally { releaseProfile(slot); fs.rmSync(work, { recursive: true, force: true }); }
+      return await withTempDir(async (work) => {
+        const importFilter = from === 'pdf' ? ['--infilter=impress_pdf_import'] : [];
+        await run(engines.soffice, [`-env:UserInstallation=${profileUrl(slot)}`, '--headless', '--norestore', ...importFilter, '--convert-to', SO_FILTER[to], '--outdir', work, src], { timeout: 300000 });
+        const made = fs.readdirSync(work).find((f) => f.toLowerCase().endsWith('.' + to));
+        if (!made) throw new Error('LibreOffice produced no output');
+        const out = uniquePath(dir, base, to);
+        fs.copyFileSync(path.join(work, made), out);
+        return [out];
+      });
+    } finally { releaseProfile(slot); }
   },
 };
 

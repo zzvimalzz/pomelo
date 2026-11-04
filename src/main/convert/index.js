@@ -2,9 +2,9 @@
 // Conversion orchestrator: picks the engine(s) for a (from -> to) pair and runs them.
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
-const { extOf, baseOf, targetsForFiles, labelOf } = require('../formats');
-const { tempPath, withContext, removeOutputs, CancelledError } = require('./util');
+const { extOf, baseOf, targetsForFiles, labelOf, extsInGroup, OFFICE } = require('../formats');
+const { withContext, removeOutputs, CancelledError } = require('./util');
+const { withTempDir } = require('../../shared/node/fs');
 const { soffice, pandoc } = require('../engines/external');
 const pure = require('../engines/pure');
 const pdfhifi = require('../engines/pdfhifi');
@@ -12,23 +12,9 @@ const ffmpeg = require('../engines/ffmpeg');
 const heic = require('../engines/heic');
 const subtitle = require('../engines/subtitle');
 const archive = require('../engines/archive');
-const { enginesRoot } = require('../enginesDir');
+const { findExe } = require('../../shared/node/which');
 
 let engines = { soffice: null, pandoc: null, pdf: null, ocr: null, heic: null, ffmpeg: null, sevenZip: null };
-
-// Looks in Pomelo's own folders first (vendor/ is where a release can ship portable copies, and the engines folder holds
-// the LibreOffice that Pomelo unpacked), then the usual install spots and PATH.
-function findExe(name, subdirs) {
-  const roots = [path.join(__dirname, '..', '..', '..', 'vendor'), process.resourcesPath && path.join(process.resourcesPath, 'vendor'), enginesRoot()].filter(Boolean);
-  const pf = [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA, process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs')].filter(Boolean);
-  const candidates = [
-    ...roots.flatMap((r) => subdirs.map((d) => path.join(r, d, name))),
-    ...pf.flatMap((p) => subdirs.map((d) => path.join(p, d, name))),
-  ];
-  const hit = candidates.find((c) => fs.existsSync(c));
-  if (hit) return hit;
-  try { return execFileSync('where', [name], { windowsHide: true }).toString().split(String.fromCharCode(10))[0].trim() || null; } catch { return null; }
-}
 
 function detectEngines() {
   engines = {
@@ -44,8 +30,8 @@ function detectEngines() {
 }
 
 // Targets where look and layout matter prefer LibreOffice; text-like targets prefer Pandoc, then the built-in code.
-const FIDELITY = new Set(['pdf', 'docx', 'doc', 'rtf', 'odt', 'xlsx', 'xls', 'ods', 'pptx', 'ppt']);
-const DOCS = ['docx', 'doc', 'rtf', 'odt', 'md', 'txt', 'html', 'epub'];
+const FIDELITY = new Set(['pdf', ...Object.values(OFFICE).flat()]);
+const DOCS = extsInGroup('doc');
 
 // Pairs with no direct engine go through an intermediate format: first.run(from -> via), then second.run(via -> to).
 const CHAINS = [
@@ -83,14 +69,12 @@ const targetsFor = (files) => targetsForFiles(files, canConvert);
 // onProgress(fraction 0..1) is forwarded by engines that can report it (video/audio); for a two-step chain it is split in half.
 async function runPlan(plan, src, dir, base, onProgress) {
   if (plan.length === 1) return plan[0].engine.run({ src, from: plan[0].from, to: plan[0].to, dir, base, engines, onProgress });
-  const tmp = tempPath('d');
-  fs.mkdirSync(tmp);
-  try {
+  return withTempDir(async (tmp) => {
     const [first, second] = plan;
     const half = (offset) => onProgress && ((f) => onProgress(offset + f / 2));
     const [mid] = await first.engine.run({ src, from: first.from, to: first.to, dir: tmp, base, engines, onProgress: half(0) });
-    return await second.engine.run({ src: mid, from: second.from, to: second.to, dir, base, engines, onProgress: half(0.5) });
-  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+    return second.engine.run({ src: mid, from: second.from, to: second.to, dir, base, engines, onProgress: half(0.5) });
+  });
 }
 
 // Convert one file next to the original. Resolves with the list of files written.

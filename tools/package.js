@@ -12,6 +12,7 @@ const IGNORE = [
   /^\/(\.git|\.github|dist|docs|test|tools|installer|site|vendor)(\/|$)/,
   /^\/(\.editorconfig|\.gitattributes|\.gitignore|\.npmrc|eslint\.config\.js|package-lock\.json|Start Pomelo\.bat)$/,
   /^\/(README|CHANGELOG|CONTRIBUTING|CODE_OF_CONDUCT|SECURITY)\.md$/,     // LICENSE and THIRD_PARTY_NOTICES.md ship
+  /^\/src\/.*\.md$/,                                                        // developer notes next to the code
   /^\/assets\/(screenshots|icon\.ico)/,
   /^\/scripts\/setup-pdf-engine\.ps1$/,
   /^\/scripts\/__pycache__(\/|$)/,

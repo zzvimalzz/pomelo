@@ -8,7 +8,7 @@ const RING = 2 * Math.PI * 18;                              // circumference of 
 
 const cards = new Map();                                    // id -> { el, state, timer, outPath }
 
-const make = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
+const make = window.pomeloUi.el;
 
 function build(id) {
   const el = make('div', 'card');

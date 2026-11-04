@@ -5,6 +5,7 @@ const path = require('path');
 const { BrowserWindow, screen, ipcMain } = require('electron');
 const { extOf, groupOf } = require('./formats');
 const log = require('./log');
+const { middleEllipsis } = require('../shared/core/text');
 
 const WHEEL = 400;
 
@@ -48,7 +49,7 @@ class Overlay {
     await this.loaded;
     clearTimeout(this.hideTimer);
     const first = files[0];
-    const info = { name: path.basename(first), ext: extOf(first), group: groupOf(extOf(first)), count: files.length };
+    const info = { name: middleEllipsis(path.basename(first), 15), ext: extOf(first), group: groupOf(extOf(first)), count: files.length };
     this.place();
     this.win.webContents.send('wheel:open', { info, targets });
     this.win.showInactive();

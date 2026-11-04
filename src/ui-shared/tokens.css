@@ -1,0 +1,9 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* The colours and font the wheel, the toast and the settings window have in common. Each page adds its own on top. */
+:root {
+  --accent: #e84d6f; --txt: #1c1c1e; --ok: #1e9e5a; --err: #e5483d; --line: rgba(0, 0, 0, 0.08);
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --txt: #f5f5f7; --line: rgba(255, 255, 255, 0.1); }
+}

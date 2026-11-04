@@ -10,16 +10,12 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { run, uniquePath, tempPath } = require('../convert/util');
-const { pyenvPython } = require('../enginesDir');
-
-const unpacked = (p) => p.replace('app.asar', 'app.asar.unpacked');
-const ROOT = path.join(__dirname, '..', '..', '..');
-const script = (name) => unpacked(path.join(ROOT, 'scripts', name));
+const { run, uniquePath } = require('../convert/util');
+const { withTempDir, withTempFile } = require('../../shared/node/fs');
+const { pyenvPython, scriptPath: script, vendorRoots } = require('../../shared/node/paths');
 
 function pythons() {
-  const vendors = [path.join(ROOT, 'vendor'), process.resourcesPath && path.join(process.resourcesPath, 'vendor')].filter(Boolean);
-  const envs = [pyenvPython(), ...vendors.map((v) => path.join(v, 'pyenv', 'Scripts', 'python.exe'))];   // the one Pomelo installs, then a developer's vendor/pyenv
+  const envs = [pyenvPython(), ...vendorRoots().map((v) => pyenvPython(v))];   // the one Pomelo installs, then a developer's vendor/pyenv
   return [...envs.filter((p) => fs.existsSync(p)), 'python', 'py'];
 }
 
@@ -61,13 +57,12 @@ const isNumber = (s) => /^-?(0|[1-9]\d{0,14})([.,]\d+)?$/.test(s);
 async function pdfToText({ src, to, dir, base, engines, onProgress }) {
   const opts = { timeout: timeoutFor(src), onLine: progressReader(onProgress) };
   if (to === 'epub') {
-    const tmp = tempPath('html');
-    try {
+    return withTempFile('html', async (tmp) => {
       await run(engines.pdf, ['-W', 'ignore', script('pdf_structure_run.py'), src, tmp, 'html'], opts);
       const out = uniquePath(dir, base, 'epub');
       await require('./epub').write(fs.readFileSync(tmp, 'utf8'), { title: base }, out);
       return [out];
-    } finally { fs.rmSync(tmp, { force: true }); }
+    });
   }
   const out = uniquePath(dir, base, to);
   const args = ['-W', 'ignore', script('pdf_structure_run.py'), src, out, to];
@@ -81,9 +76,7 @@ async function pdfToText({ src, to, dir, base, engines, onProgress }) {
 // text as real text boxes at the same places, fonts, sizes and colours, links included.
 async function pdfToPptx({ src, dir, base, engines, onProgress }) {
   const PptxGenJS = require('pptxgenjs');
-  const tmp = tempPath('d');
-  fs.mkdirSync(tmp);
-  try {
+  return withTempDir(async (tmp) => {
     await run(engines.pdf, ['-W', 'ignore', script('pdf_pptx_export.py'), src, tmp], { timeout: timeoutFor(src), onLine: progressReader(onProgress && ((f) => onProgress(f * 0.9))) });
     const layout = JSON.parse(fs.readFileSync(path.join(tmp, 'layout.json'), 'utf8'));
     const pages = layout.pages;
@@ -114,13 +107,12 @@ async function pdfToPptx({ src, dir, base, engines, onProgress }) {
     const out = uniquePath(dir, base, 'pptx');
     await pptx.writeFile({ fileName: out });
     return [out];
-  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  });
 }
 
 async function pdfToXlsx({ src, dir, base, engines, onProgress }) {
   const XLSX = require('xlsx');
-  const tmp = tempPath('json');
-  try {
+  return withTempFile('json', async (tmp) => {
     await run(engines.pdf, ['-W', 'ignore', script('pdf_tables_run.py'), src, tmp], { timeout: timeoutFor(src), onLine: progressReader(onProgress) });
     const tables = JSON.parse(fs.readFileSync(tmp, 'utf8'));
     if (!tables.length) throw new Error('This PDF has no text to put in a spreadsheet');
@@ -134,7 +126,7 @@ async function pdfToXlsx({ src, dir, base, engines, onProgress }) {
     const out = uniquePath(dir, base, 'xlsx');
     fs.writeFileSync(out, XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' }));
     return [out];
-  } finally { fs.rmSync(tmp, { force: true }); }
+  });
 }
 
 module.exports = {

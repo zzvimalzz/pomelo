@@ -8,10 +8,11 @@
 const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
-const { shownProgress, remaining, guessMs, middle } = require('./progress');
+const { extOf } = require('./formats');
+const { shownProgress, remaining, guessMs } = require('./progress');
+const { middleEllipsis } = require('../shared/core/text');
 
 const sizeOf = (file) => { try { const st = fs.statSync(file); return st.isFile() ? st.size : 0; } catch { return 0; } };
-const extOf = (file) => path.extname(file).slice(1).toLowerCase() || 'folder';
 
 class Jobs extends EventEmitter {
   // timings: learns how long each kind of conversion takes here (see progress.js); now: the clock, for tests.
@@ -192,7 +193,7 @@ function jobCard(j, jobs) {
   if (j.state === 'queued') return { id: j.id, state: 'working', ring: true, title: `Waiting to convert to ${j.label}`, detail: `${j.name} · 0%`, progress: 0, outPath: '' };
   if (j.state === 'working') {
     const m = jobs.measure(j);
-    const detail = [middle(j.name, 30), `${Math.round(m.value * 100)}%`, m.left].filter(Boolean).join(' · ');
+    const detail = [middleEllipsis(j.name, 30), `${Math.round(m.value * 100)}%`, m.left].filter(Boolean).join(' · ');
     return { id: j.id, state: 'working', ring: true, title: `Converting to ${j.label}…`, detail, progress: m.value, outPath: '' };
   }
   if (j.state === 'done') return { id: j.id, state: 'done', title: path.basename(j.outPath), detail: 'Saved next to the original · click to show', progress: null, outPath: j.outPath };

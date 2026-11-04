@@ -2,7 +2,10 @@
 // Built-in converters: no Office needed. Documents, spreadsheets, PDFs and images.
 const fs = require('fs');
 const path = require('path');
-const { uniquePath, tempPath, esc, readText } = require('../convert/util');
+const { uniquePath } = require('../convert/util');
+const { escapeHtml: esc } = require('../../shared/core/text');
+const { extsInGroup } = require('../formats');
+const { withTempFile, readText } = require('../../shared/node/fs');
 const pdf = require('./pdf');
 const epub = require('./epub');
 
@@ -43,20 +46,20 @@ function offlineSession() {
 
 async function htmlToPdf(html, out, { landscape = false } = {}) {
   const { BrowserWindow } = require('electron');
-  const file = tempPath('html');
-  fs.writeFileSync(file, html, 'utf8');
-  const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false, session: offlineSession() } });
-  try {
-    await win.loadFile(file);
-    const buf = await win.webContents.printToPDF({
-      pageSize: 'A4', landscape, printBackground: true, preferCSSPageSize: true,   // a document that states its own page size keeps it
-      margins: { top: 0.7, bottom: 0.7, left: 0.8, right: 0.8 },
-    });
-    fs.writeFileSync(out, buf);
-  } finally {
-    win.destroy();
-    fs.rmSync(file, { force: true });
-  }
+  await withTempFile('html', async (file) => {
+    fs.writeFileSync(file, html, 'utf8');
+    const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false, session: offlineSession() } });
+    try {
+      await win.loadFile(file);
+      const buf = await win.webContents.printToPDF({
+        pageSize: 'A4', landscape, printBackground: true, preferCSSPageSize: true,   // a document that states its own page size keeps it
+        margins: { top: 0.7, bottom: 0.7, left: 0.8, right: 0.8 },
+      });
+      fs.writeFileSync(out, buf);
+    } finally {
+      win.destroy();
+    }
+  });
 }
 
 // ---- PDF blocks -> text formats -------------------------------------------------------------
@@ -145,7 +148,7 @@ async function sourceToHtml(src, from) {
 }
 
 // ---- spreadsheets ---------------------------------------------------------------------------
-const SHEET_EXT = ['xlsx', 'xls', 'ods', 'csv', 'tsv'];
+const SHEET_EXT = extsInGroup('sheet');
 
 function readWorkbook(src, from) {
   const XLSX = require('xlsx');
@@ -350,7 +353,7 @@ const DOC_TO = {
   md: ['pdf', 'docx', 'html', 'txt', 'epub'], html: ['pdf', 'docx', 'md', 'txt', 'epub'], epub: ['pdf', 'docx', 'md', 'txt', 'html'],
 };
 const SHEET_TO = ['xlsx', 'xls', 'ods', 'csv', 'tsv', 'html', 'json', 'pdf'];
-const IMG_FROM = ['png', 'jpg', 'webp', 'bmp', 'gif', 'tiff', 'avif', 'svg', 'heic'];
+const IMG_FROM = extsInGroup('image');
 const IMG_TO = ['png', 'jpg', 'webp', 'avif', 'tiff', 'bmp', 'gif', 'pdf'];
 
 module.exports = {

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { AsyncLocalStorage } = require('async_hooks');
-const { execFile, execFileSync } = require('child_process');
+const { killOnAbort, runCapture } = require('../../shared/node/process');
 
 // Each conversion runs inside a context { signal, outputs }: a cancel signal that every helper process started
 // during it listens to, and the list of output paths it has chosen so far (so a cancelled or failed attempt can
@@ -25,90 +24,18 @@ function uniquePath(dir, base, ext) {
   return candidate;
 }
 
-function tempPath(ext) {
-  return path.join(os.tmpdir(), `pomelo-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`);
-}
-
-// Text file -> string: handles UTF-8/UTF-16 BOMs, and falls back to Windows-1252 for legacy files.
-function readText(file) {
-  const b = fs.readFileSync(file);
-  if (b[0] === 0xff && b[1] === 0xfe) return b.slice(2).toString('utf16le');
-  if (b[0] === 0xfe && b[1] === 0xff) return Buffer.from(b.slice(2)).swap16().toString('utf16le');
-  if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) return b.slice(3).toString('utf8');
-  try { return new TextDecoder('utf-8', { fatal: true }).decode(b); } catch { return new TextDecoder('windows-1252').decode(b); }
-}
-
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-// Every helper process we start, so quitting Pomelo mid-conversion does not leave LibreOffice, FFmpeg
-// or Python running in the background.
-const children = new Set();
-function track(child) {
-  children.add(child);
-  child.once('exit', () => children.delete(child));
-  return child;
-}
-
-// Kill a helper and everything it started (soffice.exe starts soffice.bin).
-const killTree = (child) => execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, () => {});
-
-function killAll() {
-  for (const child of children) {
-    try { execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch { /* already gone */ }
-  }
-  children.clear();
-}
-
 // Kill `child` if the current conversion is cancelled. Returns a function that stops listening.
-function killOnCancel(child) {
-  const signal = context.getStore()?.signal;
-  if (!signal) return () => {};
-  if (signal.aborted) { killTree(child); return () => {}; }
-  const onAbort = () => killTree(child);
-  signal.addEventListener('abort', onAbort, { once: true });
-  return () => signal.removeEventListener('abort', onAbort);
-}
+const killOnCancel = (child) => killOnAbort(child, context.getStore()?.signal);
 
 // Delete paths a conversion chose but did not finish (files or folders).
 function removeOutputs(paths) {
   for (const p of paths) { try { fs.rmSync(p, { recursive: true, force: true }); } catch { /* best effort */ } }
 }
 
-// Calls onLine(line) for every line a stream produces as it arrives (a carriage return ends a line too, which is how
-// console progress bars redraw themselves).
-function watchLines(stream, onLine) {
-  let rest = '';
-  stream.setEncoding('utf8');
-  stream.on('data', (chunk) => {
-    const parts = (rest + chunk).split(/\r\n|\r|\n/);
-    rest = parts.pop();
-    for (const line of parts) if (line) { try { onLine(line); } catch { /* a bad progress parser must never fail a conversion */ } }
-  });
+// Run a program inside the current conversion: resolves with its stdout, and cancelling the conversion kills it.
+async function run(cmd, args, opts) {
+  const signal = context.getStore()?.signal;
+  try { return await runCapture(cmd, args, { ...opts, signal }); } catch (e) { throw signal?.aborted ? new CancelledError() : e; }
 }
 
-// Run a program, resolve with its stdout. env: extra environment variables for the child.
-// onLine: called with each output line while the program runs (progress reports).
-function run(cmd, args, { timeout = 180000, cwd, env, onLine } = {}) {
-  if (context.getStore()?.signal?.aborted) return Promise.reject(new CancelledError());
-  return new Promise((resolve, reject) => {
-    let stop = () => {};
-    const child = execFile(cmd, args, { windowsHide: true, timeout, cwd, env: env && { ...process.env, ...env }, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
-      stop();
-      if (err) {
-        if (context.getStore()?.signal?.aborted) return reject(new CancelledError());
-        // pdf2docx and friends log progress to stderr; report the last real line instead of the first chatter
-        const lines = (stderr || stdout || err.message || '').toString().split('\n').map((l) => l.trim())
-          .filter((l) => l && !/^\[(INFO|WARNING)\]/.test(l));
-        const msg = lines[lines.length - 1] || err.message;
-        return reject(new Error(msg));
-      }
-      resolve(stdout.toString());
-    });
-    track(child);
-    stop = killOnCancel(child);
-    if (onLine) { watchLines(child.stdout, onLine); watchLines(child.stderr, onLine); }
-    child.on('error', reject);
-  });
-}
-
-module.exports = { uniquePath, tempPath, esc, run, readText, track, killAll, withContext, currentContext, killOnCancel, removeOutputs, CancelledError };
+module.exports = { uniquePath, run, withContext, currentContext, killOnCancel, removeOutputs, CancelledError };

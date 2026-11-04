@@ -65,7 +65,7 @@ for (const [file, src] of Object.entries(text)) {
   }
 }
 
-for (const file of files.filter((f) => f.includes(`${path.sep}src${path.sep}main${path.sep}`))) {
+for (const file of files.filter((f) => ['main', 'shared'].some((d) => f.includes(`${path.sep}src${path.sep}${d}${path.sep}`)))) {
   const { names, factories } = exportedNames(text[file]);
   const isEngine = file.includes(`${path.sep}engines${path.sep}`);
   for (const name of [...names, ...factories]) {

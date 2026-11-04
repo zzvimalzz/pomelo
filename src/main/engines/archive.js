@@ -9,7 +9,10 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
-const { run, tempPath, uniquePath } = require('../convert/util');
+const { run, uniquePath } = require('../convert/util');
+const { withTempDir, withTempFile } = require('../../shared/node/fs');
+const { bundled } = require('../../shared/node/paths');
+const { parsePercent } = require('../../shared/node/process');
 
 const BSDTAR = path.join(process.env.SystemRoot || 'C:/Windows', 'System32', 'tar.exe');
 const FROM = new Set(['zip', '7z', 'tar', 'gz', 'rar']);
@@ -18,7 +21,7 @@ const TO = new Set(['zip', '7z', 'tar', 'gz']);
 function detect() {
   try {
     const p = require('7zip-bin').path7za;
-    const unpacked = p && p.replace('app.asar', 'app.asar.unpacked');
+    const unpacked = p && bundled(p);
     return unpacked && fs.existsSync(unpacked) ? unpacked : null;
   } catch { return null; }
 }
@@ -26,7 +29,7 @@ function detect() {
 // 7-Zip prints "  42%" while it works (-bsp1 sends that to stdout); report(0..1) gets it.
 const sevenZip = (engines, args, { report, ...opts } = {}) => run(engines.sevenZip, ['-bsp1', '-y', ...args], {
   timeout: 3600000,
-  onLine: report && ((line) => { const m = /(?:^|\s)(\d{1,3})%/.exec(line); if (m) report(Math.min(100, +m[1]) / 100); }),
+  onLine: report && ((line) => { const p = parsePercent(line); if (p !== undefined) report(p); }),
   ...opts,
 });
 
@@ -74,19 +77,19 @@ function assertContained(root) {
 async function extract(src, from, dest, engines, report) {
   if (from === 'rar') {
     // tar.exe cannot open non-ASCII paths, so read a copy that has an ASCII name
-    const staged = tempPath('rar');
-    fs.copyFileSync(src, staged);
-    try { await run(BSDTAR, ['-xf', staged, '-C', dest], { timeout: 3600000 }); } finally { fs.rmSync(staged, { force: true }); }
+    await withTempFile('rar', async (staged) => {
+      fs.copyFileSync(src, staged);
+      await run(BSDTAR, ['-xf', staged, '-C', dest], { timeout: 3600000 });
+    });
     report?.(1);
   } else if (from === 'gz' && !(await gzIsTar(src))) {
     const name = path.basename(src).replace(/\.gz$/i, '') || 'file';
     await pipeline(watched(src, report), zlib.createGunzip(), fs.createWriteStream(path.join(dest, name)));
   } else if (from === 'gz') {
-    const tar = tempPath('tar');
-    try {
+    await withTempFile('tar', async (tar) => {
       await pipeline(watched(src, report && ((f) => report(f * 0.5))), zlib.createGunzip(), fs.createWriteStream(tar));
       await sevenZip(engines, ['x', `-o${dest}`, tar], { report: report && ((f) => report(0.5 + f * 0.5)) });
-    } finally { fs.rmSync(tar, { force: true }); }
+    });
   } else {
     await sevenZip(engines, ['x', `-o${dest}`, src], { report });             // zip, 7z, tar
   }
@@ -100,11 +103,10 @@ const safeName = (n) => (/^[-@]/.test(n) ? './' + n : n);
 async function compress(names, to, out, cwd, engines, report) {
   const list = names.map(safeName);
   if (to === 'gz') {                                                         // tar.gz
-    const tar = tempPath('tar');
-    try {
+    await withTempFile('tar', async (tar) => {
       await sevenZip(engines, ['a', '-ttar', tar, ...list], { cwd, report: report && ((f) => report(f * 0.5)) });
       await pipeline(watched(tar, report && ((f) => report(0.5 + f * 0.5))), zlib.createGzip({ level: 9 }), fs.createWriteStream(out));
-    } finally { fs.rmSync(tar, { force: true }); }
+    });
     return;
   }
   await sevenZip(engines, ['a', `-t${to}`, ...(to === 'tar' ? [] : ['-mx=5']), out, ...list], { cwd, report });
@@ -133,9 +135,7 @@ async function packFolder(src, to, outDir, base, engines, report) {
 // An archive -> a folder next to it. If everything sits inside one top-level folder, that folder is used
 // directly (photos.zip containing photos/ gives photos/, not photos/photos/).
 async function extractToFolder(src, from, outDir, base, engines, report) {
-  const work = tempPath('d');
-  fs.mkdirSync(work);
-  try {
+  return withTempDir(async (work) => {
     await extract(src, from, work, engines, report && ((f) => report(f * 0.9)));
     const entries = fs.readdirSync(work);
     if (!entries.length) throw new Error('The archive is empty');
@@ -143,7 +143,7 @@ async function extractToFolder(src, from, outDir, base, engines, report) {
     const out = uniquePath(outDir, single ? entries[0] : base, '');
     fs.cpSync(single ? path.join(work, entries[0]) : work, out, { recursive: true });
     return out;
-  } finally { fs.rmSync(work, { recursive: true, force: true }); }
+  });
 }
 
 module.exports = {
@@ -154,11 +154,9 @@ module.exports = {
   async run({ src, from, to, dir, base, engines, onProgress }) {
     if (to === 'folder') return [await extractToFolder(src, from, dir, base, engines, onProgress)];
     if (from === 'folder') return [await packFolder(src, to, dir, base, engines, onProgress)];
-    const work = tempPath('d');
-    fs.mkdirSync(work);
-    try {
+    return withTempDir(async (work) => {
       await extract(src, from, work, engines, onProgress && ((f) => onProgress(f * 0.5)));       // unpacking is the first half,
       return [await pack(work, to, dir, base, engines, onProgress && ((f) => onProgress(0.5 + f * 0.5)))];   // packing the second
-    } finally { fs.rmSync(work, { recursive: true, force: true }); }
+    });
   },
 };

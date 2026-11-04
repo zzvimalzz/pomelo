@@ -25,6 +25,12 @@ const GROUP_OF = {
   ...Object.fromEntries(AUDIO_SOURCES.map((e) => [e, 'audio'])),
 };
 
+// Every extension of a group, in the order GROUP_OF lists them.
+const extsInGroup = (group) => Object.keys(GROUP_OF).filter((e) => GROUP_OF[e] === group);
+
+// The Office formats LibreOffice opens and saves, by kind.
+const OFFICE = { doc: ['docx', 'doc', 'rtf', 'odt'], sheet: ['xlsx', 'xls', 'ods'], slide: ['pptx', 'ppt'] };
+
 const without = (list, ext) => list.filter((e) => e !== ext);
 
 // Preferred wheel order per source format. The wheel shows the first 8 that are actually possible.
@@ -125,4 +131,4 @@ function targetsForFiles(files, canConvert) {
   return common.slice(0, MAX_SEGMENTS).map((ext) => ({ id: ext, ext, label: labelOf(ext), sub: subOf(ext) }));
 }
 
-module.exports = { extOf, baseOf, groupOf, labelOf, targetsForFiles, ALIASES, TARGET_ORDER, VIDEO, AUDIO };
+module.exports = { extOf, baseOf, groupOf, labelOf, targetsForFiles, extsInGroup, ALIASES, TARGET_ORDER, VIDEO, VIDEO_SOURCES, AUDIO, AUDIO_SOURCES, OFFICE };

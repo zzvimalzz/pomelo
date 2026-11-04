@@ -12,11 +12,11 @@
 // Progress is reported as note(text, fraction): fraction (0..1, optional) is how far along this engine is.
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
-const { track } = require('./convert/util');
-const { enginesRoot, pyenvPython } = require('./enginesDir');
+const { removeDirReliably, dirBytes, sleep } = require('../shared/node/fs');
+const { runStatus, lastMeaningfulLine, parsePercent } = require('../shared/node/process');
+const { enginesRoot, pyenvPython, scriptPath } = require('../shared/node/paths');
 
-const WARMUP = path.join(__dirname, '..', '..', 'scripts', 'ocr_warmup.py');
+const WARMUP = scriptPath('ocr_warmup.py');
 
 const WINGET = {
   pandoc: { id: 'JohnMacFarlane.Pandoc', name: 'Pandoc' },
@@ -30,64 +30,13 @@ const PY_PACKAGES = ['pymupdf==1.28.2', 'python-docx', 'pillow-heif', 'rapidocr=
 const PACK = { pdf: 'python', pdf2docx: 'python', ocr: 'python', heic: 'python', soffice: 'soffice', pandoc: 'pandoc' };
 const WINGET_FLAGS = ['--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'];
 
-// Run a program; resolves { code, out } and never throws. onLine gets each line of output (for progress text).
-// verbatim: the arguments are passed exactly as written (msiexec wants TARGETDIR="C:\a path" with its own quotes).
-function exec(cmd, args, { onLine, timeout = 45 * 60 * 1000, verbatim = false } = {}) {
-  return new Promise((resolve) => {
-    let out = '';
-    let child;
-    try { child = track(spawn(cmd, args, { windowsHide: true, windowsVerbatimArguments: verbatim })); } catch (e) { return resolve({ code: -1, out: e.message }); }
-    const timer = setTimeout(() => child.kill(), timeout);
-    const feed = (d) => {
-      const text = d.toString();
-      out = (out + text).slice(-8000);
-      if (onLine) for (const line of text.split(/\r?\n|\r/)) if (/[A-Za-z]{3}/.test(line) || /\d\s*(%|[KMG]B)/.test(line)) onLine(line.trim());   // text, or a progress bar's numbers
-    };
-    child.stdout.on('data', feed);
-    child.stderr.on('data', feed);
-    child.on('error', (e) => { clearTimeout(timer); resolve({ code: -1, out: e.message }); });
-    child.on('close', (code) => { clearTimeout(timer); resolve({ code: code ?? -1, out }); });
-  });
-}
-
-const lastLine = (text) => text.split(/\r?\n/).map((l) => l.trim()).filter((l) => /[A-Za-z]{3}/.test(l)).pop() || 'unknown error';
-// How far a download is, from winget's "45%" or "123 MB / 359 MB" (0..1), or undefined when the line says nothing about it.
-const percentIn = (line) => {
-  const mb = /([\d.]+)\s*MB\s*\/\s*([\d.]+)\s*MB/i.exec(line);
-  if (mb && +mb[2] > 0) return Math.min(1, +mb[1] / +mb[2]);
-  const m = /(\d{1,3})\s*%/.exec(line);
-  return m ? Math.min(100, +m[1]) / 100 : undefined;
-};
-
-function dirBytes(dir) {
-  let total = 0;
-  try {
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      const p = path.join(dir, e.name);
-      total += e.isDirectory() ? dirBytes(p) : fs.statSync(p).size;
-    }
-  } catch { /* still being written */ }
-  return total;
-}
-
-// Windows can hold a folder for a moment after it is emptied (the virus scanner, the search indexer), so remove it, check
-// that it is really gone, and try again for a few seconds if not. Resolves whether it is gone.
-async function removeDir(dir) {
-  for (let attempt = 0; attempt < 14; attempt++) {
-    try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* try again below */ }
-    if (!fs.existsSync(dir)) return true;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  return false;
-}
-
 // %LOCALAPPDATA%\Pomelo is Pomelo's own folder: once the engines are gone it should not be left behind empty.
 // A folder with anything else in it stays.
 async function removeEmptyPomeloDir(dir) {
   if (!/^pomelo$/i.test(path.basename(dir))) return;
   for (let attempt = 0; attempt < 8; attempt++) {
     try { fs.rmdirSync(dir); return; } catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTEMPTY') return; }
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await sleep(500);
   }
 }
 
@@ -106,8 +55,13 @@ function pruneLibreOffice(dir) {
   }
 }
 
+// A result with code -1 and ENOENT means winget itself could not be started, as opposed to a package that failed to install.
+function wingetRan(r) {
+  if (r.code === -1 && /ENOENT/.test(r.out)) throw new Error('Windows Package Manager (winget) is not available on this PC');
+}
+
 // deps are replaceable so the logic can be tested without installing anything.
-function createInstaller({ root = enginesRoot(), run = exec, redetect = () => ({}) } = {}) {
+function createInstaller({ root = enginesRoot(), run = runStatus, redetect = () => ({}) } = {}) {
   const manifestFile = path.join(root, 'manifest.json');
   let busy = null;
 
@@ -137,9 +91,9 @@ function createInstaller({ root = enginesRoot(), run = exec, redetect = () => ({
 
   async function winget(entry, note) {
     note(`Installing ${entry.name}…`);
-    const r = await run('winget', ['install', '--id', entry.id, ...WINGET_FLAGS, ...(entry.args || [])], { onLine: (l) => note(`${entry.name}: ${l}`.slice(0, 90), percentIn(l)) });
-    if (r.code === -1 && /ENOENT/.test(r.out)) throw new Error('Windows Package Manager (winget) is not available on this PC');
-    if (r.code !== 0) throw new Error(`${entry.name} could not be installed: ${lastLine(r.out)}`);
+    const r = await run('winget', ['install', '--id', entry.id, ...WINGET_FLAGS, ...(entry.args || [])], { onLine: (l) => note(`${entry.name}: ${l}`.slice(0, 90), parsePercent(l)) });
+    wingetRan(r);
+    if (r.code !== 0) throw new Error(`${entry.name} could not be installed: ${lastMeaningfulLine(r.out)}`);
     record({ winget: { id: entry.id, name: entry.name } });
   }
 
@@ -147,15 +101,15 @@ function createInstaller({ root = enginesRoot(), run = exec, redetect = () => ({
   async function installLibreOffice(note) {
     const target = path.join(root, 'libreoffice');
     const downloads = path.join(root, 'downloads');
-    await removeDir(target);
-    await removeDir(downloads);
+    await removeDirReliably(target);
+    await removeDirReliably(downloads);
     fs.mkdirSync(downloads, { recursive: true });
     try {
       note('Downloading LibreOffice…', 0);
       const d = await run('winget', ['download', '--id', LIBREOFFICE, '--exact', '--skip-dependencies', '--download-directory', downloads, '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'],
-        { onLine: (l) => note(`LibreOffice: ${l}`.slice(0, 90), 0.25 * (percentIn(l) ?? 0)) });
-      if (d.code === -1 && /ENOENT/.test(d.out)) throw new Error('Windows Package Manager (winget) is not available on this PC');
-      if (d.code !== 0) throw new Error(`LibreOffice could not be downloaded: ${lastLine(d.out)}`);
+        { onLine: (l) => note(`LibreOffice: ${l}`.slice(0, 90), 0.25 * (parsePercent(l) ?? 0)) });
+      wingetRan(d);
+      if (d.code !== 0) throw new Error(`LibreOffice could not be downloaded: ${lastMeaningfulLine(d.out)}`);
       const msi = fs.readdirSync(downloads).find((f) => /\.msi$/i.test(f));
       if (!msi) throw new Error('LibreOffice could not be downloaded: no installer file was found');
 
@@ -169,9 +123,9 @@ function createInstaller({ root = enginesRoot(), run = exec, redetect = () => ({
       pruneLibreOffice(target);
       record({ soffice: true });
     } catch (e) {
-      await removeDir(target);                                                    // no half-unpacked copy left behind
+      await removeDirReliably(target);                                                    // no half-unpacked copy left behind
       throw e;
-    } finally { await removeDir(downloads); }
+    } finally { await removeDirReliably(downloads); }
   }
 
   async function installPython(note) {
@@ -184,17 +138,17 @@ function createInstaller({ root = enginesRoot(), run = exec, redetect = () => ({
     }
     const env = path.join(root, 'pyenv');
     try {
-      await removeDir(env);                                                          // an older environment (other package versions) is rebuilt, not patched
+      await removeDirReliably(env);                                                          // an older environment (other package versions) is rebuilt, not patched
       note('Creating a private Python environment…', 0.05);
       let r = await run(py, ['-m', 'venv', env]);
-      if (r.code !== 0) throw new Error(`Could not create the Python environment: ${lastLine(r.out)}`);
+      if (r.code !== 0) throw new Error(`Could not create the Python environment: ${lastMeaningfulLine(r.out)}`);
       record({ pyenv: true });
       note('Downloading the PDF, OCR and HEIC components…', 0.1);
       r = await run(pyenvPython(root), ['-m', 'pip', 'install', '--disable-pip-version-check', '--no-input', ...PY_PACKAGES], { onLine: (l) => note(l.slice(0, 90)) });
-      if (r.code !== 0) throw new Error(`Could not download the components: ${lastLine(r.out)}`);
+      if (r.code !== 0) throw new Error(`Could not download the components: ${lastMeaningfulLine(r.out)}`);
       note('Checking the components…', 0.85);
       r = await run(pyenvPython(root), ['-W', 'ignore', '-c', 'import pymupdf, docx, pillow_heif, rapidocr']);
-      if (r.code !== 0) throw new Error(`The components did not start: ${lastLine(r.out)}`);
+      if (r.code !== 0) throw new Error(`The components did not start: ${lastMeaningfulLine(r.out)}`);
       note('Downloading the text-recognition models…', 0.92);
       await run(pyenvPython(root), ['-W', 'ignore', WARMUP], { timeout: 10 * 60 * 1000 });     // best effort: a scan fetches them itself when it first needs them
     } catch (e) {
@@ -234,7 +188,7 @@ function createInstaller({ root = enginesRoot(), run = exec, redetect = () => ({
     let done = 0;
     const folder = async (dir, name) => {
       note(`Removing ${name}…`, done / steps);
-      (await removeDir(path.join(root, dir)) ? removed : failed).push(name);
+      (await removeDirReliably(path.join(root, dir)) ? removed : failed).push(name);
       done++;
     };
     if (hasPyenv) await folder('pyenv', 'PDF, OCR and HEIC components');
@@ -245,7 +199,7 @@ function createInstaller({ root = enginesRoot(), run = exec, redetect = () => ({
       (r.code === 0 ? removed : failed).push(w.name);
       done++;
     }
-    if (!failed.length) { await removeDir(root); await removeEmptyPomeloDir(path.dirname(root)); }
+    if (!failed.length) { await removeDirReliably(root); await removeEmptyPomeloDir(path.dirname(root)); }
     else writeManifest({ pyenv: m.pyenv && failed.includes('PDF, OCR and HEIC components'), soffice: m.soffice && failed.includes('LibreOffice'), winget: m.winget.filter((w) => failed.includes(w.name)) });   // keep what is still installed on the list
     return { removed, failed };
   }

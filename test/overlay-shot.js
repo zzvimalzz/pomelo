@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
 const { targetsForFiles } = require('../src/main/formats');
+const { middleEllipsis } = require('../src/shared/core/text');
 
 app.on('window-all-closed', () => {});
 // Without this, a window that another app covers on screen cannot be captured ("display surface not available").
@@ -32,13 +33,13 @@ app.whenReady().then(async () => {
     ['folder', { name: 'Project v1.2', ext: 'folder', group: 'folder', count: 1 }],
   ]) {
     const targets = targetsForFiles([file === 'folder' ? 'x.zip' : `x.${file}`], everything);
-    win.webContents.send('wheel:open', { info, targets });
+    win.webContents.send('wheel:open', { info: { ...info, name: middleEllipsis(info.name, 15) }, targets });
     await sleep(700);
     check(`${file}: ${await segments()} segments drawn (${targets.map((t) => t.id).join(', ')})`, (await segments()) === targets.length && targets.length >= 2);
     await shot(`wheel-${file}.png`);
   }
 
-  win.webContents.send('wheel:open', { info: { name: 'Quarterly report final.docx', ext: 'docx', group: 'doc', count: 1 }, targets: targetsForFiles(['x.docx'], everything) });
+  win.webContents.send('wheel:open', { info: { name: middleEllipsis('Quarterly report final.docx', 15), ext: 'docx', group: 'doc', count: 1 }, targets: targetsForFiles(['x.docx'], everything) });
   await sleep(700);
   check('dropping on a segment is allowed (copy)', (await dragover(330, 205)) === 'copy');
   await sleep(300);

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 const $ = (id) => document.getElementById(id);
-const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
 // What each optional engine does for the user. `install` ones get an Install button. (Shown in the Advanced view.)
 const ENGINES = [
@@ -13,7 +12,7 @@ const ENGINES = [
   { key: 'pandoc', name: 'Pandoc', role: 'Markdown, HTML, RTF and ODT', install: true },
 ];
 
-const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
+const { el } = window.pomeloUi;
 
 const failures = {};   // engine key -> why the last install failed
 
@@ -57,7 +56,7 @@ function render() {
   $('enabled').checked = settings.enabled;
   $('openAtLogin').checked = settings.openAtLogin;
   $('autoUpdate').checked = !!settings.autoUpdate;
-  $('keycap').textContent = cap(settings.key);
+  $('keycap').textContent = settings.key;
   for (const b of document.querySelectorAll('#key button')) b.setAttribute('aria-checked', String(b.dataset.key === settings.key));
   $('status').classList.toggle('off', !settings.enabled);
   $('statusText').textContent = settings.enabled ? 'Running' : 'Paused';

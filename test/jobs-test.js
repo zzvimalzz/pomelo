@@ -207,6 +207,18 @@ const titles = (jobs) => jobs.view().cards.map((x) => x.title);
     expect('and new conversions start fresh afterwards', jobs.view().cards.length === 1 && jobs.mode === 'stack');
   }
 
+  console.log('what is timed: the format, not how the file was spelled');
+  {
+    const recorded = [];
+    const { jobs, c } = make({ timings: { expected: () => 1000, record: (from, to) => recorded.push(`${from}>${to}`) } });
+    for (const f of ['C:/p/photo.JPEG', 'C:/p/scan.tif', 'C:/p/README']) jobs.addConversion(f, 'pdf', 'PDF');
+    await tick();
+    c.pending.forEach((p) => p.resolve());
+    await tick(); await tick();
+    expect('aliases and capitals are one format (jpeg is jpg, tif is tiff)', recorded.includes('jpg>pdf') && recorded.includes('tiff>pdf'), recorded.join(' '));
+    expect('a file with no extension is not taken for a folder', !recorded.includes('folder>pdf') && recorded.includes('>pdf'), recorded.join(' '));
+  }
+
   console.log(failed() ? `\n${failed()} failed` : '\nall passed');
   finish();
 })();

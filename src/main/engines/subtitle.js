@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Subtitles: SRT <-> VTT, and plain-text export. Pure JS.
 const fs = require('fs');
-const { uniquePath, readText } = require('../convert/util');
+const { uniquePath } = require('../convert/util');
+const { readText } = require('../../shared/node/fs');
 
 const TIME = /(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{1,3})/;
 

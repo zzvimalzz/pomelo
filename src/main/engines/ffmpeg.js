@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Video and audio through FFmpeg (the ffmpeg-static build, GPL-3.0+, or a system FFmpeg). Runs as a separate process.
 const fs = require('fs');
-const { spawn, execFile, execFileSync } = require('child_process');
-const { uniquePath, track, killOnCancel, currentContext, CancelledError } = require('../convert/util');
-const { VIDEO, AUDIO } = require('../formats');
-
-const VIDEO_SRC = new Set([...VIDEO, 'm4v', 'mpg', 'flv']);
-const AUDIO_SRC = new Set([...AUDIO, 'aac']);
+const { spawn, execFile } = require('child_process');
+const { uniquePath, killOnCancel, currentContext, CancelledError } = require('../convert/util');
+const { track } = require('../../shared/node/process');
+const { VIDEO, VIDEO_SOURCES, AUDIO, AUDIO_SOURCES } = require('../formats');
+const { bundled } = require('../../shared/node/paths');
+const { where } = require('../../shared/node/which');
 
 function detect() {
   try {
     const p = require('ffmpeg-static');
-    const unpacked = p && p.replace('app.asar', 'app.asar.unpacked');
+    const unpacked = p && bundled(p);
     if (unpacked && fs.existsSync(unpacked)) return unpacked;
   } catch { /* package not installed */ }
-  try { return execFileSync('where', ['ffmpeg.exe'], { windowsHide: true }).toString().split(String.fromCharCode(10))[0].trim() || null; } catch { return null; }
+  return where('ffmpeg.exe');
 }
 
 const EVEN = 'scale=trunc(iw/2)*2:trunc(ih/2)*2';                              // H.264 + yuv420p need even dimensions
@@ -62,8 +62,8 @@ module.exports = {
   detect,
   supports(from, to, engines) {
     if (!engines.ffmpeg || from === to || !ARGS[to]) return false;
-    if (VIDEO_SRC.has(from)) return VIDEO.includes(to) || to === 'gif' || AUDIO.includes(to);
-    if (AUDIO_SRC.has(from)) return AUDIO.includes(to);
+    if (VIDEO_SOURCES.includes(from)) return VIDEO.includes(to) || to === 'gif' || AUDIO.includes(to);
+    if (AUDIO_SOURCES.includes(from)) return AUDIO.includes(to);
     return false;
   },
   async run({ src, to, dir, base, engines, onProgress }) {

@@ -7,17 +7,18 @@
 // is never just spinning and a slow job is visibly slow.
 const fs = require('fs');
 const path = require('path');
+const { extsInGroup, OFFICE } = require('./formats');
 
 const MB = 1048576;
 
 // Rough first guesses (milliseconds), used until Pomelo has timed a conversion of that kind itself.
-const OFFICE = new Set(['docx', 'doc', 'rtf', 'odt', 'xlsx', 'xls', 'ods', 'pptx', 'ppt']);
-const PICTURE = new Set(['jpg', 'jpeg', 'png', 'webp', 'bmp', 'tiff', 'tif', 'avif', 'heic', 'gif', 'svg']);
+const OFFICE_EXT = new Set(Object.values(OFFICE).flat());
+const PICTURE = new Set(extsInGroup('image'));
 
 function guessMs(from, to, size) {
   const mb = size / MB;
   if (from === 'pdf') return 3000 + Math.min(size / 70000, 400) * 1000;              // about a second a page
-  if (OFFICE.has(from) || OFFICE.has(to)) return 6000 + mb * 3000;                  // LibreOffice starts slowly
+  if (OFFICE_EXT.has(from) || OFFICE_EXT.has(to)) return 6000 + mb * 3000;                  // LibreOffice starts slowly
   if (PICTURE.has(from)) return 800 + mb * 600;
   return 1500 + mb * 1000;
 }
@@ -82,6 +83,4 @@ function remaining({ reported, elapsed, expected, previous }) {
   return { ms, text: timeLeft(ms) };
 }
 
-const middle = (s, max) => (s.length <= max ? s : `${s.slice(0, Math.ceil((max - 1) * 0.6))}…${s.slice(s.length - Math.floor((max - 1) * 0.4))}`);
-
-module.exports = { Timings, shownProgress, remaining, guessMs, middle };
+module.exports = { Timings, shownProgress, remaining, guessMs };
