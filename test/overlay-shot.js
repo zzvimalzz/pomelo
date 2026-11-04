@@ -8,10 +8,12 @@ const sharp = require('sharp');
 const { targetsForFiles } = require('../src/main/formats');
 
 app.on('window-all-closed', () => {});
+// Without this, a window that another app covers on screen cannot be captured ("display surface not available").
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 const out = path.join(__dirname, 'shots');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-let bad = 0;
-const check = (name, ok, extra = '') => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
+const { expect: check, failed } = require('./support/expect');
+const finish = require('./support/finish');
 
 app.whenReady().then(async () => {
   fs.mkdirSync(out, { recursive: true });
@@ -48,6 +50,6 @@ app.whenReady().then(async () => {
   await sleep(300);
   check('after closing, nothing can be dropped (no stale segments)', (await dragover(330, 205)) === 'none');
 
-  console.log(bad ? `\n${bad} failed` : '\nall passed');
-  app.exit(bad ? 1 : 0);
-});
+  console.log(failed() ? `\n${failed()} failed` : '\nall passed');
+  finish();
+}).catch((e) => { console.error(e); finish(2); });

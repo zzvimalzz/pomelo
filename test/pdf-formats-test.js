@@ -10,8 +10,9 @@ const JSZip = require('jszip');
 const XLSX = require('xlsx');
 const convert = require('../src/main/convert');
 
-let failures = 0;
-const expect = (name, ok, extra = '') => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
+const { expect, failed } = require('./support/expect');
+const finish = require('./support/finish');
+const tmp = require('./support/tmp');
 
 // A two-page PDF: a title, a paragraph with a link, bullets, a ruled table, a coloured banner with white text, a picture.
 const MAKE_PDF = `
@@ -56,7 +57,7 @@ const fresh = (name, ext) => path.join(os.tmpdir(), `pomelo-fmt-${process.pid}-$
 (async () => {
   const engines = convert.detectEngines();
   if (!engines.pdf) { console.log('PDF engine not installed: skipped'); return; }
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pomelo-formats-'));
+  const dir = tmp.dir('formats');
   const py = (code, ...args) => { const f = path.join(dir, `m${Math.random().toString(36).slice(2)}.py`); fs.writeFileSync(f, code); execFileSync(engines.pdf, ['-W', 'ignore', f, ...args], { windowsHide: true }); };
   const pdf = path.join(dir, 'report.pdf');
   const plain = path.join(dir, 'note.pdf');
@@ -130,8 +131,7 @@ p.insert_image(p.rect, pixmap=pix); doc.save(sys.argv[1])`, scan);
   expect('a clear message, not an empty file', /no text|OCR component/i.test(message), message);
   expect('and nothing was left behind', !fs.existsSync(path.join(dir, 'scan.md')) && !fs.existsSync(path.join(dir, 'scan_images')));
 
-  fs.rmSync(dir, { recursive: true, force: true });
   for (const f of [fresh('x', 'x')]) fs.rmSync(f, { force: true });
-  console.log(failures ? `\n${failures} failed` : '\nall good');
-  process.exit(failures ? 1 : 0);
-})().catch((e) => { console.error(e); process.exit(1); });
+  console.log(failed() ? `\n${failed()} failed` : '\nall good');
+  finish();
+})().catch((e) => { console.error(e); finish(1); });

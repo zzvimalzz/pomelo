@@ -36,8 +36,8 @@ ipcMain.handle('app:uninstall', async () => { uninstalls.push(1); await sleep(20
 ipcMain.handle('updates:check', async () => { await sleep(250); return nextUpdate; });
 ipcMain.handle('updates:download', (_e, url) => { downloads.push(url); return { ok: true }; });
 
-let bad = 0;
-const check = (name, ok, extra = '') => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
+const { expect: check, failed } = require('./support/expect');
+const finish = require('./support/finish');
 const js = (win, code) => win.webContents.executeJavaScript(code);
 const shot = async (win, name) => fs.writeFileSync(path.join(out, name), (await win.webContents.capturePage()).toPNG());
 const dims = (win) => js(win, `({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, sh: document.documentElement.scrollHeight, ch: document.documentElement.clientHeight })`);
@@ -92,8 +92,8 @@ app.whenReady().then(async () => {
       await js(win, `document.getElementById('advToggle').click()`);
       await sleep(900);
       const d = await dims(win);
-      const ui = await js(win, `({ shown: !document.getElementById('advanced').hidden, rows: document.querySelectorAll('#engines .engine').length, label: document.getElementById('advToggle').textContent, log: !!document.getElementById('logs').offsetParent, open: document.getElementById('enginesBox').open, listShown: !!document.getElementById('engines').offsetParent, summary: document.getElementById('engineSummary').textContent })`);
-      check(`${theme}/${scenario}: shows ${ui.rows} engines + log, button says "${ui.label}"`, ui.shown && ui.rows === 6 && ui.log && ui.label === 'Hide advanced');
+      const ui = await js(win, `({ shown: !document.getElementById('advanced').hidden, rows: document.querySelectorAll('#engines .engine').length, expected: ENGINES.length, label: document.getElementById('advToggle').textContent, log: !!document.getElementById('logs').offsetParent, open: document.getElementById('enginesBox').open, listShown: !!document.getElementById('engines').offsetParent, summary: document.getElementById('engineSummary').textContent })`);
+      check(`${theme}/${scenario}: shows ${ui.rows} engines + log, button says "${ui.label}"`, ui.shown && ui.rows === ui.expected && ui.log && ui.label === 'Hide advanced');
       check(`${theme}/${scenario}: the engines list starts closed, with its summary ("${ui.summary}") still visible`, !ui.open && /ready/.test(ui.summary));
       check(`${theme}/${scenario}: never scrolls sideways (${win.getContentBounds().height}px tall, content ${d.sh}px)`, d.sw <= d.cw);
       await shot(win, `settings-${theme}-${scenario}-advanced.png`);
@@ -104,8 +104,8 @@ app.whenReady().then(async () => {
         check('Copy puts version, Windows and engine info on the clipboard', /Pomelo 0\.1\.0/.test(text) && /Windows 10/.test(text) && /FFmpeg/.test(text) && /LibreOffice/.test(text), JSON.stringify(text.slice(0, 120)));
         await js(win, `document.querySelector('#enginesBox > summary').click()`);
         await sleep(500);
-        const opened = await js(win, `({ open: document.getElementById('enginesBox').open, listShown: !!document.getElementById('engines').offsetParent, rows: [...document.querySelectorAll('#engines .engine')].filter((r) => r.offsetParent).length })`);
-        check('clicking the Conversion engines header opens the list', opened.open && opened.listShown && opened.rows === 6, JSON.stringify(opened));
+        const opened = await js(win, `({ open: document.getElementById('enginesBox').open, listShown: !!document.getElementById('engines').offsetParent, rows: [...document.querySelectorAll('#engines .engine')].filter((r) => r.offsetParent).length, expected: ENGINES.length })`);
+        check('clicking the Conversion engines header opens the list', opened.open && opened.listShown && opened.rows === opened.expected, JSON.stringify(opened));
         await shot(win, `settings-${theme}-${scenario}-advanced-open.png`);
         await js(win, `document.querySelector('#enginesBox > summary').click()`);
         await sleep(300);
@@ -129,8 +129,9 @@ app.whenReady().then(async () => {
     await js(win, `document.getElementById('enginesBox').open = true`);      // the list starts closed
     await sleep(800);
     const rows = () => js(win, `[...document.querySelectorAll('#engines .engine')].map((r) => ({ name: r.querySelector('.name').textContent, chip: r.querySelector('.chip').textContent, button: r.querySelector('button.chip') ? !r.querySelector('button.chip').disabled : null, role: r.querySelector('.role').textContent }))`);
+    const installable = await js(win, `ENGINES.filter((e) => e.install).map((e) => e.name)`);
     let r = await rows();
-    check('missing optional engines say "Install", not "Ready"', ['PDF fidelity', 'HEIC export', 'LibreOffice', 'Pandoc'].every((n) => r.find((x) => x.name === n).chip === 'Install'), r.map((x) => `${x.name}:${x.chip}`).join(' '));
+    check('missing optional engines say "Install", not "Ready"', installable.every((n) => r.find((x) => x.name === n).chip === 'Install'), r.map((x) => `${x.name}:${x.chip}`).join(' '));
     check('FFmpeg (ships with Pomelo) is not an Install button', r.find((x) => x.name === 'FFmpeg').button === null);
     await shot(win, 'settings-engines-install.png');
     await js(win, `[...document.querySelectorAll('#engines .engine')].find((r) => r.querySelector('.name').textContent === 'Pandoc').querySelector('button').click()`);
@@ -235,6 +236,6 @@ app.whenReady().then(async () => {
   await shot(win, 'settings-long-page.png');
   win.close();
 
-  console.log(bad ? `\n${bad} failed` : '\nall passed');
-  app.exit(bad ? 1 : 0);
-});
+  console.log(failed() ? `\n${failed()} failed` : '\nall passed');
+  finish();
+}).catch((e) => { console.error(e); finish(2); });

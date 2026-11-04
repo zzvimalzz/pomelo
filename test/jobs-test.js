@@ -2,8 +2,8 @@
 // Logic tests for the toast stack and the "Converting 1/4 files" summary.   node test/jobs-test.js
 const { Jobs } = require('../src/main/jobs');
 
-let failures = 0;
-const expect = (name, ok, extra = '') => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
+const { expect, failed } = require('./support/expect');
+const finish = require('./support/finish');
 const tick = () => new Promise((r) => setImmediate(r));
 
 // A convert function whose jobs finish only when the test says so.
@@ -207,6 +207,6 @@ const titles = (jobs) => jobs.view().cards.map((x) => x.title);
     expect('and new conversions start fresh afterwards', jobs.view().cards.length === 1 && jobs.mode === 'stack');
   }
 
-  console.log(failures ? `\n${failures} failed` : '\nall passed');
-  process.exit(failures ? 1 : 0);
+  console.log(failed() ? `\n${failed()} failed` : '\nall passed');
+  finish();
 })();

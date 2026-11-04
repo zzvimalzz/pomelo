@@ -5,10 +5,17 @@
 #      conversion engines folder are kept
 #   3. the uninstaller removes the program, its settings and the engines folder
 # Needs Inno Setup 6.3+ (ISCC) and a packaged app (npm run package, then npm run build:installer for the new Setup).
-#   pwsh tools/installer-e2e.ps1 [-New dist\installer\Pomelo-Setup-x64.exe]
+# It installs and uninstalls Pomelo for real and deletes %APPDATA%\Pomelo and %LOCALAPPDATA%\Pomelo\engines, so it runs only on a
+# CI runner ($env:CI is set) or when -IUnderstand is passed.
+#   pwsh tools/installer-e2e.ps1 [-New dist\installer\Pomelo-Setup-x64.exe] [-IUnderstand]
 param(
-  [string]$New = (Join-Path $PSScriptRoot '..\dist\installer\Pomelo-Setup-x64.exe')
+  [string]$New = (Join-Path $PSScriptRoot '..\dist\installer\Pomelo-Setup-x64.exe'),
+  [switch]$IUnderstand
 )
+if (-not $env:CI -and -not $IUnderstand) {
+  Write-Host 'Refusing to run: this test installs and uninstalls Pomelo for real and deletes %APPDATA%\Pomelo and %LOCALAPPDATA%\Pomelo\engines. Run it on a throwaway CI runner, or pass -IUnderstand.'
+  exit 1
+}
 $ErrorActionPreference = 'Stop'
 trap { Write-Host "::error title=installer test crashed::$($_.Exception.Message) at line $($_.InvocationInfo.ScriptLineNumber)"; exit 1 }
 $root = Split-Path -Parent $PSScriptRoot

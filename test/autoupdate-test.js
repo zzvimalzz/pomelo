@@ -2,8 +2,8 @@
 // "Check automatically": checks when it is on and due, tells the user once per version, never downloads.   node test/autoupdate-test.js
 const { AutoUpdate, DAY } = require('../src/main/autoUpdate');
 
-let failures = 0;
-const expect = (name, ok, extra = '') => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
+const { expect, failed } = require('./support/expect');
+const finish = require('./support/finish');
 const tick = () => new Promise((r) => setImmediate(r));
 
 // A clock and a set of timers the test drives by hand.
@@ -94,6 +94,6 @@ const NEW = (v) => ({ state: 'available', latest: v, url: `https://github.com/o/
     expect('and forgotten when up to date', r.au.available === null);
   }
 
-  console.log(failures ? `\n${failures} failed` : '\nall good');
-  process.exit(failures ? 1 : 0);
+  console.log(failed() ? `\n${failed()} failed` : '\nall good');
+  finish();
 })();

@@ -12,8 +12,8 @@ const routes = {
   '/bad-json': { unexpected: true },
 };
 
-let failures = 0;
-const expect = (name, ok, extra = '') => { if (!ok) failures++; console.log(`${ok ? '  ok  ' : '  FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
+const { expect, failed } = require('./support/expect');
+const finish = require('./support/finish');
 
 app.whenReady().then(async () => {
   const server = http.createServer((req, res) => {
@@ -30,7 +30,8 @@ app.whenReady().then(async () => {
   const check = (p, current = '0.1.0') => updater.check({ feed: base + p, current });
 
   console.log('version comparison');
-  for (const [a, b, want] of [['1.0.0', '1.0.0', 0], ['1.0.1', '1.0.0', 1], ['0.9.9', '1.0.0', -1], ['v2.0', '1.9.9', 1], ['1.10.0', '1.9.0', 1], ['1.0.0-beta.1', '1.0.0', 0]]) {
+  for (const [a, b, want] of [['1.0.0', '1.0.0', 0], ['1.0.1', '1.0.0', 1], ['0.9.9', '1.0.0', -1], ['v2.0', '1.9.9', 1], ['1.10.0', '1.9.0', 1],
+    ['1.0.0-beta.1', '1.0.0', 0]]) {   // known behaviour, not a goal: SemVer ranks a pre-release below its release (-1). Flip this when compareVersions is made SemVer-correct
     expect(`${a} vs ${b}`, updater.compareVersions(a, b) === want);
   }
 
@@ -57,6 +58,6 @@ app.whenReady().then(async () => {
   }
 
   server.close();
-  console.log(failures ? `\n${failures} failed` : '\nall passed');
-  app.exit(failures ? 1 : 0);
+  console.log(failed() ? `\n${failed()} failed` : '\nall passed');
+  finish();
 });

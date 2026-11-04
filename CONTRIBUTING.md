@@ -18,11 +18,15 @@ npm start
 
 ```bash
 npm run check          # ESLint plus a scan for unused exports and IPC channels
-npm test               # job logic, updater, the full conversion matrix, edge cases
-npm run test:ui        # wheel, toast and settings window (opens real windows)
+npm test               # job logic, updater, routing snapshot, the full conversion matrix, edge cases
+npm run test:ui        # wheel, toast and settings window (opens real windows; leave the mouse alone)
 ```
 
-Tests that need an engine you have not installed (for example LibreOffice) are skipped, not failed.
+`test/run.js` is the one list of suites. `node test/run.js --tier=unit` takes a second; `--only=jobs,matrix` picks suites by name; `--junit=<file>` writes a JUnit report. A suite that hangs is killed at its time limit and counted as failed.
+
+Tests that need an engine you have not installed (for example LibreOffice) are skipped, not failed. The summary counts the skips: a skip is not a pass.
+
+The routing snapshot (`test/unit/conversion/routing.snapshot.json`) pins which engine handles each conversion. If you change routing on purpose, run `node test/unit/conversion/routing.test.js --update` and review the diff.
 
 ## Where things live
 

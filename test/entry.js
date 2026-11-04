@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Runs the conversion matrix inside Electron (printToPDF / nativeImage need it).  npm test
-//   npm test -- --only=mp4,pdf      only these source formats
+// Runs the conversion matrix inside Electron (printToPDF / nativeImage need it).  npx electron test/entry.js
+//   npx electron test/entry.js --only=mp4,pdf      only these source formats
 const { app } = require('electron');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
 const { spawnSync } = require('child_process');
 const convert = require('../src/main/convert');
 const { TARGET_ORDER, extOf } = require('../src/main/formats');
 const pdf = require('../src/main/engines/pdf');
+const finish = require('./support/finish');
+const tmp = require('./support/tmp');
 
 const MARK = 'Pomelo converts files';
 const SUB = 'Hello subtitles';
@@ -169,7 +170,7 @@ app.on('window-all-closed', () => {});   // hidden print windows come and go; do
   await app.whenReady();
   const eng = convert.detectEngines();
   console.log('engines:', JSON.stringify(eng));
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pomelo-test-'));
+  const dir = tmp.dir('test');
   await makeFixtures(dir);
   const files = fs.readdirSync(dir).filter((n) => fs.statSync(path.join(dir, n)).isFile());
   console.log('fixtures:', files.join(', '), '\n');
@@ -184,15 +185,15 @@ app.on('window-all-closed', () => {});   // hidden print windows come and go; do
       try {
         const outs = await convert.convertFile(path.join(dir, name), to);
         const textOut = await validate(outs[0], to, from);
-        if (typeof textOut === 'string' && /report|readme|notes|page/.test(name) && !/legacy.*pdf/.test(name) && to !== 'png' && !textOut.includes('Pomelo')) throw new Error(`missing text in output: "${textOut.slice(0, 60)}"`);
-        if (['txt', 'md', 'html'].includes(to) && /^(report|readme|notes|page|legacy|doc)\./.test(name) && !fs.readFileSync(outs[0], 'utf8').includes('Pomelo')) throw new Error('missing text in output');
+        // validate() hands back the text of pdf and docx outputs; the plain-text formats are read here
+        const outText = typeof textOut === 'string' ? textOut : ['txt', 'md', 'html'].includes(to) ? fs.readFileSync(outs[0], 'utf8') : null;
+        if (outText !== null && /^(report|readme|notes|page|legacy|doc)\./.test(name) && !outText.includes('Pomelo')) throw new Error(`missing text in output: "${outText.slice(0, 60)}"`);
         if (['csv', 'html', 'json'].includes(to) && /^(book|data|old|open)\.(xlsx|xls|ods|csv|tsv)$/.test(name) && !fs.readFileSync(outs[0], 'utf8').includes('Widget')) throw new Error('missing cell data');
         if (to === 'epub') { const book = await require('../src/main/engines/epub').read(outs[0]).catch(() => null); if (book && /^(report|readme|notes|page)\./.test(name) && !book.body.includes('Pomelo')) throw new Error('missing text in epub'); }
         if (to === 'xlsx' && name === 'grid.pdf') { const wb = require('xlsx').readFile(outs[0]); if (!require('xlsx').utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]).includes('Widget,42')) throw new Error('table cells wrong'); }
         pass++;
         console.log(`  ok  ${name.padEnd(16)} -> ${to.padEnd(5)} ${String(Date.now() - t0).padStart(5)}ms  ${outs.length > 1 ? outs.length + ' files' : path.basename(outs[0])}`);
       } catch (e) {
-        if (to === 'xlsx' && name === 'doc.pdf' && /No tables were found/.test(e.message)) { console.log(`  skip ${name.padEnd(16)} -> xlsx  (this fixture has no detectable table; grid.pdf covers it)`); continue; }
         fails.push(`${name} -> ${to}: ${e.message}`);
         console.log(`  FAIL ${name.padEnd(16)} -> ${to.padEnd(5)} ${e.message}`);
       }
@@ -220,8 +221,9 @@ app.on('window-all-closed', () => {});   // hidden print windows come and go; do
     }
   }
 
-  console.log(`\n${pass} passed, ${fails.length} failed   (outputs in ${dir})`);
+  console.log(`\n${pass} passed, ${fails.length} failed`);
   if (skipped.size) console.log('not available (missing engine): ' + [...skipped].join(', '));
   fails.forEach((f) => console.log('  - ' + f));
-  app.exit(fails.length ? 1 : 0);
-})().catch((e) => { console.error(e); app.exit(2); });
+  require('sharp').cache(false);   // libvips keeps the images it read open, and Windows will not delete an open file
+  finish(fails.length ? 1 : 0);
+})().catch((e) => { console.error(e); finish(2); });

@@ -5,19 +5,19 @@ const { app } = require('electron');
 const { EventEmitter } = require('events');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const convert = require('../src/main/convert');
 const { Trigger } = require('../src/main/trigger');
 const { Overlay } = require('../src/main/overlay');
 
 app.on('window-all-closed', () => {});
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-let bad = 0;
-const check = (name, ok, extra = '') => { if (!ok) bad++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
+const { expect: check, failed } = require('./support/expect');
+const finish = require('./support/finish');
+const tmp = require('./support/tmp');
 
 app.whenReady().then(async () => {
   convert.detectEngines();
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pomelo-pipe-'));
+  const dir = tmp.dir('pipe');
   const file = path.join(dir, 'report.docx');
   fs.writeFileSync(file, 'x');
 
@@ -72,6 +72,6 @@ app.whenReady().then(async () => {
   send('md', '500', '500'); send('mm', '530', '530'); await sleep(100); send('kd', 'ctrl'); await sleep(500);
   check('stays silent', events.length === 0); send('mu');
 
-  console.log(bad ? `\n${bad} failed` : '\nall passed');
-  app.exit(bad ? 1 : 0);
-});
+  console.log(failed() ? `\n${failed()} failed` : '\nall passed');
+  finish();
+}).catch((e) => { console.error(e); finish(2); });

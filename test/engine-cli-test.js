@@ -5,8 +5,8 @@ const os = require('os');
 const path = require('path');
 const { parse, run, fileProgress } = require('../src/main/engineCli');
 
-let failures = 0;
-const expect = (name, ok, extra = '') => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
+const { expect, failed } = require('./support/expect');
+const finish = require('./support/finish');
 
 // A fake installer: `failing` lists the engine keys that fail.
 const fake = (failing = [], removalFails = []) => {
@@ -73,6 +73,6 @@ const fake = (failing = [], removalFails = []) => {
   code = await run({ action: 'uninstall' }, { installer: fake([], ['Pandoc']), setLoginItem: () => {}, say: (l) => said.push(l) });
   expect('a removal that fails is reported, exit code 1', code === 1 && said.some((l) => /Could not remove Pandoc/.test(l)));
 
-  console.log(failures ? `\n${failures} failed` : '\nall passed');
-  process.exit(failures ? 1 : 0);
+  console.log(failed() ? `\n${failed()} failed` : '\nall passed');
+  finish();
 })();

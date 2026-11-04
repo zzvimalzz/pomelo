@@ -1,0 +1,15 @@
+{
+  "generatedFrom": "270a794",
+  "note": "PDF to Word score per sample, 0 to 1, from node test/fidelity/run.js (the DOCX printed back with LibreOffice and compared with the PDF). Made with LibreOffice, Pandoc and OCR present.",
+  "scores": {
+    "brochure": 0.8527,
+    "form": 0.9707,
+    "invoice": 0.7975,
+    "letter": 0.9756,
+    "manual": 0.8858,
+    "multilingual": 0.9632,
+    "paper": 0.8454,
+    "report": 0.9072,
+    "slides": 0.9897
+  }
+}

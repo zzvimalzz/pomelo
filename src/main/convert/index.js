@@ -56,17 +56,17 @@ const CHAINS = [
   { from: ['pdf'], to: ['doc', 'odt', 'rtf'], via: 'docx', first: [pdfhifi, pure], second: [soffice] },
 ];
 
-function plansFor(from, to) {
+function plansFor(from, to, available = engines) {
   // pdf -> docx/md/xlsx: the Python engines keep fonts, colours, tables and structure; the built-in extractor is the fallback
   const order = from === 'pdf' ? [pdfhifi, soffice, pure]
     : FIDELITY.has(to) ? [soffice, pandoc, pure] : [pandoc, pure, soffice];
   const direct = [ffmpeg, heic, subtitle, archive, ...order];
-  const plans = direct.filter((e) => e.supports(from, to, engines)).map((e) => [{ engine: e, from, to }]);
+  const plans = direct.filter((e) => e.supports(from, to, available)).map((e) => [{ engine: e, from, to }]);
   for (const c of CHAINS) {
     if (!c.from.includes(from) || !c.to.includes(to)) continue;
     for (const a of c.first) {
       for (const b of c.second) {
-        if (a.supports(from, c.via, engines) && b.supports(c.via, to, engines)) plans.push([{ engine: a, from, to: c.via }, { engine: b, from: c.via, to }]);
+        if (a.supports(from, c.via, available) && b.supports(c.via, to, available)) plans.push([{ engine: a, from, to: c.via }, { engine: b, from: c.via, to }]);
       }
     }
   }
@@ -126,4 +126,4 @@ async function convertFile(src, to, { onProgress, signal } = {}) {
 
 const getEngines = () => engines;
 
-module.exports = { detectEngines, getEngines, canConvert, targetsFor, convertFile, CancelledError };
+module.exports = { detectEngines, getEngines, canConvert, targetsFor, convertFile, plansFor };

@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Engine installer and uninstaller logic with a fake command runner (nothing is installed).   node test/installer-test.js
-// Add --real to also build the private Python environment for real in a temp folder (needs Python 3.9+, downloads ~60 MB).
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { createInstaller } = require('../src/main/engineInstaller');
 
-let failures = 0;
-const expect = (name, ok, extra = '') => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'pomelo-inst-'));
+const { expect, failed } = require('./support/expect');
+const finish = require('./support/finish');
+const { dir: tmpDir } = require('./support/tmp');
+const tmp = () => tmpDir('inst');
 const touch = (p) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, ''); };
 
 // A runner that records every call. `script(cmd, args)` may return { code, out } to override the default success.
@@ -211,16 +210,6 @@ function fake(script = () => null) {
     expect('a package that will not uninstall stays on the list for next time', r.failed.join() === 'One' && r.removed.join() === 'Two' && inst.readManifest().winget.map((w) => w.name).join() === 'One');
   }
 
-  if (process.argv.includes('--real')) {
-    console.log('real private Python environment');
-    const root = tmp();
-    const inst = createInstaller({ root, redetect: () => ({ pdf: 'ok', ocr: 'ok', heic: 'ok' }) });
-    const r = await inst.install('pdf', (n) => process.stdout.write(`    ${n}\n`));
-    expect('creates the environment and the packages import', r.ok && fs.existsSync(path.join(root, 'pyenv', 'Scripts', 'python.exe')), r.message || '');
-    const u = await inst.uninstall();
-    expect('and removes it again', !fs.existsSync(root) && u.failed.length === 0, JSON.stringify(u));
-  }
-
-  console.log(failures ? `\n${failures} failed` : '\nall passed');
-  process.exit(failures ? 1 : 0);
+  console.log(failed() ? `\n${failed()} failed` : '\nall passed');
+  finish();
 })();

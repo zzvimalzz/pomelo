@@ -50,5 +50,4 @@ module.exports = {
     fs.writeFileSync(out, body, 'utf8');
     return [out];
   },
-  parse,
 };

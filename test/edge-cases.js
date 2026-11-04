@@ -3,7 +3,6 @@
 //   npx electron test/edge-cases.js
 const { app } = require('electron');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const http = require('http');
 const sharp = require('sharp');
@@ -12,8 +11,9 @@ const pdf = require('../src/main/engines/pdf');
 const { Jobs } = require('../src/main/jobs');
 
 app.on('window-all-closed', () => {});
-let failures = 0;
-const expect = (name, ok, extra = '') => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
+const { expect, failed } = require('./support/expect');
+const finish = require('./support/finish');
+const tmp = require('./support/tmp');
 const within = (ms, promise) => Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error(`still running after ${ms / 1000}s`)), ms))]);
 const ORANGE = (r, g, b) => r > 220 && g > 100 && g < 180 && b < 80;
 
@@ -27,7 +27,7 @@ async function pdfHasOrange(file) {
 
 app.whenReady().then(async () => {
   convert.detectEngines();
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pomelo-edge-'));
+  const dir = tmp.dir('edge');
   const f = (n) => path.join(dir, n);
   const { Document, Packer, Paragraph } = require('docx');
   const png = await sharp({ create: { width: 160, height: 100, channels: 3, background: { r: 255, g: 138, b: 31 } } }).png().toBuffer();
@@ -125,6 +125,7 @@ app.whenReady().then(async () => {
     expect('a cancelled job shows no card', cjobs.view().cards.length === 0);
   }
 
-  console.log(failures ? `\n${failures} failed` : '\nall passed');
-  app.exit(failures ? 1 : 0);
+  console.log(failed() ? `\n${failed()} failed` : '\nall passed');
+  sharp.cache(false);   // libvips keeps the clips it read open, and Windows will not delete an open file
+  finish();
 });

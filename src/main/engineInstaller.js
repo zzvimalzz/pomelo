@@ -250,7 +250,7 @@ function createInstaller({ root = enginesRoot(), run = exec, redetect = () => ({
     return { removed, failed };
   }
 
-  return { install, uninstall, readManifest, busy: () => busy };
+  return { install, uninstall, readManifest };
 }
 
 module.exports = { createInstaller, PACK };

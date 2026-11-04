@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Dev tool: render a .docx to page PNGs (LibreOffice -> PDF -> pdf.js) to eyeball conversion fidelity.
-#   tools/render-docx.sh <file.docx> <outdir>
+#   tools/render-docx.sh <file.docx> <outdir>      needs bash (Git Bash or WSL), not PowerShell or cmd
 set -e
 DOCX="$1"; OUT="$2"
 mkdir -p "$OUT"

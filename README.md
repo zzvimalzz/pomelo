@@ -178,7 +178,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). In short:
 
 ```bash
 npm run check      # ESLint plus unused-code scan
-npm test           # job logic, input helper, updater, full conversion matrix, edge cases
+npm test           # job logic, input helper, updater, routing snapshot, full conversion matrix, edge cases
 npm run test:ui    # wheel, toast and settings windows (also regenerates the screenshots in test/shots)
 npm run fidelity:samples && npm run test:fidelity   # PDF to Word: convert, print back to PDF, score against the original (needs the engines)
 ```

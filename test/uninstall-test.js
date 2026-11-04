@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Uninstall planning and hand-over with fakes: nothing real is removed or started.   node test/uninstall-test.js
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { plan, confirmText, uninstall } = require('../src/main/uninstall');
 const { createInstaller } = require('../src/main/engineInstaller');
 
-let failures = 0;
-const expect = (name, ok, extra = '') => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'pomelo-un-'));
+const { expect, failed } = require('./support/expect');
+const finish = require('./support/finish');
+const { dir: tmpDir } = require('./support/tmp');
+const tmp = () => tmpDir('un');
 
 (async () => {
   const root = path.join(tmp(), 'Pomelo', 'engines');
@@ -46,6 +46,6 @@ const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'pomelo-un-'));
   await createInstaller({ root: rootC, run: async () => ({ code: 0, out: '' }) }).uninstall();
   expect('but never deletes a Pomelo folder that holds anything else', fs.existsSync(path.join(path.dirname(rootC), 'something-else.txt')));
 
-  console.log(failures ? `\n${failures} failed` : '\nall passed');
-  process.exit(failures ? 1 : 0);
+  console.log(failed() ? `\n${failed()} failed` : '\nall passed');
+  finish();
 })();

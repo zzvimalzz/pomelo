@@ -4,14 +4,14 @@
 // (skipped without it); the scan test also needs the OCR component.   node test/pdf-layout-test.js
 // For real-world pages and a similarity score against the original, see test/fidelity/run.js.
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const JSZip = require('jszip');
 const convert = require('../src/main/convert');
 
-let failures = 0;
-const expect = (name, ok, extra = '') => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
+const { expect, failed } = require('./support/expect');
+const finish = require('./support/finish');
+const tmp = require('./support/tmp');
 
 // argv: out.pdf, then what to draw
 const MAKE_PDF = `
@@ -67,7 +67,7 @@ const read = async (docx) => {
 (async () => {
   const engines = convert.detectEngines();
   if (!engines.pdf) { console.log('PDF engine not installed: skipped'); return; }
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pomelo-layout-'));
+  const dir = tmp.dir('layout');
   const make = path.join(dir, 'make.py');
   fs.writeFileSync(make, MAKE_PDF);
   const draw = (name, kind, extra = '') => { const f = path.join(dir, `${name}.pdf`); execFileSync(engines.pdf, ['-W', 'ignore', make, f, kind, ...(extra ? [extra] : [])], { windowsHide: true }); return f; };
@@ -127,7 +127,6 @@ const read = async (docx) => {
     fs.rmSync(docx);
   }
 
-  fs.rmSync(dir, { recursive: true, force: true });
-  console.log(failures ? `\n${failures} failed` : '\nall good');
-  process.exit(failures ? 1 : 0);
-})().catch((e) => { console.error(e); process.exit(1); });
+  console.log(failed() ? `\n${failed()} failed` : '\nall good');
+  finish();
+})().catch((e) => { console.error(e); finish(1); });

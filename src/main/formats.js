@@ -125,4 +125,4 @@ function targetsForFiles(files, canConvert) {
   return common.slice(0, MAX_SEGMENTS).map((ext) => ({ id: ext, ext, label: labelOf(ext), sub: subOf(ext) }));
 }
 
-module.exports = { extOf, baseOf, groupOf, labelOf, targetsForFiles, TARGET_ORDER, VIDEO, AUDIO };
+module.exports = { extOf, baseOf, groupOf, labelOf, targetsForFiles, ALIASES, TARGET_ORDER, VIDEO, AUDIO };

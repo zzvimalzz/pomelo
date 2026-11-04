@@ -4,12 +4,11 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
-const os = require('os');
-const path = require('path');
 const { allowedUrl, download, installCommand, launch } = require('../src/main/updateInstall');
 
-let failures = 0;
-const expect = (name, ok, extra = '') => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
+const { expect, failed } = require('./support/expect');
+const finish = require('./support/finish');
+const tmp = require('./support/tmp');
 const rejects = async (p) => { try { await p; return null; } catch (e) { return e; } };
 
 const BODY = crypto.randomBytes(3 * 1024 * 1024);
@@ -51,7 +50,7 @@ const SHA = crypto.createHash('sha256').update(BODY).digest('hex');
   const host = `127.0.0.1:${server.address().port}`;
   const rules = { feedHost: host, testing: true };
   const base = `http://${host}`;
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pomelo-ui-test-'));
+  const dir = tmp.dir('ui-test');
   const go = (p, extra = {}) => download({ url: base + p, sha256: SHA, size: BODY.length, dir, rules, ...extra });
 
   console.log('download');
@@ -99,7 +98,6 @@ const SHA = crypto.createHash('sha256').update(BODY).digest('hex');
   expect('it is started detached and let go', calls[0][0] === 'cmd.exe' && calls[0][2].detached === true && calls[0][2].stdio === 'ignore' && calls.includes('unref'));
 
   server.close();
-  fs.rmSync(dir, { recursive: true, force: true });
-  console.log(failures ? `\n${failures} failed` : '\nall passed');
-  process.exit(failures ? 1 : 0);
+  console.log(failed() ? `\n${failed()} failed` : '\nall passed');
+  finish();
 })();

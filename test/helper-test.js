@@ -4,8 +4,8 @@
 const path = require('path');
 const { spawn } = require('child_process');
 
-let failures = 0;
-const expect = (name, ok, extra = '') => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${name}${extra ? '  ' + extra : ''}`); };
+const { expect, failed } = require('./support/expect');
+const finish = require('./support/finish');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
@@ -31,6 +31,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   proc.stdin.end();
   expect('exits when Pomelo closes its stdin', await Promise.race([closed.then(() => true), sleep(10000).then(() => false)]));
 
-  console.log(failures ? `\n${failures} failed` : '\nall passed');
-  process.exit(failures ? 1 : 0);
+  console.log(failed() ? `\n${failed()} failed` : '\nall passed');
+  finish();
 })();
