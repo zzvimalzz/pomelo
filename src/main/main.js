@@ -6,7 +6,7 @@ const settings = require('./settings');
 const { APP_ROOT } = require('../shared/node/paths');
 const { capitalize } = require('../shared/core/text');
 const convert = require('./convert');
-const { labelOf, extOf, groupOf } = require('./formats');
+const { labelOf } = require('./formats');
 const { ExplorerHelper } = require('./explorer');
 const { Trigger } = require('./trigger');
 const { Overlay } = require('./overlay');
@@ -75,17 +75,6 @@ function buildMenu() {
   ]);
 }
 
-// Plain-language reason for "the wheel has nothing to offer for this selection".
-function whyNothing(files) {
-  const exts = [...new Set(files.map(extOf))];
-  if (exts.length > 1) return { title: 'These items are different kinds', detail: 'Select items of the same kind, for example all documents or all images.' };
-  const ext = exts[0];
-  if (ext === 'lnk') return { title: "Shortcuts can't be converted", detail: 'Drag the file the shortcut points to instead.' };
-  const what = ext === 'folder' ? 'folders' : ext ? `.${ext} files` : 'these files';
-  if (!groupOf(ext)) return { title: `Can't convert ${what}`, detail: "Pomelo doesn't support this format yet." };
-  return { title: `No converter available for ${what}`, detail: 'Open Pomelo settings to see which engines to add.' };
-}
-
 // Every file x target is its own job; jobs run in parallel and the toast shows them as a stack (see jobs.js).
 function handleDrop(paths, to) {
   log('drop', to, paths);
@@ -125,7 +114,7 @@ app.whenReady().then(async () => {
     const targets = convert.targetsFor(files);
     if (targets.length) { overlay.openWheel(files, targets); return; }
     log('nothing to offer for', files);
-    jobs.addInfo(whyNothing(files));
+    jobs.addInfo(convert.explainNoTargets(files));
   });
   trigger.on('unsupported', () => jobs.addInfo({ title: 'Nothing to convert here', detail: 'Drag a file or folder from Explorer or the desktop.' }));
   trigger.on('release', () => overlay.releaseSoon());

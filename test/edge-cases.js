@@ -7,7 +7,7 @@ const path = require('path');
 const http = require('http');
 const sharp = require('sharp');
 const convert = require('../src/main/convert');
-const pdf = require('../src/main/engines/pdf');
+const pdf = require('../src/features/conversion/lib/pdfjs');
 const { Jobs } = require('../src/main/jobs');
 
 app.on('window-all-closed', () => {});

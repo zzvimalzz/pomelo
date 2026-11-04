@@ -5,16 +5,17 @@ const fs = require('fs');
 const path = require('path');
 const paths = require('../../../src/shared/node/paths');
 const { where, findExe } = require('../../../src/shared/node/which');
-const ffmpeg = require('../../../src/main/engines/ffmpeg');
-const archive = require('../../../src/main/engines/archive');
+const ffmpeg = require('../../../src/features/conversion/engines/ffmpeg');
+const archive = require('../../../src/features/conversion/engines/archive');
 const { expect } = require('../../support/expect');
 const finish = require('../../support/finish');
 
 console.log('bundled resources exist');
 {
   const SCRIPTS = ['heic_run.py', 'ocr_warmup.py', 'pdf_structure_run.py', 'pdf_pptx_export.py', 'pdf_tables_run.py', 'pdf_to_docx.py'];
-  expect('FFmpeg', fs.existsSync(ffmpeg.detect() || ''), String(ffmpeg.detect()));
-  expect('7-Zip', fs.existsSync(archive.detect() || ''), String(archive.detect()));
+  const { ffmpeg: ffmpegExe } = ffmpeg.detect(), { sevenZip } = archive.detect();
+  expect('FFmpeg', fs.existsSync(ffmpegExe || ''), String(ffmpegExe));
+  expect('7-Zip', fs.existsSync(sevenZip || ''), String(sevenZip));
   expect('the input helper (npm run build:helper)', fs.existsSync(paths.inApp('native', 'bin', 'pomelo-input.exe')));
   expect(`the ${SCRIPTS.length} Python scripts the engines run`, SCRIPTS.every((s) => fs.existsSync(paths.scriptPath(s))), SCRIPTS.filter((s) => !fs.existsSync(paths.scriptPath(s))).join(', '));
   expect('the PDF font data pdf.js needs', fs.existsSync(path.join(path.dirname(require.resolve('pdfjs-dist/package.json')), 'standard_fonts')));

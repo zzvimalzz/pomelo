@@ -1,33 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Conversion orchestrator: picks the engine(s) for a (from -> to) pair and runs them.
-const fs = require('fs');
-const path = require('path');
-const { extOf, baseOf, targetsForFiles, labelOf, extsInGroup, OFFICE } = require('../formats');
-const { withContext, removeOutputs, CancelledError } = require('./util');
-const { withTempDir } = require('../../shared/node/fs');
-const { soffice, pandoc } = require('../engines/external');
-const pure = require('../engines/pure');
-const pdfhifi = require('../engines/pdfhifi');
-const ffmpeg = require('../engines/ffmpeg');
-const heic = require('../engines/heic');
-const subtitle = require('../engines/subtitle');
-const archive = require('../engines/archive');
-const { findExe } = require('../../shared/node/which');
-
-let engines = { soffice: null, pandoc: null, pdf: null, ocr: null, heic: null, ffmpeg: null, sevenZip: null };
-
-function detectEngines() {
-  engines = {
-    soffice: findExe('soffice.exe', ['LibreOffice/program', 'libreoffice/program']),
-    pandoc: findExe('pandoc.exe', ['Pandoc', 'pandoc', '']),
-    pdf: pdfhifi.detect(),
-    ocr: pdfhifi.detectOcr(),
-    heic: pdfhifi.detectHeic(),
-    ffmpeg: ffmpeg.detect(),
-    sevenZip: archive.detect(),
-  };
-  return engines;
-}
+// Routing: for a (from, to) pair, which engines can do it and in which order to try them, including the pairs that need an
+// intermediate format. Pure given the engines map, so it can be tested under any combination of installed engines.
+const { extsInGroup, OFFICE } = require('../catalog/formats');
+const { getEngines, libreoffice: soffice, pandoc, pdfPython: pdfhifi, heicPython: heic, ffmpeg, archive, subtitle, builtin: pure } = require('../engines/registry');
 
 // Targets where look and layout matter prefer LibreOffice; text-like targets prefer Pandoc, then the built-in code.
 const FIDELITY = new Set(['pdf', ...Object.values(OFFICE).flat()]);
@@ -42,7 +17,7 @@ const CHAINS = [
   { from: ['pdf'], to: ['doc', 'odt', 'rtf'], via: 'docx', first: [pdfhifi, pure], second: [soffice] },
 ];
 
-function plansFor(from, to, available = engines) {
+function plansFor(from, to, available = getEngines()) {
   // pdf -> docx/md/xlsx: the Python engines keep fonts, colours, tables and structure; the built-in extractor is the fallback
   const order = from === 'pdf' ? [pdfhifi, soffice, pure]
     : FIDELITY.has(to) ? [soffice, pandoc, pure] : [pandoc, pure, soffice];
@@ -64,50 +39,5 @@ function plansFor(from, to, available = engines) {
 }
 
 const canConvert = (from, to) => plansFor(from, to).length > 0;
-const targetsFor = (files) => targetsForFiles(files, canConvert);
 
-// onProgress(fraction 0..1) is forwarded by engines that can report it (video/audio); for a two-step chain it is split in half.
-async function runPlan(plan, src, dir, base, onProgress) {
-  if (plan.length === 1) return plan[0].engine.run({ src, from: plan[0].from, to: plan[0].to, dir, base, engines, onProgress });
-  return withTempDir(async (tmp) => {
-    const [first, second] = plan;
-    const half = (offset) => onProgress && ((f) => onProgress(offset + f / 2));
-    const [mid] = await first.engine.run({ src, from: first.from, to: first.to, dir: tmp, base, engines, onProgress: half(0) });
-    return second.engine.run({ src: mid, from: second.from, to: second.to, dir, base, engines, onProgress: half(0.5) });
-  });
-}
-
-// Convert one file next to the original. Resolves with the list of files written.
-// signal (AbortSignal): cancel it to kill the helper programs and delete any partial output.
-async function convertFile(src, to, { onProgress, signal } = {}) {
-  const from = extOf(src);
-  const dir = path.dirname(src);
-  const base = baseOf(src);
-  const plans = plansFor(from, to);
-  if (!plans.length) throw new Error(`No converter available for .${from} to ${labelOf(to)}`);
-  if (from !== 'folder' && fs.statSync(src).size === 0) throw new Error('This file is empty');
-  if (signal?.aborted) throw new CancelledError();
-
-  const ctx = { signal, outputs: [] };
-  return withContext(ctx, async () => {
-    let firstErr;                                                                         // the best engine's reason: the fallbacks' are usually less to the point
-    for (const plan of plans) {
-      const mark = ctx.outputs.length;
-      try {
-        const outs = await runPlan(plan, src, dir, base, onProgress);
-        if (signal?.aborted) { removeOutputs(ctx.outputs); throw new CancelledError(); }   // an engine that cannot be interrupted finished anyway
-        return outs;
-      } catch (e) {
-        if (e instanceof CancelledError || signal?.aborted) { removeOutputs(ctx.outputs); throw new CancelledError(); }
-        removeOutputs(ctx.outputs.splice(mark));                                          // leftovers of a failed attempt
-        firstErr ||= e;
-        console.warn(`[convert] ${plan.map((s) => s.engine.name).join('+')} failed: ${e.message}`);
-      }
-    }
-    throw firstErr;
-  });
-}
-
-const getEngines = () => engines;
-
-module.exports = { detectEngines, getEngines, canConvert, targetsFor, convertFile, plansFor };
+module.exports = { plansFor, canConvert };

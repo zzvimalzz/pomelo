@@ -2,11 +2,12 @@
 // Video and audio through FFmpeg (the ffmpeg-static build, GPL-3.0+, or a system FFmpeg). Runs as a separate process.
 const fs = require('fs');
 const { spawn, execFile } = require('child_process');
-const { uniquePath, killOnCancel, currentContext, CancelledError } = require('../convert/util');
-const { track } = require('../../shared/node/process');
-const { VIDEO, VIDEO_SOURCES, AUDIO, AUDIO_SOURCES } = require('../formats');
-const { bundled } = require('../../shared/node/paths');
-const { where } = require('../../shared/node/which');
+const { killOnCancel, currentContext, CancelledError } = require('../../engine-kit/context');
+const { uniquePath } = require('../../engine-kit/outputs');
+const { VIDEO, VIDEO_SOURCES, AUDIO, AUDIO_SOURCES } = require('../../catalog/formats');
+const { track } = require('../../../../shared/node/process');
+const { bundled } = require('../../../../shared/node/paths');
+const { where } = require('../../../../shared/node/which');
 
 function detect() {
   try {
@@ -59,7 +60,7 @@ const probeDuration = (bin, src) => new Promise((resolve) => {
 
 module.exports = {
   name: 'ffmpeg',
-  detect,
+  detect: () => ({ ffmpeg: detect() }),
   supports(from, to, engines) {
     if (!engines.ffmpeg || from === to || !ARGS[to]) return false;
     if (VIDEO_SOURCES.includes(from)) return VIDEO.includes(to) || to === 'gif' || AUDIO.includes(to);

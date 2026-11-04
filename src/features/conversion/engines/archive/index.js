@@ -9,10 +9,12 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
-const { run, uniquePath } = require('../convert/util');
-const { withTempDir, withTempFile } = require('../../shared/node/fs');
-const { bundled } = require('../../shared/node/paths');
-const { parsePercent } = require('../../shared/node/process');
+const { run } = require('../../engine-kit/run');
+const { scaled } = require('../../engine-kit/progress');
+const { uniquePath } = require('../../engine-kit/outputs');
+const { withTempDir, withTempFile } = require('../../../../shared/node/fs');
+const { bundled } = require('../../../../shared/node/paths');
+const { parsePercent } = require('../../../../shared/node/process');
 
 const BSDTAR = path.join(process.env.SystemRoot || 'C:/Windows', 'System32', 'tar.exe');
 const FROM = new Set(['zip', '7z', 'tar', 'gz', 'rar']);
@@ -87,8 +89,8 @@ async function extract(src, from, dest, engines, report) {
     await pipeline(watched(src, report), zlib.createGunzip(), fs.createWriteStream(path.join(dest, name)));
   } else if (from === 'gz') {
     await withTempFile('tar', async (tar) => {
-      await pipeline(watched(src, report && ((f) => report(f * 0.5))), zlib.createGunzip(), fs.createWriteStream(tar));
-      await sevenZip(engines, ['x', `-o${dest}`, tar], { report: report && ((f) => report(0.5 + f * 0.5)) });
+      await pipeline(watched(src, scaled(report, 0, 0.5)), zlib.createGunzip(), fs.createWriteStream(tar));
+      await sevenZip(engines, ['x', `-o${dest}`, tar], { report: scaled(report, 0.5, 0.5) });
     });
   } else {
     await sevenZip(engines, ['x', `-o${dest}`, src], { report });             // zip, 7z, tar
@@ -104,8 +106,8 @@ async function compress(names, to, out, cwd, engines, report) {
   const list = names.map(safeName);
   if (to === 'gz') {                                                         // tar.gz
     await withTempFile('tar', async (tar) => {
-      await sevenZip(engines, ['a', '-ttar', tar, ...list], { cwd, report: report && ((f) => report(f * 0.5)) });
-      await pipeline(watched(tar, report && ((f) => report(0.5 + f * 0.5))), zlib.createGzip({ level: 9 }), fs.createWriteStream(out));
+      await sevenZip(engines, ['a', '-ttar', tar, ...list], { cwd, report: scaled(report, 0, 0.5) });
+      await pipeline(watched(tar, scaled(report, 0.5, 0.5)), zlib.createGzip({ level: 9 }), fs.createWriteStream(out));
     });
     return;
   }
@@ -136,7 +138,7 @@ async function packFolder(src, to, outDir, base, engines, report) {
 // directly (photos.zip containing photos/ gives photos/, not photos/photos/).
 async function extractToFolder(src, from, outDir, base, engines, report) {
   return withTempDir(async (work) => {
-    await extract(src, from, work, engines, report && ((f) => report(f * 0.9)));
+    await extract(src, from, work, engines, scaled(report, 0, 0.9));
     const entries = fs.readdirSync(work);
     if (!entries.length) throw new Error('The archive is empty');
     const single = entries.length === 1 && fs.statSync(path.join(work, entries[0])).isDirectory();
@@ -148,15 +150,15 @@ async function extractToFolder(src, from, outDir, base, engines, report) {
 
 module.exports = {
   name: 'archive',
-  detect,
+  detect: () => ({ sevenZip: detect() }),
   supports: (from, to, engines) => !!engines.sevenZip && from !== to
     && ((FROM.has(from) && (TO.has(to) || to === 'folder')) || (from === 'folder' && TO.has(to))),
   async run({ src, from, to, dir, base, engines, onProgress }) {
     if (to === 'folder') return [await extractToFolder(src, from, dir, base, engines, onProgress)];
     if (from === 'folder') return [await packFolder(src, to, dir, base, engines, onProgress)];
     return withTempDir(async (work) => {
-      await extract(src, from, work, engines, onProgress && ((f) => onProgress(f * 0.5)));       // unpacking is the first half,
-      return [await pack(work, to, dir, base, engines, onProgress && ((f) => onProgress(0.5 + f * 0.5)))];   // packing the second
+      await extract(src, from, work, engines, scaled(onProgress, 0, 0.5));       // unpacking is the first half,
+      return [await pack(work, to, dir, base, engines, scaled(onProgress, 0.5, 0.5))];   // packing the second
     });
   },
 };
