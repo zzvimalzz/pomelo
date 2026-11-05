@@ -298,7 +298,6 @@ def order_units(units, page):
 
 def classify(line):
     """('bullet', rest runs) / ('number', ...) / None"""
-    runs = line.runs
     text = line.text
     if not text:
         return None

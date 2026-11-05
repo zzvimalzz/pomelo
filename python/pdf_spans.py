@@ -6,8 +6,9 @@ from collections import Counter
 
 import pymupdf
 
-BAD_XML = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")          # characters an XML file cannot hold
+BAD_XML = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f" + chr(0xFFFE) + chr(0xFFFF) + "]")          # characters an XML file cannot hold
 TEXT_FLAGS = pymupdf.TEXT_PRESERVE_WHITESPACE | pymupdf.TEXT_PRESERVE_LIGATURES
+RTL = re.compile(r"[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff]")      # Hebrew, Arabic, Syriac, Thaana and their presentation forms
 
 
 def hexcolor(c):

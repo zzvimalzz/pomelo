@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { findPython } = require('../../../src/features/conversion/engine-kit/python');
+const { findPython, runHelper } = require('../../../src/features/conversion/engine-kit/python');
 const { scriptPath } = require('../../../src/shared/node/paths');
 const { expect } = require('../../support/expect');
 const finish = require('../../support/finish');
@@ -58,6 +58,25 @@ for (const c of cases) {
   }
 }
 
+console.log('which text becomes editable text on a PowerPoint slide');
+{
+  // curly quotes and dashes are ordinary text; Hebrew and Arabic stay in the picture, where they are drawn right
+  const check = spawnSync(py, ['-W', 'ignore', '-c', [
+    'import sys', `sys.path.insert(0, r"${path.dirname(scriptPath('pdf_spans.py'))}")`, 'from pdf_spans import RTL',
+    'print(bool(RTL.search("\u201c")), bool(RTL.search("\u2014")), bool(RTL.search("\u4e2d")), bool(RTL.search("\u05d0")), bool(RTL.search("\u0627")), bool(RTL.search("\ufe8d")))',
+  ].join('\n')], { encoding: 'utf8', windowsHide: true });
+  expect('a curly quote, a dash and CJK are not right-to-left; Hebrew, Arabic and Arabic presentation forms are', check.stdout.trim() === 'False False False True True True', check.stdout.trim() + check.stderr.trim());
+  // Arial, as the OCR code draws with: the built-in Helvetica has no curly quotes
+  const arial = path.join(process.env.WINDIR || 'C:/Windows', 'Fonts', 'arial.ttf').replace(/\\/g, '/');
+  const quoted = make('quoted.pdf', `p = d.new_page()\np.insert_font(fontname="Arial", fontfile="${arial}")\np.insert_text((72, 100), "\\u201cQuoted text\\u201d \\u2014 and more", fontsize=14, fontname="Arial")`);
+  const outDir = out('quoted-layout');
+  fs.mkdirSync(outDir, { recursive: true });
+  const r = run(py, 'pdf_to_layout.py', [quoted, outDir]);
+  const layout = r.code === 0 ? JSON.parse(fs.readFileSync(path.join(outDir, 'layout.json'), 'utf8')) : null;
+  const texts = layout ? layout.pages.flatMap((p) => p.texts.flatMap((t) => t.runs.map((x) => x.text))).join('').replace(/\u00a0/g, ' ') : ''; // an embedded Arial maps its space to U+00A0
+  expect('text with curly quotes and a dash is written as editable text, not left in the picture', texts.includes('\u201cQuoted text\u201d') && texts.includes('\u2014'), texts || `${r.code} ${lastLine(r)}`);
+}
+
 console.log('HEIC');
 const heicPython = findPython('pillow_heif, PIL');
 if (!heicPython) console.log('  pillow-heif not installed: skipped');
@@ -82,4 +101,10 @@ console.log('a Python without the packages');
   }
 }
 
-finish();
+// runHelper clears PYTHONSAFEPATH, which would keep a script's own folder off sys.path (Python 3.11 and later)
+console.log('the scripts find their neighbours however Python is configured');
+process.env.PYTHONSAFEPATH = '1';
+const target = out('safe-path.txt');
+runHelper(py, 'pdf_to_text.py', [withText, target, 'txt'], { src: withText })
+  .then(() => expect('with PYTHONSAFEPATH set, the helper still runs', fs.existsSync(target)), (e) => expect('with PYTHONSAFEPATH set, the helper still runs', false, e.message))
+  .finally(() => { delete process.env.PYTHONSAFEPATH; finish(); });

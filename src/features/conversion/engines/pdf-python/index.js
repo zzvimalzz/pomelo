@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // PDF conversion through Python packages, each run as a separate process:
-//   PyMuPDF     (AGPL-3.0) reads the PDF: PDF -> DOCX (python/pdf_flow.py: real paragraphs, lists and tables, always editable),
+//   PyMuPDF     (AGPL-3.0) reads the PDF: PDF -> DOCX (python/pdf_flow/: real paragraphs, lists and tables, always editable),
 //                          Markdown / HTML / text / EPUB (reading order), XLSX (tables found by its table finder, written to Excel
 //                          here) and PowerPoint (text boxes on a picture of the rest)
 //   python-docx (MIT)      writes the Word file

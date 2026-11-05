@@ -6,8 +6,7 @@ import sys
 
 from docx import Document
 from docx.oxml import parse_xml
-from docx.oxml.ns import nsdecls
-from docx.oxml.ns import qn
+from docx.oxml.ns import nsdecls, qn
 import pymupdf
 
 from pdf_spans import dominant_size
@@ -47,7 +46,6 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None):
     body_pt = body_size(sample)
 
     n = len(doc)
-    totals = {"words": 0}
     for pno in range(n):
         progress(0.97 * pno / max(1, n))
         page = doc[pno]

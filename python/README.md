@@ -45,5 +45,4 @@ The Node side depends on these (`test/integration/python/cli-contract.test.js` c
 
 ## Known limits
 
-- `pdf_layout.py` has its own right-to-left pattern, and it is wrong: a Unicode normalisation slip made it match about 61,700 characters instead of about 1,760, so any text that holds a curly quote, a dash, CJK or similar stays in the background picture of a PowerPoint slide instead of becoming editable text. Fixing it changes PowerPoint output; it is a separate change.
-- The Word and the text/Markdown readers each have their own line pipeline, tuned differently (`dedupe` tolerance 3 versus 4 points, different bullet sets). They are deliberately not merged.
+- The Word and the text/Markdown readers each have their own line pipeline, tuned differently (`dedupe` tolerance 3 versus 4 points, different bullet sets), so their output differs in small ways on purpose.

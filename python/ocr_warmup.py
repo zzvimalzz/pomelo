@@ -3,7 +3,6 @@
 (and everything after that works offline). Prints OK; a reason on stderr and exit 1 when the models could not be fetched."""
 import sys
 
-import helper  # noqa: F401  (importing it silences warnings)
 
 def main():
     try:

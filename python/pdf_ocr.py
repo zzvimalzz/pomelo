@@ -9,7 +9,6 @@ Pages that already have text are copied unchanged. Raises OcrUnavailable when a 
 """
 import os
 import re
-import sys
 import tempfile
 
 import pymupdf

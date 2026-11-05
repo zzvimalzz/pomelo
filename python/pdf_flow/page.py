@@ -7,9 +7,9 @@ from docx.opc.constants import RELATIONSHIP_TYPE
 import pymupdf
 
 from pdf_fonts import word_family
-from pdf_spans import dedupe, hexcolor
+from pdf_spans import RTL, dedupe, hexcolor
 
-from .common import HI_DPI, RTL, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
+from .common import HI_DPI, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
 from .lines import attach_markers, is_bold, is_italic, merge_rows, read_lines, split_marker
 from .shapes import Box, Tbl, rect_shapes, segments_of
 

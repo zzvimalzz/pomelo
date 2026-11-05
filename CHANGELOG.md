@@ -4,6 +4,11 @@ All notable changes to Pomelo are listed here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+### Fixed
+- PDF to PowerPoint left any text with a curly quote, a dash or a CJK character in the background picture of the slide. Only Hebrew, Arabic and the like (which cannot be drawn right as editable text) stay in the picture now.
+- Converting a scanned PDF left a temporary copy of it in the temp folder every time.
+- PDF conversion failed on PCs where the `PYTHONSAFEPATH` environment variable is set.
+
 ## [0.1.3] - 04-11-2026
 
 ### Changed

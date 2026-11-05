@@ -121,10 +121,12 @@ const read = async (docx) => {
   console.log('a scanned PDF (a picture of a page)');
   if (!engines.ocr) console.log('  OCR component not installed: skipped');
   else {
-    const ocrCopies = () => new Set(fs.readdirSync(os.tmpdir()).filter((n) => /^pomelo-ocr-.*\.pdf$/.test(n)));
-    const before = ocrCopies();
+    // a private TEMP, so a copy left by anything else running on this PC cannot be mistaken for ours
+    const savedTemp = { TEMP: process.env.TEMP, TMP: process.env.TMP };
+    process.env.TEMP = process.env.TMP = tmp.dir('ocr-temp');
     [docx] = await convert.convertFile(draw('scan', 'scan'), 'docx');
-    const left = [...ocrCopies()].filter((n) => !before.has(n));
+    const left = fs.readdirSync(os.tmpdir()).filter((n) => /^pomelo-ocr-.*\.pdf$/.test(n));
+    Object.assign(process.env, savedTemp);
     d = await read(docx);
     const found = ['Quarterly Report', 'Revenue grew', 'team@example.com', 'A bullet that wraps'].filter((t) => squash(d.text.toLowerCase()).includes(squash(t.toLowerCase())));
     expect('the text of the scan is recognised and is real, editable text', found.length >= 3, `${found.length} of 4: ${d.text.slice(0, 120)}`);

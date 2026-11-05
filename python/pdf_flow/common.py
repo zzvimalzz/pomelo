@@ -14,7 +14,6 @@ TW = 20                                   # twips per point
 NS = nsdecls("w", "wp", "a", "pic", "r")
 
 
-RTL = re.compile("[֐-ࣿיִ-﷿ﹰ-﻿]")
 
 
 BULLETS = set("•●▪◦·‣⁃■○✓✔❖➢–—-*►▸➤□◆◇▫") | {"", "", "", "", "", "", "", "", "o"}

@@ -114,7 +114,6 @@ class Builder:
 
     def para_xml(self, p, x0, x1, cursor, before_extra=0.0, border_top=None, border_bottom=None, right_to=None):
         """-> (xml, T, B): the paragraph's XML, where its first line box starts and where its last ends."""
-        P = self.P
         lines = p.lines
         self.emitted.update(id(l) for l in lines)
         n = len(lines)
@@ -309,7 +308,6 @@ class Builder:
         before = 0.0 if cursor is None else max(0.0, it.y0 - cursor)
         if cursor is None and self.first_top is None:
             self.first_top = it.y0
-        w = it.x1 - it.x0
         left = max(0.0, it.x0 - x0)
         ppr = (f'<w:pPr><w:spacing w:before="{tw(before)}" w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="{tw(left)}"/>'
                f'<w:rPr><w:sz w:val="2"/></w:rPr></w:pPr>')
@@ -507,7 +505,6 @@ class Builder:
                         f'<w:ind w:left="{tw(max(0.0, blk.x0 - x0))}" w:right="{tw(max(0.0, x1 - blk.x1) + (self.slack if self.page_x1 is not None and abs(x1 - self.page_x1) < 0.01 else 0.0))}"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>')
                 cursor = cy + bw / 2
             elif blk.kind == "para":
-                top_b = bot_b = right_to = None
                 part, T, B = self.para_xml(blk, x0, x1, cursor)
                 xml += part
                 cursor = B

@@ -6,15 +6,13 @@ backgrounds; none for a page of text alone) and the text as lines with their pos
 Text that cannot be reproduced faithfully (right-to-left, rotated, symbol fonts) is left in the picture instead of being re-typed wrongly.
 """
 import os
-import re
 
 import pymupdf
 
 from pdf_fonts import word_family
-from pdf_spans import BAD_XML, TEXT_FLAGS, has_unmapped_symbols, hexcolor
+from pdf_spans import BAD_XML, RTL, TEXT_FLAGS, has_unmapped_symbols, hexcolor
 
 PUA_OK = {chr(c) for c in (0xF0B7, 0xF0A7, 0xF0D8, 0xF076, 0xF0FC, 0xF06E, 0xF0A8, 0xF06F)}   # the bullets Word itself writes in Symbol/Wingdings
-RTL = re.compile(r"[֐-ࣿיִ-﷿ﹰ-﻿]")
 BG_DPI = 200
 
 

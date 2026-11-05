@@ -10,6 +10,7 @@ import gc
 import importlib
 import os
 import sys
+import time
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -51,13 +52,15 @@ def reason(exc):
 
 
 def _remove(path):
-    """Delete a temporary file. A document that is still open holds it on Windows, so unreferenced ones are collected first."""
-    for attempt in range(2):
+    """Delete a temporary file. A document that is still open holds it on Windows, so unreferenced ones are collected first, and a
+    scanner that has it for a moment is waited out."""
+    for attempt in range(6):
         try:
             os.remove(path)
             return
         except OSError:
             gc.collect()
+            time.sleep(0.2)
 
 
 def run_pdf_job(src, work):
