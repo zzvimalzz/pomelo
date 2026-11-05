@@ -9,12 +9,12 @@ const root = path.join(__dirname, '..');
 
 // Everything the running app needs is shipped; development folders and files are left out (paths start with "/").
 const IGNORE = [
-  /^\/(\.git|\.github|dist|docs|test|tools|installer|site|vendor)(\/|$)/,
-  /^\/(\.editorconfig|\.gitattributes|\.gitignore|\.npmrc|eslint\.config\.js|package-lock\.json|Start Pomelo\.bat)$/,
+  /^\/(\.git|\.github|\.claude|dist|docs|test|tools|installer|site|vendor)(\/|$)/,
+  /^\/(\.editorconfig|\.gitattributes|\.gitignore|\.npmrc|\.git-blame-ignore-revs|AGENTS\.md|CLAUDE\.md|eslint\.config\.js|package-lock\.json|Start Pomelo\.bat)$/,
   /^\/(README|CHANGELOG|CONTRIBUTING|CODE_OF_CONDUCT|SECURITY)\.md$/,     // LICENSE and THIRD_PARTY_NOTICES.md ship
-  /^\/src\/.*\.md$/,                                                        // developer notes next to the code
+  /^\/(src|python|native)\/.*\.md$/,                                         // developer notes next to the code
   /^\/assets\/(screenshots|icon\.ico)/,
-  /^\/python\/__pycache__(\/|$)/,
+  /^\/python\/(.*\/)?__pycache__(\/|$)/,
 ];
 
 packager({

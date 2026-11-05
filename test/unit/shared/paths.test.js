@@ -12,7 +12,7 @@ const finish = require('../../support/finish');
 
 console.log('bundled resources exist');
 {
-  const SCRIPTS = ['image_to_heic.py', 'ocr_warmup.py', 'pdf_to_text.py', 'pdf_to_layout.py', 'pdf_to_tables.py', 'pdf_to_docx.py'];
+  const SCRIPTS = ['image_to_heic.py', 'ocr_warmup.py', 'pdf_to_text.py', 'pdf_to_layout.py', 'pdf_to_tables.py', 'pdf_to_docx.py', 'helper.py', 'pdf_spans.py', 'pdf_layout.py', 'pdf_structure.py', 'pdf_ocr.py', 'pdf_fonts.py', 'pdf_flow/__init__.py', 'pdf_flow/builder.py'];
   const { ffmpeg: ffmpegExe } = ffmpeg.detect(), { sevenZip } = archive.detect();
   expect('FFmpeg', fs.existsSync(ffmpegExe || ''), String(ffmpegExe));
   expect('7-Zip', fs.existsSync(sevenZip || ''), String(sevenZip));

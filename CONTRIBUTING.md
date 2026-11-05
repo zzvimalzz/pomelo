@@ -42,7 +42,7 @@ The routing snapshot (`test/unit/conversion/routing.snapshot.json`) pins which e
 | `src/features/updates/` | Check for updates, download and install in place |
 | `src/features/engine-setup/` | Installing and removing the optional engines, and the headless `--install-engines` / `--uninstall-engines` switches the installer runs |
 | `src/features/uninstall/` | The Uninstall button |
-| `python/requirements.txt` | The pinned Python packages of the PDF, OCR and HEIC engine: the in-app installer, `npm run setup:pdf` and the notices check all read it |
+| `python/` | The Python helpers for PDF, OCR and HEIC, each run as its own process; `requirements.txt` pins the packages (the in-app installer, `npm run setup:pdf` and the notices check all read it). See its `README.md` |
 | `installer/pomelo.iss` | The Inno Setup script (three screens, per-user). `npm run package`, then `npm run build:installer` (needs Inno Setup 6.3+) |
 | `.github/workflows/release.yml` | On a `v*` tag: builds the installer and attaches it, with its SHA-256, to a draft release |
 | `tools/make-icons.js` | Draws the logo, tray icon, `.ico` and installer artwork. `npm run icons` |
