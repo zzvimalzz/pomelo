@@ -1,19 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Feeds synthetic input events (what the native input helper would send) through Trigger -> Overlay.
-//   npx electron test/pipeline.js
+// Feeds synthetic input events (what the native input helper would send) through Trigger -> the drop flow -> the wheel window.
+//   npx electron test/ui/pipeline.js
 const { app } = require('electron');
 const { EventEmitter } = require('events');
 const path = require('path');
 const fs = require('fs');
-const convert = require('../src/features/conversion');
-const { Trigger } = require('../src/main/trigger');
-const { Overlay } = require('../src/main/overlay');
+const convert = require('../../src/features/conversion');
+const { Trigger } = require('../../src/features/gesture/trigger');
+const { WheelWindow } = require('../../src/features/gesture/wheel.window');
+const { createDropFlow } = require('../../src/app/drop-flow');
 
 app.on('window-all-closed', () => {});
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const { expect: check, failed } = require('./support/expect');
-const finish = require('./support/finish');
-const tmp = require('./support/tmp');
+const { expect: check, failed } = require('../support/expect');
+const finish = require('../support/finish');
+const tmp = require('../support/tmp');
 
 app.whenReady().then(async () => {
   convert.detectEngines();
@@ -25,11 +26,12 @@ app.whenReady().then(async () => {
   const helper = new EventEmitter();
   helper.down = () => {};
   helper.files = async () => selection;
-  const overlay = new Overlay({ onDrop: () => {} });
+  const overlay = new WheelWindow({ onDrop: () => {} });
   overlay.create();
+  const flow = createDropFlow({ conversion: convert, getWheel: () => overlay, getJobs: () => ({ addInfo: () => {} }), log: () => {} });
   const trigger = new Trigger(helper);
   const events = [];
-  trigger.on('open', (files) => { events.push('open'); overlay.openWheel(files, convert.targetsFor(files)); });
+  trigger.on('open', (files) => { events.push('open'); flow.onOpen(files); });
   trigger.on('unsupported', () => events.push('unsupported'));
   trigger.on('release', () => { events.push('release'); overlay.releaseSoon(); });
   trigger.on('cancel', () => { events.push('cancel'); overlay.hide(); });

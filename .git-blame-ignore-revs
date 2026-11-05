@@ -1,3 +1,5 @@
 # Commits that only move files; git blame skips them:  git config blame.ignoreRevsFile .git-blame-ignore-revs
 # Move the conversion files to src/features/conversion (rename only)
 608d422e40d4322ba01dcccd87f63770bc56961d
+# Move the main-process files, the windows' pages and the tests into their features (rename only)
+217f32b6ff4f8e4745ac2609acb5de00133b9223

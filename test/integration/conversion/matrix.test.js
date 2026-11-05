@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Runs the conversion matrix inside Electron (printToPDF / nativeImage need it).  npx electron test/entry.js
-//   npx electron test/entry.js --only=mp4,pdf      only these source formats
+// Runs the conversion matrix inside Electron (printToPDF / nativeImage need it).  npx electron test/integration/conversion/matrix.test.js
+//   npx electron test/integration/conversion/matrix.test.js --only=mp4,pdf      only these source formats
 const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { spawnSync } = require('child_process');
-const convert = require('../src/features/conversion');
-const { TARGET_ORDER, VIDEO, AUDIO, extOf } = require('../src/features/conversion/catalog/formats');
-const pdf = require('../src/features/conversion/lib/pdfjs');
-const finish = require('./support/finish');
-const tmp = require('./support/tmp');
+const convert = require('../../../src/features/conversion');
+const { TARGET_ORDER, VIDEO, AUDIO, extOf } = require('../../../src/features/conversion/catalog/formats');
+const pdf = require('../../../src/features/conversion/lib/pdfjs');
+const finish = require('../../support/finish');
+const tmp = require('../../support/tmp');
 
 const MARK = 'Pomelo converts files';
 const SUB = 'Hello subtitles';
@@ -189,7 +189,7 @@ app.on('window-all-closed', () => {});   // hidden print windows come and go; do
         const outText = typeof textOut === 'string' ? textOut : ['txt', 'md', 'html'].includes(to) ? fs.readFileSync(outs[0], 'utf8') : null;
         if (outText !== null && /^(report|readme|notes|page|legacy|doc)\./.test(name) && !outText.includes('Pomelo')) throw new Error(`missing text in output: "${outText.slice(0, 60)}"`);
         if (['csv', 'html', 'json'].includes(to) && /^(book|data|old|open)\.(xlsx|xls|ods|csv|tsv)$/.test(name) && !fs.readFileSync(outs[0], 'utf8').includes('Widget')) throw new Error('missing cell data');
-        if (to === 'epub') { const book = await require('../src/features/conversion/lib/epub').read(outs[0]).catch(() => null); if (book && /^(report|readme|notes|page)\./.test(name) && !book.body.includes('Pomelo')) throw new Error('missing text in epub'); }
+        if (to === 'epub') { const book = await require('../../../src/features/conversion/lib/epub').read(outs[0]).catch(() => null); if (book && /^(report|readme|notes|page)\./.test(name) && !book.body.includes('Pomelo')) throw new Error('missing text in epub'); }
         if (to === 'xlsx' && name === 'grid.pdf') { const wb = require('xlsx').readFile(outs[0]); if (!require('xlsx').utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]).includes('Widget,42')) throw new Error('table cells wrong'); }
         pass++;
         console.log(`  ok  ${name.padEnd(16)} -> ${to.padEnd(5)} ${String(Date.now() - t0).padStart(5)}ms  ${outs.length > 1 ? outs.length + ' files' : path.basename(outs[0])}`);

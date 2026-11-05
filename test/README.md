@@ -15,17 +15,19 @@ node test/run.js --timeout=60                 # time limit in seconds for every 
 
 `run.js` kills a suite that runs past its time limit and counts it as failed. It prints a table with the checks that passed, failed and were skipped. A skip is not a pass: a suite that needs an engine you do not have prints `skipped` and the table counts it. In GitHub Actions it also writes an `::error` annotation per failed check and a step summary.
 
-A single suite runs on its own too: `node test/jobs-test.js`, or `npx electron test/entry.js --only=mp4,pdf` for the conversion matrix.
+A single suite runs on its own too: `node test/unit/jobs/jobs.test.js`, or `npx electron test/integration/conversion/matrix.test.js --only=mp4,pdf` for the conversion matrix.
 
 ## Tiers
 
 | Tier | Runs in | Needs | Suites |
 |---|---|---|---|
-| `unit` | Node | nothing; the input helper must be built (`npm run build:helper`) | `jobs`, `helper`, `engine-cli`, `installer`, `uninstall`, `autoupdate`, `updateinstall`, `routing`, `dev-tools`, `paths`, `fs-process`, `text` |
-| `integration` | Electron | LibreOffice and Pandoc for their pairs (skipped without) | `updater`, `matrix` (`entry.js`), `edge-cases` |
+| `unit` | Node | nothing; the input helper must be built (`npm run build:helper`) | `jobs`, `helper`, `engine-cli`, `installer`, `uninstall`, `autoupdate`, `updater`, `updateinstall`, `routing`, `kit-and-catalog`, `registry`, `dev-tools`, `paths`, `fs-process`, `text` |
+| `integration` | Electron | LibreOffice and Pandoc for their pairs (skipped without) | `app-start` (CI only), `matrix`, `edge-cases` |
 | `pdf` | Node | the Python PDF engine, and OCR for the scan check | `pdf-layout`, `pdf-formats` |
 | `ui` | Electron | the Windows desktop | `pipeline`, `overlay-shot`, `toast-shot`, `settings-shot` (they also save screenshots to `test/shots/`) |
 | `nightly` | Node | network; installs Python packages for real | `real-python` |
+
+The files sit in `unit/<feature>/`, `integration/<area>/` and `ui/`, next to the feature they test by name.
 
 ## Writing a suite
 

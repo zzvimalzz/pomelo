@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // A PDF into every other format: Markdown, HTML, text, EPUB, Excel, PowerPoint, RTF, and the progress they report.
-// Needs the PDF engine (skipped without it).   node test/pdf-formats-test.js
+// Needs the PDF engine (skipped without it).   node test/integration/conversion/pdf-formats.test.js
 // Scores on real-world pages: test/fidelity/formats.js.
 const fs = require('fs');
 const os = require('os');
@@ -8,11 +8,11 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const JSZip = require('jszip');
 const XLSX = require('xlsx');
-const convert = require('../src/features/conversion');
+const convert = require('../../../src/features/conversion');
 
-const { expect, failed } = require('./support/expect');
-const finish = require('./support/finish');
-const tmp = require('./support/tmp');
+const { expect, failed } = require('../../support/expect');
+const finish = require('../../support/finish');
+const tmp = require('../../support/tmp');
 
 // A two-page PDF: a title, a paragraph with a link, bullets, a ruled table, a coloured banner with white text, a picture.
 const MAKE_PDF = `

@@ -17,7 +17,7 @@ const PROGRAMS = [
   ['bsdtar / libarchive (tar.exe shipped with Windows 10 and 11)', 'BSD-2-Clause', 'https://www.libarchive.org', 'reading RAR archives'],
 ];
 
-// Installed by Pomelo's "Install" button (src/main/engineInstaller.js) or `npm run setup:pdf` into a private Python environment
+// Installed by Pomelo's "Install" button (src/features/engine-setup) or `npm run setup:pdf` into a private Python environment
 // (not part of this repository). Versions are the ones the installer pins or resolves to.
 const PYTHON = [
   ['PyMuPDF', '1.28.2', 'AGPL-3.0-or-later or Artifex commercial'], ['python-docx', '1.2.0', 'MIT'], ['lxml', '6.1.3', 'BSD-3-Clause'],
@@ -30,6 +30,12 @@ const PYTHON = [
   ['pillow-heif', '1.8.1', 'BSD-3-Clause (wheels bundle libheif LGPL-3.0, libde265 LGPL-3.0 and the x265 encoder GPL-2.0-or-later)'],
   ['Pillow', '13.0.0', 'MIT-CMU'], ['typing_extensions', '4.16.0', 'PSF-2.0'],
 ];
+
+// The pinned packages in python/requirements.txt must be listed here at the same version, so the notices cannot drift from what the installer installs.
+const norm = (n) => n.toLowerCase().replace(/[-_.]/g, '');
+const pins = fs.readFileSync(path.join(root, 'python', 'requirements.txt'), 'utf8').split(/\r?\n/).map((l) => /^([\w.-]+)==([\w.]+)$/.exec(l.trim())).filter(Boolean);
+const drift = pins.filter(([, name, version]) => !PYTHON.some(([n, v]) => norm(n) === norm(name) && v === version));
+if (drift.length) { console.error('python/requirements.txt pins that THIRD_PARTY_NOTICES does not list at that version: ' + drift.map(([, n, v]) => `${n}==${v}`).join(', ')); process.exit(1); }
 
 // Not allowed: licences that are not open source or that conflict with AGPL-3.0-or-later.
 const FORBIDDEN = /PolyForm|Noncommercial|Commons-Clause|SSPL|BUSL|Proprietary|UNLICENSED|CC-BY-NC/i;

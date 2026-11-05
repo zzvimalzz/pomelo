@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Uninstall planning and hand-over with fakes: nothing real is removed or started.   node test/uninstall-test.js
+// Uninstall planning and hand-over with fakes: nothing real is removed or started.   node test/unit/uninstall/uninstall.test.js
 const fs = require('fs');
 const path = require('path');
-const { plan, confirmText, uninstall } = require('../src/main/uninstall');
-const { createInstaller } = require('../src/main/engineInstaller');
+const { plan, confirmText, uninstall } = require('../../../src/features/uninstall/uninstall');
+const { createInstaller } = require('../../../src/features/engine-setup/installer');
 
-const { expect, failed } = require('./support/expect');
-const finish = require('./support/finish');
-const { dir: tmpDir } = require('./support/tmp');
+const { expect, failed } = require('../../support/expect');
+const finish = require('../../support/finish');
+const { dir: tmpDir } = require('../../support/tmp');
 const tmp = () => tmpDir('un');
 
 (async () => {

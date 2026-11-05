@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Renders the real wheel page with sample data: segments, hover, drop-target behaviour, and per-kind icon colours.
-//   npx electron test/overlay-shot.js
+//   npx electron test/ui/overlay-shot.js
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
-const { targetsForFiles } = require('../src/features/conversion/catalog/formats');
-const { middleEllipsis } = require('../src/shared/core/text');
+const { targetsForFiles } = require('../../src/features/conversion/catalog/formats');
+const { middleEllipsis } = require('../../src/shared/core/text');
 
 app.on('window-all-closed', () => {});
 // Without this, a window that another app covers on screen cannot be captured ("display surface not available").
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
-const out = path.join(__dirname, 'shots');
+const out = path.join(__dirname, '..', 'shots');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const { expect: check, failed } = require('./support/expect');
-const finish = require('./support/finish');
+const { expect: check, failed } = require('../support/expect');
+const finish = require('../support/finish');
 
 app.whenReady().then(async () => {
   fs.mkdirSync(out, { recursive: true });
   const win = new BrowserWindow({ width: 400, height: 400, x: 200, y: 200, frame: false, transparent: true, focusable: false, skipTaskbar: true, alwaysOnTop: true,
-    webPreferences: { preload: path.join(__dirname, '..', 'src', 'preload', 'overlay.js'), contextIsolation: true, sandbox: true } });
-  await win.loadFile(path.join(__dirname, '..', 'src', 'renderer', 'overlay.html'));
+    webPreferences: { preload: path.join(__dirname, '..', '..', 'src', 'features', 'gesture', 'ui', 'preload.js'), contextIsolation: true, sandbox: true } });
+  await win.loadFile(path.join(__dirname, '..', '..', 'src', 'features', 'gesture', 'ui', 'wheel.html'));
   const shot = async (name) => fs.writeFileSync(path.join(out, name), await sharp((await win.webContents.capturePage()).toPNG()).flatten({ background: '#d9d6d0' }).toBuffer());
   const dragover = (x, y) => win.webContents.executeJavaScript(`(() => { const e = new Event('dragover', { cancelable: true }); e.clientX = ${x}; e.clientY = ${y}; e.dataTransfer = { dropEffect: '' }; window.dispatchEvent(e); return e.dataTransfer.dropEffect; })()`);
   const segments = () => win.webContents.executeJavaScript(`document.querySelectorAll('.seg').length`);

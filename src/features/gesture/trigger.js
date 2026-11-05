@@ -3,7 +3,7 @@
 //   idle -> pressed (left down) -> dragging (moved past threshold, files probed) -> wheel (trigger key pressed)
 // Input events come from the native input helper (see native/pomelo-input.cs).
 const { EventEmitter } = require('events');
-const log = require('./log');
+const log = require('../../shared/node/log');
 
 const DRAG_THRESHOLD_PX = 8;
 const KEYS = ['ctrl', 'alt', 'shift'];

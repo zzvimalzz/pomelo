@@ -6,13 +6,11 @@
 //   Pomelo.exe --uninstall-engines                         removes what Pomelo installed and switches off "Start with Windows"
 //   --progress-file=<path>                                 optional: where to keep progress for the wizard (see fileProgress)
 //
-// Engine names are the ones in engineInstaller's PACK (pdf, ocr and heic come from the same install).
+// Engine names are the keys in packs.js (pdf, ocr and heic come from the same install).
 // Exit code 0: everything worked. 1: something failed (the message is printed and logged).
 const fs = require('fs');
-const { PACK } = require('./engineInstaller');
+const { PACKS, PACK } = require('./packs');
 
-const LABEL = { python: 'PDF, OCR and HEIC components', soffice: 'LibreOffice', pandoc: 'Pandoc' };
-const WEIGHT = { python: 220, soffice: 450, pandoc: 40 };        // roughly how long each takes, so the bar moves evenly
 const ascii = (s) => String(s).replace(/[^\x20-\x7e]/g, '').replace(/\s+/g, ' ').trim().slice(0, 70);
 
 // -> { action: 'install', keys, progressFile } | { action: 'uninstall', progressFile } | null when Pomelo was started normally.
@@ -53,13 +51,13 @@ async function run(cmd, { installer, setLoginItem, say = console.log, progress =
 
   const queue = [];                                    // adding PDF also adds HEIC, so a second one from the same install is skipped
   for (const key of cmd.keys) if (!PACK[key] || !queue.some((k) => PACK[k] === PACK[key])) queue.push(key);
-  const weight = (key) => WEIGHT[PACK[key]] || 100;
+  const weight = (key) => PACKS[PACK[key]]?.weight || 100;     // roughly how long each takes, so the bar moves evenly
   const total = queue.reduce((sum, key) => sum + weight(key), 0);
 
   const failed = [];
   let before = 0;
   for (const [i, key] of queue.entries()) {
-    const label = LABEL[PACK[key]] || key;
+    const label = PACKS[PACK[key]]?.label || key;
     let within = 0;
     const title = `Installing ${label} (${i + 1} of ${queue.length})`;
     const report = (detail) => progress({ fraction: (before + weight(key) * Math.min(within, 0.99)) / total, text: title, detail });

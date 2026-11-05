@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Opens the real settings window with sample data: normal vs advanced view, layout/scrolling, the logo, spacing,
-// the update button and version line, diagnostics. Saves screenshots.   npx electron test/settings-shot.js
+// the update button and version line, diagnostics. Saves screenshots.   npx electron test/ui/settings-shot.js
 const { app, ipcMain, nativeTheme, screen, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const settingsWindow = require('../src/main/settingsWindow');
+const settingsWindow = require('../../src/features/settings/settings.window');
+const { registerSettingsIpc } = require('../../src/features/settings/settings.ipc');
 
 app.on('window-all-closed', () => {});
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const asset = (n) => path.join(__dirname, '..', 'assets', n);
-const out = path.join(__dirname, 'shots');
+const asset = (n) => path.join(__dirname, '..', '..', 'assets', n);
+const out = path.join(__dirname, '..', 'shots');
 
 const LONG = 'C:\\Users\\someone-with-a-very-long-name\\OneDrive - Contoso Corporation\\Desktop\\Pomelo\\vendor\\pyenv\\Scripts\\python.exe';
 const scenarios = {
@@ -19,8 +20,13 @@ const scenarios = {
 let current = scenarios['all-ready'];
 let nextUpdate = { state: 'unconfigured', current: '0.1.0' };
 const downloads = [];
-ipcMain.handle('settings:get', () => ({ ...current, version: '0.1.0', os: 'Windows 10.0.26300 x64' }));
-ipcMain.handle('settings:set', (_e, patch) => { current = { ...current, settings: { ...current.settings, ...patch } }; return current.settings; });
+// The real settings messages (get, set, fit the window, copy, open the log) on top of a fake store and fake state.
+registerSettingsIpc({
+  store: { get: () => current.settings, set: (patch) => { current = { ...current, settings: { ...current.settings, ...patch } }; return current.settings; } },
+  getState: () => ({ engines: current.engines, version: '0.1.0', os: 'Windows 10.0.26300 x64' }),
+  onChange: () => {},
+  logPath: () => path.join(out, 'debug.log'),
+});
 const installs = [];
 let installOutcome = { ok: true };
 let uninstallAnswer = { ok: false };
@@ -36,8 +42,8 @@ ipcMain.handle('app:uninstall', async () => { uninstalls.push(1); await sleep(20
 ipcMain.handle('updates:check', async () => { await sleep(250); return nextUpdate; });
 ipcMain.handle('updates:download', (_e, url) => { downloads.push(url); return { ok: true }; });
 
-const { expect: check, failed } = require('./support/expect');
-const finish = require('./support/finish');
+const { expect: check, failed } = require('../support/expect');
+const finish = require('../support/finish');
 const js = (win, code) => win.webContents.executeJavaScript(code);
 const shot = async (win, name) => fs.writeFileSync(path.join(out, name), (await win.webContents.capturePage()).toPNG());
 const dims = (win) => js(win, `({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, sh: document.documentElement.scrollHeight, ch: document.documentElement.clientHeight })`);

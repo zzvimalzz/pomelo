@@ -8,16 +8,18 @@
 const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
-const { extOf } = require('./formats');
-const { shownProgress, remaining, guessMs } = require('./progress');
-const { middleEllipsis } = require('../shared/core/text');
+const { shownProgress, remaining, guessMs } = require('./estimate');
+const { middleEllipsis } = require('../../shared/core/text');
 
 const sizeOf = (file) => { try { const st = fs.statSync(file); return st.isFile() ? st.size : 0; } catch { return 0; } };
 
 class Jobs extends EventEmitter {
-  // timings: learns how long each kind of conversion takes here (see progress.js); now: the clock, for tests.
-  constructor({ convert, concurrency = 3, maxStack = 3, timings = null, now = Date.now }) {
+  // formats = { extOf, kinds }: the format of a file, and the extension sets guessMs needs (both from the conversion feature,
+  // handed in by the app). timings: learns how long each kind of conversion takes here (see estimate.js); now: the clock, for tests.
+  constructor({ convert, formats, concurrency = 3, maxStack = 3, timings = null, now = Date.now }) {
     super();
+    if (!formats?.extOf || !formats.kinds) throw new Error('Jobs needs formats = { extOf, kinds }');
+    this.formats = formats;
     this.convert = convert;          // async (src, to, { onProgress, signal }) => [output paths]
     this.timings = timings;
     this.now = now;
@@ -106,9 +108,9 @@ class Jobs extends EventEmitter {
   async start(job) {
     job.state = 'working';
     job.startedAt = this.now();
-    job.from = extOf(job.src);
+    job.from = this.formats.extOf(job.src);
     job.size = sizeOf(job.src);
-    job.expected = this.timings ? this.timings.expected(job.from, job.to, job.size) : guessMs(job.from, job.to, job.size);
+    job.expected = this.timings ? this.timings.expected(job.from, job.to, job.size) : guessMs(job.from, job.to, job.size, this.formats.kinds);
     this.running++;
     this.startTicker();
     this.changed();

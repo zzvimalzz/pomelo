@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Drives the real toast window through single, stacked and summary states with a fake slow converter.
-//   npx electron test/toast-shot.js
+//   npx electron test/ui/toast-shot.js
 const { app, screen, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
-const { Toast, heightFor } = require('../src/main/toast');
-const { Jobs } = require('../src/main/jobs');
-const { expect: check, failed } = require('./support/expect');
-const finish = require('./support/finish');
+const { Toast, heightFor } = require('../../src/features/jobs/toast.window');
+const { Jobs } = require('../../src/features/jobs/jobs');
+const { timingFormats } = require('../../src/features/conversion');
+const { expect: check, failed } = require('../support/expect');
+const finish = require('../support/finish');
 
 app.on('window-all-closed', () => {});
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const out = path.join(__dirname, 'shots');
+const out = path.join(__dirname, '..', 'shots');
 
 app.whenReady().then(async () => {
   fs.mkdirSync(out, { recursive: true });
@@ -23,7 +24,7 @@ app.whenReady().then(async () => {
     pending.push({ src, to, onProgress, signal, resolve: () => resolve([src.replace(/\.\w+$/, '.' + to)]), reject });
     signal.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true });
   });
-  const jobs = new Jobs({ convert, concurrency: 3, maxStack: 3 });
+  const jobs = new Jobs({ convert, formats: timingFormats, concurrency: 3, maxStack: 3 });
   const toast = new Toast({ onRemove: (id) => jobs.remove(id), onCancel: (id) => jobs.cancel(id) });
   toast.create();
   jobs.on('change', (v) => toast.update(v));

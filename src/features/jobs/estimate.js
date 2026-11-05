@@ -7,33 +7,31 @@
 // is never just spinning and a slow job is visibly slow.
 const fs = require('fs');
 const path = require('path');
-const { extsInGroup, OFFICE } = require('./formats');
-
 const MB = 1048576;
 
 // Rough first guesses (milliseconds), used until Pomelo has timed a conversion of that kind itself.
-const OFFICE_EXT = new Set(Object.values(OFFICE).flat());
-const PICTURE = new Set(extsInGroup('image'));
-
-function guessMs(from, to, size) {
+// kinds = { office, picture }: the extensions LibreOffice has to start for, and the picture formats (from the format catalog,
+// which this feature does not import).
+function guessMs(from, to, size, { office, picture }) {
   const mb = size / MB;
   if (from === 'pdf') return 3000 + Math.min(size / 70000, 400) * 1000;              // about a second a page
-  if (OFFICE_EXT.has(from) || OFFICE_EXT.has(to)) return 6000 + mb * 3000;                  // LibreOffice starts slowly
-  if (PICTURE.has(from)) return 800 + mb * 600;
+  if (office.has(from) || office.has(to)) return 6000 + mb * 3000;                  // LibreOffice starts slowly
+  if (picture.has(from)) return 800 + mb * 600;
   return 1500 + mb * 1000;
 }
 
 // Learned timings: key "from>to" -> milliseconds per (1 MB + 1), smoothed. Kept next to the settings.
 class Timings {
-  constructor(file) {
+  constructor(file, kinds) {
     this.file = file;
+    this.kinds = kinds;
     this.data = {};
     try { this.data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* none yet */ }
   }
 
   expected(from, to, size) {
     const learned = this.data[`${from}>${to}`];
-    return learned ? Math.max(500, learned * (1 + size / MB)) : guessMs(from, to, size);
+    return learned ? Math.max(500, learned * (1 + size / MB)) : guessMs(from, to, size, this.kinds);
   }
 
   record(from, to, size, ms) {

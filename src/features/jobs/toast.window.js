@@ -2,7 +2,9 @@
 // Progress, results and errors appear in a small toast stack in the bottom-right corner, just above the taskbar,
 // instead of over whatever the user is working on. It never takes focus. What to show comes from jobs.js.
 const path = require('path');
-const { BrowserWindow, screen, ipcMain, shell } = require('electron');
+const { screen } = require('electron');
+const { registerToastIpc } = require('./toast.ipc');
+const { createFloatingWindow } = require('../../shared/electron/windows');
 
 const W = 408;          // card (380) plus a margin for its shadow
 const CARD_H = 88;
@@ -24,20 +26,9 @@ class Toast {
   }
 
   create() {
-    this.win = new BrowserWindow({
-      width: W, height: heightFor(1), show: false, frame: false, transparent: true, backgroundColor: '#00000000',
-      resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false, hasShadow: false,
-      focusable: false, skipTaskbar: true, alwaysOnTop: true,
-      webPreferences: { preload: path.join(__dirname, '..', 'preload', 'toast.js'), contextIsolation: true, sandbox: true },
-    });
-    this.win.setAlwaysOnTop(true, 'status');
-    this.win.webContents.on('will-navigate', (e) => e.preventDefault());
-    this.win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    this.win.loadFile(path.join(__dirname, '..', 'renderer', 'toast.html'));
-    ipcMain.once('toast:ready', () => this.markLoaded());
-    ipcMain.on('toast:reveal', (_e, file) => { if (file) shell.showItemInFolder(file); });
-    ipcMain.on('toast:remove', (_e, id) => this.onRemove(id));
-    ipcMain.on('toast:cancel', (_e, id) => this.onCancel(id));
+    this.win = createFloatingWindow({ width: W, height: heightFor(1), preload: path.join(__dirname, 'ui', 'preload.js'), level: 'status' });
+    registerToastIpc({ onReady: () => this.markLoaded(), onRemove: (id) => this.onRemove(id), onCancel: (id) => this.onCancel(id) });
+    this.win.loadFile(path.join(__dirname, 'ui', 'toast.html'));
   }
 
   // Bottom-right of the primary display (where the taskbar tray is), inside the work area. Grows upward.

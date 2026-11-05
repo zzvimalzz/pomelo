@@ -5,9 +5,8 @@
 //                         or   "pomelo": { "updateFeed": "https://example.com/latest.json" }
 // A generic feed is JSON like { "version": "1.2.0", "url": "https://...", "notes": "..." }.
 // With neither set, the check reports "not configured" and makes no network request.
-const { app, shell } = require('electron');
-const pkg = require('../../package.json');
-const { allowedUrl } = require('./updateInstall');
+const pkg = require('../../../package.json');
+const { allowedUrl } = require('./url-policy');
 
 const CONFIG = pkg.pomelo || {};
 const TIMEOUT_MS = 10000;
@@ -44,13 +43,14 @@ function parseRelease(json) {
   throw new Error('The update feed has an unexpected format');
 }
 
+// current: the running version. fetchImpl: replaceable for tests.
 // -> { state: 'unconfigured' | 'uptodate' | 'available' | 'error', current, latest?, url?, notes?, message? }
-async function check({ feed = feedUrl(), current = app.getVersion() } = {}) {
+async function check({ current, feed = feedUrl(), fetchImpl = fetch }) {
   if (!feed) return { state: 'unconfigured', current };
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(feed, { signal: ctl.signal, headers: { Accept: 'application/vnd.github+json, application/json', 'User-Agent': `Pomelo/${current}` } });
+    const res = await fetchImpl(feed, { signal: ctl.signal, headers: { Accept: 'application/vnd.github+json, application/json', 'User-Agent': `Pomelo/${current}` } });
     if (res.status === 404) return { state: 'uptodate', current, note: 'No releases published yet' };
     if (!res.ok) throw new Error(`The update server answered ${res.status}`);
     let json;
@@ -73,11 +73,12 @@ function downloadRules() {
 }
 
 // Opens the download page or file in the browser: the fallback when an update cannot be installed from inside Pomelo.
-async function openDownload(url) {
+// openExternal(url) is Electron's shell.openExternal, handed in by the IPC layer.
+async function openDownload(url, openExternal) {
   let u;
   try { u = new URL(url); } catch { return { ok: false, message: 'Not a valid link' }; }
   if (!allowedUrl(u.href, downloadRules())) return { ok: false, message: 'Refusing to open an unexpected link' };
-  await shell.openExternal(u.href);
+  await openExternal(u.href);
   return { ok: true };
 }
 

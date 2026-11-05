@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The installer's headless switches, with a fake installer: nothing is installed or removed.   node test/engine-cli-test.js
+// The installer's headless switches, with a fake installer: nothing is installed or removed.   node test/unit/engine-setup/cli.test.js
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { parse, run, fileProgress } = require('../src/main/engineCli');
+const { parse, run, fileProgress } = require('../../../src/features/engine-setup/cli');
 
-const { expect, failed } = require('./support/expect');
-const finish = require('./support/finish');
+const { expect, failed } = require('../../support/expect');
+const finish = require('../../support/finish');
 
 // A fake installer: `failing` lists the engine keys that fail.
 const fake = (failing = [], removalFails = []) => {

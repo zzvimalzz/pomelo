@@ -10,18 +10,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { allowedUrl } = require('./url-policy');
 
 const DIR = () => path.join(os.tmpdir(), 'pomelo-update');
-
-// Hosts a download may come from. `feedHost`: the host of a configured generic update feed, if any.
-// `testing` (a local feed given by POMELO_UPDATE_FEED) additionally allows plain http to that same host.
-function allowedUrl(url, { feedHost = null, testing = false } = {}) {
-  let u;
-  try { u = new URL(url); } catch { return false; }
-  if (u.protocol !== 'https:' && !(testing && u.protocol === 'http:' && u.host === feedHost)) return false;
-  if (u.host === 'github.com' || u.host.endsWith('.githubusercontent.com')) return true;
-  return !!feedHost && u.host === feedHost;
-}
 
 // Resolves with the path of the verified installer. onProgress({ received, total, fraction }).
 async function download({ url, sha256, size = 0, dir = DIR(), name = 'Pomelo-Setup-x64.exe', onProgress, signal, fetchImpl = fetch, rules }) {
@@ -90,4 +81,4 @@ function launch(installer, pomeloExe, { version = '', spawn = require('child_pro
 
 const cleanup = (dir = DIR()) => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* still in use: next time */ } };
 
-module.exports = { allowedUrl, download, installCommand, launch, cleanup };
+module.exports = { download, installCommand, launch, cleanup };

@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Updating from inside Pomelo: where it may download from, that a bad or partial download is thrown away, and the command
-// that is run.   node test/updateinstall-test.js
+// that is run.   node test/unit/updates/install.test.js
 const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
-const { allowedUrl, download, installCommand, launch } = require('../src/main/updateInstall');
+const { download, installCommand, launch } = require('../../../src/features/updates/install');
+const { allowedUrl } = require('../../../src/features/updates/url-policy');
 
-const { expect, failed } = require('./support/expect');
-const finish = require('./support/finish');
-const tmp = require('./support/tmp');
+const { expect, failed } = require('../../support/expect');
+const finish = require('../../support/finish');
+const tmp = require('../../support/tmp');
 const rejects = async (p) => { try { await p; return null; } catch (e) { return e; } };
 
 const BODY = crypto.randomBytes(3 * 1024 * 1024);

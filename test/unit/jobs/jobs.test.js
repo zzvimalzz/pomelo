@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Logic tests for the toast stack and the "Converting 1/4 files" summary.   node test/jobs-test.js
-const { Jobs } = require('../src/main/jobs');
+// Logic tests for the toast stack and the "Converting 1/4 files" summary.   node test/unit/jobs/jobs.test.js
+const { Jobs } = require('../../../src/features/jobs/jobs');
+const { timingFormats } = require('../../../src/features/conversion');
 
-const { expect, failed } = require('./support/expect');
-const finish = require('./support/finish');
+const { expect, failed } = require('../../support/expect');
+const finish = require('../../support/finish');
 const tick = () => new Promise((r) => setImmediate(r));
 
 // A convert function whose jobs finish only when the test says so.
@@ -17,7 +18,7 @@ function controlled() {
 }
 // A clock the test moves by hand, so estimated progress and "time left" are exact.
 const clock = { t: 1_000_000 };
-const make = (extra = {}) => { const c = controlled(); const jobs = new Jobs({ convert: c.fn, concurrency: 3, maxStack: 3, now: () => clock.t, ...extra }); return { jobs, c }; };
+const make = (extra = {}) => { const c = controlled(); const jobs = new Jobs({ convert: c.fn, formats: timingFormats, concurrency: 3, maxStack: 3, now: () => clock.t, ...extra }); return { jobs, c }; };
 const titles = (jobs) => jobs.view().cards.map((x) => x.title);
 
 (async () => {

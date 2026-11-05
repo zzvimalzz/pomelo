@@ -14,8 +14,12 @@ module.exports = [
     },
   },
   {
-    files: ['src/renderer/**/*.js', 'src/ui-shared/**/*.js'],
+    files: ['src/features/*/ui/**/*.js', 'src/ui-shared/**/*.js'],
     languageOptions: { globals: { ...globals.browser } },
+  },
+  {
+    files: ['src/features/*/ui/preload.js'],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
   {
     files: ['**/*.mjs'],

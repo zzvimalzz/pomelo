@@ -25,7 +25,7 @@
   "license": "AGPL-3.0-or-later",
   "author": "Pomelo contributors",
   "private": true,
-  "main": "src/main/main.js",
+  "main": "src/app/main.js",
   "pomelo": {
     "updateRepo": "zzvimalzz/pomelo"
   },

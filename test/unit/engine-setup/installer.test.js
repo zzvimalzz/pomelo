@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Engine installer and uninstaller logic with a fake command runner (nothing is installed).   node test/installer-test.js
+// Engine installer and uninstaller logic with a fake command runner (nothing is installed).   node test/unit/engine-setup/installer.test.js
 const fs = require('fs');
 const path = require('path');
-const { createInstaller } = require('../src/main/engineInstaller');
+const { createInstaller } = require('../../../src/features/engine-setup/installer');
 
-const { expect, failed } = require('./support/expect');
-const finish = require('./support/finish');
-const { dir: tmpDir } = require('./support/tmp');
+const { expect, failed } = require('../../support/expect');
+const finish = require('../../support/finish');
+const { dir: tmpDir } = require('../../support/tmp');
 const tmp = () => tmpDir('inst');
 const touch = (p) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, ''); };
 
@@ -132,7 +132,10 @@ function fake(script = () => null) {
     const r = await inst.install('pdf');
     const pip = f.calls.find((c) => c.includes('pip'));
     expect('uses the Python already on the PC (no winget)', r.ok && f.named('winget').length === 0);
-    expect('pip installs PyMuPDF (pinned, so its 2.x layout stack is not pulled in), python-docx, OCR and HEIC', pip && pip.includes('pymupdf==1.28.2') && pip.includes('python-docx') && pip.includes('pillow-heif') && pip.some((a) => /^rapidocr==/.test(a)) && !pip.includes('pdf2docx') && !pip.includes('pymupdf4llm'), String(pip));
+    const file = pip && pip[pip.indexOf('-r') + 1];
+    const pins = file && fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#')) : [];
+    expect('pip installs python/requirements.txt', pip && pip.includes('-r') && path.basename(file) === 'requirements.txt' && path.basename(path.dirname(file)) === 'python', String(pip));
+    expect('which pins PyMuPDF (so its 2.x layout stack is not pulled in), python-docx, OCR and HEIC', pins.includes('pymupdf==1.28.2') && pins.includes('python-docx') && pins.includes('pillow-heif') && pins.some((a) => /^rapidocr==/.test(a)) && !pins.some((a) => /pdf2docx|pymupdf4llm/.test(a)), pins.join(' '));
     expect('environment lives under the engines folder and is on the manifest', inst.readManifest().pyenv === true && fs.existsSync(path.join(root, 'pyenv', 'Scripts', 'python.exe')));
     expect('Python itself was not recorded (the user already had it)', inst.readManifest().winget.length === 0);
   }
@@ -208,6 +211,20 @@ function fake(script = () => null) {
     const inst = createInstaller({ root, run: f.run });
     const r = await inst.uninstall();
     expect('a package that will not uninstall stays on the list for next time', r.failed.join() === 'One' && r.removed.join() === 'Two' && inst.readManifest().winget.map((w) => w.name).join() === 'One');
+  }
+  {
+    // The manifest an install made with Pomelo 0.1.2 (the same format today): what is still installed is kept by id, not by name.
+    const root = tmp();
+    touch(path.join(root, 'pyenv', 'Scripts', 'python.exe'));
+    touch(path.join(root, 'libreoffice', 'program', 'soffice.exe'));
+    fs.writeFileSync(path.join(root, 'manifest.json'), JSON.stringify({ winget: [{ id: 'Python.Python.3.12', name: 'Python' }, { id: 'JohnMacFarlane.Pandoc', name: 'Pandoc' }], pyenv: true, soffice: true }));
+    const f = fake((cmd, args) => (args.includes('JohnMacFarlane.Pandoc') ? { code: 1, out: 'in use' } : null));
+    const inst = createInstaller({ root, run: f.run });
+    const r = await inst.uninstall();
+    const m = inst.readManifest();
+    expect('the Python environment and LibreOffice are removed, Python is uninstalled, Pandoc fails', r.removed.join() === 'PDF, OCR and HEIC components,LibreOffice,Python' && r.failed.join() === 'Pandoc', JSON.stringify(r));
+    expect('only Pandoc stays on the manifest, and the flags for what is gone are cleared', m.winget.map((w) => w.id).join() === 'JohnMacFarlane.Pandoc' && m.pyenv === false && m.soffice === false, JSON.stringify(m));
+    expect('and the names for the confirmation come from the manifest', inst.installed().join() === 'Pandoc');
   }
 
   console.log(failed() ? `\n${failed()} failed` : '\nall passed');

@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Edge cases that real files hit: odd names, local and remote images, broken input, parallel jobs.
-//   npx electron test/edge-cases.js
+//   npx electron test/integration/conversion/edge-cases.test.js
 const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const sharp = require('sharp');
-const convert = require('../src/features/conversion');
-const pdf = require('../src/features/conversion/lib/pdfjs');
-const { Jobs } = require('../src/main/jobs');
+const convert = require('../../../src/features/conversion');
+const pdf = require('../../../src/features/conversion/lib/pdfjs');
+const { Jobs } = require('../../../src/features/jobs/jobs');
 
 app.on('window-all-closed', () => {});
-const { expect, failed } = require('./support/expect');
-const finish = require('./support/finish');
-const tmp = require('./support/tmp');
+const { expect, failed } = require('../../support/expect');
+const finish = require('../../support/finish');
+const tmp = require('../../support/tmp');
 const within = (ms, promise) => Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error(`still running after ${ms / 1000}s`)), ms))]);
 const ORANGE = (r, g, b) => r > 220 && g > 100 && g < 180 && b < 80;
 
@@ -84,7 +84,7 @@ app.whenReady().then(async () => {
 
   console.log('two drops of the same file to the same format at once');
   fs.writeFileSync(f('twice.docx'), await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('twice')] }] })));
-  const jobs = new Jobs({ convert: (s, t, o) => convert.convertFile(s, t, o), concurrency: 3, maxStack: 3 });
+  const jobs = new Jobs({ convert: (s, t, o) => convert.convertFile(s, t, o), formats: convert.timingFormats, concurrency: 3, maxStack: 3 });
   jobs.addConversion(f('twice.docx'), 'pdf', 'PDF');
   jobs.addConversion(f('twice.docx'), 'pdf', 'PDF');
   await within(120000, new Promise((r) => { const iv = setInterval(() => { if (!jobs.active().length) { clearInterval(iv); r(); } }, 150); }));
@@ -112,7 +112,7 @@ app.whenReady().then(async () => {
     const src = f('long.mp4');
     execFileSync(ffmpegBin, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=30', '-t', '90', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', src], { windowsHide: true });
     const running = () => execFileSync('tasklist', ['/FI', 'IMAGENAME eq ffmpeg.exe', '/NH'], { windowsHide: true }).toString().includes('ffmpeg.exe');
-    const cjobs = new Jobs({ convert: (s, t, o) => convert.convertFile(s, t, o), concurrency: 3, maxStack: 3 });
+    const cjobs = new Jobs({ convert: (s, t, o) => convert.convertFile(s, t, o), formats: convert.timingFormats, concurrency: 3, maxStack: 3 });
     const before = fs.readdirSync(dir).length;
     cjobs.addConversion(src, 'webm', 'WEBM');
     await new Promise((r) => setTimeout(r, 2500));

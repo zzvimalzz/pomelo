@@ -33,14 +33,16 @@ The routing snapshot (`test/unit/conversion/routing.snapshot.json`) pins which e
 | Path | What it is |
 | --- | --- |
 | `native/pomelo-input.cs` | The input helper: global mouse/trigger-key hook and "which files are being dragged?" lookup. `npm run build:helper` compiles it (`npm start` and `npm test` do that for you) |
-| `src/main/explorer.js` | Starts the helper and talks to it over stdin/stdout |
-| `src/main/trigger.js` | The drag + key gesture state machine |
-| `src/main/overlay.js`, `src/renderer/overlay.*` | The wheel window (also the drop target) |
-| `src/main/jobs.js`, `toast.js`, `src/renderer/toast.*` | Parallel conversions and the bottom-right toast stack |
+| `src/app/` | The entry point (`main.js`) and the wiring between features: tray, drop flow, shutdown. Features never import each other |
+| `src/features/gesture/` | The input-helper client, the drag + key state machine, and the wheel window (also the drop target) |
+| `src/features/jobs/` | Parallel conversions, time estimates and the bottom-right toast stack |
 | `src/features/conversion/` | Everything about converting: the format catalog, which engines handle a pair (`routing/plans.js`), running them with fallback, and one folder per engine under `engines/` (built-in JS, LibreOffice, Pandoc, FFmpeg, archives, PDF, HEIC, subtitles). See its `README.md` |
 | `src/shared/`, `src/ui-shared/` | Helpers used by more than one part: paths, processes, temp files, text; the colours and DOM helper of the windows' pages |
-| `src/main/updater.js`, `src/renderer/settings.*` | Check for updates and the Settings window |
-| `src/main/engineCli.js` | The headless `--install-engines` / `--uninstall-engines` switches the installer runs |
+| `src/features/settings/` | The stored settings and the Settings window |
+| `src/features/updates/` | Check for updates, download and install in place |
+| `src/features/engine-setup/` | Installing and removing the optional engines, and the headless `--install-engines` / `--uninstall-engines` switches the installer runs |
+| `src/features/uninstall/` | The Uninstall button |
+| `python/requirements.txt` | The pinned Python packages of the PDF, OCR and HEIC engine: the in-app installer, `npm run setup:pdf` and the notices check all read it |
 | `installer/pomelo.iss` | The Inno Setup script (three screens, per-user). `npm run package`, then `npm run build:installer` (needs Inno Setup 6.3+) |
 | `.github/workflows/release.yml` | On a `v*` tag: builds the installer and attaches it, with its SHA-256, to a draft release |
 | `tools/make-icons.js` | Draws the logo, tray icon, `.ico` and installer artwork. `npm run icons` |
@@ -50,7 +52,7 @@ The routing snapshot (`test/unit/conversion/routing.snapshot.json`) pins which e
 1. Add the extension to `GROUP_OF`, `TARGET_ORDER` and `LABELS` in `src/features/conversion/catalog/formats.js` (the wheel shows the first 8 available targets).
 2. Implement it in an engine under `src/features/conversion/engines/<name>/`. An engine exports `supports(from, to, engines)` and `run(job)` that returns the files it wrote, and `detect()` if it needs a program or a Python environment. Never overwrite: use `uniquePath`.
 3. List a new engine in `engines/registry.js`. Set its place in the order, and any chain through an intermediate format, in `routing/plans.js`.
-4. Add a fixture and a content check in `test/entry.js`. Check the output, not just that a file exists.
+4. Add a fixture and a content check in `test/integration/conversion/matrix.test.js`. Check the output, not just that a file exists.
 5. Run `node test/unit/conversion/routing.test.js --update` and review the snapshot diff: it should show exactly the routes you added.
 
 ## Ground rules

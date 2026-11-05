@@ -1,6 +1,6 @@
 # Conversion
 
-Turns one file into another format, next to the original. The rest of the app uses only `index.js`: `detectEngines`, `getEngines`, `targetsFor` (what the wheel offers), `canConvert`, `convertFile`, `plansFor` and `explainNoTargets`.
+Turns one file into another format, next to the original. The rest of the app uses only `index.js`: `detectEngines`, `getEngines`, `targetsFor` (what the wheel offers), `canConvert`, `convertFile`, `plansFor`, `explainNoTargets`, the format helpers `extOf`, `groupOf` and `labelOf`, and `timingFormats` (what the jobs feature needs, handed to it by the app).
 
 ## How it works
 
@@ -54,4 +54,3 @@ Engines and what they do:
 
 - `detectEngines()` is synchronous and takes about 0.75 s on start-up (Python probes).
 - `engines.pdf` prefers a Python that also has RapidOCR, so two environments on one PC (an older one without OCR, a newer one with) agree about OCR; `engines.heic` is found separately and can point at another environment.
-- The old import paths `src/main/convert/index.js` and `src/main/formats.js` are one-line re-exports until `main.js` moves (D5).

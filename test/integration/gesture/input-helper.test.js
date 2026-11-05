@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Protocol check for the native input helper. Needs no desktop interaction and presses no keys.   node test/helper-test.js
+// Protocol check for the native input helper. Needs no desktop interaction and presses no keys.   node test/integration/gesture/input-helper.test.js
 // (Run `npm run build:helper` first.)
-const path = require('path');
+const { inApp } = require('../../../src/shared/node/paths');
 const { spawn } = require('child_process');
 
-const { expect, failed } = require('./support/expect');
-const finish = require('./support/finish');
+const { expect, failed } = require('../../support/expect');
+const finish = require('../../support/finish');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
-  const proc = spawn(path.join(__dirname, '..', 'native', 'bin', 'pomelo-input.exe'), [], { windowsHide: true });
+  const proc = spawn(inApp('native', 'bin', 'pomelo-input.exe'), [], { windowsHide: true });
   const lines = [];
   let buf = '';
   proc.stdout.setEncoding('utf8');

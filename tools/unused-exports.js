@@ -81,8 +81,11 @@ for (const file of files.filter((f) => ['main', 'shared', 'features'].some((d) =
   for (const name of [...names, ...factories]) {
     if (interfaceNames.includes(name)) continue;
     const isMember = factories.includes(name) && !names.includes(name);
-    // A factory's result is passed around under other names, so any `.name` read in a file that requires the module counts.
-    if (isMember ? [...(importers[file] || [])].some((f) => new RegExp(`\\.${name}\\b`).test(text[f])) : used[file]?.has(name)) continue;
+    // A value that is handed on (a factory's result, the conversion API passed to the drop flow) is read under other names in
+    // other files, so a `.name` read in a file that requires the module, or sits beside one that does, counts.
+    const near = (f) => files.filter((g) => path.dirname(g) === path.dirname(f));
+    const handedOn = isMember || path.basename(file) === 'index.js';
+    if (handedOn ? used[file]?.has(name) || [...(importers[file] || [])].flatMap(near).some((f) => new RegExp(`\\.${name}\\b`).test(text[f])) : used[file]?.has(name)) continue;
     found++;
     const usedInside = (text[file].match(new RegExp(`\\b${name}\\b`, 'g')) || []).length > 1;
     console.log(`${path.relative(root, file)}: "${name}" is exported but never used elsewhere${usedInside ? ' (used inside the file)' : ' and not used inside either'}`);
@@ -93,7 +96,7 @@ for (const file of files.filter((f) => ['main', 'shared', 'features'].some((d) =
 const channels = {};
 for (const [file, src] of Object.entries(text)) {
   for (const m of src.matchAll(/(?:ipcMain\.(?:on|once|handle)|ipcRenderer\.(?:send|invoke|on))\(\s*'([^']+)'/g)) (channels[m[1]] ||= new Set()).add(file.includes('preload') || file.includes('renderer') ? 'renderer-side' : 'main-side');
-  for (const m of src.matchAll(/webContents\.send\(\s*'([^']+)'/g)) (channels[m[1]] ||= new Set()).add('main-side');
+  for (const m of src.matchAll(/(?:webContents\.send|sendToSettings)\(\s*'([^']+)'/g)) (channels[m[1]] ||= new Set()).add('main-side');
 }
 for (const [name, sides] of Object.entries(channels)) {
   if (sides.size < 2) { found++; console.log(`IPC channel "${name}" only appears on one side (${[...sides][0]})`); }

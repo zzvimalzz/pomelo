@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// "Check automatically": checks when it is on and due, tells the user once per version, never downloads.   node test/autoupdate-test.js
-const { AutoUpdate, DAY } = require('../src/main/autoUpdate');
+// "Check automatically": checks when it is on and due, tells the user once per version, never downloads.   node test/unit/updates/auto-check.test.js
+const { AutoUpdate, DAY } = require('../../../src/features/updates/auto-check');
 
-const { expect, failed } = require('./support/expect');
-const finish = require('./support/finish');
+const { expect, failed } = require('../../support/expect');
+const finish = require('../../support/finish');
 const tick = () => new Promise((r) => setImmediate(r));
 
 // A clock and a set of timers the test drives by hand.

@@ -3,7 +3,7 @@
 // about 60 MB, so it runs in the nightly tier only.   node test/run.js --tier=nightly
 const fs = require('fs');
 const path = require('path');
-const { createInstaller } = require('../../../src/main/engineInstaller');
+const { createInstaller } = require('../../../src/features/engine-setup/installer');
 const { expect, failed } = require('../../support/expect');
 const finish = require('../../support/finish');
 const tmp = require('../../support/tmp');

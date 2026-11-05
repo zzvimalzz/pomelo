@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Exercises the update checker against a local fake release server.   npx electron test/updater-test.js
-const { app } = require('electron');
+// Exercises the update checker against a local fake release server.   node test/unit/updates/check.test.js
 const http = require('http');
-const updater = require('../src/main/updater');
+const updater = require('../../../src/features/updates/check');
 
 const routes = {
   '/gh-newer': { tag_name: 'v9.9.9', html_url: 'https://github.com/o/r/releases/tag/v9.9.9', body: 'Faster conversions', assets: [{ name: 'notes.txt', browser_download_url: 'https://github.com/x' }, { name: 'Pomelo-Setup-9.9.9.exe', browser_download_url: 'https://github.com/o/r/releases/download/v9.9.9/Pomelo-Setup-9.9.9.exe' }] },
@@ -12,10 +11,10 @@ const routes = {
   '/bad-json': { unexpected: true },
 };
 
-const { expect, failed } = require('./support/expect');
-const finish = require('./support/finish');
+const { expect, failed } = require('../../support/expect');
+const finish = require('../../support/finish');
 
-app.whenReady().then(async () => {
+(async () => {
   const server = http.createServer((req, res) => {
     if (req.url === '/server-error') { res.statusCode = 500; return res.end('boom'); }
     if (req.url === '/missing') { res.statusCode = 404; return res.end('{}'); }
@@ -53,11 +52,17 @@ app.whenReady().then(async () => {
 
   console.log('download link safety');
   for (const url of ['http://github.com/o/r', 'https://evil.example/x.exe', 'javascript:alert(1)', 'file:///C:/Windows/notepad.exe', 'nonsense']) {
-    const out = await updater.openDownload(url);
-    expect(`refuses ${url}`, out.ok === false, out.message);
+    const opened = [];
+    const out = await updater.openDownload(url, async (u) => opened.push(u));
+    expect(`refuses ${url}`, out.ok === false && opened.length === 0, out.message);
+  }
+  {
+    const opened = [];
+    const out = await updater.openDownload('https://github.com/o/r/releases/latest', async (u) => opened.push(u));
+    expect('opens a GitHub link through the function it is given', out.ok === true && opened.join() === 'https://github.com/o/r/releases/latest');
   }
 
   server.close();
   console.log(failed() ? `\n${failed()} failed` : '\nall passed');
   finish();
-});
+})();

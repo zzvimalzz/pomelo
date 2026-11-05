@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // PDF -> DOCX on small PDFs drawn here: the Word file must be editable (real paragraphs, lists and tables, no frames of loose
 // lines), keep what the page looks like, and say plainly what is wrong with a PDF it cannot read. Needs the PDF engine
-// (skipped without it); the scan test also needs the OCR component.   node test/pdf-layout-test.js
+// (skipped without it); the scan test also needs the OCR component.   node test/integration/conversion/pdf-layout.test.js
 // For real-world pages and a similarity score against the original, see test/fidelity/run.js.
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const JSZip = require('jszip');
-const convert = require('../src/features/conversion');
+const convert = require('../../../src/features/conversion');
 
-const { expect, failed } = require('./support/expect');
-const finish = require('./support/finish');
-const tmp = require('./support/tmp');
+const { expect, failed } = require('../../support/expect');
+const finish = require('../../support/finish');
+const tmp = require('../../support/tmp');
 
 // argv: out.pdf, then what to draw
 const MAKE_PDF = `
