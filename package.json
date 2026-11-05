@@ -1,7 +1,7 @@
 {
   "name": "pomelo",
   "productName": "Pomelo",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Drag a file, tap Ctrl, drop it on a format. A zero-click, offline file converter wheel for Windows.",
   "keywords": [
     "file-converter",
