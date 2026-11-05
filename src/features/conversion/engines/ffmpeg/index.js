@@ -5,9 +5,9 @@ const { spawn, execFile } = require('child_process');
 const { killOnCancel, currentContext, CancelledError } = require('../../engine-kit/context');
 const { uniquePath } = require('../../engine-kit/outputs');
 const { VIDEO, VIDEO_SOURCES, AUDIO, AUDIO_SOURCES } = require('../../catalog/formats');
-const { track } = require('../../../../shared/node/process');
-const { bundled } = require('../../../../shared/node/paths');
-const { where } = require('../../../../shared/node/which');
+const { track } = require('#shared/node/process');
+const { bundled } = require('#shared/node/paths');
+const { where } = require('#shared/node/which');
 
 function detect() {
   try {

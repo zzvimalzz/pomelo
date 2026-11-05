@@ -35,8 +35,8 @@ Engines and what they do:
 
 ## Rules
 
-- Code in `engines/<x>/` imports only `engine-kit`, `lib`, `catalog` and `shared`, never another engine. `lib/` never imports `engines/` or `routing/`. `tools/check-boundaries.js` reports breaks.
-- `electron` is required only inside a function, and only in the adapters `lib/print-pdf.js` and `engines/builtin/images.js`. `test/pdf-layout-test.js` and `test/pdf-formats-test.js` load this code under plain Node.
+- Code in `engines/<x>/` imports only `engine-kit`, `lib`, `catalog` and `shared`, never another engine. `lib/` never imports `engines/` or `routing/`. `npm run check` fails on a break (`tools/check-boundaries.js`).
+- `electron` is required only inside a function, and only in the adapters `lib/print-pdf.js` and `engines/builtin/images.js`. `test/integration/conversion/pdf-layout.test.js` and `pdf-formats.test.js` load this code under plain Node.
 - Heavy libraries (`sharp`, `docx`, `xlsx`, `pptxgenjs` and so on) are required inside the function that uses them, so start-up stays fast.
 - The engine `name` strings and the engines-map keys appear in `routing.snapshot.json`, in logs and in the settings window. Changing one is a visible change.
 

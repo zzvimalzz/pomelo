@@ -4,7 +4,7 @@
 // profile is slow, the rest take a few seconds. A profile can only serve one LibreOffice at a time, so concurrent conversions
 // each take a free one.
 const path = require('path');
-const { enginesRoot } = require('../../../../shared/node/paths');
+const { enginesRoot } = require('#shared/node/paths');
 
 const PROFILES = 3;
 const busy = new Set();

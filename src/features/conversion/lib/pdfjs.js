@@ -2,7 +2,7 @@
 // PDF reading: structured text extraction and page rendering (pdfjs-dist + @napi-rs/canvas).
 const fs = require('fs');
 const path = require('path');
-const { bundled } = require('../../../shared/node/paths');
+const { bundled } = require('#shared/node/paths');
 
 let pdfjsPromise;
 const getPdfjs = () => (pdfjsPromise ||= import('pdfjs-dist/legacy/build/pdf.mjs'));

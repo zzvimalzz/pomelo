@@ -26,6 +26,9 @@
   "author": "Pomelo contributors",
   "private": true,
   "main": "src/app/main.js",
+  "imports": {
+    "#shared/*": "./src/shared/*.js"
+  },
   "pomelo": {
     "updateRepo": "zzvimalzz/pomelo"
   },
@@ -42,7 +45,7 @@
     "icons": "node tools/make-icons.js",
     "setup:pdf": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/setup-pdf-engine.ps1",
     "lint": "eslint .",
-    "check": "npm run lint && node tools/unused-exports.js && node tools/check-public.js",
+    "check": "npm run lint && node tools/unused-exports.js && node tools/check-boundaries.js && node tools/check-public.js",
     "pretest": "npm run build:helper",
     "test": "node test/run.js --tier=unit,integration,pdf",
     "test:fidelity": "node test/fidelity/run.js",

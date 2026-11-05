@@ -3,7 +3,7 @@
 const path = require('path');
 const { uniquePath } = require('../../engine-kit/outputs');
 const { run } = require('../../engine-kit/run');
-const { findExe } = require('../../../../shared/node/which');
+const { findExe } = require('#shared/node/which');
 
 const PD_READ = { docx: 'docx', odt: 'odt', rtf: 'rtf', md: 'markdown', html: 'html', epub: 'epub' };
 const PD_WRITE = { docx: ['docx'], odt: ['odt'], rtf: ['rtf', '-s'], md: ['gfm', '--wrap=none'], html: ['html5', '--embed-resources', '--standalone'], txt: ['plain', '--wrap=none'], epub: ['epub3'] };

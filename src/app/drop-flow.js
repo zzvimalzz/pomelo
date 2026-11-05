@@ -2,7 +2,7 @@
 // From the gesture to the jobs: the selection the user is dragging becomes a wheel of formats (or an explanation of why there is
 // none), and files dropped on a segment become one job each.
 const path = require('path');
-const { middleEllipsis } = require('../shared/core/text');
+const { middleEllipsis } = require('#shared/core/text');
 
 // What the wheel shows in its centre for a selection: a name short enough to fit, the kind, and how many files.
 function describeSelection(files, conversion) {

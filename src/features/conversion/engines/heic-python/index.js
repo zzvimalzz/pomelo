@@ -4,7 +4,7 @@ const { uniquePath, assertProduced } = require('../../engine-kit/outputs');
 const { findPython, runHelper } = require('../../engine-kit/python');
 const { extsInGroup } = require('../../catalog/formats');
 const { sharpFrom } = require('../../lib/image-input');
-const { withTempFile } = require('../../../../shared/node/fs');
+const { withTempFile } = require('#shared/node/fs');
 
 // Pillow reads these directly; anything else is turned into a PNG first.
 const DIRECT = new Set(['png', 'jpg', 'webp', 'bmp', 'gif', 'tiff']);

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Dev tool: who may import whom (features never import each other, shared code never imports a feature, logic never imports Electron).
-// It lists findings and exits 0.   node tools/check-boundaries.js [root]
+// Exits 1 when it finds something; `npm run check` runs it.   node tools/check-boundaries.js [root]
 const fs = require('fs');
 const path = require('path');
 
@@ -14,9 +14,7 @@ const walk = (d) => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true 
 const files = walk(src);
 const rel = (f) => path.relative(src, f).split(path.sep).join('/');
 
-// Today's code: only these may import Electron at the top (section 2.3 lists log, settings and updater as leaks).
-const LEGACY_ELECTRON_FILES = ['main/main.js', 'main/overlay.js', 'main/toast.js', 'main/settingsWindow.js'];
-// Adapters in the target layout: the rest of features/ and shared/core|node is logic and never imports Electron.
+// Adapters: the rest of features/ and shared/core|node is logic and never imports Electron.
 const isAdapter = (r) => /\.(window|ipc)\.js$/.test(r) || /\/ui\//.test(r) || r === 'features/conversion/lib/print-pdf.js' || r === 'features/conversion/engines/builtin/images.js';
 
 // Every require('x'), with whether it sits at the top of the file (starts in column 0) or inside a function.
@@ -47,7 +45,6 @@ function findings(file) {
         if (!isAdapter(r)) bad('logic', 'a logic file must not require electron');
         else if (p[1] === 'conversion' && top) bad('electron-lazy', 'in conversion, electron may only be required inside a function');
       }
-      if (p[0] === 'main' && top && !LEGACY_ELECTRON_FILES.includes(r)) bad('logic', 'a logic file must not require electron');
       continue;
     }
     if (!target) continue;
@@ -71,7 +68,7 @@ function findings(file) {
   }
 
   // Preloads run in a sandbox where only electron can be required.
-  if (p[0] === 'preload' || (p[0] === 'features' && p[p.length - 2] === 'ui' && p[p.length - 1] === 'preload.js')) {
+  if (p[0] === 'features' && p[p.length - 2] === 'ui' && p[p.length - 1] === 'preload.js') {
     for (const { spec } of imports) if (spec !== 'electron') bad('preload', `a sandboxed preload may require only electron (${spec})`);
   }
   return out;
@@ -79,4 +76,5 @@ function findings(file) {
 
 const all = files.flatMap(findings);
 all.forEach((l) => console.log(l));
-console.log(all.length ? `\n${all.length} boundary findings (report only)` : 'no boundary findings');
+console.log(all.length ? `\n${all.length} boundary findings` : 'no boundary findings');
+process.exitCode = all.length ? 1 : 0;

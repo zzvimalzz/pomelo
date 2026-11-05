@@ -7,8 +7,8 @@ const { OFFICE } = require('../../catalog/formats');
 const { uniquePath } = require('../../engine-kit/outputs');
 const { run } = require('../../engine-kit/run');
 const { acquireProfile, releaseProfile, profileUrl } = require('./profiles');
-const { withTempDir } = require('../../../../shared/node/fs');
-const { findExe } = require('../../../../shared/node/which');
+const { withTempDir } = require('#shared/node/fs');
+const { findExe } = require('#shared/node/which');
 
 const SO_TO = { doc: ['pdf', 'docx', 'doc', 'rtf', 'odt'], sheet: ['xlsx', 'xls', 'ods', 'pdf'], slide: ['pptx', 'ppt', 'pdf'] };
 const SO_FILTER = { docx: 'docx:MS Word 2007 XML', doc: 'doc:MS Word 97', rtf: 'rtf:Rich Text Format', odt: 'odt:writer8',

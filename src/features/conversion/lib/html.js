@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Building and converting HTML for the converters that go through it: a printable page, and HTML to DOCX, Markdown or text.
 const path = require('path');
-const { escapeHtml: esc } = require('../../../shared/core/text');
+const { escapeHtml: esc } = require('#shared/core/text');
 
 // The page margin has to be here: a CSS @page rule beats the margins passed to printToPDF, and with `margin: 0` the
 // text used to run to the very edge of the sheet.

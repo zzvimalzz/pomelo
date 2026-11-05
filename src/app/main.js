@@ -3,12 +3,12 @@
 // needs from another is handed in here.
 const path = require('path');
 const { app } = require('electron');
-const log = require('../shared/node/log');
-const { userDataFile } = require('../shared/electron/user-data');
+const log = require('#shared/node/log');
+const { userDataFile } = require('#shared/electron/user-data');
 
 log.setFile(userDataFile('debug.log'));             // first, so everything below can log
 
-const { APP_ROOT } = require('../shared/node/paths');
+const { APP_ROOT } = require('#shared/node/paths');
 const conversion = require('../features/conversion');
 const { createStore, openSettingsWindow, getSettingsWindow, registerSettingsIpc } = require('../features/settings');
 const { InputHelper, Trigger, WheelWindow } = require('../features/gesture');

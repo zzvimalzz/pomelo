@@ -2,7 +2,7 @@
 // The settings window. It sizes itself to its content (no scrollbars) and stays within the screen.
 const path = require('path');
 const { BrowserWindow, screen, shell } = require('electron');
-const log = require('../../shared/node/log');
+const log = require('#shared/node/log');
 
 const WIDTH = 480;
 const MIN_HEIGHT = 320;

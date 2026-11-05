@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Running a helper program inside a conversion.
 const { currentContext, CancelledError } = require('./context');
-const { runCapture } = require('../../../shared/node/process');
+const { runCapture } = require('#shared/node/process');
 
 // Resolves with the program's stdout. Cancelling the conversion kills the program and rejects with CancelledError.
 async function run(cmd, args, opts) {

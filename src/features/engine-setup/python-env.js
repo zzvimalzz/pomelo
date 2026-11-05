@@ -5,9 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const { PACKS } = require('./packs');
 const { wingetInstall } = require('./winget');
-const { removeDirReliably } = require('../../shared/node/fs');
-const { lastMeaningfulLine } = require('../../shared/node/process');
-const { inApp, pyenvPython, scriptPath } = require('../../shared/node/paths');
+const { removeDirReliably } = require('#shared/node/fs');
+const { lastMeaningfulLine } = require('#shared/node/process');
+const { inApp, pyenvPython, scriptPath } = require('#shared/node/paths');
 
 const requirementsFile = () => inApp('python', 'requirements.txt');
 

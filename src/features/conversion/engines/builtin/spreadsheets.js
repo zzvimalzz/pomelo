@@ -5,8 +5,8 @@ const { uniquePath } = require('../../engine-kit/outputs');
 const { extsInGroup } = require('../../catalog/formats');
 const { wrapHtml } = require('../../lib/html');
 const { htmlToPdf } = require('../../lib/print-pdf');
-const { escapeHtml: esc } = require('../../../../shared/core/text');
-const { readText } = require('../../../../shared/node/fs');
+const { escapeHtml: esc } = require('#shared/core/text');
+const { readText } = require('#shared/node/fs');
 
 const SHEET_EXT = extsInGroup('sheet');
 

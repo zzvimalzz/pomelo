@@ -2,7 +2,7 @@
 // Subtitles: SRT <-> VTT, and plain-text export. Pure JS.
 const fs = require('fs');
 const { uniquePath } = require('../../engine-kit/outputs');
-const { readText } = require('../../../../shared/node/fs');
+const { readText } = require('#shared/node/fs');
 
 const TIME = /(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{1,3})/;
 

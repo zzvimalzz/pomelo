@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Windows Package Manager (winget) calls.
-const { lastMeaningfulLine, parsePercent } = require('../../shared/node/process');
+const { lastMeaningfulLine, parsePercent } = require('#shared/node/process');
 
 const FLAGS = ['--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity'];
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The tray icon: tooltip, click and the context menu.
 const { Tray, Menu, nativeImage } = require('electron');
-const { capitalize } = require('../shared/core/text');
+const { capitalize } = require('#shared/core/text');
 
 // icon: path of the tray image. getSettings() / setEnabled(bool): the stored settings. onSettings(): open the Settings window.
 // onQuit(). -> { setTooltip(text), refreshMenu() }

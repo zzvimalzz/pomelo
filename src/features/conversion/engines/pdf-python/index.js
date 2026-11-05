@@ -10,7 +10,7 @@
 const fs = require('fs');
 const { uniquePath, assertProduced } = require('../../engine-kit/outputs');
 const { findPython, runHelper } = require('../../engine-kit/python');
-const { withTempFile } = require('../../../../shared/node/fs');
+const { withTempFile } = require('#shared/node/fs');
 const { pdfToPptx } = require('./to-pptx');
 const { pdfToXlsx } = require('./to-xlsx');
 

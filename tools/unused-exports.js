@@ -43,8 +43,9 @@ function exportedNames(src) {
   return { names, factories: factories.flat() };
 }
 
+// `#shared/x` is the package.json "imports" alias for src/shared/x
 function resolve(from, spec) {
-  const base = path.resolve(path.dirname(from), spec);
+  const base = spec.startsWith('#shared/') ? path.join(root, 'src', 'shared', spec.slice(8)) : path.resolve(path.dirname(from), spec);
   return [base, `${base}.js`, path.join(base, 'index.js')].find((p) => files.includes(p));
 }
 
@@ -56,9 +57,9 @@ const importers = {};
 const mark = (key, names, file) => { if (key) { names.forEach((n) => (used[key] ||= new Set()).add(n)); (importers[key] ||= new Set()).add(file); } };
 for (const [file, src] of Object.entries(text)) {
   const spec = (s) => resolve(file, s);
-  for (const m of src.matchAll(/\{([^}]*)\}\s*=\s*require\(\s*'(\.[^']*)'\s*\)/g)) mark(spec(m[2]), keysOf(m[1]), file);
-  for (const m of src.matchAll(/require\(\s*'(\.[^']*)'\s*\)\??\.(\w+)/g)) mark(spec(m[1]), [m[2]], file);
-  for (const m of src.matchAll(/(?:const|let|var)\s+(\w+)\s*=\s*require\(\s*'(\.[^']*)'\s*\)/g)) {
+  for (const m of src.matchAll(/\{([^}]*)\}\s*=\s*require\(\s*'([.#][^']*)'\s*\)/g)) mark(spec(m[2]), keysOf(m[1]), file);
+  for (const m of src.matchAll(/require\(\s*'([.#][^']*)'\s*\)\??\.(\w+)/g)) mark(spec(m[1]), [m[2]], file);
+  for (const m of src.matchAll(/(?:const|let|var)\s+(\w+)\s*=\s*require\(\s*'([.#][^']*)'\s*\)/g)) {
     const target = spec(m[2]);
     for (const u of src.matchAll(new RegExp(`\\b${m[1]}\\??\\.(\\w+)`, 'g'))) mark(target, [u[1]], file);
     for (const u of src.matchAll(new RegExp(`\\{([^}]*)\\}\\s*=\\s*${m[1]}\\b`, 'g'))) mark(target, keysOf(u[1]), file);
@@ -68,7 +69,7 @@ for (const [file, src] of Object.entries(text)) {
 
 // A file that is only `module.exports = require('x')` passes on whatever its importers use to x.
 for (const [file, src] of Object.entries(text)) {
-  const m = /^module\.exports = require\('(\.[^']+)'\);?\s*$/m.exec(src);
+  const m = /^module\.exports = require\('([.#][^']+)'\);?\s*$/m.exec(src);
   const target = m && resolve(file, m[1]);
   if (target) mark(target, [...(used[file] || [])], file);
   if (target) for (const f of importers[file] || []) (importers[target] ||= new Set()).add(f);

@@ -3,7 +3,7 @@
 // lists the paths it has chosen so far, so a cancelled or failed attempt can delete what it left behind. The context travels
 // through async calls on its own, so engines need no extra parameters.
 const { AsyncLocalStorage } = require('async_hooks');
-const { killOnAbort } = require('../../../shared/node/process');
+const { killOnAbort } = require('#shared/node/process');
 
 const context = new AsyncLocalStorage();
 const withContext = (ctx, fn) => context.run(ctx, fn);

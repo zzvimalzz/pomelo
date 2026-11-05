@@ -4,8 +4,8 @@
 const path = require('path');
 const { screen } = require('electron');
 const { registerWheelIpc } = require('./wheel.ipc');
-const { createFloatingWindow } = require('../../shared/electron/windows');
-const log = require('../../shared/node/log');
+const { createFloatingWindow } = require('#shared/electron/windows');
+const log = require('#shared/node/log');
 
 const WHEEL = 400;
 

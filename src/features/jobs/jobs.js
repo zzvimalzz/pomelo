@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
 const { shownProgress, remaining, guessMs } = require('./estimate');
-const { middleEllipsis } = require('../../shared/core/text');
+const { middleEllipsis } = require('#shared/core/text');
 
 const sizeOf = (file) => { try { const st = fs.statSync(file); return st.isFile() ? st.size : 0; } catch { return 0; } };
 

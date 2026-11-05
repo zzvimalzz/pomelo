@@ -3,7 +3,7 @@
 // check-boundaries must flag each kind of bad import and leave good ones alone.
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const { expect } = require('../../support/expect');
 const finish = require('../../support/finish');
 const tmp = require('../../support/tmp');
@@ -16,7 +16,10 @@ function tree(files) {
   }
   return dir;
 }
-const run = (tool, dir) => execFileSync(process.execPath, [path.join(__dirname, '..', '..', '..', 'tools', tool), dir], { encoding: 'utf8' });
+// check-boundaries exits 1 when it finds something; what it printed is what the tests read
+const run = (tool, dir) => {
+  try { return execFileSync(process.execPath, [path.join(__dirname, '..', '..', '..', 'tools', tool), dir], { encoding: 'utf8' }); } catch (e) { return e.stdout; }
+};
 
 console.log('unused-exports');
 {
@@ -38,6 +41,8 @@ console.log('unused-exports');
     'src/app/user.js': "const { viaShim } = require('./shim');",
     'src/features/conversion/engines/one/index.js': "module.exports = { name: 'one', supports() {}, run() {}, detect() {}, extra: 1 };",
     'src/features/conversion/engines/one/helper.js': 'module.exports = { run() {}, detect() {} };',
+    'src/shared/node/x.js': 'const viaAlias = 1, unreadAlias = 2;\nmodule.exports = { viaAlias, unreadAlias };',
+    'src/app/alias-user.js': "const { viaAlias } = require('#shared/node/x');",
   }));
   expect('an export that is read is not reported', !/"used"|"createThing"/.test(out));
   expect('a name that only appears as JSON.parse is reported', /"parse"/.test(out));
@@ -45,6 +50,7 @@ console.log('unused-exports');
   expect('the API a factory returns is checked: unused key reported, used key not', /"idle"/.test(out) && !/"live"/.test(out));
   expect('a plain unused export is reported', /"dead"/.test(out));
   expect('what is read through a one-line re-export counts as used, what is not does not', !/"viaShim"/.test(out) && /"unreadByAnyone"/.test(out));
+  expect('a name read through the #shared alias counts as used, one that is not read does not', !/"viaAlias"/.test(out) && /"unreadAlias"/.test(out));
   const engineLines = out.split('\n').filter((l) => /engines[\\/]one[\\/]index\.js/.test(l));
   expect('an engine\'s interface names are not reported, its other exports are', engineLines.length === 1 && /"extra"/.test(engineLines[0]), engineLines.join(' | '));
   expect('a helper next to an engine gets no such exemption', /helper\.js: "run"/.test(out) && /helper\.js: "detect"/.test(out));
@@ -66,7 +72,9 @@ console.log('check-boundaries');
     'src/features/conversion/engines/builtin/images.js':"function f() {\n  const { nativeImage } = require('electron');\n}",
     'src/app/main.js': "const a = require('../features/jobs/jobs');\nconst b = require('../features/gesture/index');",
     'src/features/gesture/index.js': '',
-    'src/preload/overlay.js': "const path = require('path');",
+    'src/features/gesture/ui/preload.js': "const path = require('path');",
+    'src/features/jobs/ui/preload.js': "const { contextBridge } = require('electron');",
+    'src/shared/core/by-alias.js': "const fs = require('#shared/node/fs');",
   });
   const lines = run('check-boundaries.js', dir).split('\n').filter((l) => l.includes(': '));
   const about = (file, rule) => lines.some((l) => l.startsWith(`${file}: ${rule}:`));
@@ -76,7 +84,10 @@ console.log('check-boundaries');
   expect('an engine importing another engine is flagged, importing lib is not', about('features/conversion/engines/ffmpeg/index.js', 'conversion') && lines.filter((l) => l.startsWith('features/conversion/engines/ffmpeg')).length === 1);
   expect('in conversion, a top-level electron require is flagged and a lazy one is not', about('features/conversion/lib/print-pdf.js', 'electron-lazy') && !lines.some((l) => l.startsWith('features/conversion/engines/builtin/images.js')));
   expect('app/ reaching past a feature index is flagged, using the index is not', about('app/main.js', 'app') && lines.filter((l) => l.startsWith('app/main.js')).length === 1);
-  expect('a preload requiring anything but electron is flagged', about('preload/overlay.js', 'preload'));
+  expect('a preload requiring anything but electron is flagged', about('features/gesture/ui/preload.js', 'preload') && !lines.some((l) => l.startsWith('features/jobs/ui/preload.js')));
+  expect('a #shared import is resolved, so it is checked like a relative one', about('shared/core/by-alias.js', 'shared'));
+  const exitCode = (d) => spawnSync(process.execPath, [path.join(__dirname, '..', '..', '..', 'tools', 'check-boundaries.js'), d]).status;
+  expect('it exits 1 on findings and 0 on a clean tree', exitCode(dir) === 1 && exitCode(tree({ 'src/shared/core/a.js': '', 'src/features/jobs/index.js': "require('#shared/core/a');" })) === 0);
   expect('a window file may require electron', !lines.some((l) => l.startsWith('features/gesture/wheel.window.js')));
 }
 

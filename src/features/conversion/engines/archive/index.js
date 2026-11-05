@@ -12,9 +12,9 @@ const { pipeline } = require('stream/promises');
 const { run } = require('../../engine-kit/run');
 const { scaled } = require('../../engine-kit/progress');
 const { uniquePath } = require('../../engine-kit/outputs');
-const { withTempDir, withTempFile } = require('../../../../shared/node/fs');
-const { bundled } = require('../../../../shared/node/paths');
-const { parsePercent } = require('../../../../shared/node/process');
+const { withTempDir, withTempFile } = require('#shared/node/fs');
+const { bundled } = require('#shared/node/paths');
+const { parsePercent } = require('#shared/node/process');
 
 const BSDTAR = path.join(process.env.SystemRoot || 'C:/Windows', 'System32', 'tar.exe');
 const FROM = new Set(['zip', '7z', 'tar', 'gz', 'rar']);

@@ -7,7 +7,7 @@ const { runHelper } = require('../../engine-kit/python');
 const { scaled } = require('../../engine-kit/progress');
 const { mimeOf } = require('../../lib/mime');
 const { newDeck } = require('../../lib/pptx');
-const { withTempDir } = require('../../../../shared/node/fs');
+const { withTempDir } = require('#shared/node/fs');
 
 // Slides that look like the pages: each page's pictures, shapes and backgrounds as one picture behind the text, and the
 // text as real text boxes at the same places, fonts, sizes and colours, links included.

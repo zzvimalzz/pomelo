@@ -4,7 +4,7 @@
 const path = require('path');
 const { screen } = require('electron');
 const { registerToastIpc } = require('./toast.ipc');
-const { createFloatingWindow } = require('../../shared/electron/windows');
+const { createFloatingWindow } = require('#shared/electron/windows');
 
 const W = 408;          // card (380) plus a margin for its shadow
 const CARD_H = 88;

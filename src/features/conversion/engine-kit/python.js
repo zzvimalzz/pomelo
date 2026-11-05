@@ -3,7 +3,7 @@
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 const { run } = require('./run');
-const { pyenvPython, scriptPath, vendorRoots } = require('../../../shared/node/paths');
+const { pyenvPython, scriptPath, vendorRoots } = require('#shared/node/paths');
 
 function pythons() {
   const envs = [pyenvPython(), ...vendorRoots().map((v) => pyenvPython(v))];   // the one Pomelo installs, then a developer's vendor/pyenv

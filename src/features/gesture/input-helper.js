@@ -2,8 +2,8 @@
 // Client for native/pomelo-input.cs: global input events plus "which files are being dragged?".
 const { spawn } = require('child_process');
 const { EventEmitter } = require('events');
-const log = require('../../shared/node/log');
-const { inApp } = require('../../shared/node/paths');
+const log = require('#shared/node/log');
+const { inApp } = require('#shared/node/paths');
 
 const EXE = inApp('native', 'bin', 'pomelo-input.exe');
 

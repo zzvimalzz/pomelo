@@ -5,8 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { PACKS } = require('./packs');
 const { wingetRan } = require('./winget');
-const { removeDirReliably, dirBytes } = require('../../shared/node/fs');
-const { lastMeaningfulLine, parsePercent } = require('../../shared/node/process');
+const { removeDirReliably, dirBytes } = require('#shared/node/fs');
+const { lastMeaningfulLine, parsePercent } = require('#shared/node/process');
 
 const LO_UNPACKED_BYTES = 1.5e9;                       // size of the unpacked MSI, to turn "bytes written so far" into a percentage
 

@@ -15,9 +15,9 @@ const { createManifest } = require('./manifest');
 const { installPython } = require('./python-env');
 const { installLibreOffice } = require('./libreoffice');
 const { wingetInstall } = require('./winget');
-const { removeDirReliably, sleep } = require('../../shared/node/fs');
-const { runStatus } = require('../../shared/node/process');
-const { enginesRoot } = require('../../shared/node/paths');
+const { removeDirReliably, sleep } = require('#shared/node/fs');
+const { runStatus } = require('#shared/node/process');
+const { enginesRoot } = require('#shared/node/paths');
 
 // %LOCALAPPDATA%\Pomelo is Pomelo's own folder: once the engines are gone it should not be left behind empty.
 // A folder with anything else in it stays.

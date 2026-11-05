@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Printing an HTML page to PDF in a hidden Electron window. The page is built from a user's document, so the window runs offline.
 const fs = require('fs');
-const { withTempFile } = require('../../../shared/node/fs');
+const { withTempFile } = require('#shared/node/fs');
 
 // The page that gets printed is built from a user's document, so it must not be able to call out to the internet
 // (remote images, tracking pixels). Local files stay readable.

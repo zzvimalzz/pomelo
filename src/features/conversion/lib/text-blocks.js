@@ -3,7 +3,7 @@
 // HTML, Markdown, plain text or DOCX.
 const fs = require('fs');
 const { wrapHtml } = require('./html');
-const { escapeHtml: esc } = require('../../../shared/core/text');
+const { escapeHtml: esc } = require('#shared/core/text');
 
 const flat = (pages) => pages.flat();
 

@@ -2,7 +2,7 @@
 // EPUB reading and writing without external tools (JSZip). Pandoc is preferred when installed; this is the fallback.
 const path = require('path');
 const JSZip = require('jszip');
-const { escapeHtml: esc } = require('../../../shared/core/text');
+const { escapeHtml: esc } = require('#shared/core/text');
 const { mimeOf } = require('./mime');
 
 const attr = (tag, name) => { const m = new RegExp(`${name}\\s*=\\s*["']([^"']*)["']`, 'i').exec(tag); return m ? m[1] : null; };

@@ -6,7 +6,7 @@ const { uniquePath } = require('../../engine-kit/outputs');
 const epub = require('../../lib/epub');
 const { wrapHtml, baseHrefOf, withBase, htmlToDocx, htmlToMd, htmlToTxt, txtToHtml } = require('../../lib/html');
 const { htmlToPdf } = require('../../lib/print-pdf');
-const { readText } = require('../../../../shared/node/fs');
+const { readText } = require('#shared/node/fs');
 const legacyDoc = require('./legacy-doc');
 
 // What a .docx says about its own page and default text, so a printed copy gets the same paper size, margins, font and

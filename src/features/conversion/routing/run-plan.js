@@ -8,7 +8,7 @@ const { removeOutputs } = require('../engine-kit/outputs');
 const { scaled } = require('../engine-kit/progress');
 const { getEngines } = require('../engines/registry');
 const { plansFor } = require('./plans');
-const { withTempDir } = require('../../../shared/node/fs');
+const { withTempDir } = require('#shared/node/fs');
 
 // onProgress(fraction 0..1) is forwarded by engines that can report it (video/audio); for a two-step chain it is split in half.
 async function runPlan(plan, src, dir, base, onProgress) {

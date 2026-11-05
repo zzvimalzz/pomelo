@@ -3,7 +3,7 @@
 const fs = require('fs');
 const { uniquePath } = require('../../engine-kit/outputs');
 const { runHelper } = require('../../engine-kit/python');
-const { withTempFile } = require('../../../../shared/node/fs');
+const { withTempFile } = require('#shared/node/fs');
 
 const isNumber = (s) => /^-?(0|[1-9]\d{0,14})([.,]\d+)?$/.test(s);
 
