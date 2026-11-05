@@ -24,7 +24,6 @@ GAP = " "          # an em space: the gap between a title and the date on its 
 SENTENCE_END = re.compile(r"[.!?:;”\")\]]\s*$")
 
 
-# ---- reading a page ------------------------------------------------------------------------------------------------
 def style_of(span):
     name = span["font"].lower()
     f = span["flags"]
@@ -150,7 +149,6 @@ def stack_lines(lines):
     return stacks
 
 
-# ---- tables and pictures ---------------------------------------------------------------------------------------------
 def clean_cell(c):
     return " ".join((c or "").split())
 
@@ -256,7 +254,6 @@ class Pictures:
             return None
 
 
-# ---- building the document -------------------------------------------------------------------------------------------
 def body_size(all_lines):
     return dominant_size((r[0], r[5]) for l in all_lines for r in l.runs)
 
@@ -481,7 +478,6 @@ def cur_y1(block):
     return block.get("y1", 0)
 
 
-# ---- writing -----------------------------------------------------------------------------------------------------------
 def md_escape(t):
     t = t.replace("\\", "\\\\")
     for ch in "*_`[]<>|":

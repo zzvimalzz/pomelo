@@ -10,7 +10,6 @@ from .page import Para, runs_xml
 from .shapes import Box, Tbl
 
 
-# ---- laying out a region ----------------------------------------------------------------------------------------------------
 class Builder:
     """Writes one page's body XML."""
 
@@ -22,7 +21,6 @@ class Builder:
         self.emitted = set()
         self.nid = 1000 + page_obj.pno * 200
 
-    # ---- cuts
     def v_cut(self, items, g=None):
         g = g or max(9.0, 0.85 * self.P.body)
         spans = [(it.x0, it.x1, it) for it in sorted(items, key=lambda i: (i.x0, i.x1))]
@@ -61,7 +59,6 @@ class Builder:
                 bands.append([it.y0, it.y1, [it]])
         return bands
 
-    # ---- paragraphs
     def group(self, lines, x0, x1):
         paras = []
         cur = None
@@ -279,7 +276,6 @@ class Builder:
                f'<w:ind w:left="{tw(first.x0 - x0)}"/></w:pPr>')
         return f"<w:p>{ppr}{body}</w:p>", T, T + pitch
 
-    # ---- stacks of blocks
     def spacer(self, h):
         if h < 1.0:
             return ""
@@ -523,7 +519,6 @@ class Builder:
                 xml += part
         return xml, cursor
 
-    # ---- tables and boxes
     def border_xml(self, borders, dashed=False):
         out = ""
         for side in ("top", "left", "bottom", "right"):
