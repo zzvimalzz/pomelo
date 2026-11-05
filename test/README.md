@@ -45,6 +45,5 @@ A single suite runs on its own too: `node test/jobs-test.js`, or `npx electron t
 ## Things that trip people up
 
 - Some editors set `ELECTRON_RUN_AS_NODE=1`, which makes Electron behave as Node. `run.js` removes it for the Electron suites; do it yourself when starting one by hand.
-- `engines.pdf` and `engines.ocr` are detected separately. With an old engines-folder Python (no RapidOCR) and a newer `vendor\pyenv`, the PDF conversion runs in the old one and reports that OCR is missing. To run `pdf-layout` on such a PC, point `LOCALAPPDATA` at an empty folder so only `vendor\pyenv` is seen.
 - `overlay-shot` switches off Chromium's window-occlusion check; without it a window covered by another app cannot be captured.
 - `tools/installer-e2e.ps1` installs and uninstalls Pomelo for real. It runs only on a CI runner, or with `-IUnderstand`.

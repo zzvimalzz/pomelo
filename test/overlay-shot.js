@@ -5,7 +5,7 @@ const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const sharp = require('sharp');
-const { targetsForFiles } = require('../src/main/formats');
+const { targetsForFiles } = require('../src/features/conversion/catalog/formats');
 const { middleEllipsis } = require('../src/shared/core/text');
 
 app.on('window-all-closed', () => {});

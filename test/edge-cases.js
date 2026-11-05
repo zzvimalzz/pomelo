@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const sharp = require('sharp');
-const convert = require('../src/main/convert');
+const convert = require('../src/features/conversion');
 const pdf = require('../src/features/conversion/lib/pdfjs');
 const { Jobs } = require('../src/main/jobs');
 

@@ -129,7 +129,7 @@ npm run setup:pdf                                  # developer setup: PDF to Wor
 | [PyMuPDF](https://pymupdf.readthedocs.io) (optional, Python) | AGPL-3.0-or-later or Artifex commercial; separate process | Reads every PDF: PDF to Word (`scripts/pdf_flow.py`), PowerPoint, Markdown, HTML, text, EPUB and Excel (`scripts/pdf_structure_run.py`, `pdf_fixed_layout.py`, `pdf_tables_run.py`) |
 | [pillow-heif](https://github.com/bigcat88/pillow_heif) (optional, Python) | BSD-3 (bundles libheif and the GPL x265 encoder) | Writing HEIC. Reading HEIC works without it |
 
-Engine order per conversion lives in `src/main/convert/index.js`; if one engine fails, the next is tried.
+Engine order per conversion lives in `src/features/conversion/routing/plans.js`; if one engine fails, the next is tried.
 
 </details>
 

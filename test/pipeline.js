@@ -5,7 +5,7 @@ const { app } = require('electron');
 const { EventEmitter } = require('events');
 const path = require('path');
 const fs = require('fs');
-const convert = require('../src/main/convert');
+const convert = require('../src/features/conversion');
 const { Trigger } = require('../src/main/trigger');
 const { Overlay } = require('../src/main/overlay');
 

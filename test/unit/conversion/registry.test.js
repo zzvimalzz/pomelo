@@ -16,7 +16,7 @@ for (const [name, missing] of Object.entries(CASES)) {
   const ok = Object.keys(map).join() === KEYS.join() && KEYS.every((k) => !!map[k] === !missing.includes(k));
   expect(`${name}: the seven keys, in order, found exactly where they should be`, ok, JSON.stringify(map));
 }
-expect('an engine that reports nothing leaves its keys null', Object.values(detectEngines([{ detect: () => ({}) }])).every((v) => v === null));
+expect('the map holds exactly the keys the engines report', Object.keys(detectEngines([{ detect: () => ({}) }])).length === 0 && Object.keys(detectEngines([{ detect: () => ({ pdf: null, ocr: null }) }])).join() === 'pdf,ocr');
 
 console.log('the real engines');
 {

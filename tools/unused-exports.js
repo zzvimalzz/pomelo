@@ -75,9 +75,11 @@ for (const [file, src] of Object.entries(text)) {
 
 for (const file of files.filter((f) => ['main', 'shared', 'features'].some((d) => f.includes(`${path.sep}src${path.sep}${d}${path.sep}`)))) {
   const { names, factories } = exportedNames(text[file]);
-  const isEngine = file.includes(`${path.sep}engines${path.sep}`);
+  // The engine interface (name, supports, run, detect) and the built-in engine's kinds (reads, writes, run) are called on whichever
+  // module was picked, so nothing reads them by name.
+  const interfaceNames = names.includes('supports') ? ['name', 'supports', 'run', 'detect'] : names.includes('reads') ? ['reads', 'writes', 'run'] : [];
   for (const name of [...names, ...factories]) {
-    if (isEngine && ['name', 'supports', 'run', 'detect', 'reads', 'writes'].includes(name)) continue;    // the engine interface: convert/ calls it on whichever engine it picked
+    if (interfaceNames.includes(name)) continue;
     const isMember = factories.includes(name) && !names.includes(name);
     // A factory's result is passed around under other names, so any `.name` read in a file that requires the module counts.
     if (isMember ? [...(importers[file] || [])].some((f) => new RegExp(`\\.${name}\\b`).test(text[f])) : used[file]?.has(name)) continue;

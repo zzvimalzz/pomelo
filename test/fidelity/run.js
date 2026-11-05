@@ -15,7 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const convert = require('../../src/main/convert');
+const convert = require('../../src/features/conversion');
 
 const OUT = path.join(__dirname, 'out');
 const args = process.argv.slice(2);

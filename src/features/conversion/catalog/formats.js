@@ -114,7 +114,7 @@ const groupOf = (ext) => GROUP_OF[ext] || null;
 const labelOf = (ext) => (LABELS[ext] || [ext.toUpperCase(), ''])[0];
 const subOf = (ext) => (LABELS[ext] || ['', ''])[1];
 
-// canConvert(from, to) -> bool, for the engines that are actually available (see convert/index.js)
+// canConvert(from, to) -> bool, for the engines that are actually available (see routing/plans.js)
 function targetsForExt(from, canConvert) {
   return (TARGET_ORDER[from] || []).filter((to) => to !== from && canConvert(from, to));
 }

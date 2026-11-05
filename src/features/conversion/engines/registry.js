@@ -10,14 +10,14 @@ const archive = require('./archive');
 const subtitle = require('./subtitle');
 const builtin = require('./builtin');
 
-// Keys of the engines map: soffice, pandoc, pdf, ocr, heic, ffmpeg, sevenZip. Each is a path, or null when not found.
+// Keys of the engines map, in this order: soffice, pandoc, pdf, ocr, heic, ffmpeg, sevenZip. Each is a path, or null when not
+// found. An engine's detect() always answers with all of its keys, so the map is complete without a list of keys here.
 const DETECTED = [libreoffice, pandoc, pdfPython, heicPython, ffmpeg, archive];
-const NONE = { soffice: null, pandoc: null, pdf: null, ocr: null, heic: null, ffmpeg: null, sevenZip: null };
 
-let engines = { ...NONE };
+let engines = {};                                  // until detectEngines() has run, every key reads as not found
 
 function detectEngines(list = DETECTED) {
-  engines = Object.assign({ ...NONE }, ...list.map((e) => e.detect()));
+  engines = Object.assign({}, ...list.map((e) => e.detect()));
   return engines;
 }
 

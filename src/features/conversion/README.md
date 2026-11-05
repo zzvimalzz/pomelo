@@ -53,5 +53,5 @@ Engines and what they do:
 ## Known limits
 
 - `detectEngines()` is synchronous and takes about 0.75 s on start-up (Python probes).
-- `engines.pdf` and `engines.ocr` are found independently, so two Python environments can disagree about OCR.
+- `engines.pdf` prefers a Python that also has RapidOCR, so two environments on one PC (an older one without OCR, a newer one with) agree about OCR; `engines.heic` is found separately and can point at another environment.
 - The old import paths `src/main/convert/index.js` and `src/main/formats.js` are one-line re-exports until `main.js` moves (D5).

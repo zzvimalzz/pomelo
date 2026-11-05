@@ -4,8 +4,8 @@
 //   node test/unit/conversion/routing.test.js [--update]
 const fs = require('fs');
 const path = require('path');
-const { plansFor } = require('../../../src/main/convert');
-const { ALIASES, TARGET_ORDER, targetsForFiles } = require('../../../src/main/formats');
+const { plansFor } = require('../../../src/features/conversion');
+const { ALIASES, TARGET_ORDER, targetsForFiles } = require('../../../src/features/conversion/catalog/formats');
 const { expect } = require('../../support/expect');
 const finish = require('../../support/finish');
 

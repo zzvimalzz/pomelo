@@ -21,6 +21,7 @@ const SUITES = [
   { name: 'autoupdate', file: 'autoupdate-test.js', tier: 'unit' },
   { name: 'updateinstall', file: 'updateinstall-test.js', tier: 'unit' },
   { name: 'routing', file: 'unit/conversion/routing.test.js', tier: 'unit' },
+  { name: 'kit-and-catalog', file: 'unit/conversion/kit-and-catalog.test.js', tier: 'unit' },
   { name: 'registry', file: 'unit/conversion/registry.test.js', tier: 'unit' },
   { name: 'dev-tools', file: 'unit/tools/dev-tools.test.js', tier: 'unit' },
   { name: 'paths', file: 'unit/shared/paths.test.js', tier: 'unit' },

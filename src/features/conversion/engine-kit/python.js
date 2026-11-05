@@ -42,4 +42,4 @@ function runHelper(python, script, args, { src, onProgress, timeout } = {}) {
   return run(python, ['-W', 'ignore', scriptPath(script), ...args], { timeout: timeout ?? timeoutFor(src), onLine: progressReader(onProgress) });
 }
 
-module.exports = { findPython, runHelper };
+module.exports = { findPython, runHelper, progressReader, timeoutFor };

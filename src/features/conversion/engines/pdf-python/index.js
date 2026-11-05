@@ -14,7 +14,9 @@ const { withTempFile } = require('../../../../shared/node/fs');
 const { pdfToPptx } = require('./to-pptx');
 const { pdfToXlsx } = require('./to-xlsx');
 
-const detect = () => ({ pdf: findPython('pymupdf, docx'), ocr: findPython('rapidocr') });
+// The PDF scripts run in the Python found for `pdf`, and they do the OCR themselves, so prefer one that has RapidOCR as well.
+// Otherwise a PC with an older environment (no OCR) and a newer one would show OCR as ready and then fail to use it.
+const detect = () => ({ pdf: findPython('pymupdf, docx, rapidocr') || findPython('pymupdf, docx'), ocr: findPython('rapidocr') });
 
 // Markdown, HTML, plain text and EPUB all come from one reading of the PDF (scripts/pdf_structure_run.py), so they
 // agree: all of the text in reading order, headings, lists, tables, links, bold and italic, code and pictures.

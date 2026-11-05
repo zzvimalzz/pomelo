@@ -37,9 +37,8 @@ The routing snapshot (`test/unit/conversion/routing.snapshot.json`) pins which e
 | `src/main/trigger.js` | The drag + key gesture state machine |
 | `src/main/overlay.js`, `src/renderer/overlay.*` | The wheel window (also the drop target) |
 | `src/main/jobs.js`, `toast.js`, `src/renderer/toast.*` | Parallel conversions and the bottom-right toast stack |
-| `src/main/formats.js` | Formats, and which targets the wheel offers for each |
-| `src/main/convert/index.js` | Picks the engine(s) for each conversion and falls back when one fails |
-| `src/main/engines/` | One file per engine: built-in JS, LibreOffice/Pandoc, FFmpeg, archives, PDF, HEIC, subtitles, EPUB |
+| `src/features/conversion/` | Everything about converting: the format catalog, which engines handle a pair (`routing/plans.js`), running them with fallback, and one folder per engine under `engines/` (built-in JS, LibreOffice, Pandoc, FFmpeg, archives, PDF, HEIC, subtitles). See its `README.md` |
+| `src/shared/`, `src/ui-shared/` | Helpers used by more than one part: paths, processes, temp files, text; the colours and DOM helper of the windows' pages |
 | `src/main/updater.js`, `src/renderer/settings.*` | Check for updates and the Settings window |
 | `src/main/engineCli.js` | The headless `--install-engines` / `--uninstall-engines` switches the installer runs |
 | `installer/pomelo.iss` | The Inno Setup script (three screens, per-user). `npm run package`, then `npm run build:installer` (needs Inno Setup 6.3+) |
@@ -48,10 +47,11 @@ The routing snapshot (`test/unit/conversion/routing.snapshot.json`) pins which e
 
 ## Adding a format or an engine
 
-1. Add the extension to `GROUP_OF`, `TARGET_ORDER` and `LABELS` in `src/main/formats.js` (the wheel shows the first 8 available targets).
-2. Implement it in an engine under `src/main/engines/`. An engine exports `supports(from, to, engines)` and `run(job)` that returns the files it wrote. Never overwrite: use `uniquePath`.
-3. Register the engine, and any chain through an intermediate format, in `src/main/convert/index.js`.
+1. Add the extension to `GROUP_OF`, `TARGET_ORDER` and `LABELS` in `src/features/conversion/catalog/formats.js` (the wheel shows the first 8 available targets).
+2. Implement it in an engine under `src/features/conversion/engines/<name>/`. An engine exports `supports(from, to, engines)` and `run(job)` that returns the files it wrote, and `detect()` if it needs a program or a Python environment. Never overwrite: use `uniquePath`.
+3. List a new engine in `engines/registry.js`. Set its place in the order, and any chain through an intermediate format, in `routing/plans.js`.
 4. Add a fixture and a content check in `test/entry.js`. Check the output, not just that a file exists.
+5. Run `node test/unit/conversion/routing.test.js --update` and review the snapshot diff: it should show exactly the routes you added.
 
 ## Ground rules
 

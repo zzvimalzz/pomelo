@@ -29,12 +29,21 @@ console.log('unused-exports');
       'module.exports = { used, dead, parse, async run() {}, createThing };',
     ].join('\n'),
     'src/main/b.js': ["const { used, createThing } = require('./a');", "JSON.parse('1');", 'createThing().live;'].join('\n'),
+    'src/main/shim.js': "module.exports = require('./target');",
+    'src/main/target.js': 'const viaShim = 1, unreadByAnyone = 2;\nmodule.exports = { viaShim, unreadByAnyone };',
+    'src/main/user.js': "const { viaShim } = require('./shim');",
+    'src/main/engines/one/index.js': "module.exports = { name: 'one', supports() {}, run() {}, detect() {}, extra: 1 };",
+    'src/main/engines/one/helper.js': 'module.exports = { run() {}, detect() {} };',
   }));
   expect('an export that is read is not reported', !/"used"|"createThing"/.test(out));
   expect('a name that only appears as JSON.parse is reported', /"parse"/.test(out));
   expect('an `async` method is checked under its own name', /"run"/.test(out) && !/"async"/.test(out));
   expect('the API a factory returns is checked: unused key reported, used key not', /"idle"/.test(out) && !/"live"/.test(out));
   expect('a plain unused export is reported', /"dead"/.test(out));
+  expect('what is read through a one-line re-export counts as used, what is not does not', !/"viaShim"/.test(out) && /"unreadByAnyone"/.test(out));
+  const engineLines = out.split('\n').filter((l) => /engines[\\/]one[\\/]index\.js/.test(l));
+  expect('an engine\'s interface names are not reported, its other exports are', engineLines.length === 1 && /"extra"/.test(engineLines[0]), engineLines.join(' | '));
+  expect('a helper next to an engine gets no such exemption', /helper\.js: "run"/.test(out) && /helper\.js: "detect"/.test(out));
 }
 
 console.log('check-boundaries');

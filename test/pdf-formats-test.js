@@ -8,7 +8,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const JSZip = require('jszip');
 const XLSX = require('xlsx');
-const convert = require('../src/main/convert');
+const convert = require('../src/features/conversion');
 
 const { expect, failed } = require('./support/expect');
 const finish = require('./support/finish');
