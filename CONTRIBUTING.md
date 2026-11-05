@@ -1,6 +1,12 @@
 # Contributing to Pomelo
 
-Thanks for helping. Pomelo is a Windows app, free software under the [GNU AGPL v3 or later](LICENSE). By contributing you agree that your work is released under the same licence. Please read the [Code of Conduct](CODE_OF_CONDUCT.md) first.
+Thanks for helping. Pomelo is a Windows app, free software under the [GNU AGPL v3 or later](LICENSE). Please read the [Code of Conduct](CODE_OF_CONDUCT.md) first.
+
+## Licence of your contribution
+
+You keep the copyright in what you contribute. Pomelo is released under the AGPL, and by contributing you agree to the [Contributor Licence Agreement](CLA.md), which also lets the maintainer offer your contribution under other licence terms while the public source stays AGPL. Read it before your first pull request, then tick the licence box in the pull request template. A pull request without that agreement cannot be merged.
+
+If you contribute as part of a job, your employer has to agree too. Open an issue first and say so.
 
 ## Set up
 
