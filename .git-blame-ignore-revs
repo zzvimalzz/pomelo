@@ -3,3 +3,5 @@
 608d422e40d4322ba01dcccd87f63770bc56961d
 # Move the main-process files, the windows' pages and the tests into their features (rename only)
 217f32b6ff4f8e4745ac2609acb5de00133b9223
+# Move the Python helpers from scripts/ to python/ (rename only)
+e324ee9f5201a2f55a0050a8fe1c09938057731c

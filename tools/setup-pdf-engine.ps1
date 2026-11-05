@@ -14,4 +14,4 @@ Write-Host 'Installing PyMuPDF, python-docx, RapidOCR and pillow-heif ...'
 & $py -m pip install --quiet --upgrade pip
 & $py -m pip install --quiet --upgrade -r (Join-Path $root 'python\requirements.txt')      # the same list the in-app installer uses
 & $py -W ignore -c "import pymupdf, docx, pillow_heif, rapidocr; print('PDF, OCR and HEIC engines ready')"
-& $py -W ignore (Join-Path $PSScriptRoot 'ocr_warmup.py')
+& $py -W ignore (Join-Path $root 'python\ocr_warmup.py')

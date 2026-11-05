@@ -42,7 +42,7 @@ Engines and what they do:
 
 ## Contracts
 
-- The Python helpers' arguments, the `POMELO_PROGRESS` lines, `OK` and exit codes 1, 2 and 3 (`runHelper` and the scripts in `scripts/`).
+- The Python helpers' arguments, the `POMELO_PROGRESS` lines, `OK` and exit codes 1, 2 and 3 (`runHelper` and the scripts in `python/`).
 - `settings:get` returns the engines map with the keys above.
 - Error messages shown to the user (tests assert on them).
 

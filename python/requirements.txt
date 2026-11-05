@@ -1,5 +1,5 @@
 # The Python packages of the PDF, OCR and HEIC engine. The one list for the in-app installer (src/features/engine-setup),
-# `npm run setup:pdf` (scripts/setup-pdf-engine.ps1) and the notices check (tools/make-notices.js).
+# `npm run setup:pdf` (tools/setup-pdf-engine.ps1) and the notices check (tools/make-notices.js).
 # PyMuPDF is pinned: its 2.x releases pull in a layout-analysis stack (ONNX models, networkx and more, 120 MB) that nothing here uses.
 pymupdf==1.28.2
 python-docx

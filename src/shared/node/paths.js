@@ -11,7 +11,7 @@ const APP_ROOT = path.join(__dirname, '..', '..', '..');
 // nothing today; it is the one place to fix if that changes. (A path that is already unpacked is left alone.)
 const bundled = (p) => p.replace(/app\.asar(?!\.unpacked)/, 'app.asar.unpacked');
 const inApp = (...parts) => bundled(path.join(APP_ROOT, ...parts));
-const scriptPath = (name) => inApp('scripts', name);
+const scriptPath = (name) => inApp('python', name);
 
 // vendor/ is where a developer's `npm run setup:pdf` puts the Python environment and where a release can ship portable tools.
 const vendorRoots = () => [path.join(APP_ROOT, 'vendor'), process.resourcesPath && path.join(process.resourcesPath, 'vendor')].filter(Boolean);

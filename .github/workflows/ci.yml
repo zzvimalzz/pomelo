@@ -56,7 +56,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: npm ci
-      - run: python -m compileall -q scripts
+      - run: python -m compileall -q python
       # The same code behind the Install button and the installer's engine page: a private Python environment with PyMuPDF,
       # python-docx, RapidOCR (its models are fetched here) and pillow-heif.
       - name: Install the PDF engine with Pomelo's own installer code

@@ -40,7 +40,7 @@
     "package": "node tools/package.js",
     "build:installer": "node tools/build-installer.js",
     "icons": "node tools/make-icons.js",
-    "setup:pdf": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-pdf-engine.ps1",
+    "setup:pdf": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/setup-pdf-engine.ps1",
     "lint": "eslint .",
     "check": "npm run lint && node tools/unused-exports.js",
     "pretest": "npm run build:helper",

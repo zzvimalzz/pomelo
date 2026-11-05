@@ -37,7 +37,7 @@ function timeoutFor(src) {
   return Math.min(4 * 3600 * 1000, 600000 + Math.ceil(pages / 10) * 120000);
 }
 
-// Runs scripts/<script> with `python`. The time limit comes from the size of `src`, unless `timeout` is given.
+// Runs python/<script> with `python`. The time limit comes from the size of `src`, unless `timeout` is given.
 function runHelper(python, script, args, { src, onProgress, timeout } = {}) {
   return run(python, ['-W', 'ignore', scriptPath(script), ...args], { timeout: timeout ?? timeoutFor(src), onLine: progressReader(onProgress) });
 }

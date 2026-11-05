@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // PDF conversion through Python packages, each run as a separate process:
-//   PyMuPDF     (AGPL-3.0) reads the PDF: PDF -> DOCX (scripts/pdf_flow.py: real paragraphs, lists and tables, always editable),
+//   PyMuPDF     (AGPL-3.0) reads the PDF: PDF -> DOCX (python/pdf_flow.py: real paragraphs, lists and tables, always editable),
 //                          Markdown / HTML / text / EPUB (reading order), XLSX (tables found by its table finder, written to Excel
 //                          here) and PowerPoint (text boxes on a picture of the rest)
 //   python-docx (MIT)      writes the Word file
-//   RapidOCR    (Apache-2.0) reads scanned pages first, so every route above also works on a scan (scripts/pdf_ocr.py)
+//   RapidOCR    (Apache-2.0) reads scanned pages first, so every route above also works on a scan (python/pdf_ocr.py)
 // Environment: Pomelo's Install button creates one in %LOCALAPPDATA%\Pomelo\engines\pyenv (see engineInstaller.js);
 // `npm run setup:pdf` creates vendor/pyenv for development; an existing system Python with the packages also works.
 const fs = require('fs');
@@ -18,7 +18,7 @@ const { pdfToXlsx } = require('./to-xlsx');
 // Otherwise a PC with an older environment (no OCR) and a newer one would show OCR as ready and then fail to use it.
 const detect = () => ({ pdf: findPython('pymupdf, docx, rapidocr') || findPython('pymupdf, docx'), ocr: findPython('rapidocr') });
 
-// Markdown, HTML, plain text and EPUB all come from one reading of the PDF (scripts/pdf_structure_run.py), so they
+// Markdown, HTML, plain text and EPUB all come from one reading of the PDF (python/pdf_structure_run.py), so they
 // agree: all of the text in reading order, headings, lists, tables, links, bold and italic, code and pictures.
 async function pdfToText({ src, to, dir, base, engines, onProgress }) {
   if (to === 'epub') {
