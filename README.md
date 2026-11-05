@@ -196,5 +196,3 @@ Dev tools in `tools/`: `build-helper.js` (compiles the input helper), `package.j
 ## Licence
 
 Pomelo is free software under the **GNU Affero General Public License v3.0 or later** ([LICENSE](LICENSE)). It builds on many open-source projects; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Contributors keep their copyright and agree to the [Contributor Licence Agreement](CLA.md).
-
-Pomelo is inspired by [Tangerine for Mac](https://tangerineformac.com/). It is an independent project and shares no code or assets with it.
