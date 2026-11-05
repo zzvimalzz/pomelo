@@ -45,6 +45,7 @@ class WheelWindow {
     this.place();
     this.win.webContents.send('wheel:open', { info, targets });
     this.win.showInactive();
+    this.win.setAlwaysOnTop(true, 'screen-saver');   // The topmost flag can be set while Windows keeps the wheel under the folder being dragged from; applying it again lifts it.
     this.shown = true;
     log('wheel shown', this.win.getBounds(), targets.map((t) => t.id));
   }

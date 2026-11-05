@@ -12,6 +12,7 @@ All notable changes to Pomelo are listed here. The format follows [Keep a Change
 - An update that adds an engine to the PDF components you already have (as 0.1.3 did with OCR) now adds it for you, in the same window, instead of leaving you to press Install in Settings.
 
 ### Fixed
+- On some PCs the format wheel opened behind the folder you were dragging from, so only the part outside that window showed. It now always opens on top.
 - A command window flashed on screen for a moment while Pomelo updated itself. The installer now waits for Pomelo to close on its own instead of using the pause that opened it.
 
 ## [0.1.4] - 05-11-2026
