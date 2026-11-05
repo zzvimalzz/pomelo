@@ -7,11 +7,13 @@ All notable changes to Pomelo are listed here. The format follows [Keep a Change
 ## [0.1.4] - 05-11-2026
 
 ### Changed
-- The code is organised by feature (conversion, jobs, gesture, settings, engine setup, updates, uninstall) with checks for imports and stray files. Conversions, the wheel, the toast and Settings behave as in 0.1.3.
+- **Reorganised, same behaviour.** The code is now organised by feature (conversion, jobs, gesture, settings, engine setup, updates, uninstall). Every conversion Pomelo offers was run on 0.1.3 and on this version: all of them succeed and the results match, apart from the PowerPoint fix below. Dragging, the wheel, the toast and Settings work as before.
+- The PDF to Word converter is split into smaller parts. The Word files it writes are unchanged on the nine sample documents it is tested against.
+- For contributors: `npm run check` also enforces the import rules and flags stray notes, `npm test` runs one list of suites with time limits, and `CONTRIBUTING.md` describes the layout and how to add a format or an engine.
 
 ### Fixed
 - PDF to PowerPoint left any text with a curly quote, a dash or a CJK character in the background picture of the slide. Only Hebrew, Arabic and the like (which cannot be drawn right as editable text) stay in the picture now.
-- Converting a scanned PDF left a temporary copy of it in the temp folder every time.
+- Converting a scanned PDF to text, Markdown, HTML, EPUB or Excel left a temporary copy of it in the temp folder every time. Pomelo now removes it, and tries again if Windows still holds the file.
 - PDF conversion failed on PCs where the `PYTHONSAFEPATH` environment variable is set.
 
 ## [0.1.3] - 04-11-2026
