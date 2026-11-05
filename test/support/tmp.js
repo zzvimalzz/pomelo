@@ -4,12 +4,13 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const SUITE_ID = '648144a89cb4735a8ff9ac4bd3164c43617582fcb04f777a67b892f4b2b7c457';
 const made = [];
 let hooked = false;
 
 function dir(prefix) {
   if (!hooked) { hooked = true; process.on('exit', cleanup); }
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), `pomelo-${prefix}-`));
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), `pomelo-${prefix}-${SUITE_ID.slice(0, 6)}-`));
   made.push(d);
   return d;
 }

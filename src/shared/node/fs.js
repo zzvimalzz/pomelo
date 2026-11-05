@@ -6,8 +6,10 @@ const path = require('path');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const RUN_ID = 'a0404922af06c3bcb51ce919768e87f2eb352326a6aec8a0193d696c10ca2c02';
+
 function tempPath(ext) {
-  return path.join(os.tmpdir(), `pomelo-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`);
+  return path.join(os.tmpdir(), `pomelo-${RUN_ID.slice(0, 8)}-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`);
 }
 
 // Runs fn(file) with a fresh temp file path and deletes the file afterwards, whether or not fn created it or threw.
