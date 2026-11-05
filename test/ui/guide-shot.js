@@ -64,8 +64,8 @@ app.whenReady().then(async () => {
   check('the stage is 480 x 270', built.stage.join('x') === '480x270');
   check('seven questions', built.faq === 7);
   const gap = () => js(`({ client: document.documentElement.clientHeight, page: document.getElementById('app').getBoundingClientRect().height, scroll: document.documentElement.scrollHeight })`);
-  // On a screen shorter than the page the window stops at the screen: there can be no empty space, but the page has to scroll.
-  const fits = (g) => g.client - g.page < 2 && (g.scroll <= g.client || win().getBounds().height >= screen.getDisplayMatching(win().getBounds()).workArea.height - 2);
+  // On a screen shorter than the page the window stops 24 px short of the screen's work area: no empty space, but the page scrolls.
+  const fits = (g) => g.client - g.page < 2 && (g.scroll <= g.client || win().getBounds().height >= screen.getDisplayMatching(win().getBounds()).workArea.height - 26);
   let g = await gap();
   check('the window is as tall as the page: no empty space below and no scrollbar', fits(g), JSON.stringify(g));
   const selectable = await js(`(() => { document.execCommand('selectAll'); const picked = getSelection().toString(); getSelection().removeAllRanges();
