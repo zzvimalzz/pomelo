@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The settings window. It sizes itself to its content (no scrollbars) and stays within the screen.
 const path = require('path');
-const { BrowserWindow, screen, shell } = require('electron');
+const { BrowserWindow, shell } = require('electron');
+const { fitContentHeight } = require('#shared/electron/windows');
 const log = require('#shared/node/log');
 
 const WIDTH = 480;
@@ -29,13 +30,7 @@ function open(assetPath) {
 
 // The page reports its natural height; fit the window to it (up to the screen), scrollbars stay hidden. Only the Settings page is heard.
 function fit(sender, height) {
-  if (!win || win.isDestroyed() || sender !== win.webContents) return;
-  const wa = screen.getDisplayMatching(win.getBounds()).workArea;
-  const frame = win.getBounds().height - win.getContentBounds().height;
-  const h = Math.round(Math.max(MIN_HEIGHT, Math.min(height, wa.height - frame - 24)));
-  win.setContentSize(WIDTH, h);
-  const b = win.getBounds();
-  if (b.y + b.height > wa.y + wa.height) win.setPosition(b.x, Math.max(wa.y, wa.y + wa.height - b.height - 12));
+  if (win && !win.isDestroyed() && sender === win.webContents) fitContentHeight(win, WIDTH, height, MIN_HEIGHT);
 }
 
 module.exports = { open, fit, getWindow: () => win };

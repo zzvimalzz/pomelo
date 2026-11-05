@@ -4,7 +4,7 @@
 // Installed with the installer: the Windows uninstaller (unins000.exe) does everything and shows its own progress window.
 // It removes the engines Pomelo installed (the engine switches in engineCli.js), "Start with Windows", the program files and
 // Pomelo's settings, so uninstalling here and from Windows Settings > Apps is the same thing.
-// Running from source there is no installer: only the engines and "Start with Windows" are removed.
+// Running from source there is no installer: only the engines, "Start with Windows" and the right-click menu are removed.
 const { spawn } = require('child_process');
 
 // What the user is told will be removed.
@@ -22,12 +22,13 @@ function confirmText(p) {
 // uninstaller: path of the installer's unins000.exe (null when running from source).
 // -> { launched: true } once the Windows uninstaller is on its way (the caller should quit Pomelo now),
 //    or { launched: false, engines: { removed, failed } } when it removed the engines itself.
-async function uninstall({ installer, uninstaller = null, setLoginItem, note = () => {}, spawnDetached = detached }) {
+async function uninstall({ installer, uninstaller = null, setLoginItem, removeShellMenu = async () => {}, note = () => {}, spawnDetached = detached }) {
   if (uninstaller) {
     spawnDetached(uninstaller, ['/SILENT']);       // /SILENT: the progress window, but no second "are you sure?"
     return { launched: true };
   }
   setLoginItem(false);
+  await removeShellMenu();
   return { launched: false, engines: await installer.uninstall(note) };
 }
 

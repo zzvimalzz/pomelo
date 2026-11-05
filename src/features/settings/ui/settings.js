@@ -51,13 +51,50 @@ async function install(key) {
 
 let state;           // { settings, engines, installing, version, os }
 
+const folderName = (dir) => dir.split(/[\\/]/).filter(Boolean).pop() || dir;
+
+// Default, the folder in use when there is one, and Choose folder. Picking a new folder replaces the old one, so there are never more than three.
+function renderOutput(dir) {
+  const choices = [['default', 'Default'], ...(dir ? [['current', folderName(dir)]] : [])];
+  const selected = dir ? 'current' : 'default';
+  const option = ([value, text]) => {
+    const li = el('li', '', text);
+    li.setAttribute('role', 'option');
+    li.dataset.value = value;
+    li.tabIndex = -1;
+    return li;
+  };
+  const separator = el('li');
+  separator.setAttribute('role', 'separator');
+  $('outputMenu').replaceChildren(...choices.map(option), separator, option(['choose', 'Choose folder…']));
+  for (const o of outputOptions()) o.setAttribute('aria-selected', String(o.dataset.value === selected));
+  $('outputText').textContent = choices.find(([value]) => value === selected)[1];
+  $('output').title = dir || '';
+  $('outputNote').hidden = !dir;
+  $('outputNote').textContent = dir || '';
+}
+
+const outputOptions = () => [...$('outputMenu').querySelectorAll('[role="option"]')];
+
+function toggleOutputMenu(open, focus = true) {
+  $('outputMenu').hidden = !open;
+  $('output').setAttribute('aria-expanded', String(open));
+  if (open) (outputOptions().find((o) => o.getAttribute('aria-selected') === 'true') || outputOptions()[0]).focus();
+  else if (focus) $('output').focus();
+}
+
+async function pickOutput(value) {
+  toggleOutputMenu(false);
+  if (value === 'default') await save({ outputDir: '' });
+  else if (value === 'choose') { state = { ...state, settings: await window.settingsApi.chooseOutput() }; render(); }
+}
+
 function render() {
   const { settings, engines } = state;
   $('enabled').checked = settings.enabled;
   $('openAtLogin').checked = settings.openAtLogin;
   $('autoUpdate').checked = !!settings.autoUpdate;
-  $('keycap').textContent = settings.key;
-  for (const b of document.querySelectorAll('#key button')) b.setAttribute('aria-checked', String(b.dataset.key === settings.key));
+  renderOutput(settings.outputDir);
   const theme = ['light', 'dark'].includes(settings.theme) ? settings.theme : 'system';
   for (const b of document.querySelectorAll('#theme button')) b.setAttribute('aria-checked', String(b.dataset.theme === theme));
   $('status').classList.toggle('off', !settings.enabled);
@@ -154,7 +191,7 @@ function fit() {
 
 // ---- diagnostics ---------------------------------------------------------------------------------
 function diagnostics() {
-  const lines = [`Pomelo ${state.version}`, state.os || '', `Trigger key: ${state.settings.key}`, 'Engines:'];
+  const lines = [`Pomelo ${state.version}`, state.os || '', `Save conversions to: ${state.settings.outputDir ? 'a chosen folder' : 'next to the original'}`, 'Engines:'];
   for (const e of ENGINES) lines.push(`  ${e.name}: ${e.always ? 'built in' : state.engines[e.key] || 'not found'}`);
   return lines.filter(Boolean).join('\n');
 }
@@ -180,6 +217,7 @@ $('uninstall').onclick = async () => {
   const r = await window.settingsApi.uninstall();   // the confirmation is a native dialog from the main process
   if (!r.ok) { btn.disabled = false; note.textContent = before; } else { btn.textContent = 'Uninstalling'; }
 };
+$('help').onclick = () => window.settingsApi.openGuide();
 $('logs').onclick = () => window.settingsApi.openLogs();
 $('diag').onclick = () => { window.settingsApi.copy(diagnostics()); $('diag').textContent = 'Copied'; setTimeout(() => { $('diag').textContent = 'Copy'; }, 1600); };
 $('advToggle').onclick = () => save({ advanced: !state.settings.advanced });
@@ -189,5 +227,20 @@ $('autoUpdate').onchange = async (e) => {
   await save({ autoUpdate: e.target.checked });
   if (e.target.checked && update.state !== 'available') checkNow();    // switching it on looks straight away, so the answer is on screen
 };
-$('key').onclick = (e) => { const k = e.target.dataset?.key; if (k) save({ key: k }); };
+$('output').onclick = () => toggleOutputMenu($('outputMenu').hidden);
+$('output').onkeydown = (e) => { if (['ArrowDown', 'ArrowUp'].includes(e.key)) { e.preventDefault(); toggleOutputMenu(true); } };
+$('outputMenu').onclick = (e) => { const value = e.target.dataset?.value; if (value) pickOutput(value); };
+$('outputMenu').onkeydown = (e) => {
+  const options = outputOptions();
+  const at = options.indexOf(document.activeElement);
+  const to = { ArrowDown: (at + 1) % options.length, ArrowUp: (at - 1 + options.length) % options.length, Home: 0, End: options.length - 1 }[e.key];
+  if (to !== undefined) options[to].focus();
+  else if (e.key === 'Enter' || e.key === ' ') pickOutput(document.activeElement.dataset.value);
+  else if (e.key === 'Escape') toggleOutputMenu(false);
+  else if (e.key === 'Tab') toggleOutputMenu(false, false);
+  else return;
+  e.preventDefault();
+};
+document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.dd')) toggleOutputMenu(false, false); });
+window.addEventListener('blur', () => toggleOutputMenu(false, false));
 $('theme').onclick = (e) => { const t = e.target.dataset?.theme; if (t) save({ theme: t }); };

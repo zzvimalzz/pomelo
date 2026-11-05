@@ -34,9 +34,11 @@
 
 1. **Drag** a file or folder in Explorer, or an icon on the desktop. Hold the left mouse button.
 2. **Tap Ctrl** while dragging. A wheel of formats opens at the cursor.
-3. **Drop** on a segment. The converted copy is saved next to the original.
+3. **Drop** on a segment. The converted copy is saved next to the original, or in the folder you chose in the **Save conversions to** dropdown in Settings. Your original is never changed.
 
-Esc cancels. The trigger key (Ctrl, Alt or Shift) and the appearance (System, Light or Dark) can be changed in Settings. Progress and results show in small toasts in the bottom-right corner, never over your work. Click a finished toast to show the file, or the ✕ in a progress ring to cancel (partial files are deleted).
+Prefer a menu? Right-click a file and choose **Convert with Pomelo** (on Windows 11 it is under **Show more options**), then click a format. Pomelo adds that entry for your user account when it starts, and removes it when you uninstall. The **?** button next to the name in Settings opens a short guide with an animation of the gesture and a few questions.
+
+Esc cancels. The appearance (System, Light or Dark) can be changed in Settings. Progress and results show in small toasts in the bottom-right corner, never over your work. Click a finished toast to show the file, or the ✕ in a progress ring to cancel (partial files are deleted).
 
 ## Screenshots
 
@@ -100,7 +102,7 @@ Not supported: Apple Pages (`.pages`) and RTFD, because Apple's own software is 
 - **On your device.** Files are converted locally and nothing is uploaded. There is no telemetry and no account.
 - **No remote fetches while converting.** The PDF print window and Pandoc are blocked from loading remote resources, so a document that links to an online image does not make a request. LibreOffice can still fetch linked content in some Office files.
 - **Network use is your choice.** The only requests Pomelo makes itself are installing an optional engine and the update check, which runs when you click **Check for updates** or, only if you turn it on, once a day (**Check automatically**, off by default; it only tells you, the download starts when you press the button, and goes straight to GitHub; an engine the update adds to components you already installed is downloaded as part of it).
-- **No keylogging.** Drag detection uses a Windows input hook in a small helper, `pomelo-input.exe` ([source](native/pomelo-input.cs), one short file, no network code). It reports only the left mouse button and the mouse position while that button is held, plus your trigger key and Esc while that button is held. Other keys are never recorded, and nothing it sees is stored or logged.
+- **No keylogging.** Drag detection uses a Windows input hook in a small helper, `pomelo-input.exe` ([source](native/pomelo-input.cs), one short file, no network code). It reports only the left mouse button and the mouse position while that button is held, plus Ctrl and Esc while that button is held. Other keys are never recorded, and nothing it sees is stored or logged.
 
 Found a vulnerability? Please report it privately, see [SECURITY.md](SECURITY.md).
 

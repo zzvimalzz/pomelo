@@ -16,7 +16,6 @@ class InputHelper extends EventEmitter {
     this.pending = new Map();
     this.buf = '';
     this.stopped = false;
-    this.key = 'ctrl';
   }
 
   start() {
@@ -44,16 +43,13 @@ class InputHelper extends EventEmitter {
       if (line[0] !== '{') { this.emit('input', line.split(' ')); continue; }   // md/mm/mu/kd events
       let msg;
       try { msg = JSON.parse(line); } catch { continue; }
-      if (msg.ready) { this.ready = true; this.send(`key ${this.key}`); continue; }
+      if (msg.ready) { this.ready = true; continue; }
       const done = this.pending.get(msg.id);
       if (done) { this.pending.delete(msg.id); if (!(msg.files || []).length && msg.why) log('no files:', msg.why); done({ files: msg.files || [], explorer: !!msg.explorer }); }
     }
   }
 
   send(line) { if (this.ready) this.proc.stdin.write(`${line}\n`); }
-
-  // The one key (ctrl, alt or shift) the helper reports besides Esc. Applied again whenever the helper restarts.
-  setKey(name) { this.key = name; this.send(`key ${name}`); }
 
   // Call at mouse-down: remembers which Explorer item is under (x, y), in physical screen pixels.
   down(x, y) { this.send(`down ${Math.round(x)} ${Math.round(y)}`); }

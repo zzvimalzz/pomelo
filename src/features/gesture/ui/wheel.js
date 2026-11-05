@@ -1,50 +1,41 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 const api = window.pomelo;
-const NS = 'http://www.w3.org/2000/svg';
-const CX = 200, CY = 200, R_OUT = 160, R_IN = 68, GAP_DEG = 3, PAD = 5;
-const GROUP_COLOR = { doc: '#2b6cd4', pdf: '#e5483d', sheet: '#1e9e5a', slide: '#e8793a', image: '#8a5cf0',
-  folder: '#e0a030', video: '#0e7490', audio: '#0ca678', subtitle: '#d99100', archive: '#6c757d' };
+const { CX, CY, R_OUT, R_IN, svg: el, pt, segmentPath } = window.pomeloWheelShapes;
 
 const stage = document.getElementById('stage');
 const segmentsEl = document.getElementById('segments');
 const centerEl = document.getElementById('center');
+window.pomeloIcons.addDefs(el, document.getElementById('wheel'));
 
 let targets = [];
 let hot = -1;
+let picking = false;       // opened from the right-click menu: segments are clicked, not dropped on
 
-const el = (tag, attrs = {}, parent) => {
-  const n = document.createElementNS(NS, tag);
-  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
-  parent?.appendChild(n);
-  return n;
-};
-const pt = (r, deg) => [CX + r * Math.cos((deg * Math.PI) / 180), CY + r * Math.sin((deg * Math.PI) / 180)];
+const DISC = R_IN - 8, NAME_MAX = 84;
+let centerName = null, centerText = '';
 
-// Segment outline inset by PAD; the thick round-joined stroke in the same colour rounds the corners.
-function segmentPath(mid, step) {
-  const ro = R_OUT - PAD, ri = R_IN + PAD;
-  const half = step / 2 - GAP_DEG / 2;
-  const off = (r) => (PAD / r) * (180 / Math.PI);
-  const [a0o, a1o] = [mid - half + off(ro), mid + half - off(ro)];
-  const [a0i, a1i] = [mid - half + off(ri), mid + half - off(ri)];
-  const large = a1o - a0o > 180 ? 1 : 0;
-  const [x0, y0] = pt(ro, a0o), [x1, y1] = pt(ro, a1o), [x2, y2] = pt(ri, a1i), [x3, y3] = pt(ri, a0i);
-  return `M${x0} ${y0} A${ro} ${ro} 0 ${large} 1 ${x1} ${y1} L${x2} ${y2} A${ri} ${ri} 0 ${large} 0 ${x3} ${y3}Z`;
+// Shrinks a name that would reach past the disc at its height.
+function setName(text) {
+  centerName.textContent = text;
+  centerName.style.fontSize = '';
+  const w = centerName.getComputedTextLength();
+  if (w > NAME_MAX) centerName.style.fontSize = `${Math.max(8, (11 * NAME_MAX) / w)}px`;
 }
 
+// The disc is opaque so the file's icon reads clearly over whatever is behind the wheel.
 function drawCenter(info) {
   centerEl.replaceChildren();
-  el('circle', { class: 'disc', cx: CX, cy: CY, r: R_IN - 8 }, centerEl);
-  const color = GROUP_COLOR[info.group] || '#8e8e93';
-  const stack = info.count > 1 ? 2 : 0;
-  for (let i = stack; i >= 0; i--) {
-    const x = CX - 15 + i * 5, y = CY - 32 - i * 3;
-    el('rect', { x, y, width: 30, height: 38, rx: 6, fill: i ? 'rgba(128,128,140,.35)' : color }, centerEl);
+  el('circle', { class: 'disc', cx: CX, cy: CY, r: DISC }, centerEl);
+  el('circle', { cx: CX, cy: CY, r: DISC }, el('clipPath', { id: 'discClip' }, centerEl));
+  const content = el('g', { 'clip-path': 'url(#discClip)' }, centerEl);
+  const doc = el('g', { class: 'doc picon' }, content);
+  const { x, y } = window.pomeloIcons.draw(el, doc, info, CX, CY);
+  if (info.count > 1) {
+    el('circle', { class: 'count', cx: x + 4, cy: y + 6, r: 9.5 }, doc);
+    el('text', { class: 'countText', x: x + 4, y: y + 9.5 }, doc).textContent = info.count > 99 ? '99+' : info.count;
   }
-  const badge = el('text', { class: 'badge', x: CX, y: CY - 9 }, centerEl);
-  badge.textContent = (info.ext || '?').toUpperCase().slice(0, 4);
-  const name = el('text', { class: 'name', x: CX, y: CY + 22 }, centerEl);
-  name.textContent = info.count > 1 ? `${info.count} files` : info.name;      // the main process has already shortened a long name
+  centerName = el('text', { class: 'name', x: CX, y: CY + 30 }, content);
+  setName(centerText = info.count > 1 ? `${info.count} files` : info.name);      // the main process has already shortened a long name
 }
 
 function buildWheel(data) {
@@ -71,6 +62,10 @@ function setHot(i) {
   if (i === hot) return;
   if (hot >= 0) { targets[hot].node.classList.remove('hot'); targets[hot].node.style.transform = ''; }
   hot = i;
+  if (centerName) {
+    setName(hot >= 0 ? `to ${targets[hot].label}` : centerText);
+    centerName.classList.toggle('to', hot >= 0);
+  }
   if (hot >= 0) {
     const t = targets[hot];
     const rad = (t.mid * Math.PI) / 180;
@@ -92,6 +87,8 @@ function hitTest(x, y) {
 // ---- show / hide -------------------------------------------------------------------------
 // The overlay only ever shows the wheel. Progress, results and errors live in the bottom-right toast.
 api.onOpen((data) => {
+  picking = data.pick;
+  stage.classList.toggle('picking', picking);
   stage.classList.remove('open', 'closing');
   buildWheel(data);
   requestAnimationFrame(() => requestAnimationFrame(() => stage.classList.add('open')));
@@ -123,6 +120,14 @@ window.addEventListener('drop', (e) => {
   else api.cancel();
   setHot(-1);
 });
+
+window.addEventListener('mousemove', (e) => { if (picking) setHot(hitTest(e.clientX, e.clientY)); });
+window.addEventListener('click', (e) => {
+  if (!picking) return;
+  const i = hitTest(e.clientX, e.clientY);
+  if (i >= 0) api.pick(targets[i].id); else api.cancel();
+});
+window.addEventListener('keydown', (e) => { if (picking && e.key === 'Escape') api.cancel(); });
 
 window.addEventListener('contextmenu', (e) => e.preventDefault());
 api.ready();

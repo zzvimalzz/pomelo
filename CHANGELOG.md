@@ -5,9 +5,14 @@ All notable changes to Pomelo are listed here. The format follows [Keep a Change
 ## [Unreleased]
 
 ### Added
+- **Convert from the right-click menu.** Right-click a file or folder and choose **Convert with Pomelo**; the format wheel opens at the pointer and you click a format. The drag gesture works exactly as before. On Windows 11 the entry is under **Show more options**. Pomelo adds it for your user account the first time it starts and removes it when you uninstall.
+- **A guide.** The first time Pomelo starts it opens a short guide with an animation of drag, tap Ctrl and drop, and a few questions and answers, with step-by-step instructions and pictures of where Pomelo sits in the tray and where the right-click entry is. The new **?** button next to the name in Settings opens it again; the animation shows a document, a spreadsheet and a picture being converted in turn.
+- **Save conversions to a folder you choose.** Settings has a new **Save conversions to** dropdown. Leave it on **Default** and files are saved next to the original, as before; choose a folder and every conversion lands there, all in one place. If the folder you picked is gone, Pomelo says so and saves next to the original instead. Your original files are never changed.
 - Settings has an Appearance control with System, Light and Dark. System follows Windows, as before; Light and Dark apply to every Pomelo window.
 
 ### Changed
+- **The wheel's centre is now a Pomelo file.** While you hold a file over the wheel, its centre shows the file as a coloured icon with its format on it and a picture of its own: every format Pomelo reads (DOCX, XLSX, PNG, JPG, MP4, MP3, ZIP and the rest) has a different one, and a folder shows as a folder. Dragging several files shows a small stack with a count. Pointing at a format on the ring adds "to PDF" under the icon.
+- **The trigger key is always Ctrl.** The Trigger key setting is gone from Settings, because Pomelo will use other keys for other gestures later. Drag a file and tap Ctrl, as before.
 - **A cleaner update.** With **Check automatically** on, the toast now says "Update your Pomelo to v...", and clicking it opens Settings with the **Download update** button showing. Pressing the button opens a small **Pomelo Downloader** window with the stage, the percentage, the size and time left, and a Cancel button; you can minimise it. The installer's own window no longer appears. When the update is in, Pomelo reopens by itself (with Settings open again if you had it open) and a toast says it is now on the new version.
 - An update that adds an engine to the PDF components you already have (as 0.1.3 did with OCR) now adds it for you, in the same window, instead of leaving you to press Install in Settings.
 

@@ -3,7 +3,7 @@
 // code behind the Settings Install buttons instead of having a second implementation. No window is shown.
 //
 //   Pomelo.exe --install-engines=pdf,soffice,pandoc        installs the named engines one after another
-//   Pomelo.exe --uninstall-engines                         removes what Pomelo installed and switches off "Start with Windows"
+//   Pomelo.exe --uninstall-engines                         removes what Pomelo installed, switches off "Start with Windows" and removes the right-click menu entries
 //   --progress-file=<path>                                 optional: where to keep progress for the wizard (see fileProgress)
 //
 // Engine names are the keys in packs.js (pdf, ocr and heic come from the same install).
@@ -34,9 +34,10 @@ function fileProgress(file) {
   };
 }
 
-async function run(cmd, { installer, setLoginItem, say = console.log, progress = () => {} }) {
+async function run(cmd, { installer, setLoginItem, removeShellMenu = async () => {}, say = console.log, progress = () => {} }) {
   if (cmd.action === 'uninstall') {
     setLoginItem(false);
+    await removeShellMenu();
     let last = 0;
     progress({ fraction: 0, text: 'Removing conversion engines' });
     const { failed } = await installer.uninstall((text, fraction) => {

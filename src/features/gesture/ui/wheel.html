@@ -5,16 +5,21 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:">
   <title>Pomelo</title>
   <link rel="stylesheet" href="../../../ui-shared/tokens.css">
+  <link rel="stylesheet" href="../../../ui-shared/wheel-look.css">
+  <link rel="stylesheet" href="../../../ui-shared/wheel-icons.css">
   <link rel="stylesheet" href="wheel.css">
 </head>
 <body>
   <div id="stage" class="stage">
     <svg id="wheel" viewBox="0 0 400 400" width="400" height="400" aria-hidden="true">
-      <circle id="plate" cx="200" cy="200" r="170"/>
+      <circle class="plate" cx="200" cy="200" r="170"/>
       <g id="segments"></g>
       <g id="center"></g>
     </svg>
   </div>
+  <script src="../../../ui-shared/wheel-shapes.js"></script>
+  <script src="../../../ui-shared/wheel-glyphs.js"></script>
+  <script src="../../../ui-shared/wheel-icons.js"></script>
   <script src="wheel.js"></script>
 </body>
 </html>

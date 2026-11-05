@@ -14,7 +14,7 @@ Installs and removes the optional engines: the PDF, OCR and HEIC components, Lib
 
 `installer.pending(engines)` is for an update that adds an engine to a pack that is already there: when Pomelo built the PDF environment and the engines map finds PDF but not OCR, it names the missing engine so the app can install it (the install rebuilds the whole pack). An environment that is not Pomelo's, or is not there at all, gives nothing.
 
-`cli.js` is the headless side: `--install-engines=pdf,soffice,pandoc` installs one pack after another, `--uninstall-engines` removes everything, `--progress-file=` keeps a small file the installer's wizard polls. `engine-setup.ipc.js` handles the Install button, keeps track of an install in progress, and offers the same install as `run(key, onNote)` to the app.
+`cli.js` is the headless side: `--install-engines=pdf,soffice,pandoc` installs one pack after another, `--uninstall-engines` removes everything, including the right-click menu entries, `--progress-file=` keeps a small file the installer's wizard polls. `engine-setup.ipc.js` handles the Install button, keeps track of an install in progress, and offers the same install as `run(key, onNote)` to the app.
 
 ## Files
 
