@@ -2,7 +2,7 @@
 // Opens the real guide window and checks the animation at fixed moments of its loop (by pausing it and setting the time), that it only
 // moves things the compositor can move, the questions, the buttons, reduced motion, and saves screenshots.
 //   npx electron test/ui/guide-shot.js
-const { app, nativeTheme, shell } = require('electron');
+const { app, nativeTheme, shell, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { openGuideWindow, registerGuideIpc } = require('../../src/features/guide');
@@ -43,6 +43,11 @@ app.whenReady().then(async () => {
   nativeTheme.themeSource = 'dark';
   let closed = 0;
   openGuideWindow(asset, { onClosed: () => closed++ });
+  // A CI machine can have Windows animations switched off, which the page reads as "reduce motion".
+  const dbg = win().webContents.debugger;
+  dbg.attach('1.3');
+  const motion = (value) => dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value }] });
+  await motion('no-preference');
   await sleep(1800);
 
   console.log('what the page builds');
@@ -59,8 +64,10 @@ app.whenReady().then(async () => {
   check('the stage is 480 x 270', built.stage.join('x') === '480x270');
   check('seven questions', built.faq === 7);
   const gap = () => js(`({ client: document.documentElement.clientHeight, page: document.getElementById('app').getBoundingClientRect().height, scroll: document.documentElement.scrollHeight })`);
+  // On a screen shorter than the page the window stops at the screen: there can be no empty space, but the page has to scroll.
+  const fits = (g) => g.client - g.page < 2 && (g.scroll <= g.client || win().getBounds().height >= screen.getDisplayMatching(win().getBounds()).workArea.height - 2);
   let g = await gap();
-  check('the window is as tall as the page: no empty space below and no scrollbar', g.client - g.page < 2 && g.scroll <= g.client, JSON.stringify(g));
+  check('the window is as tall as the page: no empty space below and no scrollbar', fits(g), JSON.stringify(g));
   const selectable = await js(`(() => { document.execCommand('selectAll'); const picked = getSelection().toString(); getSelection().removeAllRanges();
     return { picked, h1: getComputedStyle(document.querySelector('h1')).userSelect, answer: getComputedStyle(document.querySelector('details p')).userSelect }; })()`);
   check('no text can be selected', selectable.picked === '' && selectable.h1 === 'none' && selectable.answer === 'none', JSON.stringify(selectable));
@@ -131,7 +138,7 @@ app.whenReady().then(async () => {
   check('a question opens to show its answer', faq[0] && faq[1]);
   await shot('guide-7-question.png');
   g = await gap();
-  check('the window grew with it, with no gap and no scrollbar', g.client - g.page < 2 && g.scroll <= g.client, JSON.stringify(g));
+  check('the window grew with it, with no gap and no scrollbar', fits(g), JSON.stringify(g));
   await js(`document.querySelectorAll('details summary')[1].click()`);
   await sleep(300);
   check('opening another closes the first, so only one answer is open', (await js(`document.querySelectorAll('details[open]').length`)) === 1);
@@ -152,7 +159,7 @@ app.whenReady().then(async () => {
   check('the right-click answer shows both menus and marks the entries to press', menus.menus === 2 && menus.hot.join() === 'Show more options,Convert with Pomelo' && menus.logo, JSON.stringify(menus));
   check('and the pictures stay inside the card', await within('.menus .menu', '.faq'));
   g = await gap();
-  check('the window fits this answer too, with no scrollbar', g.client - g.page < 2 && g.scroll <= g.client, JSON.stringify(g));
+  check('the window fits this answer too, with no scrollbar', fits(g), JSON.stringify(g));
   await shot('guide-q-menu.png');
   await open(6);
   const tray = await js(`({ pins: [...document.querySelectorAll('.tray .pin')].map((p) => p.textContent), logo: document.querySelector('.tray .me img').complete && document.querySelector('.tray .me img').naturalWidth > 0 })`);
@@ -160,7 +167,7 @@ app.whenReady().then(async () => {
   check('and the pop-up, the arrow and the icon all sit inside the taskbar picture', await within('.tray .flyout, .tray .caret, .tray .me', '.tray'));
   await shot('guide-q-tray.png');
   g = await gap();
-  check('the window follows each answer, with no gap and no scrollbar', g.client - g.page < 2 && g.scroll <= g.client, JSON.stringify(g));
+  check('the window follows each answer, with no gap and no scrollbar', fits(g), JSON.stringify(g));
   await js(`document.querySelectorAll('details summary')[6].click()`);
   await js(`document.getElementById('site').click()`);
   await sleep(300);
@@ -169,16 +176,13 @@ app.whenReady().then(async () => {
   console.log(`  (the page is ${tall[0]} px tall in a window of ${tall[1]} px)`);
 
   console.log('reduced motion');
-  const dbg = win().webContents.debugger;
-  dbg.attach('1.3');
-  await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await motion('reduce');
   await sleep(500);
   const still = await js(`({ running: document.getAnimations().filter((a) => !a.animationName.startsWith('faq')).length, wheel: +getComputedStyle(document.querySelector('.wheelbox')).opacity,
     hot: +getComputedStyle(document.querySelector('.hotseg')).opacity, steps: +getComputedStyle(document.querySelector('.steps .s1')).opacity })`);
   check('with reduced motion nothing moves and the wheel is shown open', still.running === 0 && still.wheel === 1 && still.hot === 1 && still.steps === 1, JSON.stringify(still));
   await shot('guide-8-reduced.png');
-  await dbg.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
-  dbg.detach();
+  await motion('no-preference');
 
   console.log('light theme');
   nativeTheme.themeSource = 'light';
