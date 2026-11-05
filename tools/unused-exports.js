@@ -21,6 +21,7 @@ function objectKeys(src, start) {
   let depth = 0, token = '';
   for (let i = start; i < src.length; i++) {
     const c = src[i];
+    if (c === '/' && src[i + 1] === '/' && /\s/.test(src[i - 1] || ' ')) { i = src.indexOf('\n', i); if (i < 0) break; continue; }   // a comment, not a URL
     if ('{(['.includes(c)) { depth++; if (depth > 1) token += c; continue; }
     if ('})]'.includes(c)) { depth--; if (depth === 0) break; token += c; continue; }
     if (c === ',' && depth === 1) { names.push(token); token = ''; continue; }
@@ -73,7 +74,10 @@ for (const [file, src] of Object.entries(text)) {
   if (target) for (const f of importers[file] || []) (importers[target] ||= new Set()).add(f);
 }
 
-for (const file of files.filter((f) => ['main', 'shared', 'features'].some((d) => f.includes(`${path.sep}src${path.sep}${d}${path.sep}`)))) {
+// Modules whose whole API is handed to another file as an argument (the app gives the conversion API to the drop flow).
+const HANDED_ON = ['src/features/conversion/index.js'];
+
+for (const file of files.filter((f) => ['app', 'shared', 'features'].some((d) => f.includes(`${path.sep}src${path.sep}${d}${path.sep}`)))) {
   const { names, factories } = exportedNames(text[file]);
   // The engine interface (name, supports, run, detect) and the built-in engine's kinds (reads, writes, run) are called on whichever
   // module was picked, so nothing reads them by name.
@@ -84,7 +88,7 @@ for (const file of files.filter((f) => ['main', 'shared', 'features'].some((d) =
     // A value that is handed on (a factory's result, the conversion API passed to the drop flow) is read under other names in
     // other files, so a `.name` read in a file that requires the module, or sits beside one that does, counts.
     const near = (f) => files.filter((g) => path.dirname(g) === path.dirname(f));
-    const handedOn = isMember || path.basename(file) === 'index.js';
+    const handedOn = isMember || HANDED_ON.includes(path.relative(root, file).split(path.sep).join('/'));
     if (handedOn ? used[file]?.has(name) || [...(importers[file] || [])].flatMap(near).some((f) => new RegExp(`\\.${name}\\b`).test(text[f])) : used[file]?.has(name)) continue;
     found++;
     const usedInside = (text[file].match(new RegExp(`\\b${name}\\b`, 'g')) || []).length > 1;

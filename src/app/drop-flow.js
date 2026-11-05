@@ -35,4 +35,4 @@ function createDropFlow({ conversion, getWheel, getJobs, log }) {
   };
 }
 
-module.exports = { createDropFlow, describeSelection };
+module.exports = { createDropFlow };

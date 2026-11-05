@@ -27,15 +27,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const child = spawn(require('electron'), [APP_ROOT, '--hidden', `--user-data-dir=${dir}`], { env, stdio: 'ignore' });
   const logFile = path.join(dir, 'debug.log');
   const text = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '');
-  let ready = false;
-  for (let t = 0; t < 60000 && !ready && child.exitCode === null; t += 250) {
-    await sleep(250);
-    ready = /\bready\b/.test(text());
+  const READY = /^\d\d:\d\d:\d\d\.\d{3} ready$/m;                         // the whole line: a log line that merely mentions the word does not count
+  try {
+    let ready = false;
+    for (let t = 0; t < 60000 && !ready && child.exitCode === null; t += 250) {
+      await sleep(250);
+      ready = READY.test(text());
+    }
+    expect('the log says ready (all features were created and connected)', ready, text().split('\n').slice(-4).join(' | '));
+    expect('and it announced the version and the build', /--- started v\d+\.\d+\.\d+ build [0-9a-f]{12}/.test(text()));
+    expect('the app is still running', child.exitCode === null);
+  } finally {
+    spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true });
+    await sleep(500);
   }
-  expect('the log says ready (all features were created and connected)', ready, text().split('\n').slice(-4).join(' | '));
-  expect('and it announced the version and the build', /--- started v\d+\.\d+\.\d+ build [0-9a-f]{12}/.test(text()));
-  expect('the app is still running', child.exitCode === null);
-  spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true });
-  await sleep(500);
   finish();
 })();

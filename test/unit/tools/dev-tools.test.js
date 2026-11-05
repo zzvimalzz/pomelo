@@ -21,19 +21,23 @@ const run = (tool, dir) => execFileSync(process.execPath, [path.join(__dirname, 
 console.log('unused-exports');
 {
   const out = run('unused-exports.js', tree({
-    'src/main/a.js': [
+    'src/app/a.js': [
       'const used = 1, dead = 2, parse = 3, run = 4, live = 5, idle = 6;',
       'function createThing() {',
-      '  return { live, idle };',
+      '  return {',
+      '    // a comment, with commas, inside the returned object',
+      '    live,',
+      '    idle,',
+      '  };',
       '}',
       'module.exports = { used, dead, parse, async run() {}, createThing };',
     ].join('\n'),
-    'src/main/b.js': ["const { used, createThing } = require('./a');", "JSON.parse('1');", 'createThing().live;'].join('\n'),
-    'src/main/shim.js': "module.exports = require('./target');",
-    'src/main/target.js': 'const viaShim = 1, unreadByAnyone = 2;\nmodule.exports = { viaShim, unreadByAnyone };',
-    'src/main/user.js': "const { viaShim } = require('./shim');",
-    'src/main/engines/one/index.js': "module.exports = { name: 'one', supports() {}, run() {}, detect() {}, extra: 1 };",
-    'src/main/engines/one/helper.js': 'module.exports = { run() {}, detect() {} };',
+    'src/app/b.js': ["const { used, createThing } = require('./a');", "JSON.parse('1');", 'createThing().live;'].join('\n'),
+    'src/app/shim.js': "module.exports = require('./target');",
+    'src/app/target.js': 'const viaShim = 1, unreadByAnyone = 2;\nmodule.exports = { viaShim, unreadByAnyone };',
+    'src/app/user.js': "const { viaShim } = require('./shim');",
+    'src/features/conversion/engines/one/index.js': "module.exports = { name: 'one', supports() {}, run() {}, detect() {}, extra: 1 };",
+    'src/features/conversion/engines/one/helper.js': 'module.exports = { run() {}, detect() {} };',
   }));
   expect('an export that is read is not reported', !/"used"|"createThing"/.test(out));
   expect('a name that only appears as JSON.parse is reported', /"parse"/.test(out));

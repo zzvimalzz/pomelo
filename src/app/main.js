@@ -79,7 +79,7 @@ app.whenReady().then(async () => {
   wheel.create();
   jobs = new Jobs({
     formats: conversion.timingFormats,
-    timings: new Timings(userDataFile('timings.json'), conversion.timingFormats.kinds),
+    timings: new Timings(userDataFile('timings.json')),
     convert: (src, to, opts) => conversion.convertFile(src, to, opts).catch((e) => { log('convert failed:', path.basename(src), e.message); throw e; }),
   });
   const toast = new Toast({ onRemove: (id) => jobs.remove(id), onCancel: (id) => jobs.cancel(id) });

@@ -110,7 +110,7 @@ class Jobs extends EventEmitter {
     job.startedAt = this.now();
     job.from = this.formats.extOf(job.src);
     job.size = sizeOf(job.src);
-    job.expected = this.timings ? this.timings.expected(job.from, job.to, job.size) : guessMs(job.from, job.to, job.size, this.formats.kinds);
+    job.expected = this.timings ? this.timings.expected(job.from, job.to, job.size, this.formats.kinds) : guessMs(job.from, job.to, job.size, this.formats.kinds);
     this.running++;
     this.startTicker();
     this.changed();

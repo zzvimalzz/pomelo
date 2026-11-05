@@ -22,16 +22,16 @@ function guessMs(from, to, size, { office, picture }) {
 
 // Learned timings: key "from>to" -> milliseconds per (1 MB + 1), smoothed. Kept next to the settings.
 class Timings {
-  constructor(file, kinds) {
+  constructor(file) {
     this.file = file;
-    this.kinds = kinds;
     this.data = {};
     try { this.data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* none yet */ }
   }
 
-  expected(from, to, size) {
+  // kinds: the extension sets guessMs needs, for a pair with nothing learned yet.
+  expected(from, to, size, kinds) {
     const learned = this.data[`${from}>${to}`];
-    return learned ? Math.max(500, learned * (1 + size / MB)) : guessMs(from, to, size, this.kinds);
+    return learned ? Math.max(500, learned * (1 + size / MB)) : guessMs(from, to, size, kinds);
   }
 
   record(from, to, size, ms) {
