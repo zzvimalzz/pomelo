@@ -119,6 +119,22 @@ const titles = (jobs) => jobs.view().cards.map((x) => x.title);
     expect('a new conversion after a finished batch starts a fresh stack', jobs.mode === 'stack' && jobs.view().cards.length === 1 && jobs.view().cards[0].title === 'Converting to PDF…', titles(jobs).join(' | '));
   }
 
+  console.log('a message you can click');
+  {
+    const { jobs } = make();
+    const clicked = [];
+    const plain = jobs.addInfo({ title: 'Plain', detail: 'x' });
+    const button = jobs.addInfo({ title: 'Update your Pomelo to v0.2.0', detail: 'Click to open Pomelo', onClick: () => clicked.push('opened') });
+    const cards = jobs.view().cards;
+    expect('a card with onClick is marked clickable, a plain one is not', cards.find((x) => x.id === button).clickable === true && cards.find((x) => x.id === plain).clickable === false);
+    jobs.activate(plain);
+    expect('clicking a plain card does nothing', clicked.length === 0);
+    jobs.activate(button);
+    expect('clicking the button card runs its action', clicked.join() === 'opened');
+    jobs.activate('info999');
+    expect('an unknown id is ignored', clicked.length === 1);
+  }
+
   console.log('progress is always a number, and the time left is honest');
   {
     const { jobs, c } = make();

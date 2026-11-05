@@ -4,9 +4,10 @@ const stack = document.getElementById('stack');
 
 const ICON = { done: '✓', error: '!', info: 'i' };
 const LINGER = { done: 5500, info: 6000, error: 9000 };     // working cards stay until they finish
+const LINGER_BUTTON = 15000;                                // a card with something to click stays a little longer
 const RING = 2 * Math.PI * 18;                              // circumference of the progress ring (r = 18)
 
-const cards = new Map();                                    // id -> { el, state, timer, outPath }
+const cards = new Map();                                    // id -> { el, state, timer, outPath, clickable }
 
 const make = window.pomeloUi.el;
 
@@ -26,6 +27,7 @@ function build(id) {
     if (e.target.closest('.cancel')) return api.cancel(id);
     if (e.target.closest('.close')) return dismiss(id);
     if (c.state === 'done' && c.outPath) { api.reveal(c.outPath); dismiss(id); }
+    else if (c.clickable) { api.click(id); dismiss(id); }
   });
   return el;
 }
@@ -45,7 +47,8 @@ function schedule(id) {
   const c = cards.get(id);
   if (!c) return;
   clearTimeout(c.timer);
-  if (LINGER[c.state]) c.timer = setTimeout(() => dismiss(id), LINGER[c.state]);
+  const linger = c.clickable ? LINGER_BUTTON : LINGER[c.state];
+  if (linger) c.timer = setTimeout(() => dismiss(id), linger);
 }
 
 // Fade the card out, then tell the main process so the window can shrink.
@@ -62,9 +65,10 @@ function paint(c, data) {
   const stateChanged = c.state !== data.state;
   c.state = data.state;
   c.outPath = data.outPath || '';
+  c.clickable = !!data.clickable;
   el.classList.remove('working', 'done', 'error', 'info');
   el.classList.add(data.state);
-  el.classList.toggle('clickable', data.state === 'done' && !!c.outPath);
+  el.classList.toggle('clickable', c.clickable || (data.state === 'done' && !!c.outPath));
 
   const lead = el.firstChild;
   if (data.ring) {
@@ -94,7 +98,7 @@ api.onView((view) => {
     let c = cards.get(data.id);
     if (c && c.el.classList.contains('out')) return;        // already fading out; main will drop it
     if (!c) {
-      c = { el: build(data.id), state: null, timer: null, outPath: '' };
+      c = { el: build(data.id), state: null, timer: null, outPath: '', clickable: false };
       cards.set(data.id, c);
     }
     paint(c, data);

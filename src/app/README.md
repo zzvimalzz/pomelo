@@ -6,7 +6,7 @@ The entry point and the wiring. `main.js` (package.json `"main"`) creates every 
 
 1. `main.js` points the debug log at `%APPDATA%\Pomelo\debug.log` before anything else, then checks the command line. `--install-engines=` and `--uninstall-engines` run the installer's headless work (`engine-setup`) and exit; no window, no tray, no single-instance lock.
 2. Otherwise it takes the single-instance lock, and once Electron is ready: writes the default settings, detects the engines, starts the input helper, creates the wheel window, the job list with its toast, the gesture trigger and the tray, and registers each feature's IPC.
-3. It applies the settings (gesture key, enabled, "Start with Windows"), starts the automatic update check if it is on, reports how an in-app update went (`--updated`), writes `ready` to the log, and opens Settings unless `--hidden` was given.
+3. It applies the settings (gesture key, enabled, "Start with Windows"), starts the automatic update check if it is on, finishes an in-app update (`--updated`: adds the engines the new version expects, then reports how it went), writes `ready` to the log, and opens Settings unless `--hidden` was given.
 
 ## Files
 

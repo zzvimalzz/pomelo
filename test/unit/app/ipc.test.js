@@ -21,10 +21,10 @@ const quiet = { log: noop, sendToSettings: noop };
 
 console.log('registering the IPC modules');
 require(path.join(features, 'gesture', 'wheel.ipc')).registerWheelIpc({ onLog: noop, onReady: noop, onDrop: noop, onCancel: noop });
-require(path.join(features, 'jobs', 'toast.ipc')).registerToastIpc({ onReady: noop, onRemove: noop, onCancel: noop });
+require(path.join(features, 'jobs', 'toast.ipc')).registerToastIpc({ onReady: noop, onRemove: noop, onCancel: noop, onClick: noop });
 require(path.join(features, 'settings', 'settings.ipc')).registerSettingsIpc({ store: {}, getState: noop, onChange: noop, logPath: noop });
 require(path.join(features, 'engine-setup', 'engine-setup.ipc')).registerEngineSetupIpc({ installer: {}, getEngines: noop, ...quiet });
-require(path.join(features, 'updates', 'updates.ipc')).registerUpdatesIpc({ current: '0.0.0', autoCheck: {}, onChecked: noop, isPackaged: false, execPath: '', stopForUpdate: noop, exit: noop, ...quiet });
+require(path.join(features, 'updates', 'updates.ipc')).registerUpdatesIpc({ current: '0.0.0', autoCheck: {}, onChecked: noop, isPackaged: false, execPath: '', isSettingsOpen: noop, downloader: {}, stopForUpdate: noop, exit: noop, ...quiet });
 require(path.join(features, 'uninstall', 'uninstall.ipc')).registerUninstallIpc({ installer: {}, getWindow: noop, setLoginItem: noop, isPackaged: false, execPath: '', quit: noop, log: noop });
 Module._load = realLoad;
 

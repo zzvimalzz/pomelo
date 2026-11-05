@@ -83,13 +83,23 @@ function createInstaller({ root = enginesRoot(), run = runStatus, redetect = () 
     return { removed, failed };
   }
 
+  // After an update added an engine to the PDF pack (PDF found, OCR not) the environment Pomelo built is only partly useful:
+  // [{ key, label }] naming one missing engine, and installing it rebuilds the whole pack. Empty when the environment is not
+  // Pomelo's own, or is not there at all (a pack the user never installed stays that way).
+  function pending(engines) {
+    if (!manifest.read().pyenv) return [];
+    const keys = PACKS.python.keys.filter((k) => k in engines);           // pdf2docx is only another name for pdf
+    const missing = keys.find((k) => !engines[k]);
+    return missing && keys.some((k) => engines[k]) ? [{ key: missing, label: PACKS.python.label }] : [];
+  }
+
   // The names of what Pomelo installed, for the uninstall confirmation.
   function installed() {
     const m = manifest.read();
     return [...(m.pyenv ? [PACKS.python.label] : []), ...(m.soffice ? [PACKS.soffice.label] : []), ...m.winget.map((w) => w.name)];
   }
 
-  return { install, uninstall, installed, readManifest: manifest.read };
+  return { install, uninstall, installed, pending, readManifest: manifest.read };
 }
 
 module.exports = { createInstaller };

@@ -90,13 +90,19 @@ const SHA = crypto.createHash('sha256').update(BODY).digest('hex');
 
   console.log('what is run');
   const cmd = installCommand('C:\\Temp\\pomelo-update\\Pomelo-Setup-x64.exe', 'C:\\Users\\a b\\AppData\\Local\\Programs\\Pomelo\\Pomelo.exe', 'C:\\Temp\\u.log', '0.2.0');
-  expect('silent, no restart, no optional tasks', /\/SILENT/.test(cmd) && /\/NORESTART/.test(cmd) && /\/TASKS= /.test(cmd) && /\/SUPPRESSMSGBOXES/.test(cmd));
+  expect('silent with no installer window, no restart, no optional tasks', /\/VERYSILENT/.test(cmd) && /\/NORESTART/.test(cmd) && /\/TASKS= /.test(cmd) && /\/SUPPRESSMSGBOXES/.test(cmd));
   expect('waits for the installer, then starts Pomelo hidden', cmd.indexOf('/wait') < cmd.indexOf('Pomelo.exe"') && /--hidden --updated=0\.2\.0$/.test(cmd));
+  expect('no console program in the chain: Windows opens a visible window for each', !/\b(ping|timeout|powershell|choice)\b/i.test(cmd), cmd);
+  const waiting = installCommand('a.exe', 'p.exe', null, '0.2.0', { waitPid: 4321 });
+  expect('the installer is told which process to wait for', waiting.includes('"a.exe" /VERYSILENT') && waiting.includes('/WAITPID=4321 ') && !cmd.includes('/WAITPID'));
+  expect('a pid that is not a number is not passed on', !installCommand('a.exe', 'p.exe', null, '0.2.0', { waitPid: '1 & calc' }).includes('WAITPID'));
+  expect('reopening leaves out --hidden, so Settings shows again', /Pomelo\.exe" --updated=0\.2\.0$/.test(installCommand('a.exe', 'C:\\Pomelo.exe', null, '0.2.0', { reopen: true })));
   expect('paths with spaces are quoted', cmd.includes('"C:\\Users\\a b\\AppData\\Local\\Programs\\Pomelo\\Pomelo.exe"'));
   expect('a strange version is not put on the command line', !/--updated=/.test(installCommand('a.exe', 'p.exe', null, '1.0 & calc')));
   const calls = [];
-  launch('C:\\x\\setup.exe', 'C:\\x\\Pomelo.exe', { version: '0.2.0', spawn: (...a) => { calls.push(a); return { unref() { calls.push('unref'); } }; } });
+  const sent = launch('C:\\x\\setup.exe', 'C:\\x\\Pomelo.exe', { version: '0.2.0', pid: 777, spawn: (...a) => { calls.push(a); return { unref() { calls.push('unref'); } }; } });
   expect('it is started detached and let go', calls[0][0] === 'cmd.exe' && calls[0][2].detached === true && calls[0][2].stdio === 'ignore' && calls.includes('unref'));
+  expect('it hands the installer this process id', sent.includes('/WAITPID=777 '));
 
   server.close();
   console.log(failed() ? `\n${failed()} failed` : '\nall passed');

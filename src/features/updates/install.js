@@ -58,22 +58,26 @@ async function download({ url, sha256, size = 0, dir = DIR(), name = 'Pomelo-Set
 }
 
 // The command line that runs the installer to completion and then starts Pomelo again:
-//   start /wait "" "setup.exe" /SILENT ...   then   start "" "Pomelo.exe" --hidden --updated=<version>
-// /TASKS= selects none of the optional tasks, so an update never re-creates a desktop shortcut the user removed; the
-// engines page is skipped in silent mode, so engines are left as they are. The installer stops the running Pomelo itself.
-// Pomelo is started again even if the installer failed, so the user is never left without it; --updated=<version> lets the
-// new process tell "now on <version>" from "still on the old one".
-function installCommand(installer, pomeloExe, logFile, version = '') {
+//   start /wait "" "setup.exe" /VERYSILENT ...   then   start "" "Pomelo.exe" --hidden --updated=<version>
+// /VERYSILENT keeps the installer's own window away: Pomelo's downloader has already said what is happening. /TASKS= selects
+// none of the optional tasks, so an update never re-creates a desktop shortcut the user removed; the engines page is skipped
+// in silent mode, so the installer leaves engines alone (Pomelo adds what the new version needs when it starts again).
+// /WAITPID makes the installer wait until this Pomelo has exited before it looks for a running copy to stop: the installer
+// must not still be a child of the process it stops. Nothing here may be a console program: cmd runs without a console
+// (it has to outlive Pomelo), and Windows opens a visible one for any console program it starts, which is what a `ping` used as
+// the pause did. Pomelo is started again even if the installer failed, so the user is never left without it; --updated=<version>
+// lets the new process tell "now on <version>" from "still on the old one". `reopen` leaves out --hidden, so Settings opens
+// again for someone who had it open.
+function installCommand(installer, pomeloExe, logFile, version = '', { waitPid = 0, reopen = false } = {}) {
   const q = (p) => `"${p}"`;
   const v = /^[\w.-]{1,32}$/.test(version) ? version : '';
-  // the short ping is a pause: Pomelo has to be gone before the installer looks for it (its "stop Pomelo" step ends the
-  // whole process tree of any running Pomelo.exe, and the installer must not be part of one)
-  return `ping -n 3 127.0.0.1 >nul & start "" /wait ${q(installer)} /SILENT /SUPPRESSMSGBOXES /NORESTART /TASKS= ${logFile ? `/LOG=${q(logFile)}` : ''} & start "" ${q(pomeloExe)} --hidden ${v ? `--updated=${v}` : '--updated'}`;
+  const wait = Number.isInteger(waitPid) && waitPid > 0 ? `/WAITPID=${waitPid} ` : '';
+  return `start "" /wait ${q(installer)} /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /TASKS= ${wait}${logFile ? `/LOG=${q(logFile)}` : ''} & start "" ${q(pomeloExe)} ${reopen ? '' : '--hidden '}${v ? `--updated=${v}` : '--updated'}`;
 }
 
 // Starts it detached from this process (Pomelo exits right after, and the installer must outlive it). Returns the command.
-function launch(installer, pomeloExe, { version = '', spawn = require('child_process').spawn, logFile = path.join(os.tmpdir(), 'pomelo-update.log') } = {}) {
-  const cmd = installCommand(installer, pomeloExe, logFile, version);
+function launch(installer, pomeloExe, { version = '', reopen = false, pid = process.pid, spawn = require('child_process').spawn, logFile = path.join(os.tmpdir(), 'pomelo-update.log') } = {}) {
+  const cmd = installCommand(installer, pomeloExe, logFile, version, { waitPid: pid, reopen });
   const child = spawn('cmd.exe', ['/d', '/s', '/c', `"${cmd}"`], { detached: true, stdio: 'ignore', windowsHide: true, windowsVerbatimArguments: true });
   child.unref();
   return cmd;

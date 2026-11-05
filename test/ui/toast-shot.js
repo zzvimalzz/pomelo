@@ -25,7 +25,7 @@ app.whenReady().then(async () => {
     signal.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true });
   });
   const jobs = new Jobs({ convert, formats: timingFormats, concurrency: 3, maxStack: 3 });
-  const toast = new Toast({ onRemove: (id) => jobs.remove(id), onCancel: (id) => jobs.cancel(id) });
+  const toast = new Toast({ onRemove: (id) => jobs.remove(id), onCancel: (id) => jobs.cancel(id), onClick: (id) => jobs.activate(id) });
   toast.create();
   jobs.on('change', (v) => toast.update(v));
 
@@ -106,6 +106,18 @@ app.whenReady().then(async () => {
   d = await dom();
   check('info + error stacked, error newest on top', d.cards.length === 2 && /Conversion failed/.test(d.cards[0].title), d.cards.map((c) => c.title).join(' | '));
   await shot('toast-light-mixed.png');
+
+  console.log('a card that is a button');
+  for (const c of [...jobs.view().cards]) jobs.remove(c.id);
+  await sleep(400);
+  const opened = [];
+  jobs.addInfo({ title: 'Update your Pomelo to v0.2.0', detail: 'Click to open Pomelo and download it.', onClick: () => opened.push(1) });
+  await sleep(600);
+  check('it looks clickable', (await toast.win.webContents.executeJavaScript(`document.querySelector('.card').classList.contains('clickable')`)) === true);
+  await shot('toast-update-available.png');
+  await toast.win.webContents.executeJavaScript(`document.querySelector('.card').click()`);
+  await sleep(500);
+  check('clicking it runs its action and the card goes away', opened.length === 1 && jobs.view().cards.length === 0, `${opened.length} clicks, ${jobs.view().cards.length} cards`);
 
   console.log('cards fade out and the window hides when empty');
   for (const c of [...jobs.view().cards]) jobs.remove(c.id);

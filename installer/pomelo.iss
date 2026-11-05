@@ -2,8 +2,9 @@
 ; Pomelo installer: per-user (no administrator rights), three screens: location, conversion engines, shortcuts.
 ; Build it with:  npm run package  then  npm run build:installer      (needs Inno Setup 6.3 or later)
 ;
-; Silent install:   Pomelo-Setup-x64.exe /SILENT                      app only, no engines (this is how Pomelo updates itself)
-;                   Pomelo-Setup-x64.exe /SILENT /ENGINES=pdf,soffice,pandoc
+; Silent install:   Pomelo-Setup-x64.exe /VERYSILENT                  app only, no engines (this is how Pomelo updates itself)
+;                   Pomelo-Setup-x64.exe /VERYSILENT /ENGINES=pdf,soffice,pandoc
+;                   add /WAITPID=<id> to wait for that process to exit first (Pomelo passes its own when it updates itself)
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -88,6 +89,12 @@ function TranslateMessage(const Msg: TMsg): BOOL;
   external 'TranslateMessage@user32.dll stdcall';
 function DispatchMessage(const Msg: TMsg): Longint;
   external 'DispatchMessageW@user32.dll stdcall';
+function OpenProcess(Access: DWORD; InheritHandle: BOOL; ProcessId: DWORD): Longint;
+  external 'OpenProcess@kernel32.dll stdcall';
+function WaitForSingleObject(Handle: Longint; Milliseconds: DWORD): DWORD;
+  external 'WaitForSingleObject@kernel32.dll stdcall';
+function CloseHandle(Handle: Longint): BOOL;
+  external 'CloseHandle@kernel32.dll stdcall';
 
 // Sleep does not keep the window alive. Without this the wizard shows "Not responding" while the engines install.
 procedure PumpMessages;
@@ -158,8 +165,24 @@ begin
     'The program files are replaced. Your settings, shortcuts and conversion engines are kept. If Pomelo is running, Setup closes it first.';
 end;
 
+// When Pomelo updates itself it starts this Setup and then quits; stopping a Pomelo that has not finished quitting would also
+// stop this Setup, which is still one of its children. So wait for that process (at most 30 seconds) before doing anything.
+procedure WaitForPomeloToQuit;
+var
+  Pid: Integer;
+  Handle: Longint;
+begin
+  Pid := StrToIntDef(ExpandConstant('{param:WAITPID|0}'), 0);
+  if Pid <= 0 then Exit;
+  Handle := OpenProcess($00100000, False, Pid);      // SYNCHRONIZE; 0 when the process is already gone
+  if Handle = 0 then Exit;
+  WaitForSingleObject(Handle, 30000);
+  CloseHandle(Handle);
+end;
+
 function InitializeSetup: Boolean;
 begin
+  WaitForPomeloToQuit;
   FindInstalled;
   Updating := InstalledDir <> '';
   Result := True;

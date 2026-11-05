@@ -3,7 +3,7 @@
 const { ipcMain, clipboard, shell } = require('electron');
 const { fit } = require('./settings.window');
 
-// store: the settings store. getState(): the rest of what the page shows ({ engines, installing, version, os, update }),
+// store: the settings store. getState(): the rest of what the page shows ({ engines, installing, version, os, update, updated }),
 // which belongs to other parts of the app. onChange(patch): settings were changed from the page. logPath(): the debug log.
 function registerSettingsIpc({ store, getState, onChange, logPath }) {
   ipcMain.handle('settings:get', () => ({ settings: store.get(), ...getState() }));

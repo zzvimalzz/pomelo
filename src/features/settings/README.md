@@ -6,7 +6,7 @@ What the user can set, where it is kept, and the Settings window.
 
 `store.js` keeps the settings in a JSON file whose path the app hands in (`%APPDATA%\Pomelo\settings.json`): `createStore(file)` returns `get()` and `set(patch)`. Missing keys get the defaults, and `set` writes the file at once. There is no Electron in it.
 
-`settings.window.js` opens the window. It reports its natural height to the main process (`fit`), which sizes the window to its content, so nothing scrolls unless the screen is too small. `settings.ipc.js` answers the page: `settings:get` returns the stored settings together with the state other features own (engines, an install in progress, the version, an update that was found), which the app supplies through `getState()`; `settings:set` stores a patch and calls `onChange(patch)` so the app can apply it.
+`settings.window.js` opens the window. It reports its natural height to the main process (`fit`), which sizes the window to its content, so nothing scrolls unless the screen is too small. `settings.ipc.js` answers the page: `settings:get` returns the stored settings together with the state other features own (engines, an install in progress, the version, an update that was found, whether this start followed an update), which the app supplies through `getState()`; `settings:set` stores a patch and calls `onChange(patch)` so the app can apply it.
 
 The page (`ui/`) shows the everyday switches, and under Advanced the engines with their Install buttons, the log, diagnostics and Uninstall. Install, update and uninstall messages belong to their own features.
 

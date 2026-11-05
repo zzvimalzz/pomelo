@@ -1,0 +1,47 @@
+:root {
+  --accent-2: #bf2f4f;
+  --bg: #f6f4f1; --muted: rgba(28, 28, 30, .56); --track: rgba(0, 0, 0, .09);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1c1c1e; --muted: rgba(255, 255, 255, .58); --track: rgba(255, 255, 255, .1); }
+}
+
+* { box-sizing: border-box; min-width: 0; overflow-wrap: anywhere; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--txt); user-select: none; -webkit-user-select: none; }
+body { font: 13.5px/1.35 var(--font); -webkit-font-smoothing: antialiased; }
+#app { height: 100%; display: flex; flex-direction: column; padding: 18px 20px 16px; }
+p { margin: 0; }
+b { font-weight: 600; }
+.muted { color: var(--muted); font-size: 12px; }
+small { color: var(--muted); font-size: 11.5px; display: block; line-height: 1.35; }
+button { font: inherit; color: inherit; }
+
+.hero { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+.logo { flex: none; border-radius: 12px; object-fit: contain; filter: drop-shadow(0 4px 10px rgba(232, 77, 111, .3)); }
+h1 { margin: 0 0 2px; font-size: 19px; letter-spacing: -.01em; line-height: 1.2; }
+
+.head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.head b { font-size: 17px; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity .7s ease; }
+.head b.out { opacity: 0; }
+#percent { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--accent-2); }
+@media (prefers-color-scheme: dark) { #percent { color: var(--accent); } }
+#detail { margin-top: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.bar { height: 10px; border-radius: 99px; background: var(--track); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--accent), #ff8a6b); transition: width .25s ease-out; }
+/* no figure to show (installing, or an engine that reports nothing): a sliding glow instead of a bar that lies */
+.bar.busy i { width: 38%; animation: slide 1.3s ease-in-out infinite alternate; }
+@keyframes slide { from { margin-left: 0; } to { margin-left: 62%; } }
+.bar.bad i { background: var(--err); }
+
+footer { display: flex; justify-content: flex-end; gap: 8px; min-height: 31px; margin-top: 14px; }
+.btn { border: 1px solid var(--line); background: none; padding: 6px 14px; border-radius: 9px; cursor: pointer; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow-wrap: normal; }
+.btn:hover { background: var(--track); }
+.btn.primary { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
+.btn.primary:hover { background: #a32642; border-color: #a32642; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bar i, .head b { transition: none; }
+  .bar.busy i { animation: none; width: 100%; opacity: .5; }
+}

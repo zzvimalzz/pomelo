@@ -176,6 +176,21 @@ function fake(script = () => null) {
     release(); await first;
   }
 
+  console.log('an update that adds an engine to the PDF pack');
+  {
+    const root = tmp();
+    const inst = createInstaller({ root, run: fake().run });
+    const old = { pdf: 'py', ocr: null, heic: 'py', soffice: null, pandoc: null };
+    expect('no environment built by Pomelo: nothing to add, even when an engine is missing', inst.pending(old).length === 0);
+    fs.writeFileSync(path.join(root, 'manifest.json'), JSON.stringify({ winget: [], pyenv: true, soffice: false }));
+    const p = inst.pending(old);
+    expect('PDF found but OCR missing: the pack is named once, by the engine that is missing', p.length === 1 && p[0].key === 'ocr' && p[0].label === 'PDF, OCR and HEIC components', JSON.stringify(p));
+    expect('everything found: nothing to add', inst.pending({ ...old, ocr: 'py' }).length === 0);
+    expect('nothing found (environment gone): left alone, the Install button is for that', inst.pending({ pdf: null, ocr: null, heic: null }).length === 0);
+    expect('engines that are not in this pack are never added (LibreOffice and Pandoc stay as the user left them)', inst.pending({ pdf: 'py', ocr: 'py', heic: 'py', soffice: null, pandoc: null }).length === 0);
+    expect('before engines are detected the map is empty: nothing to add', inst.pending({}).length === 0);
+  }
+
   console.log('uninstall removes only what Pomelo installed');
   {
     const root = tmp();
