@@ -6,7 +6,6 @@ import re
 import pymupdf
 
 
-# ---- fonts ---------------------------------------------------------------------------------------------------------------
 class FontMeter:
     """Natural width of a string in the PDF's own font: to carry the PDF's letter-spacing over."""
 

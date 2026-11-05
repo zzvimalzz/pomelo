@@ -8,7 +8,6 @@ from pdf_spans import TEXT_FLAGS, has_unmapped_symbols
 from .common import BULLETS, NUMBER
 
 
-# ---- text lines -------------------------------------------------------------------------------------------------
 class Line:
     """A line of text: spans on one baseline."""
     kind = "line"

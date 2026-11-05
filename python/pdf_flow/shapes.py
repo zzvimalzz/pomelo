@@ -4,7 +4,6 @@
 from .common import is_white, rgb_hex
 
 
-# ---- the other things on a page ---------------------------------------------------------------------------------------
 class Img:
     kind = "img"
 
@@ -67,7 +66,6 @@ class Fig:
         return (self.x0, self.y0, self.x1, self.y1)
 
 
-# ---- the page --------------------------------------------------------------------------------------------------------
 def segments_of(drawings):
     """Horizontal and vertical strokes (lines, thin rectangles, rectangle edges) with their width and colour."""
     segs = []
