@@ -58,6 +58,8 @@ function render() {
   $('autoUpdate').checked = !!settings.autoUpdate;
   $('keycap').textContent = settings.key;
   for (const b of document.querySelectorAll('#key button')) b.setAttribute('aria-checked', String(b.dataset.key === settings.key));
+  const theme = ['light', 'dark'].includes(settings.theme) ? settings.theme : 'system';
+  for (const b of document.querySelectorAll('#theme button')) b.setAttribute('aria-checked', String(b.dataset.theme === theme));
   $('status').classList.toggle('off', !settings.enabled);
   $('statusText').textContent = settings.enabled ? 'Running' : 'Paused';
 
@@ -188,3 +190,4 @@ $('autoUpdate').onchange = async (e) => {
   if (e.target.checked && update.state !== 'available') checkNow();    // switching it on looks straight away, so the answer is on screen
 };
 $('key').onclick = (e) => { const k = e.target.dataset?.key; if (k) save({ key: k }); };
+$('theme').onclick = (e) => { const t = e.target.dataset?.theme; if (t) save({ theme: t }); };

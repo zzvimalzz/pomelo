@@ -10,6 +10,12 @@
 </p>
 
 <p align="center">
+  <a href="https://pomelo.swymble.com"><b>Visit the website</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/zzvimalzz/pomelo/releases/latest">Download</a>
+</p>
+
+<p align="center">
   <a href="LICENSE"><img alt="License: AGPL v3+" src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg"></a>
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078d6.svg">
   <img alt="100% offline" src="https://img.shields.io/badge/100%25-offline-2ea44f.svg">
@@ -30,7 +36,7 @@
 2. **Tap Ctrl** while dragging. A wheel of formats opens at the cursor.
 3. **Drop** on a segment. The converted copy is saved next to the original.
 
-Esc cancels. The trigger key (Ctrl, Alt or Shift) can be changed in Settings. Progress and results show in small toasts in the bottom-right corner, never over your work. Click a finished toast to show the file, or the ✕ in a progress ring to cancel (partial files are deleted).
+Esc cancels. The trigger key (Ctrl, Alt or Shift) and the appearance (System, Light or Dark) can be changed in Settings. Progress and results show in small toasts in the bottom-right corner, never over your work. Click a finished toast to show the file, or the ✕ in a progress ring to cancel (partial files are deleted).
 
 ## Screenshots
 
@@ -49,7 +55,7 @@ Esc cancels. The trigger key (Ctrl, Alt or Shift) can be changed in Settings. Pr
         <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/settings-dark.png">
         <img src="assets/screenshots/settings-light.png" alt="The Pomelo settings window" width="360">
       </picture>
-      <br><sub>Settings follow your Windows theme. Pomelo lives in the tray</sub>
+      <br><sub>Settings can follow your Windows theme or stay light or dark. Pomelo lives in the tray</sub>
     </td>
   </tr>
 </table>
