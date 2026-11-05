@@ -4,6 +4,8 @@ All notable changes to Pomelo are listed here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.1.5] - 06-11-2026
+
 ### Added
 - **Convert from the right-click menu.** Right-click a file or folder and choose **Convert with Pomelo**; the format wheel opens at the pointer and you click a format. The drag gesture works exactly as before. On Windows 11 the entry is under **Show more options**. Pomelo adds it for your user account the first time it starts and removes it when you uninstall.
 - **A guide.** The first time Pomelo starts it opens a short guide with an animation of drag, tap Ctrl and drop, and a few questions and answers, with step-by-step instructions and pictures of where Pomelo sits in the tray and where the right-click entry is. The new **?** button next to the name in Settings opens it again; the animation shows a document, a spreadsheet and a picture being converted in turn.
