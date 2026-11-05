@@ -4,6 +4,11 @@ All notable changes to Pomelo are listed here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+## [0.1.4] - 05-11-2026
+
+### Changed
+- The code is organised by feature (conversion, jobs, gesture, settings, engine setup, updates, uninstall) with checks for imports and stray files. Conversions, the wheel, the toast and Settings behave as in 0.1.3.
+
 ### Fixed
 - PDF to PowerPoint left any text with a curly quote, a dash or a CJK character in the background picture of the slide. Only Hebrew, Arabic and the like (which cannot be drawn right as editable text) stay in the picture now.
 - Converting a scanned PDF left a temporary copy of it in the temp folder every time.
