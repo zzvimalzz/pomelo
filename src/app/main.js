@@ -32,9 +32,10 @@ let tray, wheel, jobs, trigger, helper;
 
 const openSettings = () => openSettingsWindow(asset);
 const sendToSettings = (channel, payload) => getSettingsWindow()?.webContents.send(channel, payload);
+const downloader = new updates.Downloader({ asset });
 
-// Looks for a newer version when the user has switched "Check automatically" on, and only says so: the download
-// starts when the user presses the button in Settings.
+// Looks for a newer version when the user has switched "Check automatically" on, and only says so: the toast opens Settings,
+// and the download starts when the user presses the button there.
 const autoUpdate = new updates.AutoUpdate({
   getSettings: () => settings.get(),
   setSettings: (patch) => settings.set(patch),
@@ -42,7 +43,7 @@ const autoUpdate = new updates.AutoUpdate({
   onAvailable: (r) => {
     log('update available:', r.latest);
     sendToSettings('updates:found', r);          // an open Settings window switches to "Download update"
-    jobs?.addInfo({ title: `Pomelo ${r.latest} is available`, detail: 'Open Settings from the tray icon and press Download update.' });
+    jobs?.addInfo({ title: `Update your Pomelo to v${r.latest}`, detail: 'Click to open Pomelo and download it.', onClick: openSettings });
     updateTray();
   },
 });
@@ -82,7 +83,7 @@ app.whenReady().then(async () => {
     timings: new Timings(userDataFile('timings.json')),
     convert: (src, to, opts) => conversion.convertFile(src, to, opts).catch((e) => { log('convert failed:', path.basename(src), e.message); throw e; }),
   });
-  const toast = new Toast({ onRemove: (id) => jobs.remove(id), onCancel: (id) => jobs.cancel(id) });
+  const toast = new Toast({ onRemove: (id) => jobs.remove(id), onCancel: (id) => jobs.cancel(id), onClick: (id) => jobs.activate(id) });
   toast.create();
   jobs.on('change', (view) => toast.update(view));
 
@@ -99,21 +100,30 @@ app.whenReady().then(async () => {
   });
 
   const setup = engineSetup.registerEngineSetupIpc({ installer, getEngines: conversion.getEngines, sendToSettings, log });
+  let justUpdated = updates.updatedStart(process.argv, app.getVersion());      // Settings says so the first time it opens, not every time
   registerSettingsIpc({
     store: settings,
-    getState: () => ({ engines: conversion.getEngines(), installing: setup.getInstalling(), version: app.getVersion(), os: `Windows ${process.getSystemVersion()} ${process.arch}`, update: autoUpdate.available }),
+    getState: () => {
+      const updated = justUpdated;
+      justUpdated = false;
+      return { engines: conversion.getEngines(), installing: setup.getInstalling(), version: app.getVersion(), os: `Windows ${process.getSystemVersion()} ${process.arch}`, update: autoUpdate.available, updated };
+    },
     onChange: (patch) => { applySettings(); if ('autoUpdate' in patch) autoUpdate.apply(); },
     logPath: log.path,
   });
   registerUninstallIpc({ installer, getWindow: getSettingsWindow, setLoginItem, isPackaged: app.isPackaged, execPath: process.execPath, quit: () => app.quit(), log });
   updates.registerUpdatesIpc({
     current: app.getVersion(), autoCheck: autoUpdate, onChecked: updateTray, isPackaged: app.isPackaged, execPath: process.execPath,
-    sendToSettings, stopForUpdate: () => stopAll(helper), exit: (code) => app.exit(code), log,
+    sendToSettings, isSettingsOpen: () => !!getSettingsWindow(), downloader, stopForUpdate: () => stopAll(helper), exit: (code) => app.exit(code), log,
   });
 
   applySettings();
   autoUpdate.apply();
-  updates.reportUpdate({ argv: process.argv, current: app.getVersion(), notify: (m) => jobs.addInfo(m), cleanup: updates.cleanup, log });   // started again by an in-app update
+  // started again by an in-app update: add the engines the new version expects, then say it is done
+  updates.reportUpdate({
+    argv: process.argv, current: app.getVersion(), notify: (m) => jobs.addInfo(m), cleanup: updates.cleanup, log, ui: downloader,
+    engines: { missing: () => installer.pending(conversion.getEngines()), add: setup.run },
+  }).catch((e) => log('update follow-up failed:', e.message));
   log('ready');
   // Show the window on every manual launch so there is always a visible way in; login starts stay in the tray.
   if (!process.argv.includes('--hidden')) openSettings();

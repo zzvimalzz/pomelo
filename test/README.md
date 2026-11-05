@@ -21,10 +21,10 @@ A single suite runs on its own too: `node test/unit/jobs/jobs.test.js`, or `npx 
 
 | Tier | Runs in | Needs | Suites |
 |---|---|---|---|
-| `unit` | Node | nothing; the input helper must be built (`npm run build:helper`) | `jobs`, `helper`, `engine-cli`, `installer`, `uninstall`, `autoupdate`, `updater`, `updateinstall`, `routing`, `kit-and-catalog`, `registry`, `dev-tools`, `check-public`, `paths`, `fs-process`, `text` |
+| `unit` | Node | nothing; the input helper must be built (`npm run build:helper`) | `jobs`, `helper`, `engine-cli`, `installer`, `uninstall`, `autoupdate`, `updater`, `updateinstall`, `postupdate`, `routing`, `kit-and-catalog`, `registry`, `dev-tools`, `check-public`, `paths`, `fs-process`, `text` |
 | `integration` | Electron | LibreOffice and Pandoc for their pairs (skipped without) | `app-start` (CI only), `matrix`, `edge-cases` |
 | `pdf` | Node | the Python PDF engine, and OCR for the scan check | `pdf-layout`, `pdf-formats` |
-| `ui` | Electron | the Windows desktop | `pipeline`, `overlay-shot`, `toast-shot`, `settings-shot` (they also save screenshots to `test/shots/`) |
+| `ui` | Electron | the Windows desktop | `pipeline`, `overlay-shot`, `toast-shot`, `settings-shot`, `downloader-shot` (they also save screenshots to `test/shots/`) |
 | `nightly` | Node | network; installs Python packages for real | `real-python` |
 
 The files sit in `unit/<feature>/`, `integration/<area>/` and `ui/`, next to the feature they test by name.

@@ -55,8 +55,9 @@ class Jobs extends EventEmitter {
     return job.id;
   }
 
-  addInfo({ title, detail }) {
-    const info = { id: `info${++this.seq}`, kind: 'info', state: 'info', title, detail: detail || '' };
+  // onClick (optional): called when the user clicks the card, which makes it a button.
+  addInfo({ title, detail, onClick }) {
+    const info = { id: `info${++this.seq}`, kind: 'info', state: 'info', title, detail: detail || '', onClick };
     this.items.unshift(info);
     this.trim();
     this.changed();
@@ -74,6 +75,9 @@ class Jobs extends EventEmitter {
     }
     if (targets.length) { this.changed(); this.pump(); }
   }
+
+  // The card was clicked.
+  activate(id) { this.items.find((i) => i.id === id)?.onClick?.(); }
 
   // The renderer finished showing (and fading out) this card.
   remove(id) {
@@ -188,7 +192,7 @@ class Jobs extends EventEmitter {
   }
 }
 
-function infoCard(i) { return { id: i.id, state: 'info', title: i.title, detail: i.detail, progress: null, outPath: '' }; }
+function infoCard(i) { return { id: i.id, state: 'info', title: i.title, detail: i.detail, progress: null, outPath: '', clickable: !!i.onClick }; }
 
 // "name · 42% · about 12 s left". The name is shortened in the middle so the figures are never the part that is cut off.
 function jobCard(j, jobs) {

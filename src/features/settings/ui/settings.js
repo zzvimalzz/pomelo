@@ -91,7 +91,7 @@ function renderUpdate() {
       // "Version 0.1.0 > Version 0.2.0"
       line.className = 'new';
       line.replaceChildren(document.createTextNode(`Version ${current}`), el('span', 'vnew', '>'), document.createTextNode(`Version ${update.latest}`));
-      btn.textContent = update.installable ? 'Update now' : 'Download update'; btn.className = 'btn primary';
+      btn.textContent = 'Download update'; btn.className = 'btn primary';
       status.textContent = 'A new version is available'; status.className = 'ok';
       break;
     case 'downloading': {
@@ -130,6 +130,7 @@ $('updateBtn').onclick = async () => {
     update = { ...found, state: 'downloading', progress: { phase: 'download' } };
     renderUpdate();
     const r = await window.settingsApi.installUpdate();     // on success Pomelo restarts itself, so this rarely returns
+    if (r.cancelled) { update = found; renderUpdate(); return; }
     if (!r.ok) {
       update = { state: 'error', message: r.message, retry: found };
       renderUpdate();
@@ -158,7 +159,12 @@ function diagnostics() {
 
 async function save(patch) { state = { ...state, settings: await window.settingsApi.set(patch) }; render(); }
 
-window.settingsApi.get().then((s) => { state = s; if (s.update) update = s.update; render(); });
+window.settingsApi.get().then((s) => {
+  state = s;
+  if (s.update) update = s.update;
+  else if (s.updated) update = { state: 'uptodate', current: s.version, note: 'Pomelo has just been updated' };      // started again by an update
+  render();
+});
 window.settingsApi.onEngineProgress((installing) => {
   if (!state || !installing) return;
   if (!installing.keys.length) { $('uninstallNote').textContent = installing.note; return; }   // progress of an uninstall

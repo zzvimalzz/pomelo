@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pomelo Downloader</title>
+  <link rel="stylesheet" href="../../../ui-shared/tokens.css">
+  <link rel="stylesheet" href="downloader.css">
+</head>
+<body>
+  <main id="app">
+    <header class="hero">
+      <img class="logo" src="../../../../assets/icon.png" width="46" height="46" alt="">
+      <div class="titles">
+        <h1>Pomelo Downloader</h1>
+        <p class="muted" id="versions">&nbsp;</p>
+      </div>
+    </header>
+
+    <section aria-live="polite">
+      <div class="head"><b id="phase">Starting</b><span id="percent"></span></div>
+      <div class="bar" id="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"><i></i></div>
+      <small id="detail">&nbsp;</small>
+    </section>
+
+    <footer id="actions"></footer>
+  </main>
+  <script src="../../../ui-shared/dom.js"></script>
+  <script src="downloader.js"></script>
+</body>
+</html>

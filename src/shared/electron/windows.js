@@ -22,4 +22,4 @@ function createFloatingWindow({ width, height, preload, level }) {
   return win;
 }
 
-module.exports = { createFloatingWindow };
+module.exports = { createFloatingWindow, lockNavigation };

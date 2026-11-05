@@ -6,5 +6,6 @@ contextBridge.exposeInMainWorld('toast', {
   reveal: (file) => ipcRenderer.send('toast:reveal', file),
   remove: (id) => ipcRenderer.send('toast:remove', id),
   cancel: (id) => ipcRenderer.send('toast:cancel', id),
+  click: (id) => ipcRenderer.send('toast:click', id),
   ready: () => ipcRenderer.send('toast:ready'),
 });

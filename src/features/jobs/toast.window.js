@@ -16,9 +16,11 @@ const heightFor = (n) => n * CARD_H + (n - 1) * GAP + 2 * PAD;
 
 class Toast {
   // onRemove(id): a card finished fading out in the renderer. onCancel(id): the X in a progress ring was pressed.
-  constructor({ onRemove, onCancel } = {}) {
+  // onClick(id): a card that is a button was clicked.
+  constructor({ onRemove, onCancel, onClick } = {}) {
     this.onRemove = onRemove || (() => {});
     this.onCancel = onCancel || (() => {});
+    this.onClick = onClick || (() => {});
     this.win = null;
     this.visible = false;
     this.count = 0;
@@ -27,7 +29,7 @@ class Toast {
 
   create() {
     this.win = createFloatingWindow({ width: W, height: heightFor(1), preload: path.join(__dirname, 'ui', 'preload.js'), level: 'status' });
-    registerToastIpc({ onReady: () => this.markLoaded(), onRemove: (id) => this.onRemove(id), onCancel: (id) => this.onCancel(id) });
+    registerToastIpc({ onReady: () => this.markLoaded(), onRemove: (id) => this.onRemove(id), onCancel: (id) => this.onCancel(id), onClick: (id) => this.onClick(id) });
     this.win.loadFile(path.join(__dirname, 'ui', 'toast.html'));
   }
 
