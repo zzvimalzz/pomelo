@@ -1,0 +1,12 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* The look of the file icons drawn by wheel-icons.js. Put `picon` on the group the icon is drawn into. */
+.picon text { text-anchor: middle; pointer-events: none; }
+.picon .fold { fill: #fff; fill-opacity: 0.4; stroke: #fff; stroke-opacity: 0.4; stroke-width: 1.5; stroke-linejoin: round; }
+.picon .shade { fill: #000; fill-opacity: 0.2; }
+.picon .edge { fill: none; stroke: #fff; stroke-opacity: 0.4; stroke-width: 1.2; stroke-linecap: round; }
+.picon .g { fill: #fff; fill-opacity: 0.92; }
+.picon .gl { fill: none; stroke: #fff; stroke-opacity: 0.92; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.picon .gl.thin { stroke-width: 1.7; }
+.picon .g.round { stroke: #fff; stroke-opacity: 0.92; stroke-width: 2.4; stroke-linejoin: round; }
+.picon .gt { font-size: 15px; font-weight: 800; fill: #fff; fill-opacity: 0.92; }
+.picon .badge { font-size: 13px; font-weight: 800; fill: #fff; letter-spacing: 0.4px; }

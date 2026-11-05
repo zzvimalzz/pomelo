@@ -21,11 +21,11 @@ async function runPlan(plan, src, dir, base, onProgress) {
   });
 }
 
-// Convert one file next to the original. Resolves with the list of files written.
+// Convert one file next to the original, or into outDir. Resolves with the list of files written.
 // signal (AbortSignal): cancel it to kill the helper programs and delete any partial output.
-async function convertFile(src, to, { onProgress, signal } = {}) {
+async function convertFile(src, to, { onProgress, signal, outDir } = {}) {
   const from = extOf(src);
-  const dir = path.dirname(src);
+  const dir = outDir || path.dirname(src);
   const base = baseOf(src);
   const plans = plansFor(from, to);
   if (!plans.length) throw new Error(`No converter available for .${from} to ${labelOf(to)}`);

@@ -1,11 +1,11 @@
 :root {
   --accent-2: #bf2f4f;
   --bg: #f6f4f1; --card: #ffffff; --muted: rgba(28, 28, 30, .56);
-  --ok-bg: rgba(30, 158, 90, .12); --off-bg: rgba(0, 0, 0, .06);
+  --ok-bg: rgba(30, 158, 90, .12); --off-bg: rgba(0, 0, 0, .06); --menu: #ffffff;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #1c1c1e; --card: #2a2a2d; --muted: rgba(255, 255, 255, .58);
-    --ok: #4cd08a; --ok-bg: rgba(76, 208, 138, .14); --off-bg: rgba(255, 255, 255, .08); }
+    --ok: #4cd08a; --ok-bg: rgba(76, 208, 138, .14); --off-bg: rgba(255, 255, 255, .08); --menu: #343438; }
 }
 
 * { box-sizing: border-box; min-width: 0; overflow-wrap: anywhere; }
@@ -32,6 +32,10 @@ button { font: inherit; color: inherit; }
 h1 { margin: 0 0 2px; font-size: 20px; letter-spacing: -.01em; line-height: 1.2; }
 .status { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 600;
   background: var(--ok-bg); color: var(--ok); }
+.titleline { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.titleline h1 { margin: 0; }
+.help { flex: none; width: 22px; height: 22px; padding: 0; line-height: 1; border: 1px solid var(--line); border-radius: 50%; background: none; color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; transition: color .15s, border-color .15s, background .15s; }
+.help:hover { color: var(--accent); border-color: var(--accent); background: var(--off-bg); }
 .status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .status.off { background: var(--off-bg); color: var(--muted); }
 
@@ -45,7 +49,6 @@ h2 { margin: 0 0 2px; font-size: 11px; font-weight: 700; text-transform: upperca
 .step { display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow-wrap: normal; }
 .step .n { flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; }
 kbd { padding: 0 6px; border-radius: 6px; border: 1px solid var(--line); border-bottom-width: 2px; background: var(--bg); font: 600 12px/1.5 inherit; }
-#keycap { text-transform: capitalize; }
 
 /* rows */
 .row { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 40px; padding: 7px 0; }
@@ -90,6 +93,26 @@ span.chip.off { background: none; border: 1px solid var(--line); color: var(--mu
 .engine .note { color: var(--accent-2); }
 @media (prefers-color-scheme: dark) { .engine .note { color: var(--accent); } }
 .engine .bad { color: var(--err); }
+
+.dd { position: relative; flex: none; }
+.dd-btn { position: relative; display: block; width: 168px; padding: 6px 30px 6px 12px; border: 1px solid var(--line); border-radius: 9px; background: none; font-size: 12.5px; font-weight: 600; text-align: left; cursor: pointer; transition: background .15s, border-color .15s; }
+.dd-btn > span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dd-btn::after { content: ""; position: absolute; right: 13px; top: 50%; width: 6px; height: 6px; margin-top: -5px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); rotate: 45deg; transition: rotate .15s, margin-top .15s; }
+.dd-btn:hover { background: var(--off-bg); }
+.dd-btn[aria-expanded="true"] { border-color: var(--accent); }
+.dd-btn[aria-expanded="true"]::after { rotate: 225deg; margin-top: -2px; }
+.dd-menu { position: absolute; z-index: 5; right: 0; top: calc(100% + 6px); width: 216px; margin: 0; padding: 5px; list-style: none; background: var(--menu); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, .22), 0 2px 6px rgba(0, 0, 0, .12); transform-origin: top right; }
+.dd-menu[hidden] { display: none; }
+.dd-menu:not([hidden]) { animation: dd-in .14s ease-out; }
+@keyframes dd-in { from { opacity: 0; translate: 0 -4px; scale: .97; } }
+@media (prefers-reduced-motion: reduce) { .dd-menu:not([hidden]) { animation: none; } }
+.dd-menu [role="option"] { position: relative; padding: 7px 10px 7px 30px; border-radius: 8px; font-size: 12.5px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; outline: none; }
+.dd-menu [role="option"]:hover, .dd-menu [role="option"]:focus { background: var(--off-bg); }
+.dd-menu [role="option"]:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.dd-menu [aria-selected="true"] { font-weight: 600; }
+.dd-menu [aria-selected="true"]::before { content: ""; position: absolute; left: 12px; top: 50%; width: 5px; height: 9px; margin-top: -7px; border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent); rotate: 45deg; }
+.dd-menu [role="separator"] { height: 1px; margin: 5px 6px; background: var(--line); }
+#outputNote { max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* update button: plain, then accent when an update is waiting */
 .btn { flex: none; border: 1px solid var(--line); background: none; padding: 6px 14px; border-radius: 9px; cursor: pointer; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow-wrap: normal; }

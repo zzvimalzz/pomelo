@@ -93,6 +93,7 @@ jobs:
   installer:
     name: Installer (silent install, update, uninstall)
     runs-on: windows-latest
+    timeout-minutes: 20
     needs: check
     steps:
       - uses: actions/checkout@v4

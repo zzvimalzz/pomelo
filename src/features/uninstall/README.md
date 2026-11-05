@@ -6,8 +6,8 @@ The Uninstall button in Settings. It asks, then hands over to the Windows uninst
 
 `uninstall.ipc.js` shows the confirmation (`confirmText`, which lists the engines Pomelo itself installed and says that anything the user installed, and all converted files, stay). On "Uninstall":
 
-- **Installed with the installer** (`unins000.exe` sits next to `Pomelo.exe`): `uninstall.js` starts it with `/SILENT` and detached, and Pomelo quits. The Windows uninstaller removes the engines (through `--uninstall-engines`), the program, the settings and the "Start with Windows" entry, so uninstalling here and from Windows Settings is the same thing.
-- **Run from source**: no Windows uninstaller exists, so the engines are removed right away and "Start with Windows" is switched off. If some cannot be removed, a message names them.
+- **Installed with the installer** (`unins000.exe` sits next to `Pomelo.exe`): `uninstall.js` starts it with `/SILENT` and detached, and Pomelo quits. The Windows uninstaller removes the engines and the right-click menu entries (through `--uninstall-engines`), the program, the settings and the "Start with Windows" entry, so uninstalling here and from Windows Settings is the same thing.
+- **Run from source**: no Windows uninstaller exists, so the engines and the right-click menu entries are removed right away and "Start with Windows" is switched off. If some cannot be removed, a message names them.
 
 ## Files
 

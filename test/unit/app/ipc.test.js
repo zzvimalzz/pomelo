@@ -8,7 +8,8 @@ const { expect } = require('../../support/expect');
 const finish = require('../../support/finish');
 
 const registered = { handle: new Set(), on: new Set(), once: new Set() };
-const ipcMain = Object.fromEntries(['handle', 'on', 'once'].map((kind) => [kind, (channel) => { registered[kind].add(channel); }]));
+const handlers = {};
+const ipcMain = Object.fromEntries(['handle', 'on', 'once'].map((kind) => [kind, (channel, fn) => { registered[kind].add(channel); handlers[channel] = fn; }]));
 const noop = () => {};
 const fakeElectron = {
   ipcMain, dialog: {}, clipboard: {}, shell: {}, screen: {}, BrowserWindow: class {}, app: {},
@@ -20,13 +21,20 @@ const features = path.join(__dirname, '..', '..', '..', 'src', 'features');
 const quiet = { log: noop, sendToSettings: noop };
 
 console.log('registering the IPC modules');
-require(path.join(features, 'gesture', 'wheel.ipc')).registerWheelIpc({ onLog: noop, onReady: noop, onDrop: noop, onCancel: noop });
+require(path.join(features, 'gesture', 'wheel.ipc')).registerWheelIpc({ onLog: noop, onReady: noop, onDrop: noop, onPick: noop, onCancel: noop });
 require(path.join(features, 'jobs', 'toast.ipc')).registerToastIpc({ onReady: noop, onRemove: noop, onCancel: noop, onClick: noop });
-require(path.join(features, 'settings', 'settings.ipc')).registerSettingsIpc({ store: {}, getState: noop, onChange: noop, logPath: noop });
+const stored = [];
+require(path.join(features, 'settings', 'settings.ipc')).registerSettingsIpc({ store: { get: () => ({}), set: (patch) => stored.push(patch) }, getState: noop, onChange: noop, logPath: noop, onOpenGuide: noop });
 require(path.join(features, 'engine-setup', 'engine-setup.ipc')).registerEngineSetupIpc({ installer: {}, getEngines: noop, ...quiet });
 require(path.join(features, 'updates', 'updates.ipc')).registerUpdatesIpc({ current: '0.0.0', autoCheck: {}, onChecked: noop, isPackaged: false, execPath: '', isSettingsOpen: noop, downloader: {}, stopForUpdate: noop, exit: noop, ...quiet });
+require(path.join(features, 'guide', 'guide.ipc')).registerGuideIpc({ getTargets: noop });
 require(path.join(features, 'uninstall', 'uninstall.ipc')).registerUninstallIpc({ installer: {}, getWindow: noop, setLoginItem: noop, isPackaged: false, execPath: '', quit: noop, log: noop });
 Module._load = realLoad;
+
+// A page can clear the output folder but never set one: only the folder dialog stores a path.
+handlers['settings:set']({}, { theme: 'dark', outputDir: 'C:/somewhere' });
+handlers['settings:set']({}, { outputDir: '' });
+expect('a page cannot choose the output folder, only clear it', stored[0].outputDir === undefined && stored[0].theme === 'dark' && stored[1].outputDir === '', JSON.stringify(stored));
 
 // What each preload sends to the main process, with ipcRenderer invoke or send
 const asked = new Set();

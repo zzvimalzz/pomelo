@@ -23,9 +23,10 @@ The page (`ui/`) shows the everyday switches, and under Advanced the engines wit
 
 ## Contracts
 
-- The keys of `settings.json`: `enabled`, `key`, `openAtLogin`, `advanced`, `theme`, `autoUpdate`, `lastUpdateCheck`, `updateNotified`.
-- IPC channels: `settings:get`, `settings:set`, `settings:fit`, `app:copy`, `app:open-logs`.
-- Not validated: `settings:set` accepts any patch. A bad `key` reaches the input helper, and an empty one throws when the tray menu is built.
+- The keys of `settings.json`: `enabled`, `outputDir`, `openAtLogin`, `advanced`, `theme`, `autoUpdate`, `lastUpdateCheck`, `updateNotified`.
+- IPC channels: `settings:get`, `settings:set`, `settings:choose-output`, `settings:open-guide`, `settings:fit`, `app:copy`, `app:open-logs`.
+- The **Save conversions to** dropdown is drawn by the page, not a native `<select>`, so it matches the rest of the window and uses its font; it works with the mouse and with the arrow keys, Home, End, Enter, Space and Esc. It shows Default, the folder in use when there is one, and Choose folder (never more than three; a new folder replaces the old one). `outputDir` is the folder conversions are saved to, `''` for next to the original. It is only stored from the folder dialog behind `settings:choose-output`; `settings:set` drops it unless it is `''`, which clears it.
+- Not validated: apart from that, `settings:set` accepts any patch. A bad `theme` falls back to System.
 
 ## Testing
 

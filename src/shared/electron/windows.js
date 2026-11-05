@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Window setup that Pomelo's windows share.
-const { BrowserWindow } = require('electron');
+const { BrowserWindow, screen } = require('electron');
 
 // A page of Pomelo's own never navigates away and never opens another window.
 function lockNavigation(win) {
@@ -22,4 +22,13 @@ function createFloatingWindow({ width, height, preload, level }) {
   return win;
 }
 
-module.exports = { createFloatingWindow, lockNavigation };
+// Sizes a window's content to `height` (never below `min`), as far as the screen it is on allows, and keeps the window on that screen.
+function fitContentHeight(win, width, height, min = 0) {
+  const wa = screen.getDisplayMatching(win.getBounds()).workArea;
+  const frame = win.getBounds().height - win.getContentBounds().height;
+  win.setContentSize(width, Math.round(Math.max(min, Math.min(height, wa.height - frame - 24))));
+  const b = win.getBounds();
+  if (b.y + b.height > wa.y + wa.height) win.setPosition(b.x, Math.max(wa.y, wa.y + wa.height - b.height - 12));
+}
+
+module.exports = { createFloatingWindow, lockNavigation, fitContentHeight };

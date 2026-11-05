@@ -66,10 +66,11 @@ const fake = (failing = [], removalFails = []) => {
   }
 
   console.log('uninstalling');
-  let login = 'unset';
+  let login = 'unset', menu = 'unset';
   installer = fake();
-  code = await run({ action: 'uninstall' }, { installer, setLoginItem: (v) => { login = v; }, say: () => {} });
+  code = await run({ action: 'uninstall' }, { installer, setLoginItem: (v) => { login = v; }, removeShellMenu: async () => { menu = 'removed'; }, say: () => {} });
   expect('switches off Start with Windows and removes the engines', login === false && installer.calls.join() === 'uninstall' && code === 0);
+  expect('and takes the right-click menu entries out', menu === 'removed');
   code = await run({ action: 'uninstall' }, { installer: fake([], ['Pandoc']), setLoginItem: () => {}, say: (l) => said.push(l) });
   expect('a removal that fails is reported, exit code 1', code === 1 && said.some((l) => /Could not remove Pandoc/.test(l)));
 

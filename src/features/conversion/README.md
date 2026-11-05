@@ -1,6 +1,6 @@
 # Conversion
 
-Turns one file into another format, next to the original. The rest of the app uses only `index.js`: `detectEngines`, `getEngines`, `targetsFor` (what the wheel offers), `canConvert`, `convertFile`, `plansFor`, `explainNoTargets`, the format helpers `extOf`, `groupOf` and `labelOf`, and `timingFormats` (what the jobs feature needs, handed to it by the app).
+Turns one file into another format, next to the original or, when `convertFile` is given an `outDir`, into that folder. The rest of the app uses only `index.js`: `detectEngines`, `getEngines`, `targetsFor` (what the wheel offers), `canConvert`, `convertFile`, `plansFor`, `explainNoTargets`, the format helpers `extOf`, `groupOf` and `labelOf`, and `timingFormats` (what the jobs feature needs, handed to it by the app).
 
 ## How it works
 

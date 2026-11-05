@@ -15,6 +15,7 @@ class WheelWindow {
     this.shown = false;
     this.loaded = new Promise((resolve) => { this.markLoaded = resolve; });
     this.hideTimer = null;
+    this.pickFiles = null;      // the files of a wheel opened from the right-click menu, which is clicked instead of dropped on
   }
 
   create() {
@@ -24,8 +25,10 @@ class WheelWindow {
       onLog: (msg) => log('overlay:', msg),
       onReady: () => this.markLoaded(),
       onDrop: (paths, targetId) => { clearTimeout(this.hideTimer); this.hide(); this.onDrop(paths, targetId); },
+      onPick: (targetId) => { const files = this.pickFiles; this.hide(); if (files) this.onDrop(files, targetId); },
       onCancel: () => this.hide(),
     });
+    this.win.on('blur', () => { if (this.pickFiles) this.hide(); });
     this.win.loadFile(path.join(__dirname, 'ui', 'wheel.html'));
   }
 
@@ -39,12 +42,14 @@ class WheelWindow {
   }
 
   // info = { name, ext, group, count } describes the selection (built by the app from the format catalog); the name is already shortened.
-  async openWheel(info, targets) {
+  // pickFiles: set when the wheel comes from the right-click menu. It then takes focus, so that a click elsewhere or Esc closes it.
+  async openWheel(info, targets, pickFiles = null) {
     await this.loaded;
     clearTimeout(this.hideTimer);
     this.place();
-    this.win.webContents.send('wheel:open', { info, targets });
-    this.win.showInactive();
+    this.pickFiles = pickFiles;
+    this.win.webContents.send('wheel:open', { info, targets, pick: !!pickFiles });
+    if (pickFiles) { this.win.setFocusable(true); this.win.show(); this.win.focus(); } else this.win.showInactive();
     this.win.setAlwaysOnTop(true, 'screen-saver');   // The topmost flag can be set while Windows keeps the wheel under the folder being dragged from; applying it again lifts it.
     this.shown = true;
     log('wheel shown', this.win.getBounds(), targets.map((t) => t.id));
@@ -60,8 +65,9 @@ class WheelWindow {
     clearTimeout(this.hideTimer);
     if (!this.shown) return;
     this.shown = false;
+    this.pickFiles = null;
     this.win.webContents.send('wheel:close');
-    this.hideTimer = setTimeout(() => this.win.hide(), 140);
+    this.hideTimer = setTimeout(() => { this.win.hide(); this.win.setFocusable(false); }, 140);
   }
 }
 

@@ -14,10 +14,10 @@ function describeSelection(files, conversion) {
 // after this. log(...)
 function createDropFlow({ conversion, getWheel, getJobs, log }) {
   return {
-    // The gesture opened on these files: offer the formats, or say why there are none.
-    onOpen(files) {
+    // The gesture, or the right-click menu (pick), opened on these files: offer the formats, or say why there are none.
+    onOpen(files, pick = false) {
       const targets = conversion.targetsFor(files);
-      if (targets.length) { getWheel().openWheel(describeSelection(files, conversion), targets); return; }
+      if (targets.length) { getWheel().openWheel(describeSelection(files, conversion), targets, pick ? files : null); return; }
       log('nothing to offer for', files);
       getJobs().addInfo(conversion.explainNoTargets(files));
     },

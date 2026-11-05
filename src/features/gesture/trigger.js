@@ -1,25 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Gesture detector. Hold the left mouse button on a file, drag, then press the trigger key.
-//   idle -> pressed (left down) -> dragging (moved past threshold, files probed) -> wheel (trigger key pressed)
+// Gesture detector. Hold the left mouse button on a file, drag, then press Ctrl.
+//   idle -> pressed (left down) -> dragging (moved past threshold, files probed) -> wheel (Ctrl pressed)
 // Input events come from the native input helper (see native/pomelo-input.cs).
 const { EventEmitter } = require('events');
 const log = require('#shared/node/log');
 
 const DRAG_THRESHOLD_PX = 8;
-const KEYS = ['ctrl', 'alt', 'shift'];
 
 class Trigger extends EventEmitter {
   constructor(helper) {
     super();
     this.helper = helper;
     this.enabled = true;
-    this.key = 'ctrl';
     this.state = 'idle';
     this.origin = null;
     this.files = null;        // Promise<string[]> once the drag starts
   }
 
-  setKey(name) { if (KEYS.includes(name)) this.key = name; }
   setEnabled(on) { this.enabled = on; if (!on) this.reset(); }
 
   start() { this.helper.on('input', (ev) => this.onInput(ev)); }
@@ -40,7 +37,7 @@ class Trigger extends EventEmitter {
     } else if (type === 'kd' && this.enabled) {
       if (a === 'esc' && this.state === 'wheel') { this.reset(); this.emit('cancel'); return; }
       log('key down', a, 'state=' + this.state);
-      if (a !== this.key || this.state !== 'dragging') return;
+      if (a !== 'ctrl' || this.state !== 'dragging') return;
       this.state = 'wheel';
       this.files.then(({ files, explorer }) => {
         log('selection:', files, 'explorer=' + explorer);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Pomelo's entry point (package.json "main"): starts the features and connects them. Features never import each other; what one
 // needs from another is handed in here.
+const fs = require('fs');
 const path = require('path');
 const { app, nativeTheme } = require('electron');
 const log = require('#shared/node/log');
@@ -13,26 +14,41 @@ const conversion = require('../features/conversion');
 const { createStore, openSettingsWindow, getSettingsWindow, registerSettingsIpc } = require('../features/settings');
 const { InputHelper, Trigger, WheelWindow } = require('../features/gesture');
 const { Jobs, Timings, Toast } = require('../features/jobs');
+const guide = require('../features/guide');
 const updates = require('../features/updates');
 const engineSetup = require('../features/engine-setup');
 const { registerUninstallIpc } = require('../features/uninstall');
 const { createTray } = require('./tray');
 const { createDropFlow } = require('./drop-flow');
+const { createOutputDir, folderName } = require('./output-dir');
+const { installShellMenu, removeShellMenu, convertPathsFromArgv, createBatcher } = require('./shell-menu');
 const { stopAll } = require('./shutdown');
 
 const cli = engineSetup.parseCommandLine(process.argv);     // --install-engines / --uninstall-engines: run by the installer, no window, no tray
 if (!cli && !app.requestSingleInstanceLock()) app.exit(0);
 app.on('window-all-closed', () => { /* tray app: keep running */ });
-app.on('second-instance', () => openSettings());
+// Explorer's right-click menu starts Pomelo once per selected file: the primary instance gathers them and opens one wheel.
+let flow;
+const convertBatch = createBatcher(400, (files) => app.whenReady().then(() => flow.onOpen(files, true)));
+app.on('second-instance', (_e, argv) => {
+  const files = convertPathsFromArgv(argv);
+  if (files.length) convertBatch.add(files); else openSettings();
+});
 
 const asset = (n) => path.join(APP_ROOT, 'assets', n);
-const settings = createStore(userDataFile('settings.json'));
+const settingsFile = userDataFile('settings.json');
+const firstRun = !fs.existsSync(settingsFile);         // checked before the store writes the file: only a new install shows the guide
+const settings = createStore(settingsFile);
 const installer = engineSetup.createInstaller({ redetect: () => conversion.detectEngines() });
 let tray, wheel, jobs, trigger, helper;
 
 const openSettings = () => openSettingsWindow(asset);
 const sendToSettings = (channel, payload) => getSettingsWindow()?.webContents.send(channel, payload);
 const downloader = new updates.Downloader({ asset });
+const outputDir = createOutputDir({
+  getDir: () => settings.get().outputDir,
+  notify: (dir) => jobs?.addInfo({ title: "Can't save to the chosen folder", detail: `${folderName(dir)} is not available, so files are saved next to the original instead.` }),
+});
 
 // Looks for a newer version when the user has switched "Check automatically" on, and only says so: the toast opens Settings,
 // and the download starts when the user presses the button there.
@@ -54,8 +70,6 @@ const setLoginItem = (openAtLogin) => app.setLoginItemSettings({ openAtLogin, ar
 
 function applySettings() {
   const s = settings.get();
-  trigger.setKey(s.key);
-  helper.setKey(s.key);
   trigger.setEnabled(s.enabled);
   nativeTheme.themeSource = ['light', 'dark'].includes(s.theme) ? s.theme : 'system';
   setLoginItem(s.openAtLogin);
@@ -65,7 +79,7 @@ function applySettings() {
 app.whenReady().then(async () => {
   if (cli) {
     const say = (line) => { console.log(line); log('cli:', line); };
-    const code = await engineSetup.runCommandLine(cli, { installer, setLoginItem, say, progress: engineSetup.fileProgress(cli.progressFile) });
+    const code = await engineSetup.runCommandLine(cli, { installer, setLoginItem, removeShellMenu: () => removeShellMenu({ exts: conversion.sourceExts }), say, progress: engineSetup.fileProgress(cli.progressFile) });
     setTimeout(() => app.exit(code), 500);                  // lets the last lines of output reach a pipe before the process ends
     return;
   }
@@ -76,13 +90,13 @@ app.whenReady().then(async () => {
   helper = new InputHelper();
   helper.start();
 
-  const flow = createDropFlow({ conversion, getWheel: () => wheel, getJobs: () => jobs, log });
+  flow = createDropFlow({ conversion, getWheel: () => wheel, getJobs: () => jobs, log });
   wheel = new WheelWindow({ onDrop: flow.onDrop });
   wheel.create();
   jobs = new Jobs({
     formats: conversion.timingFormats,
     timings: new Timings(userDataFile('timings.json')),
-    convert: (src, to, opts) => conversion.convertFile(src, to, opts).catch((e) => { log('convert failed:', path.basename(src), e.message); throw e; }),
+    convert: (src, to, opts) => conversion.convertFile(src, to, { ...opts, outDir: outputDir() }).catch((e) => { log('convert failed:', path.basename(src), e.message); throw e; }),
   });
   const toast = new Toast({ onRemove: (id) => jobs.remove(id), onCancel: (id) => jobs.cancel(id), onClick: (id) => jobs.activate(id) });
   toast.create();
@@ -111,8 +125,15 @@ app.whenReady().then(async () => {
     },
     onChange: (patch) => { applySettings(); if ('autoUpdate' in patch) autoUpdate.apply(); },
     logPath: log.path,
+    onOpenGuide: () => guide.openGuideWindow(asset),
   });
-  registerUninstallIpc({ installer, getWindow: getSettingsWindow, setLoginItem, isPackaged: app.isPackaged, execPath: process.execPath, quit: () => app.quit(), log });
+  guide.registerGuideIpc({
+    describe: (name) => {
+      const ext = conversion.extOf(name);
+      return { ext, group: conversion.groupOf(ext), targets: conversion.targetsFor([name]).map((t) => ({ ext: t.ext, label: t.label, sub: t.sub, group: conversion.groupOf(t.ext) })) };
+    },
+  });
+  registerUninstallIpc({ installer, getWindow: getSettingsWindow, setLoginItem, removeShellMenu: () => removeShellMenu({ exts: conversion.sourceExts }), isPackaged: app.isPackaged, execPath: process.execPath, quit: () => app.quit(), log });
   updates.registerUpdatesIpc({
     current: app.getVersion(), autoCheck: autoUpdate, onChecked: updateTray, isPackaged: app.isPackaged, execPath: process.execPath,
     sendToSettings, isSettingsOpen: () => !!getSettingsWindow(), downloader, stopForUpdate: () => stopAll(helper), exit: (code) => app.exit(code), log,
@@ -120,6 +141,11 @@ app.whenReady().then(async () => {
 
   applySettings();
   autoUpdate.apply();
+  installShellMenu({ exe: process.execPath, launch: app.isPackaged ? [] : [app.getAppPath()], version: app.getVersion(), exts: conversion.sourceExts })
+    .then((written) => { if (written) log('right-click menu entries written'); })
+    .catch((e) => log('right-click menu not written:', e.message));
+  const toConvert = convertPathsFromArgv(process.argv);
+  if (toConvert.length) convertBatch.add(toConvert);
   // started again by an in-app update: add the engines the new version expects, then say it is done
   updates.reportUpdate({
     argv: process.argv, current: app.getVersion(), notify: (m) => jobs.addInfo(m), cleanup: updates.cleanup, log, ui: downloader,
@@ -127,7 +153,9 @@ app.whenReady().then(async () => {
   }).catch((e) => log('update follow-up failed:', e.message));
   log('ready');
   // Show the window on every manual launch so there is always a visible way in; login starts stay in the tray.
-  if (!process.argv.includes('--hidden')) openSettings();
+  if (!process.argv.includes('--hidden') && !toConvert.length) {
+    if (firstRun) guide.openGuideWindow(asset, { onClosed: openSettings }); else openSettings();
+  }
 });
 
 app.on('will-quit', () => stopAll(helper));

@@ -1,0 +1,28 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* How the wheel's pieces look, for the wheel page and the animation in the guide. Each page adds the motion. */
+:root {
+  --plate: rgba(255, 255, 255, 0.55);
+  --seg: rgba(255, 255, 255, 0.94);
+  --center: rgba(250, 250, 252, 0.98);
+  --sub: rgba(0, 0, 0, 0.46);
+  --shadow: rgba(30, 20, 10, 0.28);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --plate: rgba(28, 28, 30, 0.5);
+    --seg: rgba(46, 46, 50, 0.95);
+    --center: rgba(34, 34, 38, 0.98);
+    --sub: rgba(255, 255, 255, 0.5);
+    --shadow: rgba(0, 0, 0, 0.5);
+  }
+}
+
+.plate { fill: var(--plate); }
+.seg path { fill: var(--seg); stroke: var(--seg); stroke-width: 10; stroke-linejoin: round; transition: fill 0.12s, stroke 0.12s; }
+.seg.hot path { fill: var(--accent); stroke: var(--accent); }
+.seg text { text-anchor: middle; pointer-events: none; fill: var(--txt); transition: fill 0.12s; }
+.seg .label { font-size: 16px; font-weight: 700; letter-spacing: 0.2px; }
+.seg .sub { font-size: 10.5px; font-weight: 500; fill: var(--sub); }
+.seg.hot text, .seg.hot .sub { fill: #fff; }
+.seg.hot .sub { fill: rgba(255, 255, 255, 0.82); }
+.disc { fill: var(--center); }

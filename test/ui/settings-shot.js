@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Opens the real settings window with sample data: normal vs advanced view, layout/scrolling, the logo, spacing,
 // the update button and version line, diagnostics. Saves screenshots.   npx electron test/ui/settings-shot.js
-const { app, ipcMain, nativeTheme, screen, clipboard } = require('electron');
+const { app, ipcMain, nativeTheme, screen, clipboard, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const settingsWindow = require('../../src/features/settings/settings.window');
@@ -14,11 +14,12 @@ const out = path.join(__dirname, '..', 'shots');
 
 const LONG = 'C:\\Users\\someone-with-a-very-long-name\\OneDrive - Contoso Corporation\\Desktop\\Pomelo\\vendor\\pyenv\\Scripts\\python.exe';
 const scenarios = {
-  'all-ready': { settings: { enabled: true, key: 'ctrl', openAtLogin: false, advanced: false }, engines: { soffice: 'C:\\Program Files\\LibreOffice\\program\\soffice.exe', pandoc: 'C:\\Users\\Example\\AppData\\Local\\Pandoc\\pandoc.exe', pdf: LONG, ocr: LONG, pdfmd: LONG, heic: LONG, ffmpeg: LONG } },
-  'none-installed': { settings: { enabled: false, key: 'shift', openAtLogin: true, advanced: false }, engines: { soffice: null, pandoc: null, pdf: null, ocr: null, pdfmd: null, heic: null, ffmpeg: null } },
+  'all-ready': { settings: { enabled: true, openAtLogin: false, advanced: false }, engines: { soffice: 'C:\\Program Files\\LibreOffice\\program\\soffice.exe', pandoc: 'C:\\Users\\Example\\AppData\\Local\\Pandoc\\pandoc.exe', pdf: LONG, ocr: LONG, pdfmd: LONG, heic: LONG, ffmpeg: LONG } },
+  'none-installed': { settings: { enabled: false, openAtLogin: true, advanced: false }, engines: { soffice: null, pandoc: null, pdf: null, ocr: null, pdfmd: null, heic: null, ffmpeg: null } },
 };
 let current = scenarios['all-ready'];
 let nextUpdate = { state: 'unconfigured', current: '0.1.0' };
+let guideAsked = 0;
 const downloads = [];
 // The real settings messages (get, set, fit the window, copy, open the log) on top of a fake store and fake state.
 registerSettingsIpc({
@@ -26,6 +27,7 @@ registerSettingsIpc({
   getState: () => ({ engines: current.engines, version: '0.1.0', os: 'Windows 10.0.26300 x64' }),
   onChange: (patch) => { if (patch.theme) nativeTheme.themeSource = patch.theme; },
   logPath: () => path.join(out, 'debug.log'),
+  onOpenGuide: () => { guideAsked++; },
 });
 const installs = [];
 let installOutcome = { ok: true };
@@ -75,7 +77,7 @@ app.whenReady().then(async () => {
         updateBtn: !!document.getElementById('updateBtn').offsetParent,
         steps: document.querySelectorAll('.step').length,
         toggles: document.querySelectorAll('.switch').length,
-        gap: (() => { const b = document.querySelector('#key').closest('.row').querySelector('.label b'); const s = document.querySelector('#key').closest('.row').querySelector('.label small'); return s.getBoundingClientRect().top - b.getBoundingClientRect().bottom; })(),
+        gap: (() => { const label = document.querySelector('#versionLine').closest('.label'); const b = label.querySelector('b'); const s = label.querySelector('small'); return s.getBoundingClientRect().top - b.getBoundingClientRect().bottom; })(),
       })`);
       if (theme === 'light' && scenario === 'all-ready') {
         check('engines, log and diagnostics are hidden', ui.advancedHidden && !ui.enginesShown && !ui.hasLogButtonVisible);
@@ -89,6 +91,76 @@ app.whenReady().then(async () => {
       win.close();
       await sleep(300);
     }
+  }
+
+  console.log('Save conversions to: a dropdown of at most three choices');
+  {
+    const win = await fresh('all-ready', 'light');
+    const choices = () => js(win, `({ options: [...document.querySelectorAll('#outputMenu [role="option"]')].map((o) => o.textContent), value: document.getElementById('outputText').textContent,
+      selected: document.querySelectorAll('#outputMenu [aria-selected="true"]').length, note: document.getElementById('outputNote').hidden ? '' : document.getElementById('outputNote').textContent })`);
+    const pick = async (value) => {
+      await js(win, `document.getElementById('output').click()`);
+      await sleep(60);
+      await js(win, `document.querySelector('#outputMenu [data-value="${value}"]').click()`);
+      await sleep(400);
+      return choices();
+    };
+    const key = async (keyCode) => { win.webContents.sendInputEvent({ type: 'keyDown', keyCode }); win.webContents.sendInputEvent({ type: 'keyUp', keyCode }); await sleep(60); };
+    const menu = () => js(win, `(() => { const m = document.getElementById('outputMenu'); const r = m.getBoundingClientRect();
+      return { open: !m.hidden, expanded: document.getElementById('output').getAttribute('aria-expanded'), focused: document.activeElement.dataset?.value || document.activeElement.id,
+        inside: r.left >= 0 && r.right <= innerWidth && r.bottom <= document.documentElement.clientHeight }; })()`);
+    const answer = (filePaths) => { dialog.showOpenDialog = async () => (filePaths ? { canceled: false, filePaths } : { canceled: true, filePaths: [] }); };
+    let c = await choices();
+    check('nothing chosen: Default and Choose folder', c.options.join() === 'Default,Choose folder…' && c.value === 'Default' && c.note === '', JSON.stringify(c));
+    answer(['C:\\Users\\Example\\Converted']);
+    c = await pick('choose');
+    check('a folder was chosen: Default, the folder, Choose folder, with the folder selected', c.options.join() === 'Default,Converted,Choose folder…' && c.value === 'Converted' && c.note === 'C:\\Users\\Example\\Converted', JSON.stringify(c));
+    answer(['D:\\Photos']);
+    c = await pick('choose');
+    check('a second folder replaces the first, still three choices', c.options.join() === 'Default,Photos,Choose folder…' && c.value === 'Photos', JSON.stringify(c));
+    answer(null);
+    c = await pick('choose');
+    check('closing the folder dialog changes nothing', c.options.join() === 'Default,Photos,Choose folder…' && c.value === 'Photos', JSON.stringify(c));
+    check('exactly one choice is marked selected', c.selected === 1, JSON.stringify(c));
+    await js(win, `document.getElementById('output').click()`);
+    await sleep(250);
+    let m = await menu();
+    check('pressing the button opens the list on the chosen item, inside the window', m.open && m.expanded === 'true' && m.focused === 'current' && m.inside, JSON.stringify(m));
+    await shot(win, 'settings-output-folder.png');
+    await key('Escape');
+    m = await menu();
+    check('Escape closes it and returns to the button', !m.open && m.expanded === 'false' && m.focused === 'output', JSON.stringify(m));
+    await key('Down');
+    await key('Down');
+    m = await menu();
+    check('the arrow keys open it and move through the choices', m.open && m.focused === 'choose', JSON.stringify(m));
+    await key('Home');
+    await key('Return');
+    await sleep(300);
+    c = await choices();
+    m = await menu();
+    check('Enter on Default picks it and closes the list', !m.open && c.value === 'Default' && current.settings.outputDir === '', JSON.stringify([c, m]));
+    answer(['D:\\Photos']);
+    await pick('choose');
+    await js(win, `document.getElementById('output').click()`);
+    await sleep(100);
+    await win.webContents.sendInputEvent({ type: 'mouseDown', x: 4, y: 4, button: 'left', clickCount: 1 });
+    await win.webContents.sendInputEvent({ type: 'mouseUp', x: 4, y: 4, button: 'left', clickCount: 1 });
+    await sleep(100);
+    m = await menu();
+    check('a click outside closes it', !m.open, JSON.stringify(m));
+    const fonts = await js(win, `({ button: getComputedStyle(document.getElementById('output')).fontFamily, item: getComputedStyle(document.querySelector('#outputMenu [role="option"]')).fontFamily, body: getComputedStyle(document.body).fontFamily })`);
+    check('the button and the list use the same font as the rest of the page', fonts.button === fonts.body && fonts.item === fonts.body, JSON.stringify(fonts));
+    c = await pick('default');
+    check('Default clears the folder and leaves two choices', c.options.join() === 'Default,Choose folder…' && c.value === 'Default' && current.settings.outputDir === '', JSON.stringify(c));
+    const header = await js(win, `(() => { const t = document.querySelector('.titleline').getBoundingClientRect(); const h = document.getElementById('help').getBoundingClientRect(); const b = document.querySelector('.titleline h1').getBoundingClientRect();
+      return { sameLine: Math.abs((h.top + h.height / 2) - (b.top + b.height / 2)) < 3, rightOfTitle: h.left > b.right, inside: h.right <= t.right + 1 }; })()`);
+    check('the ? button sits on the title line, right of the name', header.sameLine && header.rightOfTitle && header.inside, JSON.stringify(header));
+    await js(win, `document.getElementById('help').click()`);
+    await sleep(200);
+    check('and pressing it asks the app for the guide', guideAsked === 1);
+    win.close();
+    await sleep(300);
   }
 
   console.log('advanced view: engines, log, diagnostics');

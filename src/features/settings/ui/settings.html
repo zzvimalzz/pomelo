@@ -14,7 +14,7 @@
     <header class="hero">
       <img class="logo" src="logo.png" width="46" height="46" alt="">
       <div class="titles">
-        <h1>Pomelo</h1>
+        <div class="titleline"><h1>Pomelo</h1><button id="help" class="help" aria-label="How Pomelo works" title="How Pomelo works">?</button></div>
         <p class="muted">Open-source file converter</p>
       </div>
       <span class="status" id="status"><i></i><span id="statusText">Running</span></span>
@@ -22,7 +22,7 @@
 
     <section class="card steps" aria-label="How it works">
       <div class="step"><span class="n">1</span><span><b>Drag</b> a file</span></div>
-      <div class="step"><span class="n">2</span><span>Tap <kbd id="keycap">Ctrl</kbd></span></div>
+      <div class="step"><span class="n">2</span><span>Tap <kbd>Ctrl</kbd></span></div>
       <div class="step"><span class="n">3</span><span><b>Drop</b> on a format</span></div>
     </section>
 
@@ -37,10 +37,11 @@
         <input type="checkbox" id="openAtLogin" class="switch">
       </label>
       <div class="row">
-        <span class="label"><b>Trigger key</b><small>Tap it while dragging</small></span>
-        <div class="seg" id="key" role="radiogroup" aria-label="Trigger key">
-          <button data-key="ctrl" role="radio">Ctrl</button><button data-key="alt" role="radio">Alt</button><button data-key="shift" role="radio">Shift</button>
-        </div>
+        <span class="label"><b>Save conversions to</b><small id="outputNote" hidden></small></span>
+        <span class="dd">
+          <button type="button" id="output" class="dd-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="Save conversions to"><span id="outputText"></span></button>
+          <ul id="outputMenu" class="dd-menu" role="listbox" aria-label="Save conversions to" hidden></ul>
+        </span>
       </div>
       <div class="row">
         <span class="label"><b>Appearance</b></span>
