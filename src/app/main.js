@@ -2,7 +2,7 @@
 // Pomelo's entry point (package.json "main"): starts the features and connects them. Features never import each other; what one
 // needs from another is handed in here.
 const path = require('path');
-const { app } = require('electron');
+const { app, nativeTheme } = require('electron');
 const log = require('#shared/node/log');
 const { userDataFile } = require('#shared/electron/user-data');
 
@@ -57,6 +57,7 @@ function applySettings() {
   trigger.setKey(s.key);
   helper.setKey(s.key);
   trigger.setEnabled(s.enabled);
+  nativeTheme.themeSource = ['light', 'dark'].includes(s.theme) ? s.theme : 'system';
   setLoginItem(s.openAtLogin);
   tray?.refreshMenu();
 }

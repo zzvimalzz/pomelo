@@ -24,7 +24,7 @@ const downloads = [];
 registerSettingsIpc({
   store: { get: () => current.settings, set: (patch) => { current = { ...current, settings: { ...current.settings, ...patch } }; return current.settings; } },
   getState: () => ({ engines: current.engines, version: '0.1.0', os: 'Windows 10.0.26300 x64' }),
-  onChange: () => {},
+  onChange: (patch) => { if (patch.theme) nativeTheme.themeSource = patch.theme; },
   logPath: () => path.join(out, 'debug.log'),
 });
 const installs = [];
@@ -176,6 +176,27 @@ app.whenReady().then(async () => {
     uninstallAnswer = { ok: false };
     await js(win, `document.getElementById('advToggle').click()`);
     await sleep(300);
+    win.close();
+    await sleep(300);
+  }
+
+  console.log('appearance: System, Light or Dark');
+  {
+    const win = await fresh('all-ready', 'dark');
+    const checked = () => js(win, `[...document.querySelectorAll('#theme button')].filter((b) => b.getAttribute('aria-checked') === 'true').map((b) => b.dataset.theme).join()`);
+    const isDark = () => js(win, `matchMedia('(prefers-color-scheme: dark)').matches`);
+    check('with no theme stored, System is the selected option', (await checked()) === 'system', await checked());
+    await shot(win, 'settings-appearance-default.png');
+    for (const [theme, dark] of [['light', false], ['dark', true]]) {
+      await js(win, `document.querySelector('#theme [data-theme="${theme}"]').click()`);
+      await sleep(400);
+      check(`choosing ${theme} stores it, marks only that button and switches the page`, current.settings.theme === theme && (await checked()) === theme && (await isDark()) === dark, `${current.settings.theme} | ${await checked()} | dark: ${await isDark()}`);
+      await shot(win, `settings-appearance-${theme}.png`);
+    }
+    await js(win, `document.querySelector('#theme [data-theme="system"]').click()`);
+    await sleep(400);
+    check('choosing System stores it and marks only that button', current.settings.theme === 'system' && (await checked()) === 'system');
+    await shot(win, 'settings-appearance-system.png');
     win.close();
     await sleep(300);
   }

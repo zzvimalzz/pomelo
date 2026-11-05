@@ -4,6 +4,9 @@ All notable changes to Pomelo are listed here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added
+- Settings has an Appearance control with System, Light and Dark. System follows Windows, as before; Light and Dark apply to every Pomelo window.
+
 ### Changed
 - **A cleaner update.** With **Check automatically** on, the toast now says "Update your Pomelo to v...", and clicking it opens Settings with the **Download update** button showing. Pressing the button opens a small **Pomelo Downloader** window with the stage, the percentage, the size and time left, and a Cancel button; you can minimise it. The installer's own window no longer appears. When the update is in, Pomelo reopens by itself (with Settings open again if you had it open) and a toast says it is now on the new version.
 - An update that adds an engine to the PDF components you already have (as 0.1.3 did with OCR) now adds it for you, in the same window, instead of leaving you to press Install in Settings.

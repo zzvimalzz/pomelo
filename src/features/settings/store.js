@@ -5,7 +5,7 @@ const path = require('path');
 
 // autoUpdate is off by default: Pomelo goes online only when asked. lastUpdateCheck / updateNotified belong to the update checker
 // (features/updates/auto-check.js).
-const DEFAULTS = { enabled: true, key: 'ctrl', openAtLogin: true, advanced: false, autoUpdate: false, lastUpdateCheck: 0, updateNotified: '' };
+const DEFAULTS = { enabled: true, key: 'ctrl', openAtLogin: true, advanced: false, theme: 'system', autoUpdate: false, lastUpdateCheck: 0, updateNotified: '' };
 
 function createStore(file) {
   let cache = null;
