@@ -10,7 +10,7 @@ What the user can set, where it is kept, and the Settings window.
 
 The `theme` setting (`system`, `light` or `dark`) is applied in `src/app/main.js` through `nativeTheme.themeSource`, so the wheel, toast, settings and downloader pages all switch through their existing `prefers-color-scheme` rules. An unknown value falls back to `system`.
 
-The page (`ui/`) shows the everyday switches, and under Advanced the engines with their Install buttons, the log, diagnostics and Uninstall. Install, update and uninstall messages belong to their own features.
+The page (`ui/`) shows the everyday switches, and under Advanced the engines with their Install buttons, the log, diagnostics, a link to the source code and licences, and Uninstall. Install, update and uninstall messages belong to their own features.
 
 ## Files
 

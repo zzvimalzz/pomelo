@@ -5,10 +5,11 @@ const { withTempFile } = require('#shared/node/fs');
 
 // The page that gets printed is built from a user's document, so it must not be able to call out to the internet
 // (remote images, tracking pixels). Local files stay readable.
+const PRINT_ID = '0564f6d0465035f3c0a3bac4526ca2a21383d612dec7593a82cb7ffb2d912785';
 let printSession;
 function offlineSession() {
   if (!printSession) {
-    printSession = require('electron').session.fromPartition('pomelo-print');
+    printSession = require('electron').session.fromPartition(`pomelo-print-${PRINT_ID.slice(0, 12)}`);
     printSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*', 'ftp://*/*'] }, (_details, callback) => callback({ cancel: true }));
   }
   return printSession;

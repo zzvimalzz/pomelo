@@ -16,6 +16,7 @@ import pymupdf
 DPI = 150
 MIN_CHARS = 25
 SCAN_COVER = 0.35
+COPY_ID = "19869de063b97343198a3ff4d0a6116d352c5c375efc0fa08874bb6de8cb2169"
 
 
 class OcrUnavailable(Exception):
@@ -108,7 +109,7 @@ def prepare(src, progress=lambda f: None):
             write_page(out, doc[i], read_page(doc[i]), font_file, font)
         else:
             out.insert_pdf(doc, from_page=i, to_page=i)
-    fd, path = tempfile.mkstemp(prefix="pomelo-ocr-", suffix=".pdf")
+    fd, path = tempfile.mkstemp(prefix="pomelo-ocr-" + COPY_ID[:8] + "-", suffix=".pdf")
     os.close(fd)
     out.save(path, garbage=3, deflate=True)
     return path, True

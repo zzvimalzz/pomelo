@@ -11,7 +11,7 @@ const root = path.join(__dirname, '..');
 const IGNORE = [
   /^\/(\.git|\.github|\.claude|dist|docs|test|tools|installer|site|vendor)(\/|$)/,
   /^\/(\.editorconfig|\.gitattributes|\.gitignore|\.npmrc|AGENTS\.md|CLAUDE\.md|eslint\.config\.js|package-lock\.json|Start Pomelo\.bat)$/,
-  /^\/(README|CHANGELOG|CONTRIBUTING|CODE_OF_CONDUCT|SECURITY)\.md$/,     // LICENSE and THIRD_PARTY_NOTICES.md ship
+  /^\/(README|CHANGELOG|CONTRIBUTING|CLA|CODE_OF_CONDUCT|SECURITY)\.md$/,     // LICENSE and THIRD_PARTY_NOTICES.md ship
   /^\/(src|python|native)\/.*\.md$/,                                         // developer notes next to the code
   /^\/assets\/(screenshots|icon\.ico)/,
   /^\/python\/(.*\/)?__pycache__(\/|$)/,
@@ -28,10 +28,10 @@ packager({
   overwrite: true,
   icon: path.join(root, 'assets', 'icon.ico'),
   appVersion: pkg.version,
-  appCopyright: 'Pomelo contributors, AGPL-3.0-or-later',
+  appCopyright: 'Copyright (C) 2026 Vimal, AGPL-3.0-or-later',
   ignore: IGNORE,
   win32metadata: {
-    CompanyName: 'Pomelo contributors',
+    CompanyName: 'Vimal',
     FileDescription: 'Pomelo file converter',
     ProductName: 'Pomelo',
     OriginalFilename: 'Pomelo.exe',

@@ -15,6 +15,15 @@ Pomelo is licensed under the [GNU AGPL v3 or later](LICENSE). It builds on the o
 
 LibreOffice and Pandoc are not distributed with Pomelo; they are detected if you install them. The others are installed through npm or `npm run setup:pdf`.
 
+## Source code of the programs Pomelo ships
+
+The installer includes FFmpeg and 7-Zip as separate programs under the GPL and LGPL. Their source code is available from:
+
+- FFmpeg 6.1.1: <https://ffmpeg.org/releases/ffmpeg-6.1.1.tar.xz>. The exact build in the installer is described in `ffmpeg.exe.README` next to `ffmpeg.exe`, which names the source commit it was built from.
+- 7-Zip 21.07: <https://sourceforge.net/projects/sevenzip/files/7-Zip/21.07/>
+
+The LGPL libraries in the npm list below (libvips in `@img/sharp-win32-x64`, `libheif-js`) have their source at the repositories linked there. If any of these links stops working, open an issue at <https://github.com/zzvimalzz/pomelo/issues> and the source for the version you have will be provided.
+
 ## Python packages (optional PDF and HEIC engines)
 
 Installed by `npm run setup:pdf`.
