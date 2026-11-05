@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Dev tool: who may import whom (the layers and dependency rules in the refactor plan, section 3.3).   node tools/check-boundaries.js [root]
-// Report only until the layout exists: it lists findings and exits 0. F1 makes it fail and adds it to `npm run check`.
+// Dev tool: who may import whom (features never import each other, shared code never imports a feature, logic never imports Electron).
+// It lists findings and exits 0.   node tools/check-boundaries.js [root]
 const fs = require('fs');
 const path = require('path');
 

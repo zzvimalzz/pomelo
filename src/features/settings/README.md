@@ -23,7 +23,7 @@ The page (`ui/`) shows the everyday switches, and under Advanced the engines wit
 
 - The keys of `settings.json`: `enabled`, `key`, `openAtLogin`, `advanced`, `autoUpdate`, `lastUpdateCheck`, `updateNotified`.
 - IPC channels: `settings:get`, `settings:set`, `settings:fit`, `app:copy`, `app:open-logs`.
-- Not validated yet: `settings:set` accepts any patch. A bad `key` reaches the input helper, and an empty one throws when the tray menu is built (a known follow-up).
+- Not validated: `settings:set` accepts any patch. A bad `key` reaches the input helper, and an empty one throws when the tray menu is built.
 
 ## Testing
 

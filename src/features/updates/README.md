@@ -30,7 +30,7 @@ Looks for a newer version of Pomelo, and installs it from inside the app when th
 
 ## Known limits
 
-`compareVersions` ranks a pre-release equal to its release (`1.0.0-beta.1` equals `1.0.0`). The test records it as known behaviour; fix it before a beta channel exists.
+`compareVersions` ranks a pre-release equal to its release (`1.0.0-beta.1` equals `1.0.0`). The test records it as the current behaviour.
 
 ## Testing
 

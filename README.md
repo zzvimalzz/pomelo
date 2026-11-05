@@ -124,9 +124,9 @@ npm run setup:pdf                                  # developer setup: PDF to Wor
 | Windows `tar.exe` (libarchive) | BSD | Reading RAR |
 | [LibreOffice](https://www.libreoffice.org) (optional) | MPL-2.0 | DOC/DOCX/RTF/ODT/XLS/XLSX/ODS/PPT/PPTX to PDF and between each other; the fallback for PDF to PPTX and for PDF to DOC/ODT/RTF |
 | [Pandoc](https://pandoc.org) (optional) | GPL-2.0-or-later, separate process | Markdown / HTML / RTF / ODT / DOCX / EPUB |
-| [python-docx](https://github.com/python-openxml/python-docx) (optional, Python) | MIT | Writes the Word file for PDF to DOCX (`python/pdf_flow.py`) |
+| [python-docx](https://github.com/python-openxml/python-docx) (optional, Python) | MIT | Writes the Word file for PDF to DOCX (`python/pdf_flow/`) |
 | [RapidOCR](https://github.com/RapidAI/RapidOCR) with ONNX Runtime (optional, Python) | Apache-2.0 / MIT | Reads scanned PDF pages (`python/pdf_ocr.py`); its PP-OCR models are fetched once when the engine is installed |
-| [PyMuPDF](https://pymupdf.readthedocs.io) (optional, Python) | AGPL-3.0-or-later or Artifex commercial; separate process | Reads every PDF: PDF to Word (`python/pdf_flow.py`), PowerPoint, Markdown, HTML, text, EPUB and Excel (`python/pdf_to_text.py`, `pdf_structure.py`, `pdf_layout.py`, `pdf_to_tables.py`) |
+| [PyMuPDF](https://pymupdf.readthedocs.io) (optional, Python) | AGPL-3.0-or-later or Artifex commercial; separate process | Reads every PDF: PDF to Word (`python/pdf_flow/`), PowerPoint, Markdown, HTML, text, EPUB and Excel (`python/pdf_to_text.py`, `pdf_structure.py`, `pdf_layout.py`, `pdf_to_tables.py`) |
 | [pillow-heif](https://github.com/bigcat88/pillow_heif) (optional, Python) | BSD-3 (bundles libheif and the GPL x265 encoder) | Writing HEIC. Reading HEIC works without it |
 
 Engine order per conversion lives in `src/features/conversion/routing/plans.js`; if one engine fails, the next is tried.
@@ -177,13 +177,13 @@ npm run build:installer    # dist/installer/Pomelo-Setup-x64.exe
 See [CONTRIBUTING.md](CONTRIBUTING.md). In short:
 
 ```bash
-npm run check      # ESLint plus unused-code scan
+npm run check      # ESLint, unused-code scan, and a check that no private notes are tracked
 npm test           # job logic, input helper, updater, routing snapshot, full conversion matrix, edge cases
 npm run test:ui    # wheel, toast and settings windows (also regenerates the screenshots in test/shots)
 npm run fidelity:samples && npm run test:fidelity   # PDF to Word: convert, print back to PDF, score against the original (needs the engines)
 ```
 
-Dev tools in `tools/`: `build-helper.js` (compiles the input helper), `package.js` and `build-installer.js` (release build), `pdf-inspect.mjs` (what is inside a PDF), `render-docx.sh` (DOCX to images, to eyeball fidelity), `make-notices.js` (regenerates the third-party list), `py-licenses.py`, `unused-exports.js`.
+Dev tools in `tools/`: `build-helper.js` (compiles the input helper), `package.js` and `build-installer.js` (release build), `pdf-inspect.mjs` (what is inside a PDF), `render-docx.sh` (DOCX to images, to eyeball fidelity), `make-notices.js` (regenerates the third-party list), `py-licenses.py`, `unused-exports.js`, `check-boundaries.js`, `check-public.js`.
 
 ## Licence
 

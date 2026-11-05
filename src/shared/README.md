@@ -7,7 +7,7 @@ Helpers that more than one part of the app needs, split by what they may depend 
 | `core/` | nothing | `text.js`: `middleEllipsis`, `capitalize`, `escapeHtml` |
 | `node/` | Node built-ins and `core/` | `paths.js`, `which.js`, `fs.js`, `process.js` |
 
-`tools/check-boundaries.js` reports imports that break these rules (report only for now).
+`tools/check-boundaries.js` reports imports that break these rules; it lists them and does not fail the build.
 
 ## Files
 

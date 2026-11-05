@@ -42,7 +42,7 @@
     "icons": "node tools/make-icons.js",
     "setup:pdf": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/setup-pdf-engine.ps1",
     "lint": "eslint .",
-    "check": "npm run lint && node tools/unused-exports.js",
+    "check": "npm run lint && node tools/unused-exports.js && node tools/check-public.js",
     "pretest": "npm run build:helper",
     "test": "node test/run.js --tier=unit,integration,pdf",
     "test:fidelity": "node test/fidelity/run.js",

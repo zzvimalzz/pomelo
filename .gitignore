@@ -23,16 +23,6 @@ Start Pomelo.bat
 .env
 .env.*
 
-# private planning notes and the stamp passphrase: never committed
-/docs/
-/PLAN*.md
-/ROADMAP*.md
-STAMP.md
-
-# private instructions for coding agents
-/AGENTS.md
-/CLAUDE.md
-/.claude/
 /test/fidelity/out/
 __pycache__/
 *.pyc

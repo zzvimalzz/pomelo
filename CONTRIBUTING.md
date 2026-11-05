@@ -17,7 +17,7 @@ npm start
 ## Before you open a pull request
 
 ```bash
-npm run check          # ESLint plus a scan for unused exports and IPC channels
+npm run check          # ESLint, a scan for unused exports and IPC channels, and a check for stray private notes
 npm test               # job logic, updater, routing snapshot, the full conversion matrix, edge cases
 npm run test:ui        # wheel, toast and settings window (opens real windows; leave the mouse alone)
 ```
