@@ -31,6 +31,8 @@ const PYTHON = [
   ['Pillow', '13.0.0', 'MIT-CMU'], ['typing_extensions', '4.16.0', 'PSF-2.0'],
 ];
 
+const ffmpegVersion = /^Version: (\d+\.\d+(?:\.\d+)?)/m.exec(fs.readFileSync(path.join(root, 'node_modules', 'ffmpeg-static', 'ffmpeg.exe.README'), 'utf8'))[1];
+
 // The pinned packages in python/requirements.txt must be listed here at the same version, so the notices cannot drift from what the installer installs.
 const norm = (n) => n.toLowerCase().replace(/[-_.]/g, '');
 const pins = fs.readFileSync(path.join(root, 'python', 'requirements.txt'), 'utf8').split(/\r?\n/).map((l) => /^([\w.-]+)==([\w.]+)$/.exec(l.trim())).filter(Boolean);
@@ -61,6 +63,15 @@ checker.init({ start: root, production: true, excludePrivatePackages: true }, (e
     ...PROGRAMS.map(([n, l, url, why]) => `| [${n}](${url}) | ${l} | ${why} |`),
     '',
     'LibreOffice and Pandoc are not distributed with Pomelo; they are detected if you install them. The others are installed through npm or `npm run setup:pdf`.',
+    '',
+    '## Source code of the programs Pomelo ships',
+    '',
+    'The installer includes FFmpeg and 7-Zip as separate programs under the GPL and LGPL. Their source code is available from:',
+    '',
+    `- FFmpeg ${ffmpegVersion}: <https://ffmpeg.org/releases/ffmpeg-${ffmpegVersion}.tar.xz>. The exact build in the installer is described in \`ffmpeg.exe.README\` next to \`ffmpeg.exe\`, which names the source commit it was built from.`,
+    '- 7-Zip 21.07: <https://sourceforge.net/projects/sevenzip/files/7-Zip/21.07/>',
+    '',
+    'The LGPL libraries in the npm list below (libvips in `@img/sharp-win32-x64`, `libheif-js`) have their source at the repositories linked there. If any of these links stops working, open an issue at <https://github.com/zzvimalzz/pomelo/issues> and the source for the version you have will be provided.',
     '',
     '## Python packages (optional PDF and HEIC engines)',
     '',

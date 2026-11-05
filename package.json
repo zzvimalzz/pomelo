@@ -23,7 +23,7 @@
     "url": "git+https://github.com/zzvimalzz/pomelo.git"
   },
   "license": "AGPL-3.0-or-later",
-  "author": "Pomelo contributors",
+  "author": "Vimal",
   "private": true,
   "main": "src/app/main.js",
   "imports": {

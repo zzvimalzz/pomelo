@@ -94,6 +94,7 @@ span.chip.off { background: none; border: 1px solid var(--line); color: var(--mu
 /* update button: plain, then accent when an update is waiting */
 .btn { flex: none; border: 1px solid var(--line); background: none; padding: 6px 14px; border-radius: 9px; cursor: pointer; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow-wrap: normal; }
 .btn:hover:not(:disabled) { background: var(--off-bg); }
+a.btn { color: inherit; text-decoration: none; }
 .btn:disabled { opacity: .6; cursor: default; }
 .btn.danger { background: #d92d20; border-color: #d92d20; color: #fff; }                         /* solid red: the one destructive action */
 .btn.danger:hover:not(:disabled) { background: #b42318; border-color: #b42318; }

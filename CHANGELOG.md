@@ -6,6 +6,7 @@ All notable changes to Pomelo are listed here. The format follows [Keep a Change
 
 ### Added
 - Settings has an Appearance control with System, Light and Dark. System follows Windows, as before; Light and Dark apply to every Pomelo window.
+- Advanced settings has a link to the source code and licences, and the third-party notices say where the source of FFmpeg and 7-Zip can be downloaded.
 
 ### Changed
 - **A cleaner update.** With **Check automatically** on, the toast now says "Update your Pomelo to v...", and clicking it opens Settings with the **Download update** button showing. Pressing the button opens a small **Pomelo Downloader** window with the stage, the percentage, the size and time left, and a Cancel button; you can minimise it. The installer's own window no longer appears. When the update is in, Pomelo reopens by itself (with Settings open again if you had it open) and a toast says it is now on the new version.

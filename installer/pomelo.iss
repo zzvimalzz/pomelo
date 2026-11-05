@@ -12,13 +12,15 @@
 #define AppName "Pomelo"
 #define AppExe "Pomelo.exe"
 #define AppUrl "https://github.com/zzvimalzz/pomelo"
+#define BuildId "76597e8447ac0831cb436eb6501685f4cb4723d2dbc6d3b80f0da5ad348045f5"
 
 [Setup]
 AppId={{6F0C2E4A-3B1D-4D8E-9A57-C1E0B7F5A2D3}
 AppName={#AppName}
 AppVersion={#AppVersion}
 VersionInfoVersion={#AppVersion}
-AppPublisher=Pomelo contributors
+VersionInfoProductTextVersion={#AppVersion}+{#Copy(BuildId, 1, 12)}
+AppPublisher=Vimal
 AppPublisherURL={#AppUrl}
 AppSupportURL={#AppUrl}/issues
 AppUpdatesURL={#AppUrl}/releases
