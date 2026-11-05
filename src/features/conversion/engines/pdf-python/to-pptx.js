@@ -13,7 +13,7 @@ const { withTempDir } = require('../../../../shared/node/fs');
 // text as real text boxes at the same places, fonts, sizes and colours, links included.
 async function pdfToPptx({ src, dir, base, engines, onProgress }) {
   return withTempDir(async (tmp) => {
-    await runHelper(engines.pdf, 'pdf_pptx_export.py', [src, tmp], { src, onProgress: scaled(onProgress, 0, 0.9) });
+    await runHelper(engines.pdf, 'pdf_to_layout.py', [src, tmp], { src, onProgress: scaled(onProgress, 0, 0.9) });
     const layout = JSON.parse(fs.readFileSync(path.join(tmp, 'layout.json'), 'utf8'));
     const pages = layout.pages;
     if (!pages.length) throw new Error('This PDF has no pages');

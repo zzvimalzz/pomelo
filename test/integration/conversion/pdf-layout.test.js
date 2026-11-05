@@ -4,6 +4,7 @@
 // (skipped without it); the scan test also needs the OCR component.   node test/integration/conversion/pdf-layout.test.js
 // For real-world pages and a similarity score against the original, see test/fidelity/run.js.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const JSZip = require('jszip');
@@ -120,10 +121,14 @@ const read = async (docx) => {
   console.log('a scanned PDF (a picture of a page)');
   if (!engines.ocr) console.log('  OCR component not installed: skipped');
   else {
+    const ocrCopies = () => new Set(fs.readdirSync(os.tmpdir()).filter((n) => /^pomelo-ocr-.*\.pdf$/.test(n)));
+    const before = ocrCopies();
     [docx] = await convert.convertFile(draw('scan', 'scan'), 'docx');
+    const left = [...ocrCopies()].filter((n) => !before.has(n));
     d = await read(docx);
     const found = ['Quarterly Report', 'Revenue grew', 'team@example.com', 'A bullet that wraps'].filter((t) => squash(d.text.toLowerCase()).includes(squash(t.toLowerCase())));
     expect('the text of the scan is recognised and is real, editable text', found.length >= 3, `${found.length} of 4: ${d.text.slice(0, 120)}`);
+    expect('and the temporary OCR copy of the PDF is deleted', left.length === 0, left.join(', '));
     fs.rmSync(docx);
   }
 

@@ -10,7 +10,7 @@ const isNumber = (s) => /^-?(0|[1-9]\d{0,14})([.,]\d+)?$/.test(s);
 async function pdfToXlsx({ src, dir, base, engines, onProgress }) {
   const XLSX = require('xlsx');
   return withTempFile('json', async (tmp) => {
-    await runHelper(engines.pdf, 'pdf_tables_run.py', [src, tmp], { src, onProgress });
+    await runHelper(engines.pdf, 'pdf_to_tables.py', [src, tmp], { src, onProgress });
     const tables = JSON.parse(fs.readFileSync(tmp, 'utf8'));
     if (!tables.length) throw new Error('This PDF has no text to put in a spreadsheet');
     const wb = XLSX.utils.book_new();

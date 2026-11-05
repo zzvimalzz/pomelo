@@ -126,7 +126,7 @@ npm run setup:pdf                                  # developer setup: PDF to Wor
 | [Pandoc](https://pandoc.org) (optional) | GPL-2.0-or-later, separate process | Markdown / HTML / RTF / ODT / DOCX / EPUB |
 | [python-docx](https://github.com/python-openxml/python-docx) (optional, Python) | MIT | Writes the Word file for PDF to DOCX (`python/pdf_flow.py`) |
 | [RapidOCR](https://github.com/RapidAI/RapidOCR) with ONNX Runtime (optional, Python) | Apache-2.0 / MIT | Reads scanned PDF pages (`python/pdf_ocr.py`); its PP-OCR models are fetched once when the engine is installed |
-| [PyMuPDF](https://pymupdf.readthedocs.io) (optional, Python) | AGPL-3.0-or-later or Artifex commercial; separate process | Reads every PDF: PDF to Word (`python/pdf_flow.py`), PowerPoint, Markdown, HTML, text, EPUB and Excel (`python/pdf_structure_run.py`, `pdf_fixed_layout.py`, `pdf_tables_run.py`) |
+| [PyMuPDF](https://pymupdf.readthedocs.io) (optional, Python) | AGPL-3.0-or-later or Artifex commercial; separate process | Reads every PDF: PDF to Word (`python/pdf_flow.py`), PowerPoint, Markdown, HTML, text, EPUB and Excel (`python/pdf_to_text.py`, `pdf_structure.py`, `pdf_layout.py`, `pdf_to_tables.py`) |
 | [pillow-heif](https://github.com/bigcat88/pillow_heif) (optional, Python) | BSD-3 (bundles libheif and the GPL x265 encoder) | Writing HEIC. Reading HEIC works without it |
 
 Engine order per conversion lives in `src/features/conversion/routing/plans.js`; if one engine fails, the next is tried.

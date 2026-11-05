@@ -18,12 +18,12 @@ const { pdfToXlsx } = require('./to-xlsx');
 // Otherwise a PC with an older environment (no OCR) and a newer one would show OCR as ready and then fail to use it.
 const detect = () => ({ pdf: findPython('pymupdf, docx, rapidocr') || findPython('pymupdf, docx'), ocr: findPython('rapidocr') });
 
-// Markdown, HTML, plain text and EPUB all come from one reading of the PDF (python/pdf_structure_run.py), so they
+// Markdown, HTML, plain text and EPUB all come from one reading of the PDF (python/pdf_to_text.py), so they
 // agree: all of the text in reading order, headings, lists, tables, links, bold and italic, code and pictures.
 async function pdfToText({ src, to, dir, base, engines, onProgress }) {
   if (to === 'epub') {
     return withTempFile('html', async (tmp) => {
-      await runHelper(engines.pdf, 'pdf_structure_run.py', [src, tmp, 'html'], { src, onProgress });
+      await runHelper(engines.pdf, 'pdf_to_text.py', [src, tmp, 'html'], { src, onProgress });
       const out = uniquePath(dir, base, 'epub');
       await require('../../lib/epub').write(fs.readFileSync(tmp, 'utf8'), { title: base }, out);
       return [out];
@@ -32,7 +32,7 @@ async function pdfToText({ src, to, dir, base, engines, onProgress }) {
   const out = uniquePath(dir, base, to);
   const args = [src, out, to];
   if (to === 'md') args.push(uniquePath(dir, `${base}_images`, ''));   // made only when the PDF has pictures worth keeping
-  await runHelper(engines.pdf, 'pdf_structure_run.py', args, { src, onProgress });
+  await runHelper(engines.pdf, 'pdf_to_text.py', args, { src, onProgress });
   assertProduced(out, 'PDF engine');
   return [out];
 }

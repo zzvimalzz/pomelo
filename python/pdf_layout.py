@@ -11,15 +11,11 @@ import re
 import pymupdf
 
 from pdf_fonts import word_family
+from pdf_spans import BAD_XML, TEXT_FLAGS, has_unmapped_symbols, hexcolor
 
 PUA_OK = {chr(c) for c in (0xF0B7, 0xF0A7, 0xF0D8, 0xF076, 0xF0FC, 0xF06E, 0xF0A8, 0xF06F)}   # the bullets Word itself writes in Symbol/Wingdings
-BAD_XML = re.compile("[" + chr(0) + "-" + chr(8) + chr(11) + chr(12) + chr(14) + "-" + chr(31) + chr(0xFFFE) + chr(0xFFFF) + "]")
 RTL = re.compile(r"[֐-ࣿיִ-﷿ﹰ-﻿]")
 BG_DPI = 200
-
-
-def hexcolor(c):
-    return "%02X%02X%02X" % ((c >> 16) & 255, (c >> 8) & 255, c & 255)
 
 
 def span_ok(line, span):
@@ -31,7 +27,7 @@ def span_ok(line, span):
         return False
     if RTL.search(t):
         return False                      # right-to-left stays in the picture, exactly as drawn
-    if any(0xE000 <= ord(c) <= 0xF8FF and c not in PUA_OK for c in t):
+    if has_unmapped_symbols(t, PUA_OK):
         return False                      # symbol-font glyphs with no Unicode meaning
     return True
 
@@ -39,7 +35,7 @@ def span_ok(line, span):
 def collect(page):
     """Lines of spans, each line cut into segments wherever the gap or the baseline changes."""
     segments = []
-    d = page.get_text("dict", flags=pymupdf.TEXT_PRESERVE_WHITESPACE | pymupdf.TEXT_PRESERVE_LIGATURES)
+    d = page.get_text("dict", flags=TEXT_FLAGS)
     for block in d["blocks"]:
         for line in block.get("lines", []):
             spans = [s for s in line["spans"] if span_ok(line, s)]

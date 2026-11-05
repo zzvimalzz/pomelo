@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Pomelo helper: find the tables in a PDF with PyMuPDF and write them as JSON for the Excel writer.
 
-usage: python pdf_tables_run.py <input.pdf> <output.json>
+usage: python pdf_to_tables.py <input.pdf> <output.json>
 Output: [{"page": 1, "index": 1, "kind": "table" | "text", "rows": [["cell", ...], ...]}, ...]
 
 Ruled tables are read as they are drawn. A page with no ruled table gets its aligned rows read as one when they really
@@ -10,21 +10,14 @@ box). A PDF with no table at all still gives something useful: each page's text 
 Prints POMELO_PROGRESS lines while it works.
 """
 import json
-import os
 import re
 import sys
-import warnings
 from collections import Counter
 
-warnings.filterwarnings("ignore")
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import helper
 
-try:
-    import pymupdf
-except Exception as e:
-    sys.stderr.write("PyMuPDF is not available: %s\n" % e)
-    sys.exit(2)
-import pdf_common  # noqa: E402
+helper.require("PyMuPDF", "pymupdf")
+import pymupdf  # noqa: E402
 
 WORD = re.compile(r"\w+", re.U)
 
@@ -85,56 +78,49 @@ def text_rows(page):
     return [r[2] for r in rows]
 
 
-src, dst = sys.argv[1], sys.argv[2]
-found = []
-temp = None
-
-
-def progress(f):
-    print("POMELO_PROGRESS %.3f" % min(0.99, f), flush=True)
-
-
-try:
-    path, temp, share = pdf_common.open_for_work(src, progress)
-    doc = pymupdf.open(path)
-    for pno, page in enumerate(doc):
-        progress(share + (1 - share) * 0.95 * pno / len(doc))
-        made = 0
-        try:
-            tables = page.find_tables().tables
-        except Exception:
-            tables = []
-        for table in tables:
-            rows = read_cells(page, table)
-            if any(any(c for c in row) for row in rows):
-                made += 1
-                found.append({"page": pno + 1, "index": made, "kind": "table", "rows": rows})
-        if made:
-            continue
-        try:
-            guesses = page.find_tables(strategy="text").tables
-        except Exception:
-            guesses = []
-        for table in guesses:
-            rows = [r for r in read_cells(page, table) if any(r)]
-            if grid_like(rows, table.bbox[2] - table.bbox[0], page.rect.width) and holds_the_text(page, table, rows):
-                made += 1
-                found.append({"page": pno + 1, "index": made, "kind": "table", "rows": rows})
-    if not found:
+def read_tables(path, progress):
+    """Every table of the PDF at `path` (or, if it has none, each page's text lines as rows); the document is closed again."""
+    found = []
+    with pymupdf.open(path) as doc:
         for pno, page in enumerate(doc):
-            rows = text_rows(page)
-            if rows:
-                found.append({"page": pno + 1, "index": 1, "kind": "text", "rows": rows})
-except SystemExit:
-    raise
-except Exception as e:
-    pdf_common.cleanup(temp)
-    pdf_common.fail(e)
-pdf_common.cleanup(temp)
-if not found:
-    sys.stderr.write("This PDF has no text to put in a spreadsheet\n")
-    sys.exit(3)
+            progress(0.95 * pno / len(doc))
+            made = 0
+            try:
+                tables = page.find_tables().tables
+            except Exception:
+                tables = []
+            for table in tables:
+                rows = read_cells(page, table)
+                if any(any(c for c in row) for row in rows):
+                    made += 1
+                    found.append({"page": pno + 1, "index": made, "kind": "table", "rows": rows})
+            if made:
+                continue
+            try:
+                guesses = page.find_tables(strategy="text").tables
+            except Exception:
+                guesses = []
+            for table in guesses:
+                rows = [r for r in read_cells(page, table) if any(r)]
+                if grid_like(rows, table.bbox[2] - table.bbox[0], page.rect.width) and holds_the_text(page, table, rows):
+                    made += 1
+                    found.append({"page": pno + 1, "index": made, "kind": "table", "rows": rows})
+        if not found:
+            for pno, page in enumerate(doc):
+                rows = text_rows(page)
+                if rows:
+                    found.append({"page": pno + 1, "index": 1, "kind": "text", "rows": rows})
+    return found
 
-with open(dst, "w", encoding="utf-8") as f:
-    json.dump(found, f, ensure_ascii=False)
-print("OK")
+
+def main(src, dst):
+    found = helper.run_pdf_job(src, read_tables)
+    if not found:
+        helper.exit_no_text("This PDF has no text to put in a spreadsheet")
+    with open(dst, "w", encoding="utf-8") as f:
+        json.dump(found, f, ensure_ascii=False)
+    print("OK")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1], sys.argv[2])

@@ -19,7 +19,6 @@ import math
 import os
 import re
 import sys
-from collections import Counter
 
 import pymupdf
 from docx import Document
@@ -27,16 +26,14 @@ from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
 from docx.opc.constants import RELATIONSHIP_TYPE
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pdf_fonts import word_family  # noqa: E402
+from pdf_fonts import word_family
+from pdf_spans import BAD_XML, TEXT_FLAGS, dedupe, dominant_size, has_unmapped_symbols, hexcolor
 
 TW = 20                                   # twips per point
 NS = nsdecls("w", "wp", "a", "pic", "r")
-BAD_XML = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f￾￿]")
 RTL = re.compile("[֐-ࣿיִ-﷿ﹰ-﻿]")
 BULLETS = set("•●▪◦·‣⁃■○✓✔❖➢–—-*►▸➤□◆◇▫") | {"", "", "", "", "", "", "", "", "o"}
 NUMBER = re.compile(r"^(\(?\d{1,3}[.)]|\(?[a-z][.)]|\([ivx]{1,4}\))$")
-FLAGS = pymupdf.TEXT_PRESERVE_WHITESPACE | pymupdf.TEXT_PRESERVE_LIGATURES
 HI_DPI = 200
 
 
@@ -46,10 +43,6 @@ def tw(v):
 
 def esc(s):
     return BAD_XML.sub("", s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def hexcolor(c):
-    return "%02X%02X%02X" % ((c >> 16) & 255, (c >> 8) & 255, c & 255)
 
 
 def rgb_hex(rgb):
@@ -119,7 +112,7 @@ def span_ok(s):
         return False
     if s.get("alpha", 255) == 0:
         return False
-    return not any(0xE000 <= ord(c) <= 0xF8FF and c not in BULLETS for c in t)
+    return not has_unmapped_symbols(t, BULLETS)
 
 
 TRACKED = re.compile(r"^(?:[^\s]{1,3} ){2,}[^\s]{1,3}$|(?:^|\s)[A-Z] [A-Z]{1,3} ")
@@ -132,7 +125,7 @@ def repair_tracked(page, blocks):
                 if s["text"].count(" ") >= 2 and s["text"].strip().upper() == s["text"].strip() and TRACKED.search(s["text"].strip())]
     if not suspects:
         return
-    raw = page.get_text("rawdict", flags=FLAGS)["blocks"]
+    raw = page.get_text("rawdict", flags=TEXT_FLAGS)["blocks"]
     index = {}
     for b in raw:
         if b["type"] == 0:
@@ -157,7 +150,7 @@ def repair_tracked(page, blocks):
 
 def read_lines(page):
     out = []
-    blocks = page.get_text("dict", flags=FLAGS)["blocks"]
+    blocks = page.get_text("dict", flags=TEXT_FLAGS)["blocks"]
     try:
         repair_tracked(page, blocks)
     except Exception:
@@ -179,15 +172,6 @@ def read_lines(page):
                     continue
             size = max(s["size"] for s in spans if s["text"].strip())
             out.append(Line([dict(s) for s in spans], ln["bbox"], spans[0]["origin"][1], size, rot))
-    return out
-
-
-def dedupe(lines):
-    """Text drawn twice at the same spot (a drop shadow, a fake bold) is one line."""
-    out = []
-    for l in lines:
-        if not any(o.text == l.text and abs(o.x0 - l.x0) < 3 and abs(o.y0 - l.y0) < 3 for o in out):
-            out.append(l)
     return out
 
 
@@ -507,7 +491,7 @@ class Page:
         page = self.page
         self.meter.register(page)
         links = [(pymupdf.Rect(l["from"]), l["uri"]) for l in page.get_links() if l.get("uri")]
-        lines = dedupe(read_lines(page))
+        lines = dedupe(read_lines(page), 3)
         self.upright = attach_markers(merge_rows([l for l in lines if not l.rot]))
         self.rotated = [l for l in lines if l.rot]
         for l in self.upright:
@@ -1573,12 +1557,7 @@ class Lists:
 
 
 def body_size(all_lines):
-    sizes = Counter()
-    for l in all_lines:
-        for s in l.spans:
-            if s["text"].strip():
-                sizes[round(s["size"] * 2) / 2] += len(s["text"])
-    return sizes.most_common(1)[0][0] if sizes else 10.0
+    return dominant_size((sp["text"], sp["size"]) for l in all_lines for sp in l.spans)
 
 
 def convert(src, dst, progress=lambda f: None, log=lambda m: None):

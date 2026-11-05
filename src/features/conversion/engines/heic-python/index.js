@@ -16,7 +16,7 @@ module.exports = {
   supports: (from, to, engines) => !!engines.heic && to === 'heic' && FROM.has(from),
   async run({ src, from, dir, base, engines }) {
     const out = uniquePath(dir, base, 'heic');
-    const encode = (input) => runHelper(engines.heic, 'heic_run.py', [input, out], { timeout: 300000 });
+    const encode = (input) => runHelper(engines.heic, 'image_to_heic.py', [input, out], { timeout: 300000 });
     if (DIRECT.has(from)) await encode(src);
     else await withTempFile('png', async (temp) => {
       await sharpFrom(src, from).png().toFile(temp);
