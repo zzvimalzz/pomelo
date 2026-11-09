@@ -14,7 +14,6 @@ const conversion = require('../features/conversion');
 const { createStore, openSettingsWindow, getSettingsWindow, registerSettingsIpc } = require('../features/settings');
 const { InputHelper, Trigger, WheelWindow } = require('../features/gesture');
 const { Jobs, Timings, Toast } = require('../features/jobs');
-const guide = require('../features/guide');
 const updates = require('../features/updates');
 const engineSetup = require('../features/engine-setup');
 const { registerUninstallIpc } = require('../features/uninstall');
@@ -37,12 +36,12 @@ app.on('second-instance', (_e, argv) => {
 
 const asset = (n) => path.join(APP_ROOT, 'assets', n);
 const settingsFile = userDataFile('settings.json');
-const firstRun = !fs.existsSync(settingsFile);         // checked before the store writes the file: only a new install shows the guide
+const firstRun = !fs.existsSync(settingsFile);         // checked before the store writes the file: only a new install opens on the Help page
 const settings = createStore(settingsFile);
 const installer = engineSetup.createInstaller({ redetect: () => conversion.detectEngines() });
 let tray, wheel, jobs, trigger, helper;
 
-const openSettings = () => openSettingsWindow(asset);
+const openSettings = (target) => openSettingsWindow(asset, target);
 const sendToSettings = (channel, payload) => getSettingsWindow()?.webContents.send(channel, payload);
 const downloader = new updates.Downloader({ asset });
 const outputDir = createOutputDir({
@@ -59,7 +58,7 @@ const autoUpdate = new updates.AutoUpdate({
   onAvailable: (r) => {
     log('update available:', r.latest);
     sendToSettings('updates:found', r);          // an open Settings window switches to "Download update"
-    jobs?.addInfo({ title: `Update your Pomelo to v${r.latest}`, detail: 'Click to open Pomelo and download it.', onClick: openSettings });
+    jobs?.addInfo({ title: `Update your Pomelo to v${r.latest}`, detail: 'Click to open Pomelo and download it.', onClick: () => openSettings({ page: 'updates' }) });
     updateTray();
   },
 });
@@ -110,8 +109,8 @@ app.whenReady().then(async () => {
   trigger.start();
 
   tray = createTray({
-    icon: asset('tray.png'), getSettings: () => settings.get(), onSettings: openSettings, onQuit: () => app.quit(),
-    setEnabled: (enabled) => { settings.set({ enabled }); applySettings(); },
+    icon: asset('tray.png'), getSettings: () => settings.get(), onOpen: openSettings, onQuit: () => app.quit(),
+    onChange: (patch) => { settings.set(patch); applySettings(); sendToSettings('settings:changed', settings.get()); },
   });
 
   const setup = engineSetup.registerEngineSetupIpc({ installer, getEngines: conversion.getEngines, sendToSettings, log });
@@ -125,9 +124,6 @@ app.whenReady().then(async () => {
     },
     onChange: (patch) => { applySettings(); if ('autoUpdate' in patch) autoUpdate.apply(); },
     logPath: log.path,
-    onOpenGuide: () => guide.openGuideWindow(asset),
-  });
-  guide.registerGuideIpc({
     describe: (name) => {
       const ext = conversion.extOf(name);
       return { ext, group: conversion.groupOf(ext), targets: conversion.targetsFor([name]).map((t) => ({ ext: t.ext, label: t.label, sub: t.sub, group: conversion.groupOf(t.ext) })) };
@@ -154,7 +150,7 @@ app.whenReady().then(async () => {
   log('ready');
   // Show the window on every manual launch so there is always a visible way in; login starts stay in the tray.
   if (!process.argv.includes('--hidden') && !toConvert.length) {
-    if (firstRun) guide.openGuideWindow(asset, { onClosed: openSettings }); else openSettings();
+    openSettings(firstRun ? { page: 'help' } : undefined);
   }
 });
 

@@ -1,39 +1,20 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* The Help page: the animation of the gesture, the pictures in the answers, and the questions. */
 :root {
-  --accent-2: #bf2f4f;
-  --bg: #f6f4f1; --card: #ffffff; --muted: rgba(28, 28, 30, .56); --off-bg: rgba(0, 0, 0, .06);
   --ink: #1d1b1f; --on-ink: #fbf9f7;
   --stage: linear-gradient(135deg, #f6d6dd 0%, #ece9cc 52%, #dbe6f4 100%);
   --win: #ffffff; --win-bar: #f6f3f0; --win-ink: #1c1c1e; --toast: rgba(255, 255, 255, .97);
-  --ease: cubic-bezier(.2, .8, .2, 1);
   --p0: 430px 236px; --pa: 66px 84px; --pb: 240px 135px; --pc: 246px 78px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1c1c1e; --card: #2a2a2d; --muted: rgba(255, 255, 255, .58); --off-bg: rgba(255, 255, 255, .08);
     --ink: #f4f2f5; --on-ink: #1c1c1e;
     --stage: linear-gradient(135deg, #3b1d28 0%, #272a1b 52%, #172230 100%);
     --win: #1f1e22; --win-bar: #19181b; --win-ink: #f1eff2; --toast: rgba(40, 40, 44, .97);
   }
 }
-
-* { box-sizing: border-box; min-width: 0; overflow-wrap: anywhere; user-select: none; -webkit-user-select: none; }
 img { -webkit-user-drag: none; }
-html, body { margin: 0; width: 100%; background: var(--bg); color: var(--txt); overflow-x: hidden; overflow-y: auto; }
-::-webkit-scrollbar { width: 12px; height: 0; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 99px; border: 3px solid var(--bg); background-clip: padding-box; min-height: 40px; }
-body { font: 13.5px/1.35 var(--font); -webkit-font-smoothing: antialiased; }
-#app { padding: 20px; }
-p { margin: 0; }
-b { font-weight: 600; }
-.muted { color: var(--muted); font-size: 12px; }
-button { font: inherit; color: inherit; }
-button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-.hero { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
-.logo { flex: none; width: 46px; height: 46px; border-radius: 12px; object-fit: contain; filter: drop-shadow(0 4px 10px rgba(232, 77, 111, .3)); }
-h1 { margin: 0 0 2px; font-size: 20px; letter-spacing: -.01em; line-height: 1.2; }
+.tour, .fig { user-select: none; -webkit-user-select: none; }
 
 /* the animation: a 480 x 270 stage, positions in px so the timeline below can move things exactly */
 .tour[hidden] { display: none; }
@@ -94,25 +75,9 @@ h1 { margin: 0 0 2px; font-size: 20px; letter-spacing: -.01em; line-height: 1.2;
 .copy .t2 { opacity: 0; }
 .copy small { top: 20px; color: var(--muted); font-size: 11.5px; }
 
-.steps { display: flex; justify-content: space-between; gap: 8px; margin: 14px 4px 0; padding: 0; list-style: none; }
-.steps li { display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow-wrap: normal; opacity: .45; }
-.steps .n { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; }
-kbd { padding: 0 6px; border-radius: 6px; border: 1px solid var(--line); border-bottom-width: 2px; background: var(--bg); font: 600 12px/1.5 inherit; }
-
-/* questions */
-.card { margin-top: 16px; padding: 8px 14px 4px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
-h2 { margin: 0 0 2px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
-details { border-top: 1px solid var(--line); }
-h2 + details { border-top: 0; }
-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-radius: 8px; font-weight: 600; cursor: pointer; list-style: none; }
-summary::-webkit-details-marker { display: none; }
-.chev { flex: none; width: 7px; height: 7px; margin: 0 3px 2px 2px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); rotate: -45deg; transition: rotate .2s var(--ease), margin .2s var(--ease); }
-details[open] > summary .chev { rotate: 45deg; margin-bottom: 4px; }
-.ans { margin: -2px 0 14px; font-size: 13.5px; line-height: 1.55; animation: faq-in .24s var(--ease); }
-.ans p { margin: 0 0 10px; }
-.ans > :last-child { margin-bottom: 0; }
-.ans .note { color: var(--muted); font-size: 12.5px; }
-@keyframes faq-in { from { opacity: 0; translate: 0 -5px; } }
+.tour-steps { display: flex; justify-content: space-between; gap: 8px; margin: 14px 4px 0; padding: 0; list-style: none; }
+.tour-steps li { display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow-wrap: normal; opacity: .45; }
+.tour-steps .n { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; }
 
 .how { counter-reset: step; display: grid; gap: 8px; margin: 0 0 10px; padding: 0; list-style: none; }
 .how li { counter-increment: step; display: flex; align-items: flex-start; gap: 10px; }
@@ -147,11 +112,28 @@ details[open] > summary .chev { rotate: 45deg; margin-bottom: 4px; }
 .menu img { flex: none; border-radius: 3px; }
 .to { flex: none; width: 8px; height: 8px; border-right: 2px solid var(--accent); border-top: 2px solid var(--accent); rotate: 45deg; }
 
-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 2px 2px; }
-.btn { flex: none; border: 1px solid var(--line); background: none; padding: 7px 16px; border-radius: 9px; cursor: pointer; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow-wrap: normal; transition: background .15s; }
-.btn:hover { background: var(--off-bg); }
-.btn.primary { background: var(--accent-2); border-color: var(--accent-2); color: #fff; }
-.btn.primary:hover { background: #a32642; border-color: #a32642; }
+.faq-list { display: grid; gap: 8px; margin-bottom: 18px; }
+.faq { border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: var(--lift); overflow: hidden; transition: border-color .2s; }
+.faq[open] { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.faq summary { display: flex; align-items: center; gap: 12px; padding: 12px 14px; list-style: none; cursor: pointer; transition: background .15s; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary:hover { background: var(--hover); }
+.faq .qa { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.faq .qa.q { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.faq .qa.a { background: var(--off); color: var(--muted); margin-top: 1px; }
+.faq .qt { flex: 1; font-size: 14px; font-weight: 600; letter-spacing: -.005em; }
+.faq .chev { flex: none; width: 7px; height: 7px; margin: 0 4px 2px 2px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); rotate: -45deg; transition: rotate .2s var(--ease), margin .2s var(--ease); }
+.faq[open] .chev { rotate: 45deg; margin-bottom: 4px; }
+.faq .reply { display: flex; align-items: flex-start; gap: 12px; padding: 14px 14px 16px; border-top: 1px solid var(--line); background: var(--hover); animation: reply-in .24s var(--ease); }
+@keyframes reply-in { from { opacity: 0; translate: 0 -5px; } }
+.reply .text { flex: 1; display: grid; gap: 10px; line-height: 1.55; }
+.reply .text > * { margin: 0; }
+.reply .note { color: var(--muted); font-size: 12.5px; }
+.reply .btn { justify-self: start; }
+.tour-card { margin-bottom: 26px; }
+.tour-card .stage { margin: 0 auto; }
+.tour-steps { max-width: 480px; margin-left: auto; margin-right: auto; }
+.more { display: flex; justify-content: center; }
 
 /* the animation starts when the page has built it */
 .play .cursor { animation: cursor-move 10s linear infinite, cursor-fade 10s linear infinite; }
@@ -185,7 +167,7 @@ footer { display: flex; align-items: center; justify-content: space-between; gap
   .cursor, .ghost { translate: var(--pc); }
   .ghost { opacity: .55; scale: .85; }
   .tile.lift { opacity: .35; }
-  .steps li { opacity: 1; }
+  .tour-steps li { opacity: 1; }
 }
 
 /* The timeline: one loop of ten seconds. Every animation uses the same length, so they stay in step. */
