@@ -4,6 +4,11 @@ All notable changes to Pomelo are listed here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+### Changed
+- **A new Settings window.** Settings is now one window with a sidebar (General, Appearance, Engines, Updates, How Pomelo works, Diagnostics and About) and a search box that finds any setting or question. There is no longer an Advanced button that makes the page longer, and the window keeps its size. Appearance has a card for System, Light and Dark, and Engines shows how many are ready.
+- **The guide is part of Settings.** The animation and the questions now live under **How Pomelo works**, where each question is marked Q and its answer sits on its own panel. The separate guide window and the **?** button are gone; a new install opens Settings on that page.
+- **A fuller tray menu.** It shows whether Pomelo is running or paused and has switches for Enabled and Start with Windows, then Settings, How Pomelo works (opens that page), Check for updates (opens Updates and checks) and Quit. The tray icon turns grey while Pomelo is paused, and the update toast now opens Settings on Updates.
+
 ## [0.1.5] - 06-11-2026
 
 ### Added

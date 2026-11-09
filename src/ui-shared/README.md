@@ -1,6 +1,6 @@
 # UI shared
 
-What the wheel, toast, settings, downloader and guide pages have in common. The pages are classic scripts under a strict Content-Security-Policy (`'self'` only), and files in this folder load with a plain `<link>` or `<script src="../ui-shared/...">`.
+What the wheel, toast, settings and downloader pages have in common. The pages are classic scripts under a strict Content-Security-Policy (`'self'` only), and files in this folder load with a plain `<link>` or `<script src="../ui-shared/...">`.
 
 | File | Role |
 |---|---|

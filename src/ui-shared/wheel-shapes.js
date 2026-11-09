@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The wheel's geometry, shared by the wheel page and the animation in the guide: a 400 x 400 box, outer radius 160, inner 68, a gap of
+// The wheel's geometry, shared by the wheel page and the animation on the Settings Help page: a 400 x 400 box, outer radius 160, inner 68, a gap of
 // 3 degrees between segments, each inset by 5 and rounded by a stroke of its own colour.
 (() => {
   const NS = 'http://www.w3.org/2000/svg';
