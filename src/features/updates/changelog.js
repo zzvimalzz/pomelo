@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Reads CHANGELOG.md (the copy shipped with the app) into releases for the release history in Settings.
+// The changelog is written for developers; the history keeps only each item's headline and leaves out the Internal section.
 const fs = require('fs');
 
-// An item is "**Title.** text" or plain text. The bold lead becomes the title.
-function item(raw) {
-  const m = /^\*\*(.+?)\*\*(.*)$/.exec(raw);
-  if (!m) return { title: '', text: raw };
-  return { title: m[1].replace(/[.:\s]+$/, ''), text: m[2].replace(/^[:.\s]+/, '') };
+// An item is "**Headline.** detail". Without a bold lead its first sentence is the headline.
+function headline(raw) {
+  const lead = /^\*\*(.+?)\*\*/.exec(raw);
+  return (lead ? lead[1] : raw.split(/(?<=[.!?])\s/)[0]).replace(/[.:\s]+$/, '');
 }
 
-// -> [{ version, date, sections: [{ name, items: [{ title, text }] }] }], newest first as in the file. Unreleased is left out.
+// -> [{ version, date, sections: [{ name, items: [headline] }] }], newest first as in the file. Unreleased is left out.
 function parseChangelog(text) {
   const releases = [];
   let release = null;
@@ -32,7 +32,9 @@ function parseChangelog(text) {
       section.raw[section.raw.length - 1] += ` ${line.trim()}`;
     }
   }
-  return releases.map((r) => ({ ...r, sections: r.sections.map((s) => ({ name: s.name, items: s.raw.map(item) })).filter((s) => s.items.length) }));
+  return releases
+    .map((r) => ({ ...r, sections: r.sections.filter((s) => s.raw.length && !/^internal$/i.test(s.name)).map((s) => ({ name: s.name, items: s.raw.map(headline) })) }))
+    .filter((r) => r.sections.length);
 }
 
 // A missing or unreadable file gives an empty history, never an error.

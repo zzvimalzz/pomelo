@@ -162,10 +162,9 @@ small.note { color: var(--accent); }
 .kind h3.changed::before { background: var(--accent); }
 .kind h3.fixed::before { background: #e0a030; }
 .kind h3.removed::before { background: var(--err); }
-.kind ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; }
-.kind li { display: grid; gap: 2px; line-height: 1.5; }
-.kind li span { color: var(--muted); font-size: 12.5px; }
-.kind li span:only-child { color: var(--txt); font-size: 13px; }
+.kind ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
+.kind li { padding-left: 15px; position: relative; font-size: 13px; line-height: 1.5; }
+.kind li::before { content: ""; position: absolute; left: 3px; top: 8px; width: 4px; height: 4px; border-radius: 50%; background: var(--muted); opacity: .7; }
 .kind code { padding: 1px 5px; border-radius: 5px; background: var(--off); font: 12px Consolas, "Cascadia Mono", monospace; }
 
 .about { display: flex; align-items: center; gap: 16px; padding: 0 0 22px; }

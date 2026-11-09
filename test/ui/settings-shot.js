@@ -33,10 +33,10 @@ const COMPOSITOR = new Set(['offset', 'computedOffset', 'easing', 'composite', '
 
 const HISTORY = [
   { version: '0.1.0', date: '09-11-2026', sections: [
-    { name: 'Added', items: [{ title: 'A new look', text: 'Settings has a **sidebar**, with `Ctrl+F` for search. See [the guide](https://example.com).' }, { title: '', text: 'A plain item with no title <b>x</b>.' }] },
-    { name: 'Fixed', items: [{ title: 'A crash', text: 'It no longer happens.' }] },
+    { name: 'Added', items: ['A sidebar, with `Ctrl+F` for search', 'Markup such as <b>x</b> is shown as text'] },
+    { name: 'Fixed', items: ['A crash'] },
   ] },
-  { version: '0.0.9', date: '03-11-2026', sections: [{ name: 'Changed', items: [{ title: 'Older change', text: 'Described here.' }] }] },
+  { version: '0.0.9', date: '03-11-2026', sections: [{ name: 'Changed', items: ['Older change'] }] },
 ];
 let current = scenarios['all-ready'];
 let nextUpdate = { state: 'unconfigured', current: '0.1.0' };
@@ -307,14 +307,14 @@ app.whenReady().then(async () => {
     await sleep(400);
     const h = await js(win, `({ heading: document.querySelector('#history h2').textContent, cards: [...document.querySelectorAll('.release')].map((r) => r.querySelector('.ver').textContent + ':' + r.open).join(),
       when: document.querySelector('.release .when').textContent, installed: [...document.querySelectorAll('.release')].map((r) => !!r.querySelector('.chip')).join(),
-      kinds: [...document.querySelectorAll('.release:first-child .kind h3')].map((k) => k.textContent).join(), titles: [...document.querySelectorAll('.release:first-child li > b')].map((b) => b.textContent).join(),
-      bold: document.querySelectorAll('.release:first-child li span b').length, code: document.querySelector('.release:first-child li span code')?.textContent, link: document.querySelectorAll('#history a').length,
-      raw: document.querySelectorAll('.release:first-child li span b')[1]?.textContent, plain: getComputedStyle(document.querySelectorAll('.release:first-child li span')[1]).color === getComputedStyle(document.body).color })`);
+      kinds: [...document.querySelectorAll('.release:first-child .kind h3')].map((k) => k.textContent).join(), items: [...document.querySelectorAll('.release:first-child li')].map((li) => li.textContent).join('|'),
+      code: document.querySelector('.release:first-child li code')?.textContent, markup: document.querySelectorAll('.release:first-child li b').length, subtext: document.querySelectorAll('.release li span, .release li small, .release li p').length,
+      plain: getComputedStyle(document.querySelector('.release:first-child li')).color === getComputedStyle(document.body).color })`);
     check('newest release first and open, the older one folded, with its date written out', h.heading === 'Release history' && h.cards === '0.1.0:true,0.0.9:false' && h.when === '9 Nov 2026', JSON.stringify(h));
     check('the installed version is marked, and only that one', h.installed === 'true,false', h.installed);
-    check('changes are grouped by kind, each item a bold title over its text', h.kinds === 'Added,Fixed' && h.titles === 'A new look,A crash', JSON.stringify(h));
-    check('bold and code in the text are drawn, links keep only their words, other markup is shown as text', h.bold === 1 && h.code === 'Ctrl+F' && h.link === 0 && h.raw === undefined, JSON.stringify(h));
-    check('an item without a title is full-strength text', h.plain);
+    check('changes are grouped by kind and each is one line, with no subtext', h.kinds === 'Added,Fixed' && h.items === 'A sidebar, with Ctrl+F for search|Markup such as <b>x</b> is shown as text|A crash' && h.subtext === 0, JSON.stringify(h));
+    check('code in a headline is drawn, other markup is shown as text', h.code === 'Ctrl+F' && h.markup === 0, JSON.stringify(h));
+    check('a headline is full-strength text', h.plain);
     await shot(win, 'settings-updates-history.png');
     await js(win, `document.querySelectorAll('.release')[1].querySelector('summary').click()`);
     await sleep(300);

@@ -153,10 +153,10 @@ function when(date) {
   return m ? new Date(Date.UTC(+m[3], +m[2] - 1, +m[1])).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : date;
 }
 
-// One folding card per release, newest first and open, with what changed grouped as Added, Changed and so on.
+// One folding card per release, newest first and open, with the headline of each change grouped as Added, Changed and so on.
 function renderHistory(releases) {
   if (!releases.length) return;
-  const kind = (s) => `<section class="kind"><h3 class="${esc(s.name.toLowerCase())}">${esc(s.name)}</h3><ul>${s.items.map((x) => `<li>${x.title ? `<b>${inline(x.title)}</b>` : ''}<span>${inline(x.text)}</span></li>`).join('')}</ul></section>`;
+  const kind = (s) => `<section class="kind"><h3 class="${esc(s.name.toLowerCase())}">${esc(s.name)}</h3><ul>${s.items.map((x) => `<li>${inline(x)}</li>`).join('')}</ul></section>`;
   const release = (r, i) => `<details class="fold release" name="release"${i === 0 ? ' open' : ''}><summary><span class="ver">${esc(r.version)}</span>` +
     `${r.version === state.version ? '<span class="chip">Installed</span>' : ''}<span class="when">${esc(when(r.date))}</span><i class="chev" aria-hidden="true"></i></summary><div class="notes">${r.sections.map(kind).join('')}</div></details>`;
   $('#history').innerHTML = `<section class="group"><h2>Release history</h2><div class="stack">${releases.map(release).join('')}</div></section>`;

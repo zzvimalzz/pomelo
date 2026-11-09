@@ -63,7 +63,7 @@ Each feature is a folder in `src/features/<feature>/`. Its `index.js` is the onl
 3. Register it with one line in `engines/registry.js` (and in `DETECTED` if it has `detect()`). Set its place in the order, and any chain through an intermediate format, in `routing/plans.js`.
 4. Add a fixture and a content check in `test/integration/conversion/matrix.test.js`. Check the output, not just that a file exists.
 5. Run `node test/unit/conversion/routing.test.js --update` and review the snapshot diff: it should show exactly the routes you added.
-6. Update the engine table in `src/features/conversion/README.md`, and add a line to `CHANGELOG.md` under `[Unreleased]`.
+6. Update the engine table in `src/features/conversion/README.md`, and add a line to `CHANGELOG.md` under `[Unreleased]`: `- **Headline.** Detail.` The headline is what users see in the release history in Settings; the detail is for developers.
 
 ## Ground rules
 
