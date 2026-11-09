@@ -11,7 +11,7 @@ const root = path.join(__dirname, '..');
 const IGNORE = [
   /^\/(\.git|\.github|\.claude|dist|docs|test|tools|installer|site|vendor)(\/|$)/,
   /^\/(\.editorconfig|\.gitattributes|\.gitignore|\.npmrc|AGENTS\.md|CLAUDE\.md|eslint\.config\.js|package-lock\.json|Start Pomelo\.bat)$/,
-  /^\/(README|CHANGELOG|CONTRIBUTING|CLA|CODE_OF_CONDUCT|SECURITY)\.md$/,     // LICENSE and THIRD_PARTY_NOTICES.md ship
+  /^\/(README|CONTRIBUTING|CLA|CODE_OF_CONDUCT|SECURITY)\.md$/,     // LICENSE, THIRD_PARTY_NOTICES.md and CHANGELOG.md (the release history in Settings) ship
   /^\/(src|python|native)\/.*\.md$/,                                         // developer notes next to the code
   /^\/assets\/(screenshots|icon\.ico)/,
   /^\/python\/(.*\/)?__pycache__(\/|$)/,

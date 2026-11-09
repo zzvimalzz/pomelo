@@ -29,6 +29,7 @@ const SUITES = [
   { name: 'kit-and-catalog', file: 'unit/conversion/kit-and-catalog.test.js', tier: 'unit' },
   { name: 'registry', file: 'unit/conversion/registry.test.js', tier: 'unit' },
   { name: 'tray', file: 'unit/app/tray.test.js', tier: 'unit' },
+  { name: 'changelog', file: 'unit/updates/changelog.test.js', tier: 'unit' },
   { name: 'dev-tools', file: 'unit/tools/dev-tools.test.js', tier: 'unit' },
   { name: 'check-public', file: 'unit/tools/check-public.test.js', tier: 'unit' },
   { name: 'paths', file: 'unit/shared/paths.test.js', tier: 'unit' },

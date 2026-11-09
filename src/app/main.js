@@ -124,6 +124,7 @@ app.whenReady().then(async () => {
     },
     onChange: (patch) => { applySettings(); if ('autoUpdate' in patch) autoUpdate.apply(); },
     logPath: log.path,
+    history: () => updates.readChangelog(path.join(APP_ROOT, 'CHANGELOG.md')),
     describe: (name) => {
       const ext = conversion.extOf(name);
       return { ext, group: conversion.groupOf(ext), targets: conversion.targetsFor([name]).map((t) => ({ ext: t.ext, label: t.label, sub: t.sub, group: conversion.groupOf(t.ext) })) };

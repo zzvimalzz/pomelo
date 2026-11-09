@@ -112,7 +112,7 @@ const SECTIONS = [
   { id: 'general', label: 'General', icon: 'sliders', group: 'Settings', title: 'General', render: general },
   { id: 'appearance', label: 'Appearance', icon: 'palette', group: 'Settings', title: 'Appearance', render: appearance },
   { id: 'engines', label: 'Engines', icon: 'cpu', group: 'Settings', title: 'Engines', render: engines },
-  { id: 'updates', label: 'Updates', icon: 'refresh', group: 'Settings', title: 'Updates', render: updates },
+  { id: 'updates', label: 'Updates', icon: 'refresh', group: 'Settings', title: 'Updates', render: () => `<div id="updateControls">${updates()}</div><div id="history"></div>` },
   { id: 'help', label: 'How Pomelo works', icon: 'help', group: 'Help', title: 'How Pomelo works', render: () => window.pomeloHelp.page() },
   { id: 'diagnostics', label: 'Diagnostics', icon: 'activity', group: 'Advanced', title: 'Diagnostics', render: diagnostics },
   { id: 'about', label: 'About', icon: 'info', group: 'Advanced', title: 'About', render: about },
@@ -136,6 +136,30 @@ function renderPage(id) {
   if (!state) return;
   $(`#page-${id} .page-body`).innerHTML = SECTIONS.find((s) => s.id === id).render();
   sync();
+  applySearch();
+}
+
+function renderUpdates() {
+  if (!state) return;
+  $('#updateControls').innerHTML = updates();
+  sync();
+  applySearch();
+}
+
+const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`(.+?)`/g, '<code>$1</code>').replace(/\[(.+?)\]\(.+?\)/g, '$1');
+
+function when(date) {
+  const m = /^(\d+)-(\d+)-(\d+)$/.exec(date);
+  return m ? new Date(Date.UTC(+m[3], +m[2] - 1, +m[1])).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : date;
+}
+
+// One folding card per release, newest first and open, with what changed grouped as Added, Changed and so on.
+function renderHistory(releases) {
+  if (!releases.length) return;
+  const kind = (s) => `<section class="kind"><h3 class="${esc(s.name.toLowerCase())}">${esc(s.name)}</h3><ul>${s.items.map((x) => `<li>${x.title ? `<b>${inline(x.title)}</b>` : ''}<span>${inline(x.text)}</span></li>`).join('')}</ul></section>`;
+  const release = (r, i) => `<details class="fold release" name="release"${i === 0 ? ' open' : ''}><summary><span class="ver">${esc(r.version)}</span>` +
+    `${r.version === state.version ? '<span class="chip">Installed</span>' : ''}<span class="when">${esc(when(r.date))}</span><i class="chev" aria-hidden="true"></i></summary><div class="notes">${r.sections.map(kind).join('')}</div></details>`;
+  $('#history').innerHTML = `<section class="group"><h2>Release history</h2><div class="stack">${releases.map(release).join('')}</div></section>`;
   applySearch();
 }
 
@@ -165,7 +189,7 @@ function sync() {
 function applySearch() {
   const q = $('#q').value.trim().toLowerCase();
   for (const c of $$('#content .group, #content .panel')) {
-    const rows = $$('.row, .faq', c);
+    const rows = $$('.row, .faq, .release', c);
     if (!rows.length) { c.hidden = !!q && !c.textContent.toLowerCase().includes(q); continue; }
     let any = false;
     for (const r of rows) {
@@ -242,27 +266,27 @@ async function install(key) {
 
 async function checkNow() {
   update = { state: 'checking' };
-  renderPage('updates');
+  renderUpdates();
   update = await api.checkUpdates();
-  renderPage('updates');
+  renderUpdates();
 }
 
 async function updateClick() {
   if (update.state === 'available') {                       // the download starts only here, when the user presses the button
     if (!update.installable) {                              // no checksum to verify against: the browser download instead
       const r = await api.downloadUpdate(update.url);
-      if (!r.ok) { update = { state: 'error', message: r.message }; renderPage('updates'); }
+      if (!r.ok) { update = { state: 'error', message: r.message }; renderUpdates(); }
       return;
     }
     const found = update;
     update = { ...found, state: 'downloading', progress: { phase: 'download' } };
-    renderPage('updates');
+    renderUpdates();
     const r = await api.installUpdate();                    // on success Pomelo restarts itself, so this rarely returns
-    if (r.cancelled) { update = found; renderPage('updates'); return; }
-    if (!r.ok) { update = { state: 'error', message: r.message, retry: found }; renderPage('updates'); }
+    if (r.cancelled) { update = found; renderUpdates(); return; }
+    if (!r.ok) { update = { state: 'error', message: r.message, retry: found }; renderUpdates(); }
     return;
   }
-  if (update.state === 'error' && update.retry) { update = update.retry; renderPage('updates'); return; }
+  if (update.state === 'error' && update.retry) { update = update.retry; renderUpdates(); return; }
   checkNow();
 }
 
@@ -342,8 +366,8 @@ document.addEventListener('keydown', (e) => {
 $('#q').addEventListener('input', applySearch);
 window.addEventListener('blur', () => toggleOutputMenu(false, false));
 
-api.onUpdateProgress((p) => { if (update.state === 'downloading') { update = { ...update, progress: p }; renderPage('updates'); } });
-api.onUpdateFound((result) => { update = result; renderPage('updates'); });         // the automatic check found something: show the button, do not download
+api.onUpdateProgress((p) => { if (update.state === 'downloading') { update = { ...update, progress: p }; renderUpdates(); } });
+api.onUpdateFound((result) => { update = result; renderUpdates(); });         // the automatic check found something: show the button, do not download
 api.onEngineProgress((installing) => {
   if (!state || !installing) return;
   if (!installing.keys.length) { const note = $('#uninstallNote'); if (note) note.textContent = installing.note; return; }       // progress of an uninstall
@@ -361,4 +385,5 @@ api.get().then(async (s) => {
   const query = new URLSearchParams(location.search);
   openTarget(pending || { page: query.get('page') || 'general', check: query.get('check') === 'true' });
   window.pomeloHelp.start();
+  api.history().then(renderHistory);
 });

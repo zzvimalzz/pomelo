@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('settingsApi', {
   set: (patch) => ipcRenderer.invoke('settings:set', patch),
   chooseOutput: () => ipcRenderer.invoke('settings:choose-output'),
   samples: () => ipcRenderer.invoke('settings:samples'),
+  history: () => ipcRenderer.invoke('settings:history'),
   website: () => ipcRenderer.send('settings:website'),
   copy: (text) => ipcRenderer.send('app:copy', text),
   openLogs: () => ipcRenderer.send('app:open-logs'),

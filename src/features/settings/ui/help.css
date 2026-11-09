@@ -113,19 +113,11 @@ img { -webkit-user-drag: none; }
 .to { flex: none; width: 8px; height: 8px; border-right: 2px solid var(--accent); border-top: 2px solid var(--accent); rotate: 45deg; }
 
 .faq-list { display: grid; gap: 8px; margin-bottom: 18px; }
-.faq { border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: var(--lift); overflow: hidden; transition: border-color .2s; }
-.faq[open] { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-.faq summary { display: flex; align-items: center; gap: 12px; padding: 12px 14px; list-style: none; cursor: pointer; transition: background .15s; }
-.faq summary::-webkit-details-marker { display: none; }
-.faq summary:hover { background: var(--hover); }
 .faq .qa { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
 .faq .qa.q { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 .faq .qa.a { background: var(--off); color: var(--muted); margin-top: 1px; }
 .faq .qt { flex: 1; font-size: 14px; font-weight: 600; letter-spacing: -.005em; }
-.faq .chev { flex: none; width: 7px; height: 7px; margin: 0 4px 2px 2px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); rotate: -45deg; transition: rotate .2s var(--ease), margin .2s var(--ease); }
-.faq[open] .chev { rotate: 45deg; margin-bottom: 4px; }
-.faq .reply { display: flex; align-items: flex-start; gap: 12px; padding: 14px 14px 16px; border-top: 1px solid var(--line); background: var(--hover); animation: reply-in .24s var(--ease); }
-@keyframes reply-in { from { opacity: 0; translate: 0 -5px; } }
+.faq .reply { display: flex; align-items: flex-start; gap: 12px; padding: 14px 14px 16px; border-top: 1px solid var(--line); background: var(--hover); animation: fold-in .24s var(--ease); }
 .reply .text { flex: 1; display: grid; gap: 10px; line-height: 1.55; }
 .reply .text > * { margin: 0; }
 .reply .note { color: var(--muted); font-size: 12.5px; }

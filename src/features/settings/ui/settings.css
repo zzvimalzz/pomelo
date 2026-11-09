@@ -143,6 +143,31 @@ span.chip.off { background: none; border: 1px solid var(--line); color: var(--mu
 small.note { color: var(--accent); }
 .vnew { color: var(--accent); font-weight: 700; margin: 0 5px; }
 
+.stack { display: grid; gap: 8px; margin-top: 10px; }
+.fold { border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: var(--lift); overflow: hidden; transition: border-color .2s; }
+.fold[open] { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.fold summary { display: flex; align-items: center; gap: 12px; padding: 12px 14px; list-style: none; cursor: pointer; transition: background .15s; }
+.fold summary::-webkit-details-marker { display: none; }
+.fold summary:hover { background: var(--hover); }
+.fold .chev { flex: none; width: 7px; height: 7px; margin: 0 4px 2px 2px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); rotate: -45deg; transition: rotate .2s var(--ease), margin .2s var(--ease); }
+.fold[open] .chev { rotate: 45deg; margin-bottom: 4px; }
+@keyframes fold-in { from { opacity: 0; translate: 0 -5px; } }
+
+.release .ver { font-size: 14px; font-weight: 700; letter-spacing: -.005em; }
+.release .when { margin-left: auto; color: var(--muted); font-size: 12px; }
+.release .notes { display: grid; gap: 18px; padding: 16px 16px 18px; border-top: 1px solid var(--line); background: var(--hover); animation: fold-in .24s var(--ease); }
+.kind h3 { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.kind h3::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.kind h3.added::before { background: var(--ok); }
+.kind h3.changed::before { background: var(--accent); }
+.kind h3.fixed::before { background: #e0a030; }
+.kind h3.removed::before { background: var(--err); }
+.kind ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+.kind li { display: grid; gap: 2px; line-height: 1.5; }
+.kind li span { color: var(--muted); font-size: 12.5px; }
+.kind li span:only-child { color: var(--txt); font-size: 13px; }
+.kind code { padding: 1px 5px; border-radius: 5px; background: var(--off); font: 12px Consolas, "Cascadia Mono", monospace; }
+
 .about { display: flex; align-items: center; gap: 16px; padding: 0 0 22px; }
 .about img { width: 64px; height: 64px; filter: drop-shadow(0 4px 10px rgba(232, 77, 111, .3)); }
 .about h3 { font-size: 18px; letter-spacing: -.01em; }

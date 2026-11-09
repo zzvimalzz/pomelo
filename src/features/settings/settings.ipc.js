@@ -13,7 +13,8 @@ const SETTABLE = { enabled: isBool, openAtLogin: isBool, autoUpdate: isBool, the
 // store: the settings store. getState(): the rest of what the page shows ({ engines, installing, version, os, update, updated }),
 // which belongs to other parts of the app. onChange(patch): settings were changed from the page. logPath(): the debug log.
 // describe(name): what the app knows of a sample file, as { ext, group, targets: [{ ext, label, sub, group }] } (the formats it can become).
-function registerSettingsIpc({ store, getState, onChange, logPath, describe }) {
+// history(): the releases for the release history, as { version, date, sections: [{ name, items: [{ title, text }] }] }.
+function registerSettingsIpc({ store, getState, onChange, logPath, describe, history }) {
   ipcMain.handle('settings:get', () => ({ settings: store.get(), ...getState() }));
   ipcMain.handle('settings:set', (_e, patch) => {
     const safe = Object.fromEntries(Object.entries(patch && typeof patch === 'object' ? patch : {}).filter(([key, value]) => Object.hasOwn(SETTABLE, key) && SETTABLE[key](value)));
@@ -29,6 +30,7 @@ function registerSettingsIpc({ store, getState, onChange, logPath, describe }) {
     return store.get();
   });
   ipcMain.handle('settings:samples', () => ({ samples: SAMPLES.map((name) => ({ name, ...describe(name) })).filter((s) => s.targets.length) }));
+  ipcMain.handle('settings:history', () => history());
   ipcMain.on('settings:website', () => { shell.openExternal(WEBSITE); });
   ipcMain.on('app:copy', (_e, text) => clipboard.writeText(String(text)));
   ipcMain.on('app:open-logs', () => shell.showItemInFolder(logPath()));

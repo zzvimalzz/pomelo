@@ -31,6 +31,13 @@ const FORMATS = {
 };
 const COMPOSITOR = new Set(['offset', 'computedOffset', 'easing', 'composite', 'opacity', 'translate', 'scale', 'rotate', 'strokeDashoffset']);
 
+const HISTORY = [
+  { version: '0.1.0', date: '09-11-2026', sections: [
+    { name: 'Added', items: [{ title: 'A new look', text: 'Settings has a **sidebar**, with `Ctrl+F` for search. See [the guide](https://example.com).' }, { title: '', text: 'A plain item with no title <b>x</b>.' }] },
+    { name: 'Fixed', items: [{ title: 'A crash', text: 'It no longer happens.' }] },
+  ] },
+  { version: '0.0.9', date: '03-11-2026', sections: [{ name: 'Changed', items: [{ title: 'Older change', text: 'Described here.' }] }] },
+];
 let current = scenarios['all-ready'];
 let nextUpdate = { state: 'unconfigured', current: '0.1.0' };
 const downloads = [];
@@ -43,6 +50,7 @@ registerSettingsIpc({
   onChange: (patch) => { if (patch.theme) nativeTheme.themeSource = patch.theme; },
   logPath: () => path.join(out, 'debug.log'),
   describe: (name) => ({ ext: name.split('.').pop(), ...FORMATS[name.split('.').pop()] }),
+  history: () => HISTORY,
 });
 const installs = [];
 let installOutcome = { ok: true };
@@ -270,7 +278,7 @@ app.whenReady().then(async () => {
       ['update available', { state: 'available', current: '0.1.0', latest: '0.2.0', url: 'https://github.com/o/r/releases/download/v0.2.0/Pomelo-Setup-0.2.0.exe' }, (u) => /Version 0\.1\.0\s*>\s*Version 0\.2\.0/.test(u.version) && u.btn === 'Download update' && u.primary],
       ['server error', { state: 'error', current: '0.1.0', message: "Couldn't reach the update server. Check your internet connection" }, (u) => u.btn === 'Try again' && /reach the update server/.test(u.status)],
     ]) {
-      await js(win, `update = { state: 'idle' }; renderPage('updates');`);
+      await js(win, `update = { state: 'idle' }; renderUpdates();`);
       nextUpdate = update;
       await click();
       await sleep(60);
@@ -286,8 +294,34 @@ app.whenReady().then(async () => {
         check('available: Download update opens the download link', downloads[0] === update.url);
       }
     }
-    await js(win, `update = { state: 'error', message: '<b>x</b>' }; renderPage('updates');`);
-    check('text from outside is shown as text, never as markup', (await js(win, `document.querySelectorAll('#page-updates b').length`)) === 2);
+    await js(win, `update = { state: 'error', message: '<b>x</b>' }; renderUpdates();`);
+    check('text from outside is shown as text, never as markup', (await js(win, `document.querySelectorAll('#updateControls b').length`)) === 2);
+    win.close();
+    await sleep(300);
+  }
+
+  console.log('updates: the release history');
+  {
+    const win = await fresh('all-ready', 'dark');
+    await open(win, 'updates');
+    await sleep(400);
+    const h = await js(win, `({ heading: document.querySelector('#history h2').textContent, cards: [...document.querySelectorAll('.release')].map((r) => r.querySelector('.ver').textContent + ':' + r.open).join(),
+      when: document.querySelector('.release .when').textContent, installed: [...document.querySelectorAll('.release')].map((r) => !!r.querySelector('.chip')).join(),
+      kinds: [...document.querySelectorAll('.release:first-child .kind h3')].map((k) => k.textContent).join(), titles: [...document.querySelectorAll('.release:first-child li > b')].map((b) => b.textContent).join(),
+      bold: document.querySelectorAll('.release:first-child li span b').length, code: document.querySelector('.release:first-child li span code')?.textContent, link: document.querySelectorAll('#history a').length,
+      raw: document.querySelectorAll('.release:first-child li span b')[1]?.textContent, plain: getComputedStyle(document.querySelectorAll('.release:first-child li span')[1]).color === getComputedStyle(document.body).color })`);
+    check('newest release first and open, the older one folded, with its date written out', h.heading === 'Release history' && h.cards === '0.1.0:true,0.0.9:false' && h.when === '9 Nov 2026', JSON.stringify(h));
+    check('the installed version is marked, and only that one', h.installed === 'true,false', h.installed);
+    check('changes are grouped by kind, each item a bold title over its text', h.kinds === 'Added,Fixed' && h.titles === 'A new look,A crash', JSON.stringify(h));
+    check('bold and code in the text are drawn, links keep only their words, other markup is shown as text', h.bold === 1 && h.code === 'Ctrl+F' && h.link === 0 && h.raw === undefined, JSON.stringify(h));
+    check('an item without a title is full-strength text', h.plain);
+    await shot(win, 'settings-updates-history.png');
+    await js(win, `document.querySelectorAll('.release')[1].querySelector('summary').click()`);
+    await sleep(300);
+    check('opening another release closes the first', (await js(win, `[...document.querySelectorAll('.release')].map((r) => r.open).join()`)) === 'false,true');
+    await js(win, `(() => { const q = document.getElementById('q'); q.value = 'older change'; q.dispatchEvent(new Event('input')); })()`);
+    await sleep(100);
+    check('search finds a change inside a release', (await visiblePage(win)) === 'updates' && (await js(win, `[...document.querySelectorAll('.release')].filter((r) => !r.hidden).length`)) === 1);
     win.close();
     await sleep(300);
   }
@@ -360,7 +394,7 @@ app.whenReady().then(async () => {
   check('the animation is running, 480 x 270, inside the page', built.play && built.stage.join('x') === '480x270' && built.inside);
   const props = await js(win, `[...new Set(document.getAnimations().flatMap((a) => a.effect.getKeyframes().flatMap((k) => Object.keys(k))))]`);
   check(`only the compositor is asked to animate: ${props.filter((p) => !['offset', 'computedOffset', 'easing', 'composite'].includes(p)).join(', ')}`, props.every((p) => COMPOSITOR.has(p)), props.join());
-  const lengths = await js(win, `[...new Set(document.getAnimations().filter((a) => a.animationName !== 'reply-in' && a.animationName !== 'page-in').map((a) => a.effect.getTiming().duration))]`);
+  const lengths = await js(win, `[...new Set(document.getAnimations().filter((a) => a.animationName !== 'fold-in' && a.animationName !== 'page-in').map((a) => a.effect.getTiming().duration))]`);
   check('every animation of the timeline lasts the same ten seconds, so they cannot drift apart', lengths.join() === '10000', lengths.join());
   await at(0.5);
   let v = await values(['.wheelbox', '.cursor', '.tour-steps .s1']);
@@ -398,7 +432,7 @@ app.whenReady().then(async () => {
   check('and round to the document again', n.lift === 0 && n.ghost === 'Report.docx' && n.hot === 'PDF', JSON.stringify(n));
   await motion('reduce');
   await sleep(500);
-  const still = await js(win, `({ running: document.getAnimations().filter((a) => a.animationName !== 'reply-in' && a.animationName !== 'page-in').length, wheel: +getComputedStyle(document.querySelector('.wheelbox')).opacity,
+  const still = await js(win, `({ running: document.getAnimations().filter((a) => a.animationName !== 'fold-in' && a.animationName !== 'page-in').length, wheel: +getComputedStyle(document.querySelector('.wheelbox')).opacity,
     hot: +getComputedStyle(document.querySelector('.hotseg')).opacity, steps: +getComputedStyle(document.querySelector('.tour-steps .s1')).opacity })`);
   check('with reduced motion nothing moves and the wheel is shown open', still.running === 0 && still.wheel === 1 && still.hot === 1 && still.steps === 1, JSON.stringify(still));
   await shot(win, 'settings-help-reduced.png');

@@ -12,7 +12,7 @@
   const GRAB = { x: -10, y: -13 };         // where the pointer holds a file, from the middle of its icon
 
   const how = (...steps) => `<ol class="how">${steps.map((s) => `<li><span>${s}</span></li>`).join('')}</ol>`;
-  const faq = (question, answer, open = false) => `<details class="faq" name="faq"${open ? ' open' : ''}><summary><span class="qa q">Q</span><span class="qt">${question}</span><i class="chev" aria-hidden="true"></i></summary>` +
+  const faq = (question, answer, open = false) => `<details class="fold faq" name="faq"${open ? ' open' : ''}><summary><span class="qa q">Q</span><span class="qt">${question}</span><i class="chev" aria-hidden="true"></i></summary>` +
     `<div class="reply"><span class="qa a">A</span><div class="text">${answer}</div></div></details>`;
 
   const QUESTIONS = [

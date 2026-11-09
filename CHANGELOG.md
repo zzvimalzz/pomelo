@@ -4,6 +4,9 @@ All notable changes to Pomelo are listed here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added
+- **Release history.** Updates in Settings lists every release, newest first, with its date and what changed (Added, Changed, Fixed). The notes come from the changelog that ships with Pomelo, so each new version brings its own, and the version you are running is marked **Installed**. The search box finds changes inside a release too.
+
 ### Changed
 - **A new Settings window.** Settings is now one window with a sidebar (General, Appearance, Engines, Updates, How Pomelo works, Diagnostics and About) and a search box that finds any setting or question. There is no longer an Advanced button that makes the page longer, and the window keeps its size. Appearance has a card for System, Light and Dark, and Engines shows how many are ready.
 - **The guide is part of Settings.** The animation and the questions now live under **How Pomelo works**, where each question is marked Q and its answer sits on its own panel. The separate guide window and the **?** button are gone; a new install opens Settings on that page.
