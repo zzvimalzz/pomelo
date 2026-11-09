@@ -28,6 +28,8 @@ const SUITES = [
   { name: 'routing', file: 'unit/conversion/routing.test.js', tier: 'unit' },
   { name: 'kit-and-catalog', file: 'unit/conversion/kit-and-catalog.test.js', tier: 'unit' },
   { name: 'registry', file: 'unit/conversion/registry.test.js', tier: 'unit' },
+  { name: 'tray', file: 'unit/app/tray.test.js', tier: 'unit' },
+  { name: 'changelog', file: 'unit/updates/changelog.test.js', tier: 'unit' },
   { name: 'dev-tools', file: 'unit/tools/dev-tools.test.js', tier: 'unit' },
   { name: 'check-public', file: 'unit/tools/check-public.test.js', tier: 'unit' },
   { name: 'paths', file: 'unit/shared/paths.test.js', tier: 'unit' },
@@ -45,7 +47,6 @@ const SUITES = [
   { name: 'toast-shot', file: 'ui/toast-shot.js', tier: 'ui', electron: true },
   { name: 'settings-shot', file: 'ui/settings-shot.js', tier: 'ui', electron: true },
   { name: 'downloader-shot', file: 'ui/downloader-shot.js', tier: 'ui', electron: true },
-  { name: 'guide-shot', file: 'ui/guide-shot.js', tier: 'ui', electron: true },
 ];
 const DEFAULT_TIMEOUT = 120;
 

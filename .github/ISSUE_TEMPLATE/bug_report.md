@@ -18,7 +18,7 @@ labels: bug
 - Pomelo version (Settings > Updates):
 - Windows version:
 - File type and size:
-- Optional engines installed (Settings > Advanced): LibreOffice / Pandoc / PDF fidelity / FFmpeg
+- Optional engines installed (Settings > Engines): LibreOffice / Pandoc / PDF fidelity / FFmpeg
 
 **Log**
-Settings > Advanced > **Open log**, then paste the last lines around the problem. Please remove anything private first.
+Settings > Diagnostics > **Open log**, then paste the last lines around the problem. Please remove anything private first.

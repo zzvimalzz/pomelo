@@ -6,104 +6,37 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pomelo</title>
   <link rel="stylesheet" href="../../../ui-shared/tokens.css">
+  <link rel="stylesheet" href="../../../ui-shared/wheel-look.css">
+  <link rel="stylesheet" href="../../../ui-shared/wheel-icons.css">
   <link rel="stylesheet" href="settings.css">
+  <link rel="stylesheet" href="help.css">
 </head>
 <body>
-  <main id="app">
-    <!-- Everyday view -->
-    <header class="hero">
-      <img class="logo" src="logo.png" width="46" height="46" alt="">
-      <div class="titles">
-        <div class="titleline"><h1>Pomelo</h1><button id="help" class="help" aria-label="How Pomelo works" title="How Pomelo works">?</button></div>
-        <p class="muted">Open-source file converter</p>
-      </div>
-      <span class="status" id="status"><i></i><span id="statusText">Running</span></span>
+  <div class="window">
+    <header class="titlebar">
+      <div class="brand"><img src="logo.png" width="22" height="22" alt=""><span>Pomelo</span></div>
+      <label class="search">
+        <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="q" type="search" placeholder="Search settings" aria-label="Search settings" autocomplete="off">
+      </label>
+      <div class="controls" aria-hidden="true"></div>
     </header>
-
-    <section class="card steps" aria-label="How it works">
-      <div class="step"><span class="n">1</span><span><b>Drag</b> a file</span></div>
-      <div class="step"><span class="n">2</span><span>Tap <kbd>Ctrl</kbd></span></div>
-      <div class="step"><span class="n">3</span><span><b>Drop</b> on a format</span></div>
-    </section>
-
-    <section class="card">
-      <h2>Preferences</h2>
-      <label class="row">
-        <span class="label"><b>Enabled</b></span>
-        <input type="checkbox" id="enabled" class="switch">
-      </label>
-      <label class="row">
-        <span class="label"><b>Start with Windows</b></span>
-        <input type="checkbox" id="openAtLogin" class="switch">
-      </label>
-      <div class="row">
-        <span class="label"><b>Save conversions to</b><small id="outputNote" hidden></small></span>
-        <span class="dd">
-          <button type="button" id="output" class="dd-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="Save conversions to"><span id="outputText"></span></button>
-          <ul id="outputMenu" class="dd-menu" role="listbox" aria-label="Save conversions to" hidden></ul>
-        </span>
-      </div>
-      <div class="row">
-        <span class="label"><b>Appearance</b></span>
-        <div class="seg" id="theme" role="radiogroup" aria-label="Appearance">
-          <button data-theme="system" role="radio">System</button><button data-theme="light" role="radio">Light</button><button data-theme="dark" role="radio">Dark</button>
+    <div class="body">
+      <aside class="side">
+        <nav id="nav" aria-label="Settings sections"></nav>
+        <div class="side-foot">
+          <span class="pill" id="pill"></span>
+          <span class="muted" id="ver"></span>
         </div>
-      </div>
-    </section>
-
-    <section class="card" id="updates" aria-live="polite">
-      <div class="row">
-        <span class="label">
-          <b>Updates</b>
-          <small id="versionLine">Version</small>
-          <small id="updateStatus" hidden></small>
-        </span>
-        <button id="updateBtn" class="btn">Check for updates</button>
-      </div>
-      <label class="row">
-        <span class="label"><b>Check automatically</b></span>
-        <input type="checkbox" id="autoUpdate" class="switch">
-      </label>
-    </section>
-
-    <!-- For people who want to look under the hood -->
-    <div id="advanced" hidden>
-      <details class="card" id="enginesBox">
-        <summary class="cardhead"><h2>Conversion engines</h2><span id="engineSummary" class="sum">checking…</span><span class="chev" aria-hidden="true"></span></summary>
-        <div id="engines"></div>
-      </details>
-
-      <section class="card">
-        <h2>Diagnostics</h2>
-        <div class="row">
-          <span class="label"><b>Log file</b><small>What Pomelo did and why something failed</small></span>
-          <button id="logs" class="btn">Open log</button>
-        </div>
-        <div class="row">
-          <span class="label"><b>Support info</b><small>Version, Windows and engine paths, ready to paste</small></span>
-          <button id="diag" class="btn">Copy</button>
-        </div>
-        <div class="row">
-          <span class="label"><b>Source code and licences</b><small>Pomelo is free software under the GNU AGPL</small></span>
-          <a class="btn" href="https://github.com/zzvimalzz/pomelo#licence" target="_blank" rel="noopener">Open</a>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2>Remove Pomelo</h2>
-        <div class="row">
-          <span class="label"><b>Uninstall</b><small id="uninstallNote">Removes Pomelo, its settings and the engines it installed</small></span>
-          <button id="uninstall" class="btn danger">Uninstall</button>
-        </div>
-      </section>
+      </aside>
+      <main class="content" id="content"></main>
     </div>
-
-    <footer>
-      <span class="muted">Closing this window keeps Pomelo running in the tray.</span>
-      <button id="advToggle" class="ghost" aria-expanded="false">Advanced</button>
-    </footer>
-  </main>
+  </div>
   <script src="../../../ui-shared/dom.js"></script>
+  <script src="../../../ui-shared/wheel-shapes.js"></script>
+  <script src="../../../ui-shared/wheel-glyphs.js"></script>
+  <script src="../../../ui-shared/wheel-icons.js"></script>
+  <script src="help.js"></script>
   <script src="settings.js"></script>
 </body>
 </html>

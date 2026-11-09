@@ -36,7 +36,7 @@
 2. **Tap Ctrl** while dragging. A wheel of formats opens at the cursor.
 3. **Drop** on a segment. The converted copy is saved next to the original, or in the folder you chose in the **Save conversions to** dropdown in Settings. Your original is never changed.
 
-Prefer a menu? Right-click a file and choose **Convert with Pomelo** (on Windows 11 it is under **Show more options**), then click a format. Pomelo adds that entry for your user account when it starts, and removes it when you uninstall. The **?** button next to the name in Settings opens a short guide with an animation of the gesture and a few questions.
+Prefer a menu? Right-click a file and choose **Convert with Pomelo** (on Windows 11 it is under **Show more options**), then click a format. Pomelo adds that entry for your user account when it starts, and removes it when you uninstall. **How Pomelo works** in Settings shows an animation of the gesture and answers a few common questions.
 
 Esc cancels. The appearance (System, Light or Dark) can be changed in Settings. Progress and results show in small toasts in the bottom-right corner, never over your work. Click a finished toast to show the file, or the ✕ in a progress ring to cancel (partial files are deleted).
 
@@ -55,7 +55,7 @@ Esc cancels. The appearance (System, Light or Dark) can be changed in Settings. 
     <td align="center" colspan="2">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/settings-dark.png">
-        <img src="assets/screenshots/settings-light.png" alt="The Pomelo settings window" width="360">
+        <img src="assets/screenshots/settings-light.png" alt="The Pomelo settings window" width="560">
       </picture>
       <br><sub>Settings can follow your Windows theme or stay light or dark. Pomelo lives in the tray</sub>
     </td>
@@ -70,7 +70,7 @@ Download **Pomelo-Setup-x64.exe** from the [latest release](https://github.com/z
 2. **Conversion engines.** Optional extras: editable PDF to Word, reading scanned PDFs (OCR), Office, Markdown and HEIC conversion. They are downloaded during setup with a progress bar. Pomelo works without them, and you can add or remove them later in Settings.
 3. **Shortcuts.** A desktop shortcut and "Start Pomelo with Windows", then **Install**.
 
-Every release lists the SHA-256 checksum of the installer. Early releases may not be code-signed yet, in which case Windows SmartScreen can show "Windows protected your PC": check the checksum, then choose **More info > Run anyway**. Uninstall from Windows Settings > Apps, or from Pomelo's own Settings > Advanced. Both remove only what Pomelo installed.
+Every release lists the SHA-256 checksum of the installer. Early releases may not be code-signed yet, in which case Windows SmartScreen can show "Windows protected your PC": check the checksum, then choose **More info > Run anyway**. Uninstall from Windows Settings > Apps, or from Pomelo's own Settings > About. Both remove only what Pomelo installed.
 
 Prefer to build it yourself? See [Build from source](#build-from-source).
 
@@ -108,7 +108,7 @@ Found a vulnerability? Please report it privately, see [SECURITY.md](SECURITY.md
 
 ## Optional engines
 
-Pomelo works out of the box for images, video, audio, archives, subtitles, EPUB, Markdown/HTML/TXT, CSV/XLSX and basic DOCX/PDF. Optional engines add fidelity. Open **Settings > Advanced** and click **Conversion engines** to open the list: anything not installed shows an **Install** button. The PDF engine, OCR and HEIC export share one private Python environment in `%LOCALAPPDATA%\Pomelo\engines`. LibreOffice is the official download, unpacked into that same folder (about 1 GB, no administrator permission, no extra shortcuts), and Pandoc comes from winget. Pomelo remembers what it installed, so **Uninstall** removes only that. Engines you installed yourself are detected automatically (PATH, standard install folders, or a `vendor/` folder) and never removed.
+Pomelo works out of the box for images, video, audio, archives, subtitles, EPUB, Markdown/HTML/TXT, CSV/XLSX and basic DOCX/PDF. Optional engines add fidelity. Open **Settings > Engines**: anything not installed shows an **Install** button. The PDF engine, OCR and HEIC export share one private Python environment in `%LOCALAPPDATA%\Pomelo\engines`. LibreOffice is the official download, unpacked into that same folder (about 1 GB, no administrator permission, no extra shortcuts), and Pandoc comes from winget. Pomelo remembers what it installed, so **Uninstall** removes only that. Engines you installed yourself are detected automatically (PATH, standard install folders, or a `vendor/` folder) and never removed.
 
 <details>
 <summary>Install the engines from a terminal</summary>
@@ -143,7 +143,7 @@ Engine order per conversion lives in `src/features/conversion/routing/plans.js`;
 
 ## Updates
 
-Settings shows your version, a **Check for updates** button and a **Check automatically** switch. If a newer version exists the button becomes **Download update** (with **Check automatically** on, a toast tells you and opens Settings when clicked). A small **Pomelo Downloader** window then shows the stage and the percentage while Pomelo downloads the installer from the latest [GitHub release](https://github.com/zzvimalzz/pomelo/releases) itself, checks it against the SHA-256 published with the release, installs it quietly over the current copy and starts again: no browser, no installer window. You can minimise the window; **Cancel** stops the download. Windows cannot replace a running program, so Pomelo closes for a few seconds while the files are swapped and reopens by itself (with Settings open again if it was). If the update adds an engine to the PDF components you already have, such as OCR, Pomelo adds it automatically. A download that does not match its checksum is discarded and nothing is installed. Your settings and engines are untouched. If a release has no checksum, or you run Pomelo from source, the button opens the download page instead. Forks can point it at their own releases in `package.json`:
+Settings shows your version, a **Check for updates** button and a **Check automatically** switch. Below them, **Release history** lists the main changes of every version, read from the changelog that ships with Pomelo. If a newer version exists the button becomes **Download update** (with **Check automatically** on, a toast tells you and opens Settings when clicked). A small **Pomelo Downloader** window then shows the stage and the percentage while Pomelo downloads the installer from the latest [GitHub release](https://github.com/zzvimalzz/pomelo/releases) itself, checks it against the SHA-256 published with the release, installs it quietly over the current copy and starts again: no browser, no installer window. You can minimise the window; **Cancel** stops the download. Windows cannot replace a running program, so Pomelo closes for a few seconds while the files are swapped and reopens by itself (with Settings open again if it was). If the update adds an engine to the PDF components you already have, such as OCR, Pomelo adds it automatically. A download that does not match its checksum is discarded and nothing is installed. Your settings and engines are untouched. If a release has no checksum, or you run Pomelo from source, the button opens the download page instead. Forks can point it at their own releases in `package.json`:
 
 ```json
 "pomelo": { "updateRepo": "owner/name" }

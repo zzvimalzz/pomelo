@@ -16,7 +16,7 @@ Drag a file, tap a key, drop it on a format. This feature reads the mouse and ke
 | `input-helper.js` | Client of the native helper |
 | `trigger.js` | The gesture state machine |
 | `wheel.window.js`, `wheel.ipc.js` | The wheel window and its messages |
-| `ui/` | `wheel.html`, `wheel.css`, `wheel.js`, `preload.js`. The segment geometry, the segment look and the file icons are in `src/ui-shared`, because the guide's animation draws the same wheel |
+| `ui/` | `wheel.html`, `wheel.css`, `wheel.js`, `preload.js`. The segment geometry, the segment look and the file icons are in `src/ui-shared`, because the Help page's animation draws the same wheel |
 
 ## Contracts
 
