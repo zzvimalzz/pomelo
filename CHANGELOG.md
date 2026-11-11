@@ -15,6 +15,7 @@ Every entry starts with a bold headline, then the detail. The release history in
 - **A fuller tray menu.** It shows whether Pomelo is running or paused and has switches for Enabled and Start with Windows, then Settings, How Pomelo works (opens that page), Check for updates (opens Updates and checks) and Quit. The tray icon turns grey while Pomelo is paused, and the update toast now opens Settings on Updates.
 
 ### Internal
+- **Check PDF to Word with Microsoft Word.** `node test/fidelity/run.js --word` prints each converted DOCX with Microsoft Word and reports pages, recall, order and visual similarity against the original, with a 120 s limit per file and a Word of its own for every file. `compare.py --docx-words` counts how many source words the DOCX holds, treating tabs as spaces, and runs without Word. `--out` moves the results out of `test/fidelity/out`.
 - **Settings accepts only known values.** `settings:set` keeps `enabled`, `openAtLogin` and `autoUpdate` (booleans), `theme` (`system`, `light` or `dark`) and `outputDir` only as `''`; anything else in a patch, including the update checker's keys, is dropped.
 - **Packaging ships the changelog.** `tools/package.js` no longer excludes `CHANGELOG.md`.
 

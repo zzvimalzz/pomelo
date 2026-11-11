@@ -93,7 +93,29 @@ const read = async (docx) => {
   d = await read(docx);
   expect('all the text is there', !missingFrom(d.text, WANTED).length, missingFrom(d.text, WANTED).join(' | '));
   expect('it is editable: no frames', !/<w:framePr /.test(d.xml));
+  const wordCheck = (pdf, file) => JSON.parse(execFileSync(engines.pdf, ['-I', '-W', 'ignore', path.join(__dirname, '../../fidelity/compare.py'), '--docx-words', pdf, file], { encoding: 'utf8', windowsHide: true }));
+  expect('the fidelity word check finds the words of the converted page', wordCheck(path.join(dir, 'plain.pdf'), docx).recall >= 0.97);
   fs.rmSync(docx);
+
+  console.log('the fidelity word check on a hand-made DOCX');
+  {
+    const tiny = path.join(dir, 'tiny.pdf');
+    execFileSync(engines.pdf, ['-W', 'ignore', '-c', 'import sys, pymupdf; d = pymupdf.open(); d.new_page().insert_text((50, 50), "Region Today Target"); d.save(sys.argv[1])', tiny], { windowsHide: true });
+    const build = async (name, parts) => {
+      const zip = new JSZip();
+      for (const [part, body] of Object.entries(parts)) zip.file(`word/${part}.xml`, `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p>${body}</w:p></w:body></w:document>`);
+      const file = path.join(dir, `${name}.docx`);
+      fs.writeFileSync(file, await zip.generateAsync({ type: 'nodebuffer' }));
+      return file;
+    };
+    const split = '<w:r><w:t>Reg</w:t></w:r><w:r><w:t>ion</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>Today</w:t><w:tab/></w:r>';
+    const joined = wordCheck(tiny, await build('tabs', { document: `${split}<w:r><w:t>Target</w:t></w:r>` }));
+    expect('words split over runs and separated by tabs all count', joined.recall === 1 && !joined.missing.length, JSON.stringify(joined));
+    const footer = wordCheck(tiny, await build('footer', { document: split, footer1: '<w:r><w:t>Target</w:t></w:r>' }));
+    expect('a word in a footer counts', footer.recall === 1, JSON.stringify(footer));
+    const lost = wordCheck(tiny, await build('lost', { document: split }));
+    expect('a word that is missing is named', lost.missing.join() === 'target' && lost.recall < 1, JSON.stringify(lost));
+  }
 
   console.log('speed: 40 pages of plain text');
   {

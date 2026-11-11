@@ -44,6 +44,14 @@ The files sit in `unit/<feature>/`, `integration/<area>/` and `ui/`, next to the
 
 `test/fidelity/` scores PDF to Word conversions: `npm run fidelity:samples` draws the sample PDFs, `npm run test:fidelity` converts them, prints the DOCX back to PDF with LibreOffice and compares. `npm run test:fidelity:formats` does the same for the other output formats. `baseline.json` holds the per-sample scores of the last known good state. Needs LibreOffice and the PDF engine.
 
+LibreOffice lays pages out differently from Word. `node test/fidelity/run.js --word [files or folders]` prints each DOCX with Microsoft Word instead (`word-print.ps1`, through COM) and compares the PDF Word makes with the original. Per file it reports the page count, how many pages keep their size, **recall** (the share of the source words that Word prints), **order** (how alike the word sequences are), **visual** (1 minus the mean grey difference per page at 36 dpi) and **xml** (the share of the source words found in the DOCX itself, so lost text shows up without Word). Without Word it prints `skip`. Notes:
+
+- Each file gets its own Word with a limit of 120 s. A file that runs over is reported and the batch carries on; only the Word process the script started is stopped, never one you have open. If a Word of yours is already running, leave it as it is.
+- `--out <folder>` keeps the converted files, the printed PDFs and the page images in a folder of your choice instead of `test/fidelity/out`.
+- A source PDF with no text layer (a scan) has no recall or order; the other columns still apply.
+- If Word shows "Recovered" documents when it starts, open it by hand once, close each with **Don't Save** and quit before running again.
+- `python test/fidelity/compare.py --docx-words <original.pdf> <converted.docx>` runs the xml check alone.
+
 ## Things that trip people up
 
 - Some editors set `ELECTRON_RUN_AS_NODE=1`, which makes Electron behave as Node. `run.js` removes it for the Electron suites; do it yourself when starting one by hand.
