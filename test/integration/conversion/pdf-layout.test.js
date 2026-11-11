@@ -16,7 +16,7 @@ const tmp = require('../../support/tmp');
 
 // argv: out.pdf, then what to draw
 const MAKE_PDF = `
-import sys, pymupdf
+import os, sys, pymupdf
 doc = pymupdf.open()
 kind = sys.argv[2]
 if kind == "text":                                  # many pages of nothing but text: the case that used to take seconds a page
@@ -80,6 +80,54 @@ if kind == "foot":                                  # a wide photo at the foot o
             pix.set_pixel(xx, yy, (20 + xx * 3, 60 + yy * 4, 120))
     page.insert_image(pymupdf.Rect(60, 700, 535, 800), pixmap=pix, keep_proportion=False)
     page.insert_text((60, 815), "Caption of the photo", fontname="helv", fontsize=8)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "footer":                                # body text, and a footer near the bottom edge
+    page = doc.new_page(width=595, height=842)
+    for i in range(4):
+        page.insert_text((60, 100 + i * 16), "Body line %d of the page" % (i + 1), fontname="helv", fontsize=11)
+    page.insert_text((60, 815), "Footer of the page 1 / 2", fontname="helv", fontsize=8)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "columns":                               # two justified columns, the right one reaching the right edge of its cell
+    page = doc.new_page(width=595, height=842)
+    text = "Every request is read by two people before the panel decides whether a meeting will be needed for it, and the applicant hears from the office within a week of the decision. "
+    page.insert_textbox(pymupdf.Rect(60, 100, 280, 200), text, fontname="helv", fontsize=10, align=3)
+    page.insert_textbox(pymupdf.Rect(320, 107, 535, 207), text, fontname="helv", fontsize=10, align=3)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "chart":                                 # a picture that two gridlines cross, with labels at the left
+    page = doc.new_page(width=595, height=842)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 30), False)
+    for yy in range(30):
+        for xx in range(60):
+            pix.set_pixel(xx, yy, (20 + xx * 3, 60 + yy * 4, 120))
+    page.insert_image(pymupdf.Rect(100, 100, 400, 250), pixmap=pix, keep_proportion=False)
+    for y, label in ((120, "96"), (190, "48")):
+        page.draw_line((60, y), (535, y), color=(0.8, 0.8, 0.8), width=0.5)
+        page.insert_text((62, y - 3), label, fontname="helv", fontsize=9)
+    page.insert_text((60, 300), "Revenue by quarter", fontname="helv", fontsize=10)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "beside":                                # a photo with text wrapped round it
+    page = doc.new_page(width=595, height=842)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 40), False)
+    for yy in range(40):
+        for xx in range(40):
+            pix.set_pixel(xx, yy, (20 + xx * 3, 60 + yy * 3, 120))
+    page.insert_image(pymupdf.Rect(60, 100, 160, 200), pixmap=pix)
+    for i in range(6):
+        page.insert_text((165, 110 + i * 15), "Text wrapped round the photo, line %d" % (i + 1), fontname="helv", fontsize=10)
+    for i in range(3):
+        page.insert_text((60, 225 + i * 15), "Text below the photo runs the full width of the column, line %d" % (i + 1), fontname="helv", fontsize=10)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "tall":                                  # a shaded panel more than half a page high
+    page = doc.new_page(width=595, height=842)
+    page.draw_rect(pymupdf.Rect(50, 100, 545, 600), color=(0.6, 0.6, 0.6), fill=(0.95, 0.95, 0.9))
+    for i in range(3):
+        page.insert_text((70, 130 + i * 20), "Text inside the panel, line %d" % (i + 1), fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "unknownfont":                           # a font Windows does not have
+    page = doc.new_page(width=595, height=842)
+    buf = open(os.path.join(os.environ.get("WINDIR", "C:/Windows"), "Fonts", "arial.ttf"), "rb").read()
+    page.insert_font(fontname="PomeloNoSuchSans", fontbuffer=buf)
+    page.insert_text((60, 100), "Set in a font that is not installed", fontname="PomeloNoSuchSans", fontsize=12)
     doc.save(sys.argv[1]); sys.exit()
 if kind == "circle":                                # a wide photo cropped to a circle
     page = doc.new_page(width=595, height=842)
@@ -169,7 +217,7 @@ const read = async (docx) => {
   expect('the link points where it did', /Target="mailto:team@example\.com"/.test(d.rels));
   expect('a hyperlink is a child of its paragraph, never of a run', !/<w:r>(?:(?!<\/w:r>).)*<w:hyperlink/s.test(d.xml));
   expect('the bullet is a real list item', /<w:numPr>/.test(d.xml));
-  expect('no table row clips its text (no exact row height)', !/<w:trHeight [^>]*w:hRule="exact"/.test(d.xml));
+  expect('no table row clips its text (no exact row height), and a short row stays whole on a sheet', !/<w:trHeight [^>]*w:hRule="exact"/.test(d.xml) && /<w:cantSplit\/>/.test(d.xml));
   expect('the page is the same size (595 x 842 pt)', /w:pgSz w:w="11900" w:h="16840"/.test(d.xml));
   fs.rmSync(docx);
 
@@ -248,6 +296,48 @@ const read = async (docx) => {
   d = await read(docx);
   expect('the photo is placed on the page, so a taller paragraph above cannot push it to the next sheet', /<wp:anchor /.test(d.xml) && !/<wp:inline /.test(d.xml), (d.xml.match(/<wp:(anchor|inline)/) || [''])[0]);
   expect('so is the caption under it, still text', /<w:framePr [^>]*\/>[^]*?Caption of the photo/.test(d.xml), d.text);
+  fs.rmSync(docx);
+
+  console.log('a footer near the bottom edge');
+  [docx] = await convert.convertFile(draw('footer', 'footer'), 'docx');
+  d = await read(docx);
+  expect('the footer is placed at its position on the sheet, so taller text above cannot push it onto a new sheet', /<w:framePr [^>]*w:vAnchor="page"[^>]*\/>(?:(?!<\/w:p>).)*Footer of the page/s.test(d.xml), d.text);
+  expect('the body text is ordinary paragraphs', !/<w:framePr [^>]*\/>(?:(?!<\/w:p>).)*Body line 1/s.test(d.xml) && d.text.includes('Body line 4'));
+  fs.rmSync(docx);
+
+  console.log('two columns, the right one reaching the edge of its cell');
+  [docx] = await convert.convertFile(draw('columns', 'columns'), 'docx');
+  d = await read(docx);
+  const cells = d.xml.match(/<w:tc>.*?<\/w:tc>/gs) || [];
+  expect('the columns are table cells', cells.length === 2, `${cells.length} cells`);
+  expect('a line that fills its cell to the edge is set a little narrower, so a rounding in Word cannot wrap it', cells.length === 2 && /<w:spacing w:val="-1"\/>/.test(cells[1]) && !/w:right="-/.test(cells[1]), (cells[1] || '').slice(0, 300));
+  fs.rmSync(docx);
+
+  console.log('a picture that gridlines cross');
+  [docx] = await convert.convertFile(draw('chart', 'chart'), 'docx');
+  d = await read(docx);
+  expect('the picture is placed on the page, so the labels do not stack under its height', /<wp:anchor /.test(d.xml) && !/<wp:inline /.test(d.xml), (d.xml.match(/<wp:(anchor|inline)/) || [''])[0]);
+  expect('the labels are still text', !missingFrom(d.text, ['96', '48', 'Revenue by quarter']).length, d.text);
+  fs.rmSync(docx);
+
+  console.log('a photo with text wrapped round it');
+  [docx] = await convert.convertFile(draw('beside', 'beside'), 'docx');
+  d = await read(docx);
+  expect('the photo is placed on the page and the text stays at its own height', /<wp:anchor /.test(d.xml) && !/<wp:inline /.test(d.xml), (d.xml.match(/<wp:(anchor|inline)/) || [''])[0]);
+  expect('all the text is there', !missingFrom(d.text, ['Text wrapped round the photo, line 6', 'Text below the photo runs the full width of the column, line 3']).length, d.text);
+  fs.rmSync(docx);
+
+  console.log('a panel more than half a page high');
+  [docx] = await convert.convertFile(draw('tall', 'tall'), 'docx');
+  d = await read(docx);
+  expect('its row may split across sheets, so Word does not clip it', !/<w:cantSplit\/>/.test(d.xml) && /<w:tbl>/.test(d.xml));
+  expect('the text inside is there', !missingFrom(d.text, ['Text inside the panel, line 1', 'Text inside the panel, line 3']).length);
+  fs.rmSync(docx);
+
+  console.log('a font that Windows does not have');
+  [docx] = await convert.convertFile(draw('unknownfont', 'unknownfont'), 'docx');
+  d = await read(docx);
+  expect('the text is set in an installed family chosen for it, not left to Word', /w:rFonts w:ascii="(Calibri|Arial|Segoe UI)"/.test(d.xml) && !/PomeloNoSuchSans/.test(d.xml), (d.xml.match(/<w:rFonts [^>]*>/) || [''])[0]);
   fs.rmSync(docx);
 
   console.log('a photo cropped to a circle');

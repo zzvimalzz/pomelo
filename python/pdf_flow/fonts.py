@@ -5,14 +5,19 @@ import re
 
 import pymupdf
 
+from pdf_fonts import installed, installed_font, installed_name, latin, norm, stand_in, word_family
+
+from .lines import is_bold, is_italic
+
 
 class FontMeter:
-    """Natural width of a string in the PDF's own font: to carry the PDF's letter-spacing over."""
+    """Which family Word draws a span in, and the natural width of a string in it."""
 
     def __init__(self, doc):
         self.doc = doc
         self.cache = {}
         self.xref = {}
+        self.families = {}
 
     def register(self, page):
         try:
@@ -36,8 +41,21 @@ class FontMeter:
             self.cache[key] = f
         return self.cache[key]
 
-    def width(self, name, text, size):
-        f = self.font(name)
+    def family(self, s):
+        """The family Word draws the span in. Text outside the Latin scripts keeps the font's own name."""
+        if not installed() or not latin(s["text"]):
+            own = word_family(s["font"]) or "Arial"
+            return installed_name(own) or own
+        key = re.sub(r"^[A-Z]{6}\+", "", s["font"])
+        if key not in self.families:
+            self.families[key] = stand_in(s["font"], s["flags"], is_bold(s), is_italic(s), self.font(s["font"]))
+        return self.families[key]
+
+    def width(self, s, text, size):
+        """Natural width in the font Word will use, or None when it cannot be measured."""
+        family = self.family(s)
+        theirs = norm(family) == norm(word_family(s["font"]) or "Arial") or not installed()
+        f = self.font(s["font"]) if theirs else installed_font(family, is_bold(s), is_italic(s))
         if f is None:
             return None
         try:

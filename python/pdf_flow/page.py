@@ -7,7 +7,7 @@ from collections import Counter
 from docx.opc.constants import RELATIONSHIP_TYPE
 import pymupdf
 
-from pdf_fonts import word_family
+from pdf_fonts import latin
 from pdf_spans import RTL, dedupe, hexcolor
 
 from .common import HI_DPI, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
@@ -411,9 +411,9 @@ def page_kind(P):
     return "document", "pictures and colour cover %d%% of the sheet" % round(share * 100)
 
 
-def span_run(page, s, justified, meter):
+def span_run(page, s, justified, meter, edge=False):
     """One <w:r>."""
-    font = esc(word_family(s["font"]) or "Arial")
+    font = esc(meter.family(s))
     size = s["size"]
     half = max(2, round(size * 2))
     rpr = f'<w:rFonts w:ascii="{font}" w:hAnsi="{font}" w:eastAsia="{font}" w:cs="{font}"/>'
@@ -425,13 +425,23 @@ def span_run(page, s, justified, meter):
         rpr += "<w:strike/>"
     rpr += f'<w:color w:val="{hexcolor(s["color"])}"/>'
     text = s["text"]
-    if not justified and len(text) >= 3:
-        nat = meter.width(s["font"], text, size)
+    spacing = 0
+    if len(text) >= 3:
+        nat = meter.width(s, text, size)
         w = s["bbox"][2] - s["bbox"][0]
         if nat:
             extra = (w - nat) / max(1, len(text) - 1)
-            if 0.35 < extra < 14 and text.count(" ") <= len(text) // 3:
-                rpr += f'<w:spacing w:val="{tw(extra)}"/>'
+            if not justified and 0.35 < extra < 14 and text.count(" ") <= len(text) // 3:
+                spacing = tw(extra)
+            elif latin(text):
+                shown = text.rstrip()
+                tight = ((w - (meter.width(s, shown, size) or w)) / max(1, len(shown) - 1))
+                if tight <= -0.05:
+                    spacing = tw(max(tight, -0.8))
+    if edge and latin(text):
+        spacing -= 1
+    if spacing:
+        rpr += f'<w:spacing w:val="{spacing}"/>'
     rpr += f'<w:sz w:val="{half}"/><w:szCs w:val="{half}"/>'
     if s.get("ul"):
         rpr += f'<w:u w:val="single" w:color="{s["ul"]}"/>'
@@ -444,12 +454,12 @@ def span_run(page, s, justified, meter):
     return f'<w:r><w:rPr>{rpr}</w:rPr><w:t xml:space="preserve">{esc(text)}</w:t></w:r>'
 
 
-def runs_xml(page, spans, justified, doc_part, meter):
+def runs_xml(page, spans, justified, doc_part, meter, edge=False):
     xml = ""
     pending_link, buf = None, ""
     for s in spans:
         link = s.get("link")
-        run = span_run(page, s, justified, meter)
+        run = span_run(page, s, justified, meter, edge)
         if link != pending_link:
             if pending_link:
                 xml += f'<w:hyperlink r:id="{doc_part.relate_to(pending_link, RELATIONSHIP_TYPE.HYPERLINK, is_external=True)}" w:history="1">{buf}</w:hyperlink>'

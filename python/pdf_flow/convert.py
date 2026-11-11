@@ -230,6 +230,9 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     for i, (o, pos, a, b, width, color, d) in enumerate(P.segments):
         if o == "h" and i not in P.used_segments and (b - a) >= 0.28 * P.w and width <= 4:
             rules.append(Rule((a, pos - width / 2, b, pos + width / 2), width, color))
+    for e in pics:
+        if any(e.y0 + 1 < (r.y0 + r.y1) / 2 < e.y1 - 1 and min(r.x1, e.x1) - max(r.x0, e.x0) >= 0.5 * (r.x1 - r.x0) for r in rules):
+            e.floating = True
     # assign lines, pictures, boxes to the smallest container that holds them
     containers = tbls + boxes
     def owner(bb):
@@ -247,6 +250,12 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     framed = [l for l in text_lines if any(overlap(l.bbox, b) >= 0.5 * area(l.bbox) for b in behind)]
     feet = [e.bbox for e in elements if e.kind == "img" and e.floating and ends_page(e.bbox)]
     framed += [l for l in text_lines if l not in framed and any(0 <= l.y0 - b[3] <= 30 and l.x0 >= b[0] - 2 and l.x1 <= b[2] + 2 for b in feet)]
+    if not turn:
+        low = [l for l in text_lines if l not in framed and l.y0 >= 0.9 * P.h and owner(l.bbox) is None]
+        above = [l.y1 for l in text_lines if l not in framed and l not in low] + [e.bbox[3] for e in elements if not getattr(e, "floating", False)]
+        # a footer sits at the foot of the sheet whatever the text above grows to, so it is placed, not set after a long gap
+        if low and (not above or min(l.y0 for l in low) - max(above) >= 24):
+            framed += low
     text_lines = [l for l in text_lines if l not in framed]
     pool = text_lines + elements + rules
     for it in pool:

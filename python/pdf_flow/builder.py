@@ -19,8 +19,24 @@ class Builder:
         self.page_x1 = None
         self.slack = 0.0
         self.turn = 0
+        self.depth = 0
         self.emitted = set()
         self.nid = 1000 + page_obj.pno * 200
+
+    def room(self, x1):
+        """The slack the page's right margin leaves to a paragraph that reaches the right edge; a table is only as wide as its columns, so a cell gets none."""
+        return self.slack if not self.depth and self.page_x1 is not None and abs(x1 - self.page_x1) < 0.01 else 0.0
+
+    def keep(self, height):
+        """A row stays whole on a sheet unless it is tall: Word clips a row that cannot split and is taller than what is left of the sheet."""
+        return "<w:cantSplit/>" if height < 0.5 * self.P.h else ""
+
+    def in_cell(self, items, x0, x1, cursor):
+        self.depth += 1
+        try:
+            return self.emit(items, x0, x1, cursor)
+        finally:
+            self.depth -= 1
 
     def v_cut(self, items, g=None):
         g = g or max(9.0, 0.85 * self.P.body)
@@ -173,8 +189,9 @@ class Builder:
             ind_right = max(0.0, x1 - right_to)
         ind_left = max(0.0, ind_left)
         ind_right = max(0.0, ind_right)
-        if self.page_x1 is not None and abs(x1 - self.page_x1) < 0.01 and (ind_right > 0 or jc != "left" or reflow):
-            ind_right += self.slack                                   # the page's right margin leaves a little room: see convert_page
+        if ind_right > 0 or jc != "left" or reflow:
+            ind_right += self.room(x1)
+        edge = bool(self.depth) and x1 - right_edge < 1.5             # a line that fills its cell wraps on any rounding in Word, and a cell clips what overhangs it, so it is set 1 twip a character narrower
         # first line / hanging indent, or a list
         num_pr = ""
         if marker:
@@ -234,7 +251,7 @@ class Builder:
                     last["text"] = t + " "
             for s_ in spans:
                 s_["bsize"] = l.size
-            body += runs_xml(self.P, spans, justified, self.doc.part, self.meter)
+            body += runs_xml(self.P, spans, justified, self.doc.part, self.meter, edge)
             if not last_line and breaks[i]:
                 body += "<w:r><w:br/></w:r>"
         return f"<w:p>{ppr}{body}</w:p>", T, B
@@ -494,7 +511,7 @@ class Builder:
         tcs = ""
         for k, (cx0, cx1, its) in enumerate(cells):
             lo, hi = edges[k], edges[k + 1]
-            inner, _ = self.emit(its, lo, hi, top)
+            inner, _ = self.in_cell(its, lo, hi, top)
             if not inner:
                 inner = self.spacer(1)
             if not inner.rstrip().endswith("</w:p>"):
@@ -515,6 +532,9 @@ class Builder:
     def leaf(self, items, x0, x1, cursor):
         xml = ""
         items = sorted(items, key=lambda i: (i.y0, i.x0))
+        for it in items:
+            if it.kind == "img" and not it.floating and sum(1 for l in items if l.kind == "line" and l.y1 > it.y0 + 2 and l.y0 < it.y1 - 2) >= 2:
+                it.floating = True
         blocks = []
         run = []
         for it in items:
@@ -536,7 +556,7 @@ class Builder:
                     self.first_top = cy - bw / 2 - 1.0
                 xml += (f'<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="{max(2, int(round(bw * 8)))}" w:space="0" w:color="{blk.color}"/></w:pBdr>'
                         f'<w:spacing w:before="{tw(before)}" w:after="0" w:line="20" w:lineRule="exact"/>'
-                        f'<w:ind w:left="{tw(max(0.0, blk.x0 - x0))}" w:right="{tw(max(0.0, x1 - blk.x1) + (self.slack if self.page_x1 is not None and abs(x1 - self.page_x1) < 0.01 else 0.0))}"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>')
+                        f'<w:ind w:left="{tw(max(0.0, blk.x0 - x0))}" w:right="{tw(max(0.0, x1 - blk.x1) + self.room(x1))}"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>')
                 cursor = cy + bw / 2
             elif blk.kind == "para":
                 part, T, B = self.para_xml(blk, x0, x1, cursor)
@@ -572,7 +592,7 @@ class Builder:
         before = 0.0 if cursor is None else max(0.0, bx.y0 - cursor)
         if cursor is None and self.first_top is None:
             self.first_top = bx.y0
-        inner, _ = self.emit(bx.children, bx.x0, bx.x1, bx.y0)
+        inner, _ = self.in_cell(bx.children, bx.x0, bx.x1, bx.y0)
         if not inner or not inner.rstrip().endswith("</w:p>"):
             inner += self.spacer(1)
         sides = {s: bx.border for s in ("top", "left", "bottom", "right")} if bx.border else {}
@@ -580,7 +600,7 @@ class Builder:
         xml = self.spacer(before)
         xml += (f'<w:tbl><w:tblPr><w:tblW w:w="{tw(bx.x1 - bx.x0)}" w:type="dxa"/><w:tblInd w:w="{tw(max(0.0, bx.x0 - x0))}" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
                 f'<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>'
-                f'<w:tblGrid><w:gridCol w:w="{tw(bx.x1 - bx.x0)}"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="{tw(bx.y1 - bx.y0)}" w:hRule="atLeast"/></w:trPr>'
+                f'<w:tblGrid><w:gridCol w:w="{tw(bx.x1 - bx.x0)}"/></w:tblGrid><w:tr><w:trPr>{self.keep(bx.y1 - bx.y0)}<w:trHeight w:val="{tw(bx.y1 - bx.y0)}" w:hRule="atLeast"/></w:trPr>'
                 f'<w:tc><w:tcPr><w:tcW w:w="{tw(bx.x1 - bx.x0)}" w:type="dxa"/>{self.border_xml(sides, bx.dashed)}{shd}</w:tcPr>{inner}</w:tc></w:tr></w:tbl>')
         xml += self.spacer(1)
         return xml, bx.y1 + 1
@@ -619,7 +639,7 @@ class Builder:
                     vm = '<w:vMerge w:val="restart"/>' if r == c["r0"] else "<w:vMerge/>"
                 if r == c["r0"]:
                     cx0, cy0, cx1, cy1 = c["bbox"]
-                    inner, _ = self.emit(c["items"], cx0, cx1, cy0)
+                    inner, _ = self.in_cell(c["items"], cx0, cx1, cy0)
                     if not inner or not inner.rstrip().endswith("</w:p>"):
                         inner += self.spacer(1)
                 else:
@@ -630,7 +650,7 @@ class Builder:
                         + '<w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tcMar>'
                         + f'</w:tcPr>{inner}</w:tc>')
                 k += span
-            rows += f'<w:tr><w:trPr><w:cantSplit/><w:trHeight w:val="{tw(ys[r + 1] - ys[r])}" w:hRule="atLeast"/></w:trPr>{tcs}</w:tr>'
+            rows += f'<w:tr><w:trPr>{self.keep(ys[r + 1] - ys[r])}<w:trHeight w:val="{tw(ys[r + 1] - ys[r])}" w:hRule="atLeast"/></w:trPr>{tcs}</w:tr>'
         tgrid = "".join(f'<w:gridCol w:w="{tw(xs[k + 1] - xs[k])}"/>' for k in range(ncol))
         xml = self.spacer(before)
         xml += (f'<w:tbl><w:tblPr><w:tblW w:w="{tw(xs[-1] - xs[0])}" w:type="dxa"/><w:tblInd w:w="{tw(max(0.0, xs[0] - x0))}" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
