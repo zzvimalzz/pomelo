@@ -390,8 +390,11 @@ class Page:
 
 
 def page_kind(P):
-    """("design" or "document", why). A design page (a slide, a menu, a brochure) has pictures or colour over much of the
-    sheet, a coloured background, or many short pieces of text scattered about; everything else is a document page."""
+    """("design" or "document", why). A design page (a slide, a menu, a brochure, a cheat sheet) has pictures or colour over
+    much of the sheet, a coloured background, a colour panel or several sections of text of its own, or many short pieces
+    of text scattered among pictures or boxes outside a table; everything else is a document page."""
+    if not P.upright:
+        return "document", "no text to place"
     cell = 8.0
     cols, rows = int(P.w // cell) + 1, int(P.h // cell) + 1
     covered = bytearray(cols * rows)
@@ -405,9 +408,17 @@ def page_kind(P):
         return "design", "a coloured background"
     if share > 0.4:
         return "design", "pictures and colour cover %d%% of the sheet" % round(share * 100)
+    held = [(b, sum(1 for l in P.upright if inside(l.bbox, b.bbox))) for b in P.box_items]
+    for b, n in held:
+        if b.fill and n >= 8 and area(b.bbox) >= 0.15 * P.w * P.h:
+            return "design", "a colour panel holding %d lines" % n
+    sections = [n for b, n in held if n >= 8]
+    if len(sections) >= 2:
+        return "design", "%d boxes holding text of their own" % len(sections)
     loose = [l for l in P.upright if not any(inside(l.bbox, t.bbox, 0.5) for t in P.tbls)]
     short = [l for l in loose if len(l.text.strip()) <= 25]
-    if len(loose) >= 15 and len(short) >= 0.6 * len(loose) and len(cluster([l.x0 for l in loose], 6)) >= 6:
+    drawn = P.imgs or P.figs or P.box_items
+    if drawn and not P.tbls and len(loose) >= 15 and len(short) >= 0.6 * len(loose) and len(cluster([l.x0 for l in loose], 6)) >= 6:
         return "design", "%d short pieces of text at %d left edges" % (len(short), len(cluster([l.x0 for l in loose], 6)))
     return "document", "pictures and colour cover %d%% of the sheet" % round(share * 100)
 
@@ -490,3 +501,11 @@ class Para:
     @property
     def x1(self):
         return max(l.x1 for l in self.lines)
+
+    @property
+    def y0(self):
+        return min(l.y0 for l in self.lines)
+
+    @property
+    def y1(self):
+        return max(l.y1 for l in self.lines)
