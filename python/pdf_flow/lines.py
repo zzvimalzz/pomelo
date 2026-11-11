@@ -91,9 +91,9 @@ def repair_tracked(page, blocks):
         s["text"] = out
 
 
-def read_lines(page):
+def read_lines(page, clip=None):
     out = []
-    blocks = page.get_text("dict", flags=TEXT_FLAGS)["blocks"]
+    blocks = page.get_text("dict", flags=TEXT_FLAGS, clip=clip)["blocks"]
     try:
         repair_tracked(page, blocks)
     except Exception:

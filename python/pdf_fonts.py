@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """PostScript font names -> the family names Word knows (Cambria-Bold -> Cambria, ArialMT -> Arial, ...)."""
 import re
+import struct
 
 KNOWN = {
     "TIMESNEWROMAN": "Times New Roman", "TIMESNEWROMANPS": "Times New Roman", "TIMESNEWROMANPSMT": "Times New Roman",
@@ -25,6 +26,7 @@ FONTS_KEY = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"
 STYLE_WORDS = re.compile(r"\s+(Bold|Italic|Oblique|Regular)\b.*$", re.I)
 _installed = None
 _files = {}
+_heights = {}
 
 
 def norm(family):
@@ -105,6 +107,37 @@ def installed_font(family, bold, italic):
         except Exception:
             _files[path] = None
     return _files[path]
+
+
+def line_height(family, bold, italic):
+    """How tall Word sets a line of an installed family, per point of size: the ascent, descent and line gap of the font's hhea table. None when the file cannot be read."""
+    styles = installed().get(norm(family), ("", {}))[1]
+    path = styles.get((bold, italic)) or styles.get((bold, False)) or styles.get((False, False))
+    if path not in _heights:
+        _heights[path] = None
+        try:
+            with open(path, "rb") as f:
+                head = f.read(12)
+                base = 0
+                if head[:4] == b"ttcf":
+                    f.seek(12)
+                    base = struct.unpack(">I", f.read(4))[0]
+                f.seek(base + 4)
+                count = struct.unpack(">H", f.read(2))[0]
+                f.seek(base + 12)
+                tables = {}
+                for _ in range(min(count, 64)):
+                    tag, _, offset, _ = struct.unpack(">4sIII", f.read(16))
+                    tables[tag] = offset
+                f.seek(tables[b"head"] + 18)
+                em = struct.unpack(">H", f.read(2))[0]
+                f.seek(tables[b"hhea"] + 4)
+                up, down, gap = struct.unpack(">hhh", f.read(6))
+                if em:
+                    _heights[path] = (up - down + gap) / em
+        except Exception:
+            pass
+    return _heights[path]
 
 
 def stand_in(font, flags, bold, italic, measured):

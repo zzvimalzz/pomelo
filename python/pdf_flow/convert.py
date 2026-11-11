@@ -20,6 +20,7 @@ from .lines import read_lines
 from .lists import Lists
 from .page import Page, page_kind
 from .shapes import Fig, Img, Rule
+from .structure import Furniture, attach, body_font, set_styles
 
 
 def body_size(all_lines):
@@ -56,23 +57,33 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None):
     # the size of ordinary text, for the whole document: headings and list detection key off it
     sample = []
     for page in list(doc)[:60]:
+        meter.register(page)
         sample += [l for l in read_lines(page) if not l.rot]
     body_pt = body_size(sample)
+    meter.hyphenated = {w.lower() for l in sample for w in re.findall(r"[^\W\d_]+-[^\W\d_]+", l.text)}
+    font = body_font(sample, body_pt, meter)
+    half = max(2, round(body_pt * 2))
+    meter.base = (font, half)
+    set_styles(out, font, half)
 
     n = len(doc)
+    furniture = Furniture(doc, turns) if n > 1 else None
+    states = []
     for pno in range(n):
         progress(0.97 * pno / max(1, n))
         page = doc[pno]
         try:
-            xml, sect = convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n, log, turn=turns.get(pno, 0))
+            xml, sect, furn = convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n, log, furniture, turn=turns.get(pno, 0))
         except Exception as e:                                         # one odd page must not lose the document: its text is kept
             log("page %d could not be rebuilt in full (%s); kept as text" % (pno + 1, e))
-            xml, sect = convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n, log, safe=True, turn=turns.get(pno, 0))
+            xml, sect, furn = convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n, log, None, safe=True, turn=turns.get(pno, 0))
+        states.append(furn)
         for el in list(parse_xml(f'<w:body {NS}>{xml}</w:body>')):
             body.insert(len(body) - 1, el)
         if pno == n - 1:
             final = body.find(qn("w:sectPr"))
             body.replace(final, parse_xml(sect))
+    attach(out, states)
     meta = doc.metadata or {}
     props = out.core_properties
     props.title = meta.get("title") or ""
@@ -89,8 +100,9 @@ def boxes_of(l):
     return out
 
 
-def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n_pages, log, safe=False, turn=0):
-    """safe: only the text, as paragraphs (what a page falls back to when something exotic in it cannot be rebuilt).
+def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n_pages, log, furniture, safe=False, turn=0):
+    """-> (the page's XML, its section's properties, the XML of its header and of its footer).
+    safe: only the text, as paragraphs (what a page falls back to when something exotic in it cannot be rebuilt).
     turn: the /Rotate of the page; it is built upright and shown turned, in a text box the size of the sheet."""
     P = Page(doc, work_all[pno], work_keep[pno], page, pno, meter, body_pt)
     P.read()
@@ -159,7 +171,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     if os.environ.get("POMELO_DEBUG"):
         sys.stderr.write("page %d: %s page (%s)\n" % (pno + 1, kind, why))
     if kind == "design" and not (safe or scan or turn):
-        return design_page(P, out, meter, lists, pno, n_pages)
+        return (*design_page(P, out, meter, lists, pno, n_pages), ("", ""))
     merged = []
     for b in P.rot_boxes:
         box = list(b)
@@ -256,6 +268,13 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     framed = [l for l in text_lines if any(overlap(l.bbox, b) >= 0.5 * area(l.bbox) for b in behind)]
     feet = [e.bbox for e in elements if e.kind == "img" and e.floating and ends_page(e.bbox)]
     framed += [l for l in text_lines if l not in framed and any(0 <= l.y0 - b[3] <= 30 and l.x0 >= b[0] - 2 and l.x1 <= b[2] + 2 for b in feet)]
+    taken = {"header": [], "footer": []}
+    if furniture and not (safe or scan or turn):
+        for l in text_lines:
+            band = None if l in framed or owner(l.bbox) is not None else furniture.take(l, pno, P.h)
+            if band:
+                taken[band].append(l)
+        text_lines = [l for l in text_lines if not any(l is t for ts in taken.values() for t in ts)]
     if not turn:
         low = [l for l in text_lines if l not in framed and l.y0 >= 0.9 * P.h and owner(l.bbox) is None]
         above = [l.y1 for l in text_lines if l not in framed and l not in low] + [e.bbox[3] for e in elements if not getattr(e, "floating", False)]
@@ -310,6 +329,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     xml, cursor = B.emit(flow, x0, x1, None)
     if framed:
         xml += B.frames(framed)
+    furn = tuple("".join(B.frames([l], 1.2 * l.size if any(sp.get("field") for sp in l.spans) else 0.0) for l in taken[k]) for k in ("header", "footer"))
     if os.environ.get("POMELO_DEBUG"):
         lost = [l for l in P.upright if not l.absorbed and id(l) not in B.emitted]
         if lost:
@@ -325,7 +345,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         floats += B.picture_xml(it, floating=True, name="Picture")
     # the pictures are anchored in the page's first paragraph: when the text runs a line over, the closing paragraph moves
     # to the next sheet, and the background would go with it. A page that starts with something else keeps them in the closing one.
-    if floats and not turned and xml.startswith("<w:p><w:pPr>") and not xml.startswith("<w:p><w:pPr><w:framePr"):
+    if floats and not turned and xml.startswith("<w:p><w:pPr>") and not re.match(r"<w:p><w:pPr>(<w:pStyle [^>]*/>)?<w:framePr", xml):
         cut = xml.index("</w:pPr>") + len("</w:pPr>")
         xml, floats = xml[:cut] + floats + xml[cut:], ""
     elif floats and not turned and xml.startswith("<w:tbl>"):
@@ -340,7 +360,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     else:
         sheet_w, sheet_h = P.w, P.h
     closing, sect = close_page(sheet_w, sheet_h, margins, floats, pno, n_pages)
-    return xml + closing, sect
+    return xml + closing, sect, furn
 
 
 def close_page(sheet_w, sheet_h, margins, floats, pno, n_pages):

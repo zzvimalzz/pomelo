@@ -246,19 +246,34 @@ def check_metrics(da, db):
 
 def docx_text(path):
     """Text of the body, headers and footers. A tab or a line break separates words like a space does; the runs of
-    one paragraph are joined as they are, because Word splits a word into runs wherever the formatting changes."""
+    one paragraph are joined as they are, because Word splits a word into runs wherever the formatting changes. A header
+    or footer counts once for every section that shows it: a section without a reference of its own shows the one before."""
     w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-    out = []
+
+    def text_of(data):
+        out = []
+        for event, el in ET.iterparse(io.BytesIO(data), events=("end",)):
+            if el.tag == w + "t":
+                out.append(el.text or "")
+            elif el.tag in (w + "tab", w + "br", w + "cr", w + "p"):
+                out.append(" ")
+        return "".join(out)
+
     with zipfile.ZipFile(path) as z:
-        for name in z.namelist():
-            if not re.fullmatch(r"word/(document|header\d*|footer\d*)\.xml", name):
-                continue
-            for event, el in ET.iterparse(io.BytesIO(z.read(name)), events=("end",)):
-                if el.tag == w + "t":
-                    out.append(el.text or "")
-                elif el.tag in (w + "tab", w + "br", w + "cr", w + "p"):
-                    out.append(" ")
-    return "".join(out)
+        body = z.read("word/document.xml")
+        rels_part = "word/_rels/document.xml.rels"
+        rels = {m.group(1): m.group(2) for m in re.finditer(r'<Relationship [^>]*?Id="([^"]+)"[^>]*?Target="([^"]+)"', z.read(rels_part).decode())} if rels_part in z.namelist() else {}
+        shown = Counter()
+        current = {"header": None, "footer": None}
+        for sect in re.findall(r"<w:sectPr[ >].*?</w:sectPr>", body.decode(), re.S):
+            for kind, rid in re.findall(r'<w:(header|footer)Reference [^>]*?r:id="([^"]+)"', sect):
+                current[kind] = "word/" + rels[rid] if rid in rels else None
+            shown.update(t for t in current.values() if t)
+        parts = [n for n in z.namelist() if re.fullmatch(r"word/(header|footer)\d*\.xml", n)]
+        texts = [text_of(body)]
+        for n in parts:
+            texts += [text_of(z.read(n))] * (shown[n] or 1)
+    return "".join(texts)
 
 
 def docx_words(pdf, docx):

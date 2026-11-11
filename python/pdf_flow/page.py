@@ -428,7 +428,7 @@ def span_run(page, s, justified, meter, gap=None, last=False):
     font = esc(meter.family(s))
     size = s["size"]
     half = max(2, round(size * 2))
-    rpr = f'<w:rFonts w:ascii="{font}" w:hAnsi="{font}" w:eastAsia="{font}" w:cs="{font}"/>'
+    rpr = f'<w:rFonts w:ascii="{font}" w:hAnsi="{font}" w:eastAsia="{font}" w:cs="{font}"/>' if font != meter.base[0] else ""
     if is_bold(s):
         rpr += "<w:b/><w:bCs/>"
     if is_italic(s):
@@ -438,22 +438,24 @@ def span_run(page, s, justified, meter, gap=None, last=False):
     rpr += f'<w:color w:val="{hexcolor(s["color"])}"/>'
     text = s["text"]
     spacing = 0
-    if len(text) >= 3:
-        nat = meter.width(s, text, size)
-        w = s["bbox"][2] - s["bbox"][0]
+    whole = s.get("whole") or s                                    # a span cut at its page numbers keeps the spacing of the whole
+    src = whole["text"]
+    if len(src) >= 3:
+        nat = meter.width(whole, src, size)
+        w = whole["bbox"][2] - whole["bbox"][0]
         if nat:
-            extra = (w - nat) / max(1, len(text) - 1)
-            if not justified and 0.35 < extra < 14 and text.count(" ") <= len(text) // 3:
+            extra = (w - nat) / max(1, len(src) - 1)
+            if not justified and 0.35 < extra < 14 and src.count(" ") <= len(src) // 3:
                 spacing = tw(extra)
-            elif latin(text):
-                shown = text.rstrip()
-                tight = ((w - (meter.width(s, shown, size) or w)) / max(1, len(shown) - 1))
+            elif latin(src):
+                shown = src.rstrip()
+                tight = ((w - (meter.width(whole, shown, size) or w)) / max(1, len(shown) - 1))
                 if tight <= -0.05:
                     spacing = tw(max(tight, -0.8))
     if gap is not None and gap < 1.5 and latin(text):
         spacing -= 1
     tracking = f'<w:spacing w:val="{spacing}"/>' if spacing else ""
-    rpr += tracking + f'<w:sz w:val="{half}"/><w:szCs w:val="{half}"/>'
+    rpr += tracking + (f'<w:sz w:val="{half}"/><w:szCs w:val="{half}"/>' if half != meter.base[1] else "")
     if s.get("ul"):
         rpr += f'<w:u w:val="single" w:color="{s["ul"]}"/>'
     if s.get("hl"):
@@ -463,6 +465,10 @@ def span_run(page, s, justified, meter, gap=None, last=False):
     if RTL.search(text):
         rpr += "<w:rtl/>"
     run = lambda props, t: f'<w:r><w:rPr>{props}</w:rPr><w:t xml:space="preserve">{esc(t)}</w:t></w:r>'
+    if s.get("field"):                                             # a complex field: Word sets a simple field's result in the paragraph's size, not the run's
+        mark = lambda kind: f'<w:r><w:rPr>{rpr}</w:rPr><w:fldChar w:fldCharType="{kind}"/></w:r>'
+        return (mark("begin") + f'<w:r><w:rPr>{rpr}</w:rPr><w:instrText xml:space="preserve"> {s["field"]} </w:instrText></w:r>'
+                + mark("separate") + run(rpr, text) + mark("end"))
     if last and gap is not None and spacing > 0 and gap < 1.5 + spacing / 20 and len(text) > 1 and text[-1] != " ":
         return run(rpr, text[:-1]) + run(rpr.replace(tracking, ""), text[-1])   # Word adds the letter spacing after the last letter too, which wraps a line that fills its cell
     return run(rpr, text)

@@ -3,11 +3,16 @@
 
 import io
 import os
+import re
 import sys
 
-from .common import cluster, tw
+from pdf_fonts import latin
+
+from .common import cluster, inside, tw
 from .page import Para, runs_xml
 from .shapes import Box, Tbl
+
+CAPTION = re.compile(r"(?:Figure|Fig\.?|Table|Chart|Exhibit|Diagram)\s+[A-Z]?\d+(?:\.\d+)*[a-z]?\s*[.:–—-]\s*\S")
 
 
 class Builder:
@@ -21,6 +26,7 @@ class Builder:
         self.turn = 0
         self.placed = False               # text boxes at fixed places: a line ends where the PDF's does, unless the paragraph is justified
         self.depth = 0
+        self.titled = False
         self.emitted = set()
         self.nid = 1000 + page_obj.pno * 200
 
@@ -135,7 +141,7 @@ class Builder:
         first = lines[0]
         size = max(l.size for l in lines)
         pitch, T, B = self.metrics(p)
-        rule = "exact" if pitch < 1.32 * size else "atLeast"
+        rule, line = self.line_rule(lines, pitch, size)
         # alignment
         w = max(1.0, x1 - x0)
         L = x0
@@ -232,12 +238,21 @@ class Builder:
         borders = f"<w:pBdr>{bt}{bb}</w:pBdr>" if (bt or bb) else ""
         # tabs for rows of cells joined into one paragraph
         tabs = ""
-        spacing = f'<w:spacing w:before="{tw(before)}" w:after="0" w:line="{tw(pitch)}" w:lineRule="{rule}"/>'
-        heading = ""
-        if size >= self.P.body * 1.25 and n <= 3 and len(" ".join(l.text for l in lines)) <= 140 and not marker:
+        spacing = f'<w:spacing w:before="{tw(before)}" w:after="0" w:line="{line}" w:lineRule="{rule}"/>'
+        style = heading = ""
+        text = " ".join(l.text for l in lines).strip()
+        if marker:
+            style = "ListParagraph"
+        elif size >= self.P.body * 1.25 and n <= 3 and len(text) <= 140:
             lvl = 0 if size >= self.P.body * 1.7 else 1 if size >= self.P.body * 1.4 else 2
-            heading = f'<w:outlineLvl w:val="{lvl}"/>'
-        ppr = f'<w:pPr>{num_pr}{borders}{tabs}{spacing}{ind_attr}<w:jc w:val="{jc}"/>{heading}</w:pPr>'
+            style = f"Heading{lvl + 1}"
+            if lvl == 0 and not self.titled and self.P.pno == 0 and size >= 2 * self.P.body and size >= max(l.size for l in self.P.upright):
+                style, heading, self.titled = "Title", '<w:outlineLvl w:val="0"/>', True
+        elif n <= 2 and len(text) <= 140 and CAPTION.match(text):
+            style = "Caption"
+        elif n == 1 and not self.placed and self.labels(lines[0], text):
+            style = "Heading3"
+        ppr = f'<w:pPr>{f'<w:pStyle w:val="{style}"/>' if style else ""}{num_pr}{borders}{tabs}{spacing}{ind_attr}<w:jc w:val="{jc}"/>{heading}</w:pPr>'
         # runs
         justified = jc == "both"
         body = ""
@@ -249,7 +264,7 @@ class Builder:
                 t = last["text"]
                 nxt = lines[i + 1].text.lstrip()
                 if t.rstrip().endswith("-") and len(t.rstrip()) > 2 and t.rstrip()[-2].isalpha() and nxt[:1].islower():
-                    last["text"] = t.rstrip()[:-1]
+                    last["text"] = t.rstrip() if self.compound(t, nxt) else t.rstrip()[:-1]
                 elif not t.endswith(" "):
                     last["text"] = t + " "
             for s_ in spans:
@@ -259,16 +274,41 @@ class Builder:
                 body += "<w:r><w:br/></w:r>"
         return f"<w:p>{ppr}{body}</w:p>", T, B
 
-    def frames(self, lines):
+    def line_rule(self, lines, pitch, size):
+        """(rule, line) for a paragraph. Lines are "at least" the PDF's pitch where the font's own height in Word is no taller, so they grow with the text when it is edited
+        and Word still sets them at the PDF's pitch; they are exact where the PDF sets them tighter than the font (a title, a drop cap), where sizes are mixed, where the font
+        is not known and where the text is not Latin, which Word sets in a fallback font of its own height."""
+        if pitch >= 1.32 * size:
+            return "atLeast", tw(pitch)
+        spans = [s for l in lines for s in l.spans if s["text"].strip()]
+        heights = [self.meter.height(s) for s in spans]
+        sizes = [s["size"] for s in spans]
+        if not spans or None in heights or max(sizes) > 1.08 * min(sizes) or not all(latin(s["text"]) for s in spans):
+            return "exact", tw(pitch)
+        return ("atLeast" if pitch >= 1.003 * max(h * z for h, z in zip(heights, sizes)) else "exact"), tw(pitch)
+
+    def labels(self, l, text):
+        """A short bold line of body size standing alone above text that is not bold, and not a cell of a table: a heading Word should list."""
+        if any(inside(l.bbox, t.bbox, 0.5) for t in self.P.tbls) or not (l.bold_all and self.P.body * 0.95 <= l.size < self.P.body * 1.25 and len(text) <= 60 and re.search(r"[^\W\d_]", text) and text[-1] not in ":.,;"):
+            return False
+        below = [m for m in self.P.upright if m is not l and 0 <= m.y0 - l.y1 <= 2.0 * l.size and m.x0 < l.x1 and m.x1 > l.x0]
+        return bool(below) and not any(m.bold_all for m in below)
+
+    def compound(self, t, nxt):
+        """A line that ends at the hyphen of a word the text spells with a hyphen elsewhere (three-year) keeps it; a word the typesetter broke is joined."""
+        a, b = re.search(r"([^\W\d_]+)-$", t.rstrip()), re.match(r"[^\W\d_]+", nxt)
+        return bool(a and b and f"{a.group(1)}-{b.group()}".lower() in self.meter.hyphenated)
+
+    def frames(self, lines, extra=0.0):
         """Text that sits on a picture: positioned paragraphs (frames), each one still real text that reflows inside its frame."""
         xml = ""
         for p in self.group(lines, min(l.x0 for l in lines), max(l.x1 for l in lines)):
             pitch, T, B = self.metrics(p)
-            fx0, fx1 = p.x0 - (p.lines[0].x0 - (p.lines[0].marker[2] if p.lines[0].marker else p.lines[0].x0)), p.x1 + 3.0
+            fx0, fx1 = p.x0 - (p.lines[0].x0 - (p.lines[0].marker[2] if p.lines[0].marker else p.lines[0].x0)), p.x1 + 3.0 + extra
             part, T, B = self.para_xml(p, fx0, fx1, T)
             frame = (f'<w:framePr w:w="{tw(fx1 - fx0)}" w:h="{tw(B - T)}" w:hRule="atLeast" w:hSpace="0" w:vSpace="0" w:wrap="none" '
                      f'w:vAnchor="page" w:hAnchor="page" w:x="{tw(fx0)}" w:y="{tw(T)}"/>')
-            xml += part.replace("<w:pPr>", "<w:pPr>" + frame, 1)
+            xml += re.sub(r"<w:pPr>(<w:pStyle [^>]*/>)?", lambda m: m.group(0) + frame, part, 1)
         return xml
 
     def text_boxes(self, lines):
@@ -362,7 +402,8 @@ class Builder:
                     stops += f'<w:tab w:val="left" w:pos="{tw(l.x0 - x0)}"/>'
                 body += "<w:r><w:tab/></w:r>"
             body += runs_xml(P, l.spans, False, self.doc.part, self.meter)
-        ppr = (f'<w:pPr><w:tabs>{stops}</w:tabs><w:spacing w:before="{tw(before)}" w:after="0" w:line="{tw(pitch)}" w:lineRule="exact"/>'
+        rule, line = self.line_rule(lines, pitch, size)
+        ppr = (f'<w:pPr><w:tabs>{stops}</w:tabs><w:spacing w:before="{tw(before)}" w:after="0" w:line="{line}" w:lineRule="{rule}"/>'
                f'<w:ind w:left="{tw(first.x0 - x0)}"/></w:pPr>')
         return f"<w:p>{ppr}{body}</w:p>", T, T + pitch
 
