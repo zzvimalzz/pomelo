@@ -7,21 +7,24 @@
 //   node test/fidelity/run.js C:\path\a.pdf C:\dir    your own files or folders
 //   node test/fidelity/run.js --roundtrip             also docx -> pdf -> docx and pdf -> docx -> pdf
 //   node test/fidelity/run.js --min 0.9               exit 1 when any file scores below 0.9
+//   node test/fidelity/run.js --word C:\dir            print with Microsoft Word instead (pages, recall, order, visual)
+//   node test/fidelity/run.js --out C:\scratch         keep the results somewhere else than test/fidelity/out
 //
-// Needs the optional engines (LibreOffice and the PDF engine). Pages are rendered by LibreOffice, not Word, so
-// treat the numbers as a faithful proxy rather than a promise about Word. Results: test/fidelity/out/report.json
-// and side-by-side page images in test/fidelity/out/png/.
+// Needs the optional engines (LibreOffice, or Word with --word, and the PDF engine). LibreOffice lays pages out
+// differently from Word, so treat its numbers as a proxy; --word shows what a Word user sees. Results: report.json
+// and side-by-side page images in the out folder.
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
 const convert = require('../../src/features/conversion');
 
-const OUT = path.join(__dirname, 'out');
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
 const value = (name, d) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : d; };
-const inputs = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--min');
+const OUT = path.resolve(value('--out', path.join(__dirname, 'out')));
+const inputs = args.filter((a, i) => !a.startsWith('--') && !['--min', '--out'].includes(args[i - 1]));
+const WORD_LIMIT_MS = 120000;
 
 const pad = (s, n) => String(s).padEnd(n);
 const pct = (v) => (v == null ? '  -  ' : (v * 100).toFixed(1).padStart(5));
@@ -44,19 +47,44 @@ function renderDocx(soffice, docx, dir) {
   return fs.existsSync(pdf) ? pdf : null;
 }
 
-function compare(python, original, rendered, tag) {
-  const script = path.join(__dirname, 'compare.py');
-  const r = spawnSync(python, ['-W', 'ignore', script, original, rendered, path.join(OUT, 'png'), tag], { encoding: 'utf8', maxBuffer: 1 << 26, windowsHide: true });
+function wordInstalled() {
+  return spawnSync('reg', ['query', 'HKCR\\Word.Application\\CLSID'], { windowsHide: true }).status === 0;
+}
+
+// Each file gets its own Word, so one that hangs costs that file only. The script reports the process id of the
+// Word it started; that is the only process killed on a timeout.
+function printWithWord(docx, dir) {
+  const outDir = path.join(dir, 'rendered');
+  fs.mkdirSync(outDir, { recursive: true });
+  const pdf = path.join(outDir, path.basename(docx).replace(/\.docx$/i, '.pdf'));
+  fs.rmSync(pdf, { force: true });
+  const script = path.join(__dirname, 'word-print.ps1');
+  const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Docx', docx, '-Pdf', pdf], { encoding: 'utf8', windowsHide: true, timeout: WORD_LIMIT_MS });
+  if (r.error && r.error.code === 'ETIMEDOUT') {
+    const pid = /WORD_PID (\d+)/.exec(r.stdout || '');
+    if (pid) spawnSync('taskkill', ['/PID', pid[1], '/F', '/FI', 'IMAGENAME eq WINWORD.EXE'], { windowsHide: true });
+    throw new Error(`Word took longer than ${WORD_LIMIT_MS / 1000} s` + (pid ? ' and was stopped' : ' before it reported its process id, so check Task Manager for a Word of the script\'s that is still running'));
+  }
+  if (r.status !== 0 || !fs.existsSync(pdf)) throw new Error(`Word could not print it: ${(r.stderr || r.stdout || 'no output').trim().split('\n').pop()}`);
+  return pdf;
+}
+
+function compareScript(python, scriptArgs) {
+  const r = spawnSync(python, ['-W', 'ignore', path.join(__dirname, 'compare.py'), ...scriptArgs], { encoding: 'utf8', maxBuffer: 1 << 26, windowsHide: true });
   if (r.status !== 0) throw new Error((r.stderr || r.stdout || 'compare failed').split('\n').filter(Boolean).slice(-2).join(' '));
   return JSON.parse(r.stdout.trim().split('\n').pop());
 }
 
+const compare = (python, original, rendered, tag) => compareScript(python, [original, rendered, path.join(OUT, 'png'), tag]);
+
 (async () => {
+  const word = flag('--word');
   const engines = convert.detectEngines();
-  if (!engines.soffice || !engines.pdf) {
-    console.error('The fidelity harness needs LibreOffice and the PDF engine (Settings > Advanced > Conversion engines).');
+  if (!engines.pdf || (!word && !engines.soffice)) {
+    console.error(`The fidelity harness needs ${word ? 'the PDF engine' : 'LibreOffice and the PDF engine'} (Settings > Advanced > Conversion engines).`);
     process.exit(2);
   }
+  if (word && !wordInstalled()) { console.log('skip: Microsoft Word is not installed'); return; }
   const pdfs = listPdfs();
   if (!pdfs.length) { console.error('No PDFs found. Run: npx electron test/fidelity/make-samples.js'); process.exit(2); }
   const work = path.join(OUT, 'work');
@@ -75,13 +103,25 @@ function compare(python, original, rendered, tag) {
     let docx;
     try { [docx] = await convert.convertFile(src, 'docx'); } catch (e) { rows.push(`${pad(name, 16)} CONVERSION FAILED: ${e.message}`); report[name] = { error: e.message }; continue; }
     const seconds = (Date.now() - t0) / 1000;
-    const rendered = renderDocx(engines.soffice, docx, dir);
+    let xml = null;
+    if (word) {
+      try { xml = compareScript(engines.pdf, ['--docx-words', src, docx]); } catch (e) { xml = { recall: null, missing: [], error: e.message }; }
+    }
+    let rendered;
+    try { rendered = word ? printWithWord(docx, dir) : renderDocx(engines.soffice, docx, dir); } catch (e) { rows.push(`${pad(name, 16)} ${e.message}  xml ${pct(xml.recall)}`); report[name] = { error: e.message, docx_words: xml }; continue; }
     if (!rendered) { rows.push(`${pad(name, 16)} could not render ${path.basename(docx)}`); continue; }
     try {
       const m = compare(engines.pdf, src, rendered, name);
       m.seconds = +seconds.toFixed(1);
+      if (xml) m.docx_words = xml;
       report[name] = m;
       const t = m.text;
+      if (word) {
+        const c = m.check;
+        rows.push(`${pad(name, 16)} pages ${m.pages.join('/')}  size ${c.size_ok}/${m.pages[0]}  recall ${pct(c.recall)}  order ${pct(c.order)}  visual ${pct(c.visual)}  xml ${pct(xml.recall)}  ${m.seconds}s`);
+        if (xml.missing.length) rows.push(`${pad('', 16)} not in the document: ${xml.missing.slice(0, 6).join(' | ').slice(0, 150)}`);
+        continue;
+      }
       rows.push(`${pad(name, 16)} ${pct(m.score)}  text ${pct(t.text)}  pos<=4pt ${pct(t.pos_4pt)}  family ${pct(t.font_family)}  size ${pct(t.font_size)}  b/i ${pct((t.bold + t.italic) / 2)}  colour ${pct(t.colour)}  visual ${pct(m.visual.similarity)}  img ${m.images.count.join('/')} ${pct(m.images.placement_iou)}  links ${m.links.count.join('/')}  pages ${m.pages.join('/')}  ${m.seconds}s`);
       if (t.missing.length) rows.push(`${pad('', 16)} missing: ${t.missing.slice(0, 4).join(' | ').slice(0, 150)}`);
     } catch (e) { rows.push(`${pad(name, 16)} compare failed: ${e.message}`); report[name] = { error: e.message }; }

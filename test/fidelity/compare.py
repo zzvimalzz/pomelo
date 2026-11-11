@@ -3,16 +3,23 @@
 back to PDF first), so words, fonts, links, images and drawn shapes can be compared exactly, not eyeballed.
 
 usage: python compare.py <original.pdf> <rendered.pdf> [png-dir tag]    prints one JSON object
+       python compare.py --docx-words <original.pdf> <converted.docx>   prints how many source words the DOCX holds
 
 Words are matched in reading order; for every matched pair the position, font family, size, bold/italic and colour
-are compared. Numbers are fractions 0..1 unless the key says otherwise.
+are compared. Numbers are fractions 0..1 unless the key says otherwise. "check" is the summary of what a user sees
+when the DOCX is printed: pages, how many printed words come from the source (recall), whether they come in the
+same order, and how alike the pages look.
 """
 import difflib
+import io
 import json
 import os
 import re
 import sys
 import warnings
+import xml.etree.ElementTree as ET
+import zipfile
+from collections import Counter
 
 warnings.filterwarnings("ignore")
 import pymupdf  # noqa: E402
@@ -202,7 +209,69 @@ def visual_metrics(da, db, png=None):
     return {"similarity": round(sum(scores) / len(scores), 4) if scores else 0.0, "tiles_off": round(sum(tile_bad) / len(tile_bad), 4) if tile_bad else 1.0}
 
 
+def plain_words(doc):
+    out = []
+    for page in doc:
+        for w in page.get_text("words"):
+            t = re.sub(r"\W+", "", w[4].lower())
+            if t:
+                out.append(t)
+    return out
+
+
+def grey_pages(da, db, dpi=36):
+    for i in range(min(len(da), len(db))):
+        pa, pb = (d[i].get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY) for d in (da, db))
+        w, h = min(pa.width, pb.width), min(pa.height, pb.height)
+        yield [b"".join(p.samples[y * p.width:y * p.width + w] for y in range(h)) for p in (pa, pb)]
+
+
+def check_metrics(da, db):
+    wa, wb = plain_words(da), plain_words(db)
+    recall = order = None
+    if wa:
+        recall = round(sum((Counter(wa) & Counter(wb)).values()) / len(wa), 3)
+        # the cap keeps the quadratic matcher fast on long documents
+        order = round(difflib.SequenceMatcher(None, wa[:3000], wb[:3000], autojunk=False).ratio(), 3) if wb else 0.0
+    sims = [1 - sum(abs(x - y) for x, y in zip(a, b)) / (255 * max(1, len(a))) for a, b in grey_pages(da, db)]
+    pairs = list(zip(da, db))
+    return {
+        "recall": recall,
+        "order": order,
+        "visual": round(sum(sims) / len(sims), 3) if sims else 0.0,
+        "size_ok": sum(abs(a.rect.width - b.rect.width) < 6 and abs(a.rect.height - b.rect.height) < 6 for a, b in pairs),
+        "orientation_ok": sum((a.rect.width > a.rect.height) == (b.rect.width > b.rect.height) for a, b in pairs),
+    }
+
+
+def docx_text(path):
+    """Text of the body, headers and footers. A tab or a line break separates words like a space does; the runs of
+    one paragraph are joined as they are, because Word splits a word into runs wherever the formatting changes."""
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    out = []
+    with zipfile.ZipFile(path) as z:
+        for name in z.namelist():
+            if not re.fullmatch(r"word/(document|header\d*|footer\d*)\.xml", name):
+                continue
+            for event, el in ET.iterparse(io.BytesIO(z.read(name)), events=("end",)):
+                if el.tag == w + "t":
+                    out.append(el.text or "")
+                elif el.tag in (w + "tab", w + "br", w + "cr", w + "p"):
+                    out.append(" ")
+    return "".join(out)
+
+
+def docx_words(pdf, docx):
+    src = plain_words(pymupdf.open(pdf))
+    have = [t for t in (re.sub(r"\W+", "", x.lower()) for x in docx_text(docx).split()) if t]
+    lost = Counter(src) - Counter(have)
+    return {"words": len(src), "recall": round(1 - sum(lost.values()) / len(src), 3) if src else None, "missing": sorted(lost)[:10]}
+
+
 def main():
+    if sys.argv[1] == "--docx-words":
+        print(json.dumps(docx_words(sys.argv[2], sys.argv[3])))
+        return
     orig, cand = sys.argv[1], sys.argv[2]
     da, db = pymupdf.open(orig), pymupdf.open(cand)
     res = {
@@ -213,6 +282,7 @@ def main():
         "links": link_metrics(da, db),
         "drawings": drawing_metrics(da, db),
         "visual": visual_metrics(da, db),
+        "check": check_metrics(da, db),
     }
     if len(sys.argv) > 4:
         os.makedirs(sys.argv[3], exist_ok=True)

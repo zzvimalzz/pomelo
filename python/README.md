@@ -41,7 +41,7 @@ The Node side depends on these (`test/integration/python/cli-contract.test.js` c
 
 ## Testing
 
-`node test/run.js --tier=pdf` (needs the PDF engine): the command-line contract, the Word layout checks (`pdf-layout`), and the other formats (`pdf-formats`). For real pages, `npm run test:fidelity` scores PDF to Word against `test/fidelity/baseline.json`; any change to `pdf_flow/` must leave every sample's score equal.
+`node test/run.js --tier=pdf` (needs the PDF engine): the command-line contract, the Word layout checks (`pdf-layout`), and the other formats (`pdf-formats`). For real pages, `npm run test:fidelity` scores PDF to Word against `test/fidelity/baseline.json`; any change to `pdf_flow/` must leave every sample's score equal. `node test/fidelity/run.js --word` does the same comparison with Microsoft Word as the renderer (see `test/README.md`).
 
 ## Known limits
 
