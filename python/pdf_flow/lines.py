@@ -21,6 +21,8 @@ class Line:
         self.marker = None            # (kind, token, marker_x0, text_x0)
         self.marker_box = None
         self.absorbed = False
+        self.block = self.block_x1 = None   # the PDF text block the line came from, and where it ends on the right
+        self.justified = False
 
     @property
     def text(self):
@@ -95,7 +97,7 @@ def read_lines(page):
         repair_tracked(page, blocks)
     except Exception:
         pass
-    for block in blocks:
+    for bi, block in enumerate(blocks):
         if block["type"] != 0:
             continue
         for ln in block["lines"]:
@@ -111,11 +113,64 @@ def read_lines(page):
                 if not any(s["text"].strip() for s in spans):
                     continue
             size = max(s["size"] for s in spans if s["text"].strip())
-            out.append(Line([dict(s) for s in spans], ln["bbox"], spans[0]["origin"][1], size, rot))
+            line = Line([dict(s) for s in spans], ln["bbox"], spans[0]["origin"][1], size, rot)
+            line.block, line.block_x1 = bi, block["bbox"][2]
+            out.append(line)
     return out
 
 
-def merge_rows(lines):
+def in_separate_boxes(r, shapes):
+    """True when the pieces sit in different drawn boxes (the pills of a tag list), which a justified line never does."""
+    homes = set()
+    for l in r:
+        cx, cy = (l.x0 + l.x1) / 2, (l.y0 + l.y1) / 2
+        around = [s[0] for s in shapes if s[0].x0 <= cx <= s[0].x1 and s[0].y0 <= cy <= s[0].y1]
+        if around:
+            homes.add(tuple(min(around, key=lambda b: b.width * b.height)))
+    return len(homes) > 1
+
+
+def stretched_row(r, shapes=()):
+    """The words of a justified line, which the PDF holds one by one: three or more of them from one text block, with
+    the same wide gap between each pair, the last one at the block's right edge. A row of numbers, a menu bar or the
+    cells of a table fail one of these tests and stay apart."""
+    if len(r) < 3 or r[0].block is None or any(l.block != r[0].block for l in r) or in_separate_boxes(r, shapes):
+        return False
+    if sum(bool(re.search(r"[^\W\d_]", l.text)) for l in r) < 2 * len(r) / 3:
+        return False
+    gaps = [b.x0 - a.x1 for a, b in zip(r, r[1:])]
+    return max(gaps) - min(gaps) <= 1.0 and max(gaps) < 3 * min(l.size for l in r) and r[-1].x1 >= r[-1].block_x1 - 2.5
+
+
+def join_pieces(cur, nxt):
+    gap = nxt.x0 - cur.x1
+    spans = cur.spans
+    if gap > 0.12 * cur.size and not cur.text.endswith(" ") and not nxt.text.startswith(" "):
+        spans = spans + [dict(cur.spans[-1], text=" ", bbox=(cur.x1, cur.y0, nxt.x0, cur.y1))]
+    merged = Line(spans + nxt.spans, (cur.x0, min(cur.y0, nxt.y0), nxt.x1, max(cur.y1, nxt.y1)), cur.base, max(cur.size, nxt.size))
+    merged.block, merged.block_x1 = cur.block, cur.block_x1
+    return merged
+
+
+def join_stretched(r, shapes):
+    """The words of each justified line in a row become one line. Two columns share a row, so each text block is judged on its own."""
+    blocks = {}
+    for l in r:
+        blocks.setdefault(l.block, []).append(l)
+    out = []
+    for group in blocks.values():
+        if not stretched_row(group, shapes):
+            out += group
+            continue
+        cur = group[0]
+        for nxt in group[1:]:
+            cur = join_pieces(cur, nxt)
+        cur.justified = True
+        out.append(cur)
+    return sorted(out, key=lambda l: l.x0)
+
+
+def merge_rows(lines, shapes=()):
     """Pieces on one row that sit close together are one line; pieces far apart stay apart (columns, a title and its date)."""
     lines = sorted(lines, key=lambda l: (l.base, l.x0))
     rows = []
@@ -128,16 +183,11 @@ def merge_rows(lines):
             rows.append([l])
     out = []
     for r in rows:
-        r.sort(key=lambda l: l.x0)
+        r = join_stretched(sorted(r, key=lambda l: l.x0), shapes)
         cur = r[0]
         for nxt in r[1:]:
-            gap = nxt.x0 - cur.x1
-            if gap < 0.8 * min(cur.size, nxt.size):
-                spans = cur.spans
-                if gap > 0.12 * cur.size and not cur.text.endswith(" ") and not nxt.text.startswith(" "):
-                    spans = spans + [dict(cur.spans[-1], text=" ", bbox=(cur.x1, cur.y0, nxt.x0, cur.y1))]
-                merged = Line(spans + nxt.spans, (cur.x0, min(cur.y0, nxt.y0), nxt.x1, max(cur.y1, nxt.y1)), cur.base, max(cur.size, nxt.size))
-                cur = merged
+            if nxt.x0 - cur.x1 < 0.8 * min(cur.size, nxt.size):
+                cur = join_pieces(cur, nxt)
             else:
                 out.append(cur)
                 cur = nxt

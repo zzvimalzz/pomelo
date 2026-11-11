@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """PDF -> DOCX, page by page; the entry point is convert()."""
 
+import math
 import os
+import re
 import sys
 
 from docx import Document
@@ -16,7 +18,7 @@ from .common import NS, area, inside, overlap, tw
 from .fonts import FontMeter
 from .lines import read_lines
 from .lists import Lists
-from .page import Page
+from .page import Page, page_kind
 from .shapes import Fig, Img, Rule
 
 
@@ -24,12 +26,24 @@ def body_size(all_lines):
     return dominant_size((sp["text"], sp["size"]) for l in all_lines for sp in l.spans)
 
 
-def convert(src, dst, progress=lambda f: None, log=lambda m: None):
+def open_upright(src):
+    """The document and two working copies, with /Rotate pages turned upright, and the rotation each page had: the text
+    coordinates of a rotated page are those of the unrotated sheet, so reading them as they are scatters the page."""
     doc = pymupdf.open(src)
     if doc.needs_pass:
         raise RuntimeError("This PDF is password-protected")
-    work_all = pymupdf.open(src)
-    work_keep = pymupdf.open(src)
+    turns = {p.number: p.rotation for p in doc if p.rotation}
+    if not turns:
+        return doc, pymupdf.open(src), pymupdf.open(src), turns
+    for p in doc:
+        p.set_rotation(0)
+    blob = doc.tobytes()
+    doc.close()
+    return (*(pymupdf.open("pdf", blob) for _ in range(3)), turns)
+
+
+def convert(src, dst, progress=lambda f: None, log=lambda m: None):
+    doc, work_all, work_keep, turns = open_upright(src)
     meter = FontMeter(doc)
     out = Document()
     body = out.element.body
@@ -50,10 +64,10 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None):
         progress(0.97 * pno / max(1, n))
         page = doc[pno]
         try:
-            xml, sect = convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n, log)
+            xml, sect = convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n, log, turn=turns.get(pno, 0))
         except Exception as e:                                         # one odd page must not lose the document: its text is kept
             log("page %d could not be rebuilt in full (%s); kept as text" % (pno + 1, e))
-            xml, sect = convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n, log, safe=True)
+            xml, sect = convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n, log, safe=True, turn=turns.get(pno, 0))
         for el in list(parse_xml(f'<w:body {NS}>{xml}</w:body>')):
             body.insert(len(body) - 1, el)
         if pno == n - 1:
@@ -68,8 +82,9 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None):
     out.save(dst)
 
 
-def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n_pages, log, safe=False):
-    """safe: only the text, as paragraphs (what a page falls back to when something exotic in it cannot be rebuilt)."""
+def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n_pages, log, safe=False, turn=0):
+    """safe: only the text, as paragraphs (what a page falls back to when something exotic in it cannot be rebuilt).
+    turn: the /Rotate of the page; it is built upright and shown turned, in a text box the size of the sheet."""
     P = Page(doc, work_all[pno], work_keep[pno], page, pno, meter, body_pt)
     P.read()
     P.tbls = []
@@ -137,6 +152,9 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         P.figs = []
     else:
         P.leftovers()
+    P.figs = [f for f in P.figs if not any(overlap(f, r) > 0.8 * area(f) for r, _ in P.imgs)]
+    if os.environ.get("POMELO_DEBUG"):
+        sys.stderr.write("page %d: %s page (%s)\n" % ((pno + 1,) + page_kind(P)))
     merged = []
     for b in P.rot_boxes:
         box = list(b)
@@ -174,16 +192,32 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     # pictures: in line with the text, or behind it when text sits on top
     def sits_on(bb):
         return any(overlap(l.bbox, bb) >= 0.5 * area(l.bbox) for l in text_lines)
+
+    def ends_page(bb):
+        # a wide picture at the foot of the page is placed, not set in the line: when Word sets the text above a little
+        # taller, an in-line picture would move to a new sheet whole
+        return bb[2] - bb[0] >= 0.6 * P.w and bb[3] >= 0.88 * P.h
+    # a photo cropped to a circle is placed as the photo itself, so the page copy the ring and shadow under it are cut from must not show it again
+    placed = {}
     for r, info in P.imgs:
-        data = P.encode_image(info, r)
+        if info.get("full"):
+            placed[id(info)] = P.encode_image(info, r)
+            if info.get("crop") and info["ellipse"] and info["unique"]:
+                P.work_keep.delete_image(info["xref"])
+    for r, info in P.imgs:
+        data = placed.get(id(info)) or P.encode_image(info, r)
         if not data:
             continue
-        elements.append(Img(r, data[0], data[1], floating=sits_on(r)))
+        elements.append(Img(r, data[0], data[1], floating=sits_on(r) or ends_page(r), crop=info.get("crop"), ellipse=info.get("ellipse"), order=info.get("number") or 0))
     for f in P.figs:
         data = P.render_clip(f)
         if not data:
             continue
         elements.append(Fig(f, data[0], data[1], floating=sits_on(f) and area(f) > 600))
+    pics = [e for e in elements if e.kind == "img"]
+    for a in pics:
+        if any(b is not a and overlap(a.bbox, b.bbox) >= 0.5 * min(area(a.bbox), area(b.bbox)) for b in pics):
+            a.floating = True                                       # a picture on a picture keeps its place on the page
     elements += background
     for b in P.rot_boxes:                                           # rotated text (a stamp, a margin label) stays a picture
         data = P.render_clip(pymupdf.Rect(b) + (-2, -2, 2, 2))
@@ -211,6 +245,8 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     top_items = []
     behind = [e.bbox for e in elements if e.kind == "img" and e.floating and not getattr(e, "overlay", False)]
     framed = [l for l in text_lines if any(overlap(l.bbox, b) >= 0.5 * area(l.bbox) for b in behind)]
+    feet = [e.bbox for e in elements if e.kind == "img" and e.floating and ends_page(e.bbox)]
+    framed += [l for l in text_lines if l not in framed and any(0 <= l.y0 - b[3] <= 30 and l.x0 >= b[0] - 2 and l.x1 <= b[2] + 2 for b in feet)]
     text_lines = [l for l in text_lines if l not in framed]
     pool = text_lines + elements + rules
     for it in pool:
@@ -250,7 +286,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     # rotated text: a text box, rotated
     B = Builder(out, P, meter, lists)
     if flow:
-        x0 = min(i.x0 for i in flow)
+        x0 = max(0.0, min(i.x0 for i in flow))
         x1 = max(i.x1 for i in flow)
     else:
         x0, x1 = 0.0, P.w
@@ -266,14 +302,32 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     top_margin = max(0.0, B.first_top if B.first_top is not None else 0.0)
     room = P.h - (cursor if cursor is not None else top_margin)
     bottom_margin = 0.0 if room < 70 else min(room - 14, 30.0)
-    # the closing paragraph carries the floating pictures and ends the section
+    turned = bool(turn) and not framed
+    B.turn = turn if turned else 0
     floats = ""
-    for it in sorted(P.floaters, key=lambda i: -area(i.bbox)):
+    # larger pictures go underneath; pictures of about the same size are stacked as the PDF painted them
+    for it in sorted(P.floaters, key=lambda i: (-round(math.log(max(area(i.bbox), 1.0)) / 0.1), getattr(i, "order", 0))):
         floats += B.picture_xml(it, floating=True, name="Picture")
-    inner = (f'<w:type w:val="nextPage"/><w:pgSz w:w="{tw(P.w)}" w:h="{tw(P.h)}"/>'
-             f'<w:pgMar w:top="{tw(top_margin)}" w:right="{tw(max(0.0, P.w - x1 - B.slack))}" w:bottom="{tw(bottom_margin)}" w:left="{tw(x0)}" w:header="0" w:footer="0" w:gutter="0"/>')
-    sect = f'<w:sectPr {nsdecls("w")}>{inner}</w:sectPr>'
     mark = '<w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr>'
+    # the pictures are anchored in the page's first paragraph: when the text runs a line over, the closing paragraph moves
+    # to the next sheet, and the background would go with it. A page that starts with something else keeps them in the closing one.
+    if floats and not turned and xml.startswith("<w:p><w:pPr>") and not xml.startswith("<w:p><w:pPr><w:framePr"):
+        cut = xml.index("</w:pPr>") + len("</w:pPr>")
+        xml, floats = xml[:cut] + floats + xml[cut:], ""
+    elif floats and not turned and xml.startswith("<w:tbl>"):
+        # a shaded cell would hide pictures that sit behind the text in the same cell, so only a plain first cell is used
+        cell = re.search(r"<w:tc><w:tcPr>(.*?)</w:tcPr><w:p><w:pPr>.*?</w:pPr>", xml)
+        if cell and cell.start() == xml.index("<w:tc>") and "<w:shd" not in cell.group(1):
+            xml, floats = xml[:cell.end()] + floats.replace('layoutInCell="1"', 'layoutInCell="0"') + xml[cell.end():], ""
+    margins = (top_margin, max(0.0, P.w - x1 - B.slack), bottom_margin, x0)
+    if turned:
+        xml = B.turned_page(xml, margins)
+        sheet_w, sheet_h, margins = (P.w, P.h, (0.0,) * 4) if turn == 180 else (P.h, P.w, (0.0,) * 4)
+    else:
+        sheet_w, sheet_h = P.w, P.h
+    inner = (f'<w:type w:val="nextPage"/><w:pgSz w:w="{tw(sheet_w)}" w:h="{tw(sheet_h)}"{' w:orient="landscape"' if sheet_w > sheet_h else ''}/>'
+             f'<w:pgMar w:top="{tw(margins[0])}" w:right="{tw(margins[1])}" w:bottom="{tw(margins[2])}" w:left="{tw(margins[3])}" w:header="0" w:footer="0" w:gutter="0"/>')
+    sect = f'<w:sectPr {nsdecls("w")}>{inner}</w:sectPr>'
     if pno < n_pages - 1:
         closing = f'<w:p><w:pPr>{mark}<w:sectPr>{inner}</w:sectPr></w:pPr>{floats}</w:p>'
     else:

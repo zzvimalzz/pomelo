@@ -7,9 +7,11 @@ from .common import is_white, rgb_hex
 class Img:
     kind = "img"
 
-    def __init__(self, bbox, data, ext, floating=False):
+    def __init__(self, bbox, data, ext, floating=False, crop=None, ellipse=False, order=0):
         self.x0, self.y0, self.x1, self.y1 = bbox
         self.data, self.ext, self.floating = data, ext, floating
+        self.crop, self.ellipse = crop, ellipse       # crop: fractions of the picture cut off at the left, top, right and bottom
+        self.order = order                            # the picture's place in the PDF's painting order
 
     @property
     def bbox(self):

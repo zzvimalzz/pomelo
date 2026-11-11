@@ -2,6 +2,7 @@
 """One page: its lines, shapes and pictures, and the runs and paragraphs written from them."""
 
 import math
+from collections import Counter
 
 from docx.opc.constants import RELATIONSHIP_TYPE
 import pymupdf
@@ -11,7 +12,7 @@ from pdf_spans import RTL, dedupe, hexcolor
 
 from .common import HI_DPI, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
 from .lines import attach_markers, is_bold, is_italic, merge_rows, read_lines, split_marker
-from .shapes import Box, Tbl, rect_shapes, segments_of
+from .shapes import Box, Tbl, polygon_area, rect_shapes, segments_of
 
 
 class Page:
@@ -29,18 +30,18 @@ class Page:
         page = self.page
         self.meter.register(page)
         links = [(pymupdf.Rect(l["from"]), l["uri"]) for l in page.get_links() if l.get("uri")]
-        lines = dedupe(read_lines(page), 3)
-        self.upright = attach_markers(merge_rows([l for l in lines if not l.rot]))
-        self.rotated = [l for l in lines if l.rot]
-        for l in self.upright:
-            split_marker(l, self.body)
-        self.links = links
         try:
             self.drawings = page.get_drawings()
         except Exception:
             self.drawings = []
         self.segments = segments_of(self.drawings)
         self.shapes = rect_shapes(self.drawings)
+        lines = dedupe(read_lines(page), 3)
+        self.upright = attach_markers(merge_rows([l for l in lines if not l.rot], self.shapes))
+        self.rotated = [l for l in lines if l.rot]
+        for l in self.upright:
+            split_marker(l, self.body)
+        self.links = links
 
     # -- spans: underline, strike, highlight, links
     def decorate(self):
@@ -135,7 +136,7 @@ class Page:
                     # a fill rectangle drawn as a thin-bordered one is already in shapes; also try the raw drawings
                     for d in self.drawings:
                         f = d.get("fill")
-                        if f and not is_white(f) and overlap(b, tuple(d["rect"])) >= 0.85 * area(b) and area(tuple(d["rect"])) <= 1.6 * area(b):
+                        if f and not is_white(f) and (d.get("fill_opacity") if d.get("fill_opacity") is not None else 1) >= 0.85 and overlap(b, tuple(d["rect"])) >= 0.85 * area(b) and area(tuple(d["rect"])) <= 1.6 * area(b):
                             best = rgb_hex(f)
                 c["fill"] = best
                 for side, (o, pos) in {"top": ("h", b[1]), "bottom": ("h", b[3]), "left": ("v", b[0]), "right": ("v", b[2])}.items():
@@ -179,10 +180,25 @@ class Page:
         self.box_items = out
 
     # -- pictures and what is left of the page when the text is taken away
+    def ellipse_clips(self):
+        out = []
+        for d in self.page.get_drawings(extended=True):
+            items = d.get("items") or []
+            if d["type"] != "clip" or not d.get("scissor") or sum(it[0] == "c" for it in items) < 4:
+                continue
+            r = pymupdf.Rect(d["scissor"])
+            if r.width >= 8 and r.height >= 8 and polygon_area(items) <= 0.83 * r.width * r.height:
+                out.append(tuple(r))
+        return out
+
     def pictures(self, ocr_scan=False):
         self.imgs = []
         page = self.page
         infos = page.get_image_info(xrefs=True)
+        ellipses = self.ellipse_clips() if infos else []
+        uses = Counter(i.get("xref") for i in infos)
+        # a picture clipped by the page (a photo cropped to a panel or a circle) shows less than its own rectangle: the text layer reports the shown part
+        visible = {b["number"]: tuple(b["bbox"]) for b in page.get_text("dict")["blocks"] if b["type"] == 1} if infos else {}
         covered = []
         for info in infos:
             r = tuple(info["bbox"])
@@ -194,8 +210,13 @@ class Page:
             if r[2] - r[0] > 0.92 * self.w and r[3] - r[1] > 0.92 * self.h and ocr_scan:
                 covered.append(r)
                 continue
+            shown = visible.get(info.get("number"))
+            if shown and area(shown) >= 0.15 * area(r) and (shown[0] - r[0] > 1.5 or shown[1] - r[1] > 1.5 or r[2] - shown[2] > 1.5 or r[3] - shown[3] > 1.5):
+                round_ = any(all(abs(a - b) <= 1.5 for a, b in zip(c, shown)) for c in ellipses)
+                info = dict(info, full=r, ellipse=round_, unique=uses[info.get("xref")] == 1)
+                r = shown
             self.imgs.append((r, info))
-            covered.append(r)
+            covered.append(info.get("full", r))
         self.picture_boxes = covered
 
     def encode_image(self, info, r, dpi_cap=300):
@@ -207,6 +228,9 @@ class Page:
                     data = raw["image"]
                     if data[:4] not in (bytes.fromhex("ffd8ffe0"), bytes.fromhex("ffd8ffe1")):      # python-docx wants a JFIF or Exif marker first
                         data = data[:2] + bytes.fromhex("ffe000104a46494600010100000100010000") + data[2:]
+                    if info.get("full"):
+                        f = info["full"]
+                        info["crop"] = tuple(max(0.0, v) for v in ((r[0] - f[0]) / (f[2] - f[0]), (r[1] - f[1]) / (f[3] - f[1]), (f[2] - r[2]) / (f[2] - f[0]), (f[3] - r[3]) / (f[3] - f[1])))
                     return data, "jpg"
             except Exception:
                 pass
@@ -362,6 +386,29 @@ class Page:
                 if changed:
                     break
         self.figs = [tuple(f[:4]) for f in found]
+
+
+def page_kind(P):
+    """("design" or "document", why). A design page (a slide, a menu, a brochure) has pictures or colour over much of the
+    sheet, a coloured background, or many short pieces of text scattered about; everything else is a document page."""
+    cell = 8.0
+    cols, rows = int(P.w // cell) + 1, int(P.h // cell) + 1
+    covered = bytearray(cols * rows)
+    rects = [r for r, _ in P.imgs] + list(P.figs) + [b.bbox for b in P.box_items if b.fill] + [bb for bb, _ in P.page_fills]
+    for r in rects:
+        for y in range(max(0, int(r[1] // cell)), min(rows, int(r[3] // cell) + 1)):
+            for x in range(max(0, int(r[0] // cell)), min(cols, int(r[2] // cell) + 1)):
+                covered[y * cols + x] = 1
+    share = sum(covered) / len(covered)
+    if P.page_fills:
+        return "design", "a coloured background"
+    if share > 0.4:
+        return "design", "pictures and colour cover %d%% of the sheet" % round(share * 100)
+    loose = [l for l in P.upright if not any(inside(l.bbox, t.bbox, 0.5) for t in P.tbls)]
+    short = [l for l in loose if len(l.text.strip()) <= 25]
+    if len(loose) >= 15 and len(short) >= 0.6 * len(loose) and len(cluster([l.x0 for l in loose], 6)) >= 6:
+        return "design", "%d short pieces of text at %d left edges" % (len(short), len(cluster([l.x0 for l in loose], 6)))
+    return "document", "pictures and colour cover %d%% of the sheet" % round(share * 100)
 
 
 def span_run(page, s, justified, meter):

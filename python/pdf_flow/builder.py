@@ -18,6 +18,7 @@ class Builder:
         self.first_top = None
         self.page_x1 = None
         self.slack = 0.0
+        self.turn = 0
         self.emitted = set()
         self.nid = 1000 + page_obj.pno * 200
 
@@ -135,9 +136,11 @@ class Builder:
             right_all = all(abs(x - right_edge) <= tol for x in xs1)
             if all(abs(c - cxs[0]) <= tol for c in cxs) and spread > tol:
                 jc = "center"
-            elif right_all and spread > tol:
+            elif right_all and spread > tol and not (left_flush and (n >= 3 or any(l.justified for l in lines))):
                 jc = "right"
             elif left_flush and all(abs(x - right_edge) <= tol for x in xs1[:-1]) and abs(lines[0].x0 - ref) <= 4.5 * lines[0].size                     and xs1[0] >= x1 - 0.12 * w and (right_edge - ref) > 0.4 * w and n >= 3:
+                jc = "both"
+            elif left_flush and any(l.justified for l in lines[:-1]) and all(abs(x - right_edge) <= tol for x in xs1[:-1]):
                 jc = "both"
         else:
             if abs(cxs[0] - (L + w / 2)) <= max(2.5, 0.012 * w) and (lines[0].x0 - L) > 0.08 * w and (x1 - lines[0].x1) > 0.08 * w:
@@ -289,16 +292,51 @@ class Builder:
         rid, _ = self.doc.part.get_or_add_image(io.BytesIO(it.data))
         cx, cy = int((it.x1 - it.x0) * 12700), int((it.y1 - it.y0) * 12700)
         pid = self.next_id()
+        x, y, turn = it.x0, it.y0, ""
+        if floating and self.turn:
+            x, y = self.turned_corner(it)
+            turn = f' rot="{self.turn * 60000}"'
+        crop = getattr(it, "crop", None)
+        src = "<a:srcRect " + " ".join(f'{k}="{int(round(v * 100000))}"' for k, v in zip("ltrb", crop)) + "/>" if crop else ""
         pic = (f'<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="{pid}" name="{name} {pid}"/>'
-               f'<pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
-               f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>')
+               f'<pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="{rid}"/>{src}<a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+               f'<pic:spPr><a:xfrm{turn}><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="{"ellipse" if getattr(it, "ellipse", False) else "rect"}"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>')
         if not floating:
             return (f'<w:r><w:rPr><w:sz w:val="2"/></w:rPr><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>'
                     f'<wp:docPr id="{pid}" name="{name} {pid}"/><wp:cNvGraphicFramePr/>{pic}</wp:inline></w:drawing></w:r>')
         return (f'<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="{pid}" behindDoc="1" locked="1" layoutInCell="1" allowOverlap="1">'
-                f'<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{int(it.x0 * 12700)}</wp:posOffset></wp:positionH>'
-                f'<wp:positionV relativeFrom="page"><wp:posOffset>{int(it.y0 * 12700)}</wp:posOffset></wp:positionV><wp:extent cx="{cx}" cy="{cy}"/>'
+                f'<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{int(x * 12700)}</wp:posOffset></wp:positionH>'
+                f'<wp:positionV relativeFrom="page"><wp:posOffset>{int(y * 12700)}</wp:posOffset></wp:positionV><wp:extent cx="{cx}" cy="{cy}"/>'
                 f'<wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/><wp:docPr id="{pid}" name="{name} {pid}"/><wp:cNvGraphicFramePr/>{pic}</wp:anchor></w:drawing></w:r>')
+
+    def turned_corner(self, it):
+        """Top left corner, on the sheet as it is shown, of a picture that is placed upright and then turned about its centre."""
+        w, h = it.x1 - it.x0, it.y1 - it.y0
+        cx, cy = it.x0 + w / 2, it.y0 + h / 2
+        sw, sh = self.P.w, self.P.h
+        nx, ny = {90: (sh - cy, cx), 180: (sw - cx, sh - cy), 270: (cy, sw - cx)}[self.turn]
+        return nx - w / 2, ny - h / 2
+
+    def turned_page(self, xml, margins):
+        """The page, built upright, as one text box the size of the upright sheet turned about its centre, so the shown sheet
+        keeps the PDF's orientation and the text stays text."""
+        sw, sh = self.P.w, self.P.h
+        pid = self.next_id()
+        ox, oy = ((sh - sw) / 2, (sw - sh) / 2) if self.turn != 180 else (0.0, 0.0)
+        top, right, bottom, left = (int(m * 12700) for m in margins)
+        return (f'<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr><w:r><w:drawing>'
+                f'<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="{pid}" behindDoc="0" locked="1" layoutInCell="1" allowOverlap="1">'
+                f'<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{int(ox * 12700)}</wp:posOffset></wp:positionH>'
+                f'<wp:positionV relativeFrom="page"><wp:posOffset>{int(oy * 12700)}</wp:posOffset></wp:positionV>'
+                f'<wp:extent cx="{int(sw * 12700)}" cy="{int(sh * 12700)}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>'
+                f'<wp:docPr id="{pid}" name="Page {pid}"/><wp:cNvGraphicFramePr/>'
+                f'<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">'
+                f'<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:cNvSpPr txBox="1"/>'
+                f'<wps:spPr><a:xfrm rot="{self.turn * 60000}"><a:off x="0" y="0"/><a:ext cx="{int(sw * 12700)}" cy="{int(sh * 12700)}"/></a:xfrm>'
+                f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr>'
+                f'<wps:txbx><w:txbxContent>{xml}<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/></w:pPr></w:p></w:txbxContent></wps:txbx>'
+                f'<wps:bodyPr lIns="{left}" tIns="{top}" rIns="{right}" bIns="{bottom}" anchor="t"><a:noAutofit/></wps:bodyPr></wps:wsp>'
+                f'</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>')
 
     def image_para(self, it, x0, x1, cursor):
         before = 0.0 if cursor is None else max(0.0, it.y0 - cursor)
