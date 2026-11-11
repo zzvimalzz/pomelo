@@ -19,6 +19,7 @@ class Builder:
         self.page_x1 = None
         self.slack = 0.0
         self.turn = 0
+        self.placed = False               # text boxes at fixed places: a line ends where the PDF's does, unless the paragraph is justified
         self.depth = 0
         self.emitted = set()
         self.nid = 1000 + page_obj.pno * 200
@@ -171,6 +172,8 @@ class Builder:
             room = right_edge - a_.x1
             natural = jc == "both" or ((right_edge - ref) >= 0.8 * w and room < width_next + 0.25 * b_.size)
             breaks.append(not natural)
+        if self.placed and jc != "both":
+            breaks = [True] * len(breaks)
         reflow = n >= 2 and not any(breaks)
         ind_left = ind_right = 0.0
         first_line = (marker[3] if marker else lines[0].x0) - ref if n >= 2 and jc != "center" else 0.0
@@ -267,6 +270,73 @@ class Builder:
                      f'w:vAnchor="page" w:hAnchor="page" w:x="{tw(fx0)}" w:y="{tw(T)}"/>')
             xml += part.replace("<w:pPr>", "<w:pPr>" + frame, 1)
         return xml
+
+    def text_boxes(self, lines):
+        """The text of a design page: every paragraph a text box anchored to the sheet at its PDF position, still real text."""
+        paras = []
+        for l in sorted(lines, key=lambda l: (l.base, l.x0)):
+            above = [p for p in paras if self.joins(p, l, 0.0, 0.0)]
+            if above:
+                max(above, key=lambda p: p.lines[-1].base).lines.append(l)
+            else:
+                paras.append(Para([l]))
+        xml = ""
+        for p in self.reading_order(paras):
+            first = p.lines[0]
+            fx0 = p.x0 - (first.x0 - (first.marker[2] if first.marker else first.x0))
+            fx1 = p.x1 + 3.0
+            part, T, B = self.para_xml(p, fx0, fx1, self.metrics(p)[1])
+            xml += self.text_box_xml(part, fx0, T, fx1 - fx0, B - T, wraps='<w:jc w:val="left"/>' not in part)
+        return xml
+
+    def reading_order(self, items):
+        """Columns of text one after the other, but the cells of a table row by row: the order Word reads text boxes in."""
+        def rows(its):
+            out = []
+            for i in sorted(its, key=lambda i: i.y0):
+                if out and i.y0 - out[-1][0].y0 <= 2.5:
+                    out[-1].append(i)
+                else:
+                    out.append([i])
+            return [i for r in out for i in sorted(r, key=lambda i: i.x0)]
+
+        cols = self.v_cut(items)
+        if cols:
+            level = sum(any(abs(i.y0 - j.y0) <= 2.5 for d in cols if d is not c for j in d[2]) for c in cols for i in c[2])
+            if level >= 0.6 * len(items):
+                return rows(items)
+            return [i for c in cols for i in self.reading_order(c[2])]
+        bands = self.h_bands(items)
+        if len(bands) > 1:
+            return [i for b in bands for i in self.reading_order(b[2])]
+        return rows(items)
+
+    def turned_text_box(self, l):
+        """A line that runs up, down or upside down: a text box as long as the line, turned about its centre."""
+        dx, dy = l.dir
+        turn = 90 if dy > 0 else 270 if dy < 0 else 180
+        long, thick = (l.y1 - l.y0, l.x1 - l.x0) if turn != 180 else (l.x1 - l.x0, l.y1 - l.y0)
+        spans = [dict(s, bbox=(s["bbox"][1], s["bbox"][0], s["bbox"][3], s["bbox"][2]) if turn != 180 else s["bbox"]) for s in l.spans]
+        content = (f'<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="{tw(thick)}" w:lineRule="exact"/><w:jc w:val="left"/></w:pPr>'
+                   f'{runs_xml(self.P, spans, False, self.doc.part, self.meter)}</w:p>')
+        cx, cy = (l.x0 + l.x1) / 2, (l.y0 + l.y1) / 2
+        return self.text_box_xml(content, cx - (long + 3.0) / 2, cy - thick / 2, long + 3.0, thick, wraps=False, turn=turn)
+
+    def text_box_xml(self, content, x, y, w, h, wraps, turn=0):
+        """A text box without fill or line and with no inset, anchored to the sheet. A left-aligned paragraph is not allowed to wrap, so a substitute font that is a little wider cannot break a line; Word places centred and right-aligned text inside a box that does not wrap as if the box were empty, so those keep a box as wide as the text."""
+        pid = self.next_id()
+        cx, cy = int(w * 12700), int((h + 2.0) * 12700)
+        return (f'<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="{pid}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">'
+                f'<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{int(x * 12700)}</wp:posOffset></wp:positionH>'
+                f'<wp:positionV relativeFrom="page"><wp:posOffset>{int(y * 12700)}</wp:posOffset></wp:positionV>'
+                f'<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>'
+                f'<wp:docPr id="{pid}" name="Text {pid}"/><wp:cNvGraphicFramePr/>'
+                f'<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">'
+                f'<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:cNvSpPr txBox="1"/>'
+                f'<wps:spPr><a:xfrm{f' rot="{turn * 60000}"' if turn else ''}><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr>'
+                f'<wps:txbx><w:txbxContent>{content}</w:txbxContent></wps:txbx>'
+                f'<wps:bodyPr wrap="{"square" if wraps else "none"}" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"><a:noAutofit/></wps:bodyPr></wps:wsp>'
+                f'</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>')
 
     def tabbed_para(self, lines, x0, x1, cursor):
         """Several single pieces on one row, as one paragraph with tab stops."""

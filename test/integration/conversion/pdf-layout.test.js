@@ -119,7 +119,7 @@ if kind == "beside":                                # a photo with text wrapped 
     doc.save(sys.argv[1]); sys.exit()
 if kind == "tall":                                  # a shaded panel more than half a page high
     page = doc.new_page(width=595, height=842)
-    page.draw_rect(pymupdf.Rect(50, 100, 545, 600), color=(0.6, 0.6, 0.6), fill=(0.95, 0.95, 0.9))
+    page.draw_rect(pymupdf.Rect(50, 100, 270, 600), color=(0.6, 0.6, 0.6), fill=(0.95, 0.95, 0.9))
     for i in range(3):
         page.insert_text((70, 130 + i * 20), "Text inside the panel, line %d" % (i + 1), fontname="helv", fontsize=11)
     doc.save(sys.argv[1]); sys.exit()
@@ -142,6 +142,21 @@ if kind == "words":                                # lines that start with a wor
         page.insert_text((60, 100 + i * 14), t, fontname="helv", fontsize=11)
     for i, t in enumerate(("o A real bullet written as the letter o", "• A bullet glyph")):
         page.insert_text((60, 200 + i * 16), t, fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "poster":                                # text set freely on a coloured page, as on a slide or a flyer
+    page = doc.new_page(width=595, height=842)
+    page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
+    page.draw_circle((460, 620), 90, color=None, fill=(0.95, 0.7, 0.1))
+    page.insert_text((60, 150), "SUMMER SALE", fontname="hebo", fontsize=40, color=(1, 1, 1))
+    for i, t in enumerate(("Everything half price this week,", "while the sun is out and the", "shelves are full.")):
+        page.insert_text((60, 230 + i * 16), t, fontname="helv", fontsize=12, color=(1, 1, 1))
+    page.insert_text((400, 625), "Open daily 9 to 5", fontname="hebo", fontsize=12, color=(0.1, 0.2, 0.45))
+    page.insert_text((60, 800), "www.example.com", fontname="helv", fontsize=10, color=(0.8, 0.8, 0.9))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "scatter":                               # short pieces of text at many left edges and nothing drawn: an ordinary page, not a design
+    page = doc.new_page(width=595, height=842)
+    for i in range(20):
+        page.insert_text((40 + (i % 7) * 70, 60 + i * 30), "Item %d" % i, fontname="helv", fontsize=10)
     doc.save(sys.argv[1]); sys.exit()
 if kind == "tracked":                               # a letter-spaced title that reaches the right edge of its column
     page = doc.new_page(width=595, height=842)
@@ -405,6 +420,25 @@ const read = async (docx) => {
   d = await read(docx);
   expect('"of", "on", "or" and "one" at the start of a line are kept as words', !missingFrom(d.text, ['of the parts', 'on the next line', 'or one more']).length, d.text);
   expect('only the letter o on its own and the bullet glyph make list items', (d.xml.match(/<w:numPr>/g) || []).length === 2, (d.xml.match(/<w:numPr>/g) || []).length + ' list items');
+  fs.rmSync(docx);
+
+  console.log('a poster: text set freely on a coloured page');
+  [docx] = await convert.convertFile(draw('poster', 'poster'), 'docx');
+  d = await read(docx);
+  const POSTER = ['SUMMER SALE', 'Everything half price this week,', 'shelves are full.', 'Open daily 9 to 5', 'www.example.com'];
+  const boxes = d.xml.match(/<wp:anchor [^>]*>(?:(?!<\/wp:anchor>).)*?<wps:txbx>.*?<\/wp:anchor>/gs) || [];
+  expect('the text is real text, in text boxes', boxes.length === 4 && !missingFrom(d.text, POSTER).length && !/<w:t[ >]/.test(d.xml.replace(/<w:txbxContent>.*?<\/w:txbxContent>/gs, '')), missingFrom(d.text, POSTER).join(' | '));
+  const heading = boxes.find((b) => b.includes('SUMMER SALE')) || '';
+  const at = (re) => Number((heading.match(re) || [])[1]) / 12700;
+  expect('the title box sits where the title is on the sheet', Math.abs(at(/<wp:positionH [^>]*><wp:posOffset>(\d+)</) - 60) < 4 && Math.abs(at(/<wp:positionV [^>]*><wp:posOffset>(\d+)</) - 115) < 12, heading.slice(0, 400));
+  expect('the page without its text is one picture behind the text, the size of the sheet', (d.xml.match(/behindDoc="1"/g) || []).length === 1 && /<wp:extent cx="7556500" cy="10693400"\/>/.test(d.xml));
+  expect('the page is one sheet: it cannot flow onto another', (d.xml.match(/<w:sectPr/g) || []).length === 1);
+  fs.rmSync(docx);
+
+  console.log('short pieces of text with nothing drawn');
+  [docx] = await convert.convertFile(draw('scatter', 'scatter'), 'docx');
+  d = await read(docx);
+  expect('an ordinary page: the text is paragraphs, not text boxes', !/<wps:wsp/.test(d.xml) && !missingFrom(d.text, ['Item 0', 'Item 19']).length, d.text.slice(0, 200));
   fs.rmSync(docx);
 
   console.log('a letter-spaced title that reaches the edge of its column');

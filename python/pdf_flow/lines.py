@@ -23,6 +23,7 @@ class Line:
         self.absorbed = False
         self.block = self.block_x1 = None   # the PDF text block the line came from, and where it ends on the right
         self.justified = False
+        self.dir = (1.0, 0.0)
 
     @property
     def text(self):
@@ -115,6 +116,7 @@ def read_lines(page):
             size = max(s["size"] for s in spans if s["text"].strip())
             line = Line([dict(s) for s in spans], ln["bbox"], spans[0]["origin"][1], size, rot)
             line.block, line.block_x1 = bi, block["bbox"][2]
+            line.dir = (dx, dy)
             out.append(line)
     return out
 

@@ -14,7 +14,7 @@ import pymupdf
 from pdf_spans import dominant_size
 
 from .builder import Builder
-from .common import NS, area, inside, overlap, tw
+from .common import HI_DPI, NS, area, inside, overlap, tw
 from .fonts import FontMeter
 from .lines import read_lines
 from .lists import Lists
@@ -82,6 +82,13 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None):
     out.save(dst)
 
 
+def boxes_of(l):
+    out = [s["bbox"] for s in l.spans]
+    if l.marker_box:
+        out.append(l.marker_box)
+    return out
+
+
 def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n_pages, log, safe=False, turn=0):
     """safe: only the text, as paragraphs (what a page falls back to when something exotic in it cannot be rebuilt).
     turn: the /Rotate of the page; it is built upright and shown turned, in a text box the size of the sheet."""
@@ -136,11 +143,6 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     P.rot_boxes = [tuple(b) for b in rot_boxes]
     rot_boxes = P.rot_boxes
     all_lines = [l for l in P.upright if not any(overlap(l.bbox, r) > 0.05 * area(l.bbox) for r in rot_boxes)]
-    def boxes_of(l):
-        out = [s["bbox"] for s in l.spans]
-        if l.marker_box:
-            out.append(l.marker_box)
-        return out
     for l in all_lines:
         for bb in boxes_of(l):
             r = pymupdf.Rect(bb)
@@ -153,8 +155,11 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     else:
         P.leftovers()
     P.figs = [f for f in P.figs if not any(overlap(f, r) > 0.8 * area(f) for r, _ in P.imgs)]
+    kind, why = page_kind(P)
     if os.environ.get("POMELO_DEBUG"):
-        sys.stderr.write("page %d: %s page (%s)\n" % ((pno + 1,) + page_kind(P)))
+        sys.stderr.write("page %d: %s page (%s)\n" % (pno + 1, kind, why))
+    if kind == "design" and not (safe or scan or turn):
+        return design_page(P, out, meter, lists, pno, n_pages)
     merged = []
     for b in P.rot_boxes:
         box = list(b)
@@ -318,7 +323,6 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     # larger pictures go underneath; pictures of about the same size are stacked as the PDF painted them
     for it in sorted(P.floaters, key=lambda i: (-round(math.log(max(area(i.bbox), 1.0)) / 0.1), getattr(i, "order", 0))):
         floats += B.picture_xml(it, floating=True, name="Picture")
-    mark = '<w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr>'
     # the pictures are anchored in the page's first paragraph: when the text runs a line over, the closing paragraph moves
     # to the next sheet, and the background would go with it. A page that starts with something else keeps them in the closing one.
     if floats and not turned and xml.startswith("<w:p><w:pPr>") and not xml.startswith("<w:p><w:pPr><w:framePr"):
@@ -335,11 +339,42 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         sheet_w, sheet_h, margins = (P.w, P.h, (0.0,) * 4) if turn == 180 else (P.h, P.w, (0.0,) * 4)
     else:
         sheet_w, sheet_h = P.w, P.h
+    closing, sect = close_page(sheet_w, sheet_h, margins, floats, pno, n_pages)
+    return xml + closing, sect
+
+
+def close_page(sheet_w, sheet_h, margins, floats, pno, n_pages):
+    """The closing paragraph of a page, which carries its pictures and ends its section, and the section's properties."""
+    mark = '<w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr>'
     inner = (f'<w:type w:val="nextPage"/><w:pgSz w:w="{tw(sheet_w)}" w:h="{tw(sheet_h)}"{' w:orient="landscape"' if sheet_w > sheet_h else ''}/>'
              f'<w:pgMar w:top="{tw(margins[0])}" w:right="{tw(margins[1])}" w:bottom="{tw(margins[2])}" w:left="{tw(margins[3])}" w:header="0" w:footer="0" w:gutter="0"/>')
     sect = f'<w:sectPr {nsdecls("w")}>{inner}</w:sectPr>'
     if pno < n_pages - 1:
-        closing = f'<w:p><w:pPr>{mark}<w:sectPr>{inner}</w:sectPr></w:pPr>{floats}</w:p>'
-    else:
-        closing = f'<w:p><w:pPr>{mark}</w:pPr>{floats}</w:p>'
-    return xml + closing, sect
+        return f'<w:p><w:pPr>{mark}<w:sectPr>{inner}</w:sectPr></w:pPr>{floats}</w:p>', sect
+    return f'<w:p><w:pPr>{mark}</w:pPr>{floats}</w:p>', sect
+
+
+def design_page(P, out, meter, lists, pno, n_pages):
+    """A page set freely over pictures and colour: the page without its text is one picture behind everything, and each
+    paragraph of text is a text box at its place on the sheet, turned where the text is. Nothing flows, so the page cannot
+    spill onto a second sheet. Text turned by anything but a quarter stays in the picture."""
+    turned = [l for l in P.rotated if max(abs(l.dir[0]), abs(l.dir[1])) > 0.999]
+    for l in P.upright + turned:
+        for bb in boxes_of(l):
+            r = pymupdf.Rect(bb)
+            if r.width >= r.height:
+                r = pymupdf.Rect(r.x0, r.y0 + 0.18 * r.height, r.x1, r.y1 - 0.18 * r.height)
+            else:
+                r = pymupdf.Rect(r.x0 + 0.18 * r.width, r.y0, r.x1 - 0.18 * r.width, r.y1)
+            P.work_all.add_redact_annot(r, fill=False)
+    P.work_all.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE, text=pymupdf.PDF_REDACT_TEXT_REMOVE)
+    B = Builder(out, P, meter, lists)
+    B.nid = 100000 + pno * 5000                                   # a cheat sheet holds over a hundred text boxes, more than the 200 ids a page has otherwise
+    B.placed = True
+    floats = ""
+    dpi = min(HI_DPI, int(72 * math.sqrt(25e6 / (P.w * P.h))))           # a poster-sized sheet stays under about 25 megapixels
+    data = P.render_clip((0.0, 0.0, P.w, P.h), dpi=dpi, from_keep=False)
+    if data:
+        floats = B.picture_xml(Fig((0.0, 0.0, P.w, P.h), data[0], data[1], floating=True), floating=True, name="Picture")
+    floats += B.text_boxes(P.upright) + "".join(B.turned_text_box(l) for l in turned)
+    return close_page(P.w, P.h, (0.0, 0.0, 0.0, 0.0), floats, pno, n_pages)
