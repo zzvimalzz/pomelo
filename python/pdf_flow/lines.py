@@ -195,11 +195,16 @@ def merge_rows(lines, shapes=()):
     return out
 
 
+def bullet(token):
+    """The letter "o" counts as a bullet only on its own; a word that starts with it never does."""
+    return token[0] in BULLETS and (token[0] != "o" or token == "o")
+
+
 def attach_markers(lines):
     """A bullet or a number the PDF drew as a line of its own joins the text on its row."""
     def marker_only(l):
         t = l.text.strip()
-        return 0 < len(t) <= 3 and (t[0] in BULLETS or bool(NUMBER.match(t)))
+        return 0 < len(t) <= 3 and (bullet(t) or bool(NUMBER.match(t)))
     out = list(lines)
     for m in [l for l in lines if marker_only(l)]:
         mates = [o for o in out if o is not m and not marker_only(o) and abs(o.base - m.base) <= 0.35 * m.size + 1.0 and 0 < o.x0 - m.x1 <= 4.5 * m.size]
@@ -213,6 +218,16 @@ def attach_markers(lines):
     return out
 
 
+def hangs(line, lines):
+    """False when the line below starts under the marker, not under the text, and is no marker line itself: a number that opens a running paragraph, as in "(1) The Supplier ...", is not a list item."""
+    below = [m for m in lines if m is not line and -2 <= m.y0 - line.y1 <= 0.9 * line.size and m.x0 <= line.x1 and m.x1 >= line.x0 and m.text.strip()]
+    if not below:
+        return True
+    nxt = min(below, key=lambda m: m.y0)
+    first = nxt.text.split(None, 1)[0]
+    return not (abs(nxt.x0 - line.x0) <= 2 and not (bullet(first) or NUMBER.match(first)))
+
+
 def split_marker(line, body):
     """A leading bullet or number becomes a list marker of the line (headings never do)."""
     text = line.text
@@ -224,7 +239,7 @@ def split_marker(line, body):
     if not rest.strip():
         return
     kind = None
-    if len(first) <= 2 and first[0] in BULLETS and (first not in ("-", "–", "—", "*", "o") or rest[:1].isspace()):
+    if len(first) <= 2 and bullet(first):
         kind = "bullet"
     elif NUMBER.match(first) and rest[:1].isspace() and len(rest.strip()) > 1:
         kind = "number"

@@ -11,7 +11,7 @@ from pdf_fonts import latin
 from pdf_spans import RTL, dedupe, hexcolor
 
 from .common import HI_DPI, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
-from .lines import attach_markers, is_bold, is_italic, merge_rows, read_lines, split_marker
+from .lines import attach_markers, hangs, is_bold, is_italic, merge_rows, read_lines, split_marker
 from .shapes import Box, Tbl, polygon_area, rect_shapes, segments_of
 
 
@@ -40,7 +40,8 @@ class Page:
         self.upright = attach_markers(merge_rows([l for l in lines if not l.rot], self.shapes))
         self.rotated = [l for l in lines if l.rot]
         for l in self.upright:
-            split_marker(l, self.body)
+            if hangs(l, self.upright):
+                split_marker(l, self.body)
         self.links = links
 
     # -- spans: underline, strike, highlight, links
@@ -89,7 +90,7 @@ class Page:
             return
         for t in found:
             try:
-                cells = [c for c in t.cells if c]
+                cells = [c for c in t.cells if c and c[2] - c[0] >= 8 and c[3] - c[1] >= 8]   # a cell drawn as an outer colour with an inset tint leaves thin strips between the two: they are no cells
             except Exception:
                 continue
             if len(cells) < 2:
@@ -411,8 +412,8 @@ def page_kind(P):
     return "document", "pictures and colour cover %d%% of the sheet" % round(share * 100)
 
 
-def span_run(page, s, justified, meter, edge=False):
-    """One <w:r>."""
+def span_run(page, s, justified, meter, gap=None, last=False):
+    """One <w:r>, or two when the line ends here against the cell's edge and the last letter must leave the letter spacing. `gap`: room between the line and the right edge of its cell, None outside a cell."""
     font = esc(meter.family(s))
     size = s["size"]
     half = max(2, round(size * 2))
@@ -438,11 +439,10 @@ def span_run(page, s, justified, meter, edge=False):
                 tight = ((w - (meter.width(s, shown, size) or w)) / max(1, len(shown) - 1))
                 if tight <= -0.05:
                     spacing = tw(max(tight, -0.8))
-    if edge and latin(text):
+    if gap is not None and gap < 1.5 and latin(text):
         spacing -= 1
-    if spacing:
-        rpr += f'<w:spacing w:val="{spacing}"/>'
-    rpr += f'<w:sz w:val="{half}"/><w:szCs w:val="{half}"/>'
+    tracking = f'<w:spacing w:val="{spacing}"/>' if spacing else ""
+    rpr += tracking + f'<w:sz w:val="{half}"/><w:szCs w:val="{half}"/>'
     if s.get("ul"):
         rpr += f'<w:u w:val="single" w:color="{s["ul"]}"/>'
     if s.get("hl"):
@@ -451,15 +451,18 @@ def span_run(page, s, justified, meter, edge=False):
         rpr += '<w:vertAlign w:val="superscript"/>'
     if RTL.search(text):
         rpr += "<w:rtl/>"
-    return f'<w:r><w:rPr>{rpr}</w:rPr><w:t xml:space="preserve">{esc(text)}</w:t></w:r>'
+    run = lambda props, t: f'<w:r><w:rPr>{props}</w:rPr><w:t xml:space="preserve">{esc(t)}</w:t></w:r>'
+    if last and gap is not None and spacing > 0 and gap < 1.5 + spacing / 20 and len(text) > 1 and text[-1] != " ":
+        return run(rpr, text[:-1]) + run(rpr.replace(tracking, ""), text[-1])   # Word adds the letter spacing after the last letter too, which wraps a line that fills its cell
+    return run(rpr, text)
 
 
-def runs_xml(page, spans, justified, doc_part, meter, edge=False):
+def runs_xml(page, spans, justified, doc_part, meter, gap=None):
     xml = ""
     pending_link, buf = None, ""
     for s in spans:
         link = s.get("link")
-        run = span_run(page, s, justified, meter, edge)
+        run = span_run(page, s, justified, meter, gap, s is spans[-1])
         if link != pending_link:
             if pending_link:
                 xml += f'<w:hyperlink r:id="{doc_part.relate_to(pending_link, RELATIONSHIP_TYPE.HYPERLINK, is_external=True)}" w:history="1">{buf}</w:hyperlink>'
