@@ -87,6 +87,24 @@ if kind == "footer":                                # body text, and a footer ne
         page.insert_text((60, 100 + i * 16), "Body line %d of the page" % (i + 1), fontname="helv", fontsize=11)
     page.insert_text((60, 815), "Footer of the page 1 / 2", fontname="helv", fontsize=8)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "report":                                # four pages with a running title from the second page on, a footer with the page number, a title, headings, a list and a caption
+    for n in range(4):
+        page = doc.new_page(width=595, height=842)
+        if n:
+            page.insert_text((60, 40), "Quarterly Review", fontname="helv", fontsize=9)
+        page.insert_text((60, 810), "Ref. QR-2026-%d" % 7, fontname="helv", fontsize=9)
+        page.insert_link({"kind": pymupdf.LINK_URI, "from": pymupdf.Rect(58, 800, 140, 813), "uri": "https://example.com/report"})
+        page.insert_text((470, 810), "Page %d of 4" % (n + 1), fontname="helv", fontsize=9)
+        if n == 0:
+            page.insert_text((60, 120), "Annual Statement", fontname="hebo", fontsize=30)
+        page.insert_text((60, 190), "Section %d" % (n + 1), fontname="hebo", fontsize=18)
+        for i in range(3):
+            page.insert_text((60, 220 + i * 14), "Ordinary body text, line %d on page %d." % (i + 1, n + 1), fontname="helv", fontsize=11)
+        if n == 1:
+            page.insert_text((60, 290), "•", fontname="helv", fontsize=11)
+            page.insert_text((76, 290), "A list item that matters", fontname="helv", fontsize=11)
+            page.insert_text((60, 330), "Figure 1. The plant at dusk.", fontname="helv", fontsize=9)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "columns":                               # two justified columns, the right one reaching the right edge of its cell
     page = doc.new_page(width=595, height=842)
     text = "Every request is read by two people before the panel decides whether a meeting will be needed for it, and the applicant hears from the office within a week of the decision. "
@@ -373,6 +391,26 @@ const read = async (docx) => {
   expect('the body text is ordinary paragraphs', !/<w:framePr [^>]*\/>(?:(?!<\/w:p>).)*Body line 1/s.test(d.xml) && d.text.includes('Body line 4'));
   fs.rmSync(docx);
 
+  console.log('a report: a running title, a footer with the page number, headings, a list and a caption');
+  [docx] = await convert.convertFile(draw('report', 'report'), 'docx');
+  d = await read(docx);
+  const part = async (name) => (d.zip.file(name) ? d.zip.file(name).async('string') : '');
+  const footer = await part('word/footer1.xml');
+  const header = await part('word/header1.xml');
+  const sections = d.xml.match(/<w:sectPr[ >]/g) || [];
+  expect('the footer is a footer part with a page and a page-count field', /<w:instrText [^>]*> PAGE <\/w:instrText>/.test(footer) && /<w:instrText [^>]*> NUMPAGES <\/w:instrText>/.test(footer) && footer.includes('Page') && footer.includes('Ref. QR-2026-7'), footer.slice(-300));
+  const footerRels = await part('word/_rels/footer1.xml.rels');
+  const linkId = (footer.match(/<w:hyperlink r:id="(rId\d+)"/) || [])[1];
+  expect('a link in the footer is related to the footer part, not to the document', Boolean(linkId) && new RegExp(`Id="${linkId}"[^>]*Target="https://example.com/report"|Target="https://example.com/report"[^>]*Id="${linkId}"`).test(footerRels), footerRels);
+  expect('the running title is a header part, set once', header.includes('Quarterly Review') && !(await part('word/header2.xml')));
+  expect('neither is also written in the body', !/Quarterly Review|Ref\. QR|Page \d? ?of/.test(d.text) && !/<w:t[^>]*>of<\/w:t>/.test(d.xml), d.text.slice(0, 300));
+  expect('page 1, which has no running title, has no header, and the others carry on with the first', (d.xml.match(/<w:headerReference /g) || []).length === 1 && d.xml.indexOf('<w:footerReference ') < d.xml.indexOf('</w:sectPr>') && (d.xml.match(/<w:footerReference /g) || []).length === 1 && sections.length === 4);
+  expect('the title, the headings, the list item and the caption have their styles', /<w:pStyle w:val="Title"\/>(?:(?!<\/w:p>).)*Annual Statement/s.test(d.xml) && /<w:pStyle w:val="Heading2"\/>(?:(?!<\/w:p>).)*Section 2/s.test(d.xml) && /<w:pStyle w:val="ListParagraph"\/>(?:(?!<\/w:p>).)*A list item/s.test(d.xml) && /<w:pStyle w:val="Caption"\/>(?:(?!<\/w:p>).)*Figure 1/s.test(d.xml));
+  const styles = await part('word/styles.xml');
+  const heading1 = (styles.match(/<w:style [^>]*w:styleId="Heading1".*?<\/w:style>/s) || [''])[0];
+  expect('the styles are there, and a heading style adds no look and no keep-with-next of its own', ['Normal', 'Title', 'Heading1', 'Heading2', 'Heading3', 'ListParagraph', 'Caption'].every((id) => styles.includes(`w:styleId="${id}"`)) && !/<w:rPr>|<w:keepNext/.test(heading1), heading1);
+  fs.rmSync(docx);
+
   console.log('two columns, the right one reaching the edge of its cell');
   [docx] = await convert.convertFile(draw('columns', 'columns'), 'docx');
   d = await read(docx);
@@ -405,7 +443,8 @@ const read = async (docx) => {
   console.log('a font that Windows does not have');
   [docx] = await convert.convertFile(draw('unknownfont', 'unknownfont'), 'docx');
   d = await read(docx);
-  expect('the text is set in an installed family chosen for it, not left to Word', /w:rFonts w:ascii="(Calibri|Arial|Segoe UI)"/.test(d.xml) && !/PomeloNoSuchSans/.test(d.xml), (d.xml.match(/<w:rFonts [^>]*>/) || [''])[0]);
+  const normal = ((await d.zip.file('word/styles.xml').async('string')).match(/<w:style [^>]*w:styleId="Normal".*?<\/w:style>/s) || [''])[0];
+  expect('the text is set in an installed family chosen for it, not left to Word', /w:rFonts w:ascii="(Calibri|Arial|Segoe UI)"/.test(normal) && !/PomeloNoSuchSans/.test(d.xml + normal), normal);
   fs.rmSync(docx);
 
   console.log('a centred title on two lines');

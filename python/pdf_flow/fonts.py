@@ -5,7 +5,7 @@ import re
 
 import pymupdf
 
-from pdf_fonts import installed, installed_font, installed_name, latin, norm, stand_in, word_family
+from pdf_fonts import installed, installed_font, installed_name, latin, line_height, norm, stand_in, word_family
 
 from .lines import is_bold, is_italic
 
@@ -18,6 +18,8 @@ class FontMeter:
         self.cache = {}
         self.xref = {}
         self.families = {}
+        self.hyphenated = set()           # the words the text spells with a hyphen, as "three-year"
+        self.base = (None, 0)             # the family and size (half points) of the Normal style, which a run does not repeat
 
     def register(self, page):
         try:
@@ -50,6 +52,10 @@ class FontMeter:
         if key not in self.families:
             self.families[key] = stand_in(s["font"], s["flags"], is_bold(s), is_italic(s), self.font(s["font"]))
         return self.families[key]
+
+    def height(self, s):
+        """How tall Word sets a line of the span's family per point of size, or None when that is not known."""
+        return line_height(self.family(s), is_bold(s), is_italic(s))
 
     def width(self, s, text, size):
         """Natural width in the font Word will use, or None when it cannot be measured."""
