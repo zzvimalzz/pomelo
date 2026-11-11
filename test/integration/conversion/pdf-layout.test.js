@@ -25,6 +25,91 @@ if kind == "text":                                  # many pages of nothing but 
         for i in range(40):
             page.insert_text((60, 70 + i * 18), "Page %d line %d: plain text on a white page, the most common kind of PDF." % (n + 1, i + 1), fontname="helv", fontsize=10)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "edge":                                  # text that starts left of the sheet
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((-10, 100), "Text that starts past the left edge of the sheet", fontname="helv", fontsize=11)
+    page.insert_text((60, 130), "Text inside the sheet", fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "mixed":                                 # portrait, landscape, portrait
+    for w, h in ((595, 842), (842, 595), (595, 842)):
+        page = doc.new_page(width=w, height=h)
+        page.insert_text((60, 100), "Sheet %dx%d" % (w, h), fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "turned":                                # the second sheet is stored sideways
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((60, 100), "First sheet", fontname="helv", fontsize=11)
+    page = doc.new_page(width=842, height=595)
+    for i in range(3):
+        page.insert_text((60, 100 + i * 20), "Second sheet line %d" % (i + 1), fontname="helv", fontsize=11)
+    page.set_rotation(90)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "stretched":                             # a justified paragraph drawn word by word, and a row of figures
+    page = doc.new_page(width=595, height=842)
+    rows = ["Every request is read by two people before the", "panel decides whether a meeting will be needed for it", "and the applicant hears from the office within a week"]
+    for i, row in enumerate(rows):
+        words = row.split()
+        gap = (260 - sum(pymupdf.get_text_length(w, fontname="helv", fontsize=10) for w in words)) / (len(words) - 1)
+        x = 60
+        for w in words:
+            page.insert_text((x, 100 + i * 14), w, fontname="helv", fontsize=10)
+            x += pymupdf.get_text_length(w, fontname="helv", fontsize=10) + gap
+    page.insert_text((60, 142), "ends here.", fontname="helv", fontsize=10)
+    x = 60
+    for n in ("317", "334", "351", "368", "385", "402"):
+        page.insert_text((x, 220), n, fontname="helv", fontsize=10)
+        x += pymupdf.get_text_length(n, fontname="helv", fontsize=10) + 9
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "backdrop":                              # a large picture with text on it and text below it
+    page = doc.new_page(width=595, height=842)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 84), False)
+    for yy in range(84):
+        for xx in range(60):
+            pix.set_pixel(xx, yy, (20 + xx * 3, 60 + yy, 120))
+    page.insert_image(pymupdf.Rect(0, 0, 595, 600), pixmap=pix)
+    for i in range(3):
+        page.insert_text((60, 100 + i * 20), "Text on the picture, line %d" % (i + 1), fontname="helv", fontsize=12, color=(1, 1, 1))
+    page.insert_text((60, 700), "Plain text below the picture", fontname="helv", fontsize=12)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "foot":                                  # a wide photo at the foot of the page, under a paragraph
+    page = doc.new_page(width=595, height=842)
+    for i in range(6):
+        page.insert_text((60, 100 + i * 16), "Paragraph line %d of the page" % (i + 1), fontname="helv", fontsize=11)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 24), False)
+    for yy in range(24):
+        for xx in range(60):
+            pix.set_pixel(xx, yy, (20 + xx * 3, 60 + yy * 4, 120))
+    page.insert_image(pymupdf.Rect(60, 700, 535, 800), pixmap=pix, keep_proportion=False)
+    page.insert_text((60, 815), "Caption of the photo", fontname="helv", fontsize=8)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "circle":                                # a wide photo cropped to a circle
+    page = doc.new_page(width=595, height=842)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 200, 100), False)
+    for yy in range(100):
+        for xx in range(200):
+            pix.set_pixel(xx, yy, (xx, 120 + yy, 200 - xx))
+    page.insert_image(pymupdf.Rect(60, 60, 260, 160), stream=pix.tobytes("jpeg"))
+    page.clean_contents()
+    xref = page.get_contents()[0]
+    cx, cy, r, k = 160, 842 - 110, 50, 0.5523 * 50
+    clip = "%g %g m %g %g %g %g %g %g c %g %g %g %g %g %g c %g %g %g %g %g %g c %g %g %g %g %g %g c h W n " % (
+        cx + r, cy, cx + r, cy + k, cx + k, cy + r, cx, cy + r, cx - k, cy + r, cx - r, cy + k, cx - r, cy,
+        cx - r, cy - k, cx - k, cy - r, cx, cy - r, cx + k, cy - r, cx + r, cy - k, cx + r, cy)
+    doc.update_stream(xref, b"q " + clip.encode() + doc.xref_stream(xref) + b" Q")
+    page.insert_text((60, 200), "A photo in a circle", fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "cards":                                 # white cards on a pale page, each with a faint shadow drawn under it
+    page = doc.new_page(width=595, height=842)
+    page.draw_rect(page.rect, color=None, fill=(0.96, 0.97, 0.98))
+    for i in range(3):
+        x = 60 + i * 170
+        shape = page.new_shape()
+        shape.draw_rect(pymupdf.Rect(x, 100, x + 170, 220))
+        shape.finish(color=None, fill=(0, 0, 0), fill_opacity=0.12)
+        shape.commit()
+        page.draw_rect(pymupdf.Rect(x + 12, 108, x + 158, 212), color=(0.8, 0.8, 0.8), fill=(1, 1, 1))
+        page.insert_text((x + 20, 150), "Card %d" % (i + 1), fontname="helv", fontsize=14)
+        page.insert_text((x + 20, 175), "A figure for the card", fontname="helv", fontsize=9)
+    doc.save(sys.argv[1]); sys.exit()
 page = doc.new_page(width=595, height=842)
 if kind == "banner":
     page.draw_rect(pymupdf.Rect(40, 40, 555, 140), color=None, fill=(0.1, 0.2, 0.45))           # a coloured banner
@@ -116,6 +201,68 @@ const read = async (docx) => {
     const lost = wordCheck(tiny, await build('lost', { document: split }));
     expect('a word that is missing is named', lost.missing.join() === 'target' && lost.recall < 1, JSON.stringify(lost));
   }
+
+  console.log('a page whose text starts left of the sheet');
+  [docx] = await convert.convertFile(draw('edge', 'edge'), 'docx');
+  d = await read(docx);
+  expect('no page margin is negative (Word refuses to print the file)', !/w:(left|right|top|bottom)="-/.test(d.xml));
+  expect('all the text is there', !missingFrom(d.text, ['left edge of the sheet', 'Text inside the sheet']).length);
+  fs.rmSync(docx);
+
+  console.log('portrait and landscape sheets in one document');
+  [docx] = await convert.convertFile(draw('mixed', 'mixed'), 'docx');
+  d = await read(docx);
+  const mixed = d.xml.match(/<w:pgSz [^>]*\/>/g) || [];
+  expect('each sheet has its own size, and only the landscape one is marked landscape', mixed.length === 3 && !/orient/.test(mixed[0] + mixed[2]) && /w:w="16840" w:h="11900" w:orient="landscape"/.test(mixed[1]), mixed.join(' '));
+  fs.rmSync(docx);
+
+  console.log('a sheet stored sideways (/Rotate)');
+  [docx] = await convert.convertFile(draw('turned', 'turned'), 'docx');
+  d = await read(docx);
+  const sizes = d.xml.match(/<w:pgSz [^>]*\/>/g) || [];
+  expect('the sideways sheet keeps the size it is shown at', sizes.length === 2 && sizes.every((z) => /w:w="11900" w:h="16840"/.test(z)), sizes.join(' '));
+  const box = (d.xml.match(/<w:txbxContent>.*?<\/w:txbxContent>/s) || [''])[0];
+  const order = ['Second sheet line 1', 'Second sheet line 2', 'Second sheet line 3'].map((t) => box.indexOf(t));
+  expect('its text is real text in a box turned a quarter, in reading order, none of it a picture', /<a:xfrm rot="5400000">/.test(d.xml) && order[0] >= 0 && order[0] < order[1] && order[1] < order[2] && !/<pic:pic>/.test(d.xml), box.slice(0, 200));
+  fs.rmSync(docx);
+
+  console.log('a justified paragraph drawn word by word');
+  [docx] = await convert.convertFile(draw('stretched', 'stretched'), 'docx');
+  d = await read(docx);
+  const paras = d.xml.match(/<w:p[ >].*?<\/w:p>/gs) || [];
+  const plain = (p) => p.replace(/<[^>]+>/g, '');
+  const prose = paras.filter((p) => plain(p).includes('Every request'));
+  expect('the words of the paragraph are one justified paragraph, not one paragraph a word', prose.length === 1 && /w:jc w:val="both"/.test(prose[0]) && plain(prose[0]).includes('panel decides whether a meeting') && plain(prose[0]).includes('hears from the office'), `${paras.length} paragraphs`);
+  const figures = paras.filter((p) => plain(p).includes('317'));
+  expect('a row of evenly spaced figures stays a tabbed row', figures.length === 1 && (figures[0].match(/<w:tab\/>/g) || []).length >= 5 && !/w:jc w:val="both"/.test(figures[0]), figures.join('').slice(0, 200));
+  fs.rmSync(docx);
+
+  console.log('a large picture with text on it and text below it');
+  [docx] = await convert.convertFile(draw('backdrop', 'backdrop'), 'docx');
+  d = await read(docx);
+  expect('the picture is anchored before the first line of text, so it stays on its page when the text runs over', d.xml.indexOf('<wp:anchor') >= 0 && d.xml.indexOf('<wp:anchor') < d.xml.indexOf('<w:t'));
+  fs.rmSync(docx);
+
+  console.log('a wide photo at the foot of a page, with its caption');
+  [docx] = await convert.convertFile(draw('foot', 'foot'), 'docx');
+  d = await read(docx);
+  expect('the photo is placed on the page, so a taller paragraph above cannot push it to the next sheet', /<wp:anchor /.test(d.xml) && !/<wp:inline /.test(d.xml), (d.xml.match(/<wp:(anchor|inline)/) || [''])[0]);
+  expect('so is the caption under it, still text', /<w:framePr [^>]*\/>[^]*?Caption of the photo/.test(d.xml), d.text);
+  fs.rmSync(docx);
+
+  console.log('a photo cropped to a circle');
+  [docx] = await convert.convertFile(draw('circle', 'circle'), 'docx');
+  d = await read(docx);
+  expect('the real photo is kept, cropped and shown as an ellipse', /<a:srcRect /.test(d.xml) && /prst="ellipse"/.test(d.xml), (d.xml.match(/<pic:blipFill>.*?<\/pic:blipFill>/s) || [''])[0]);
+  expect('it is there once, 100 x 100 pt', (d.xml.match(/<pic:pic>/g) || []).length === 1 && /<wp:extent cx="1270000" cy="1270000"\/>/.test(d.xml), (d.xml.match(/<wp:extent [^>]*>/g) || []).join(' '));
+  fs.rmSync(docx);
+
+  console.log('cards with a faint shadow');
+  [docx] = await convert.convertFile(draw('cards', 'cards'), 'docx');
+  d = await read(docx);
+  expect('a transparent black shadow does not turn a card black', !/w:fill="000000"/.test(d.xml));
+  expect('the text of the cards is there', !missingFrom(d.text, ['Card 1', 'Card 3', 'A figure for the card']).length);
+  fs.rmSync(docx);
 
   console.log('speed: 40 pages of plain text');
   {
