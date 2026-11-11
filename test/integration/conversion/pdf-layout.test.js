@@ -129,6 +129,59 @@ if kind == "unknownfont":                           # a font Windows does not ha
     page.insert_font(fontname="PomeloNoSuchSans", fontbuffer=buf)
     page.insert_text((60, 100), "Set in a font that is not installed", fontname="PomeloNoSuchSans", fontsize=12)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "centred":                              # a centred title on two lines of different widths
+    page = doc.new_page(width=595, height=842)
+    for i, t in enumerate(("A centred title that runs onto", "a second line")):
+        w = pymupdf.get_text_length(t, fontname="hebo", fontsize=18)
+        page.insert_text(((595 - w) / 2, 100 + i * 22), t, fontname="hebo", fontsize=18)
+    page.insert_text((60, 200), "Body text under the title.", fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "words":                                # lines that start with a word beginning in "o", and two real bullets
+    page = doc.new_page(width=595, height=842)
+    for i, t in enumerate(("The cost rose by a factor of two in the year,", "of the parts listed here only the first", "on the next line a word starts the same way", "or one more, and then the paragraph ends.")):
+        page.insert_text((60, 100 + i * 14), t, fontname="helv", fontsize=11)
+    for i, t in enumerate(("o A real bullet written as the letter o", "• A bullet glyph")):
+        page.insert_text((60, 200 + i * 16), t, fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "tracked":                               # a letter-spaced title that reaches the right edge of its column
+    page = doc.new_page(width=595, height=842)
+    buf = open(os.path.join(os.environ.get("WINDIR", "C:/Windows"), "Fonts", "arialbd.ttf"), "rb").read()
+    page.insert_font(fontname="Trk", fontbuffer=buf, set_simple=True)
+    page.insert_text((45, 70), "Seller name", fontname="hebo", fontsize=13)
+    page.insert_text((45, 90), "Street 12", fontname="helv", fontsize=9)
+    page.insert_text((409, 70), "INVOICE", fontname="Trk", fontsize=30)
+    page.insert_text((387, 100), "NUMBER", fontname="helv", fontsize=8)
+    page.insert_text((461, 100), "INV-2026-1", fontname="hebo", fontsize=9.5)
+    for xref in page.get_contents():
+        data = doc.xref_stream(xref)
+        if b"/Trk 30 Tf" in data:
+            doc.update_stream(xref, data.replace(b"/Trk 30 Tf", b"/Trk 30 Tf 3 Tc"))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "outlined":                              # two outlined boxes a few points apart, each a numbered paragraph set flush
+    page = doc.new_page(width=595, height=842)
+    for k, (y0, y1) in enumerate(((120, 180), (187, 230))):
+        page.draw_rect(pymupdf.Rect(108, y0, 540, y1), color=(0.27, 0.27, 0.27), width=0.75)
+        page.insert_text((120, y0 + 16), "(%d) First line of the party text, a company" % (k + 1), fontname="helv", fontsize=11)
+        page.insert_text((120, y0 + 31), "second line of the same paragraph.", fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "nested":                                # a table whose cells are an outer colour with a lighter tint inset in each, one row two lines tall
+    page = doc.new_page(width=842, height=595)
+    cols = [57, 137, 216, 296, 376]
+    mid, dark, light = (0.48, 0.63, 0.8), (0.31, 0.51, 0.74), (0.83, 0.88, 0.93)
+    rows = [(111, 125, "head", ["Line", "Apr", "May", "Jun"]), (126, 152, "tint", ["Product revenue", "317", "334", "351"]), (153, 180, "white", ["Service revenue", "426", "443", "460"]),
+            (181, 195, "tint", ["Subscriptions", "535", "552", "569"]), (196, 209, "white", ["Cost of sales", "644", "661", "678"]), (210, 224, "tint", ["Gross profit", "753", "770", "787"])]
+    for y0, y1, tone, cells in rows:
+        for k, text in enumerate(cells):
+            x0, x1 = cols[k], cols[k + 1]
+            if tone == "head":
+                page.draw_rect(pymupdf.Rect(x0, y0, x1, y1), color=None, fill=mid)
+                page.draw_rect(pymupdf.Rect(x0 + 5, y0, x1 - 6, y1), color=None, fill=dark)
+            elif tone == "tint":
+                page.draw_rect(pymupdf.Rect(x0, y0, x1, y1), color=None, fill=light)
+                page.draw_rect(pymupdf.Rect(x0 + 5, y0, x1 - 6, min(y1, y0 + 13)), color=None, fill=light)
+            page.insert_text((x0 + 8, y0 + 10), text, fontname="helv", fontsize=9)
+        page.draw_rect(pymupdf.Rect(cols[0], y1, cols[-1], y1 + 1), color=None, fill=mid)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "circle":                                # a wide photo cropped to a circle
     page = doc.new_page(width=595, height=842)
     pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 200, 100), False)
@@ -338,6 +391,41 @@ const read = async (docx) => {
   [docx] = await convert.convertFile(draw('unknownfont', 'unknownfont'), 'docx');
   d = await read(docx);
   expect('the text is set in an installed family chosen for it, not left to Word', /w:rFonts w:ascii="(Calibri|Arial|Segoe UI)"/.test(d.xml) && !/PomeloNoSuchSans/.test(d.xml), (d.xml.match(/<w:rFonts [^>]*>/) || [''])[0]);
+  fs.rmSync(docx);
+
+  console.log('a centred title on two lines');
+  [docx] = await convert.convertFile(draw('centred', 'centred'), 'docx');
+  d = await read(docx);
+  const title = (d.xml.match(/<w:p>(?:(?!<\/w:p>).)*A centred title(?:(?!<\/w:p>).)*<\/w:p>/s) || [''])[0];
+  expect('it is one centred paragraph with no hanging or first-line indent, so Word cannot push it off the left margin', /<w:jc w:val="center"\/>/.test(title) && title.includes('a second line') && !/w:hanging|w:firstLine/.test(title), title.slice(0, 300));
+  fs.rmSync(docx);
+
+  console.log('lines that start with a word beginning in o');
+  [docx] = await convert.convertFile(draw('words', 'words'), 'docx');
+  d = await read(docx);
+  expect('"of", "on", "or" and "one" at the start of a line are kept as words', !missingFrom(d.text, ['of the parts', 'on the next line', 'or one more']).length, d.text);
+  expect('only the letter o on its own and the bullet glyph make list items', (d.xml.match(/<w:numPr>/g) || []).length === 2, (d.xml.match(/<w:numPr>/g) || []).length + ' list items');
+  fs.rmSync(docx);
+
+  console.log('a letter-spaced title that reaches the edge of its column');
+  [docx] = await convert.convertFile(draw('tracked', 'tracked'), 'docx');
+  d = await read(docx);
+  const lastLetter = d.xml.match(/<w:r><w:rPr>((?:(?!<\/w:rPr>).)*)<\/w:rPr><w:t[^>]*>E<\/w:t>/s);
+  expect('the last letter is its own run without the letter spacing, which Word would add after it and wrap the word', /INVOIC<\/w:t>/.test(d.xml) && lastLetter && !/w:spacing/.test(lastLetter[1]), (d.xml.match(/.{80}INVOIC.{120}/s) || [''])[0]);
+  fs.rmSync(docx);
+
+  console.log('two outlined boxes a few points apart');
+  [docx] = await convert.convertFile(draw('outlined', 'outlined'), 'docx');
+  d = await read(docx);
+  expect('each box keeps its four sides', (d.xml.match(/<w:tbl>/g) || []).length === 2 && (d.xml.match(/<w:left w:val="single"/g) || []).length === 2 && (d.xml.match(/<w:right w:val="single"/g) || []).length === 2, (d.xml.match(/<w:tcBorders>.*?<\/w:tcBorders>/s) || [''])[0]);
+  expect('"(1)" that opens a paragraph set flush is text, not a list item', !/<w:numPr>/.test(d.xml) && d.text.includes('(1) First line') && d.text.includes('(2) First line'), d.text);
+  fs.rmSync(docx);
+
+  console.log('a table drawn as nested rectangles');
+  [docx] = await convert.convertFile(draw('nested', 'nested'), 'docx');
+  d = await read(docx);
+  expect('it is one table', (d.xml.match(/<w:tbl>/g) || []).length === 1, (d.xml.match(/<w:tbl>/g) || []).length + ' tables');
+  expect('its figures are text, not a picture', !/<w:drawing>/.test(d.xml) && !missingFrom(d.text, ['317', '334', '426', '443', '535', '644', '787', 'Gross profit']).length, d.text);
   fs.rmSync(docx);
 
   console.log('a photo cropped to a circle');

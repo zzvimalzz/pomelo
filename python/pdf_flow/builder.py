@@ -173,7 +173,7 @@ class Builder:
             breaks.append(not natural)
         reflow = n >= 2 and not any(breaks)
         ind_left = ind_right = 0.0
-        first_line = (marker[3] if marker else lines[0].x0) - ref if n >= 2 else 0.0
+        first_line = (marker[3] if marker else lines[0].x0) - ref if n >= 2 and jc != "center" else 0.0
         if jc == "right":
             ind_left = 0.0
             ind_right = x1 - right_edge
@@ -191,7 +191,7 @@ class Builder:
         ind_right = max(0.0, ind_right)
         if ind_right > 0 or jc != "left" or reflow:
             ind_right += self.room(x1)
-        edge = bool(self.depth) and x1 - right_edge < 1.5             # a line that fills its cell wraps on any rounding in Word, and a cell clips what overhangs it, so it is set 1 twip a character narrower
+        gap = x1 - right_edge if self.depth else None                 # a line that fills its cell wraps on any rounding in Word, and a cell clips what overhangs it, so it is set 1 twip a character narrower
         # first line / hanging indent, or a list
         num_pr = ""
         if marker:
@@ -251,7 +251,7 @@ class Builder:
                     last["text"] = t + " "
             for s_ in spans:
                 s_["bsize"] = l.size
-            body += runs_xml(self.P, spans, justified, self.doc.part, self.meter, edge)
+            body += runs_xml(self.P, spans, justified, self.doc.part, self.meter, gap)
             if not last_line and breaks[i]:
                 body += "<w:r><w:br/></w:r>"
         return f"<w:p>{ppr}{body}</w:p>", T, B
@@ -399,7 +399,8 @@ class Builder:
         for b in boxes:
             for g in groups:
                 last = g[-1]
-                if abs(last.x0 - b.x0) <= 2.5 and abs(last.x1 - b.x1) <= 2.5 and -2 <= b.y0 - last.y1 <= 2.2 * max(self.P.body, 10):
+                reach = 2.2 * max(self.P.body, 10) if b.fill or last.fill else 2.2           # outlined boxes with a gap between them are boxes, not the rows of one table
+                if abs(last.x0 - b.x0) <= 2.5 and abs(last.x1 - b.x1) <= 2.5 and -2 <= b.y0 - last.y1 <= reach:
                     g.append(b)
                     break
             else:

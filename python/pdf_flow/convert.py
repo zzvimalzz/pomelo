@@ -228,7 +228,8 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     # rules
     rules = []
     for i, (o, pos, a, b, width, color, d) in enumerate(P.segments):
-        if o == "h" and i not in P.used_segments and (b - a) >= 0.28 * P.w and width <= 4:
+        edge_of_box = any(bx.border and min(b, bx.x1) - max(a, bx.x0) >= 0.9 * (b - a) and (abs(pos - bx.y0) <= 2 or abs(pos - bx.y1) <= 2) for bx in boxes)
+        if o == "h" and i not in P.used_segments and (b - a) >= 0.28 * P.w and width <= 4 and not edge_of_box:
             rules.append(Rule((a, pos - width / 2, b, pos + width / 2), width, color))
     for e in pics:
         if any(e.y0 + 1 < (r.y0 + r.y1) / 2 < e.y1 - 1 and min(r.x1, e.x1) - max(r.x0, e.x0) >= 0.5 * (r.x1 - r.x0) for r in rules):
