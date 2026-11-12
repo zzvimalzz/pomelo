@@ -496,6 +496,11 @@ class Builder:
             xml += re.sub(r"<w:pPr>(<w:pStyle [^>]*/>)?", lambda m: m.group(0) + frame, part, 1)
         return xml
 
+    def hidden(self, lines):
+        """Text the PDF does not show, as paragraphs of hidden text whose marks are hidden too, so they take no room until Word is asked to show hidden text."""
+        return "".join('<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:vanish/></w:rPr></w:pPr>'
+                       f'{runs_xml(self.P, l.spans, False, self.doc.part, self.meter)}</w:p>' for l in sorted(lines, key=lambda l: l.seq))
+
     def text_boxes(self, lines, tables=()):
         """The text of a design page: every paragraph a text box anchored to the sheet at its PDF position, still real text. -> (the tables, each after the text boxes that
         come before it in reading order, which sit in a paragraph of their own; the text boxes after the last table). Word prints a table's text first whatever the order,

@@ -36,13 +36,69 @@ class Page:
             self.drawings = []
         self.segments = segments_of(self.drawings)
         self.shapes = rect_shapes(self.drawings)
-        lines = dedupe(read_lines(page), 3)
+        scan = any(area(tuple(i["bbox"])) > 0.85 * self.w * self.h for i in page.get_image_info())     # the invisible text layer of a scan is not hidden text
+        lines = read_lines(page, hidden_ok=not scan)
+        if not scan:
+            self.hide(lines)
+        self.hidden_lines = [l for l in lines if not any(s["text"].strip() and not s.get("hidden") for s in l.spans)]
+        gone = {id(l) for l in self.hidden_lines}
+        lines = dedupe([l for l in lines if id(l) not in gone], 3)
         self.upright = attach_markers(merge_rows([l for l in lines if not l.rot], self.shapes))
         self.rotated = [l for l in lines if l.rot]
         for l in self.upright:
             if hangs(l, self.upright):
                 split_marker(l, self.body)
         self.links = links
+
+    def hide(self, lines):
+        """Marks `hidden` on the spans the PDF does not show, which Word then keeps as hidden text: drawn in the invisible render mode, under an opaque rectangle drawn
+        after them, or in the colour of the flat ground under them."""
+        try:
+            trace = self.page.get_texttrace()
+        except Exception:
+            trace = []
+        starts = {}
+        for t in trace:
+            if t.get("chars"):
+                o = t["chars"][0][2]
+                starts.setdefault(round(o[1]), []).append((o[0], t["seqno"], t["type"], pymupdf.Rect(t["bbox"])))
+        covers = {}
+        for d in self.drawings:
+            f, r = d.get("fill"), d["rect"]
+            opacity = d.get("fill_opacity") if d.get("fill_opacity") is not None else 1
+            if f and "f" in d["type"] and opacity >= 0.85 and "seqno" in d and r.width * r.height >= 16 and {it[0] for it in d["items"]} <= {"re", "qu"}:
+                for cy in range(int(r.y0 // 32), int(r.y1 // 32) + 1):
+                    for cx in range(int(r.x0 // 32), int(r.x1 // 32) + 1):
+                        covers.setdefault((cx, cy), []).append((d["seqno"], tuple(r)))
+        pix, maybe = None, []
+        for l in lines:
+            for s in l.spans:
+                if not s["text"].strip():
+                    continue
+                oy = round(s["origin"][1])
+                near = [e for k in (oy - 1, oy, oy + 1) for e in starts.get(k, ()) if s["bbox"][0] - 1 <= e[0] <= s["bbox"][2] + 1]
+                box = pymupdf.Rect(s["bbox"])
+                for e in near:
+                    box = pymupdf.Rect(e[3]) if e is near[0] else box | e[3]
+                if s.get("alpha", 255) == 0:
+                    s["hidden"] = True
+                elif near and area(tuple(box)) > 0 and any(sq > max(e[1] for e in near) and overlap(tuple(box), r) >= 0.9 * area(tuple(box))
+                                  for sq, r in covers.get((int((box.x0 + box.x1) // 64), int((box.y0 + box.y1) // 64)), ())):
+                    s["hidden"] = True
+                elif not l.rot and not any(e[2] != 0 for e in near):          # outlined letters show whatever their fill is
+                    if pix is None:
+                        pix = self.page.get_pixmap(dpi=72, alpha=False)
+                    if same_colour(ground_colour(pix, box), s["color"]):
+                        maybe.append((s, box))
+        if maybe:
+            # the same colour all round is only a hint (white text on a snug dark label has white paper round it): what counts is the ground under the text
+            for s, box in maybe:
+                self.work_all.add_redact_annot(pymupdf.Rect(box.x0, box.y0 + 0.18 * box.height, box.x1, box.y1 - 0.18 * box.height), fill=False)
+            self.work_all.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE, text=pymupdf.PDF_REDACT_TEXT_REMOVE)
+            for s, box in maybe:
+                under = self.work_all.get_pixmap(dpi=72, clip=box, alpha=False)
+                seen = [under.pixel(x, y) for x in range(under.width) for y in range(under.height)]
+                s["hidden"] = same_colour(flat_colour(seen), s["color"])
 
     # -- spans: underline, strike, highlight, links
     def decorate(self):
@@ -132,17 +188,18 @@ class Page:
                 keep.append(t)
         self.tbls = keep
         for t in self.tbls:
+            in_table = lambda r: r[0] >= t.x0 - 2 and r[1] >= t.y0 - 2 and r[2] <= t.x1 + 2 and r[3] <= t.y1 + 2
             for c in t.cells:
                 b = c["bbox"]
                 best, f0 = None, c["raw"]                       # the fill is looked for under the cell as the finder drew it: the edges moved onto the rules can lie further out than the fill
-                for r, fill, border, dashed in self.shapes:
-                    if fill and overlap(f0, tuple(r)) >= 0.8 * area(f0) and area(tuple(r)) <= 1.6 * area(f0):
+                for r, fill, border, dashed in self.shapes:     # drawn in order, so the last one that covers the cell is the one on top; one rectangle may span a row, a column or the table
+                    if fill and overlap(f0, tuple(r)) >= 0.8 * area(f0) and in_table(r):
                         best = fill
                 if best is None:
                     # a fill rectangle drawn as a thin-bordered one is already in shapes; also try the raw drawings
                     for d in self.drawings:
                         f = d.get("fill")
-                        if f and not is_white(f) and (d.get("fill_opacity") if d.get("fill_opacity") is not None else 1) >= 0.85 and overlap(f0, tuple(d["rect"])) >= 0.85 * area(f0) and area(tuple(d["rect"])) <= 1.6 * area(f0):
+                        if f and not is_white(f) and (d.get("fill_opacity") if d.get("fill_opacity") is not None else 1) >= 0.85 and overlap(f0, tuple(d["rect"])) >= 0.85 * area(f0) and in_table(tuple(d["rect"])):
                             best = rgb_hex(f)
                 c["fill"] = best
                 for side, (o, pos) in {"top": ("h", b[1]), "bottom": ("h", b[3]), "left": ("v", b[0]), "right": ("v", b[2])}.items():
@@ -359,7 +416,16 @@ class Page:
             if s[j] < 238 or s[j + 1] < 238 or s[j + 2] < 238:
                 mask[i] = 1
 
-        def blank(b, pad=1.2, colors=None):
+        def blended(p, a, b):
+            d = [y - x for x, y in zip(a, b)]
+            k = max(range(3), key=lambda i: abs(d[i]))
+            if abs(d[k]) < 24:
+                return False
+            t = (p[k] - a[k]) / d[k]
+            return -0.05 <= t <= 1.05 and all(abs(p[i] - (a[i] + t * d[i])) < 12 for i in range(3))
+
+        def blank(b, pad=1.2, colors=None, edges=()):
+            """Clears the pixels of colour `colors` in the box, and those that blend it into one of `edges` (the soft edge where it meets paper or another colour)."""
             x0, y0 = max(0, int((b[0] - pad) * scale)), max(0, int((b[1] - pad) * scale))
             x1, y1 = min(w, int(math.ceil((b[2] + pad) * scale))), min(h, int(math.ceil((b[3] + pad) * scale)))
             for y in range(y0, y1):
@@ -370,11 +436,15 @@ class Page:
                             mask[row + x] = 0
                         else:
                             j = (row + x) * n
-                            if abs(s[j] - colors[0]) < 10 and abs(s[j + 1] - colors[1]) < 10 and abs(s[j + 2] - colors[2]) < 10:
+                            if abs(s[j] - colors[0]) < 10 and abs(s[j + 1] - colors[1]) < 10 and abs(s[j + 2] - colors[2]) < 10 or any(blended(s[j:j + 3], colors, e) for e in edges):
                                 mask[row + x] = 0
 
         for t in self.tbls:
-            blank(t.bbox, 1.5)
+            fills = {c["fill"] for c in t.cells if c["fill"]}
+            rgbs = lambda f: tuple(int(f[i:i + 2], 16) for i in (0, 2, 4))
+            for c in t.cells:
+                if c["fill"]:
+                    blank(c["bbox"], 0.5, colors=rgbs(c["fill"]), edges=[(255, 255, 255)] + [rgbs(f) for f in fills if f != c["fill"]])
         for bx in self.box_items:
             if bx.fill:
                 col = tuple(int(bx.fill[i:i + 2], 16) for i in (0, 2, 4))
@@ -497,7 +567,7 @@ def page_kind(P):
     cell = 8.0
     cols, rows = int(P.w // cell) + 1, int(P.h // cell) + 1
     covered = bytearray(cols * rows)
-    rects = [r for r, _ in P.imgs] + list(P.figs) + [b.bbox for b in P.box_items if b.fill] + [bb for bb, _ in P.page_fills]
+    rects = [r for r, _ in P.imgs] + [f for f in P.figs if not any(inside(f, t.bbox, 0) for t in P.tbls)] + [b.bbox for b in P.box_items if b.fill] + [bb for bb, _ in P.page_fills]
     for r in rects:
         for y in range(max(0, int(r[1] // cell)), min(rows, int(r[3] // cell) + 1)):
             for x in range(max(0, int(r[0] // cell)), min(cols, int(r[2] // cell) + 1)):
@@ -522,6 +592,29 @@ def page_kind(P):
     return "document", "pictures and colour cover %d%% of the sheet" % round(share * 100)
 
 
+def flat_colour(seen):
+    """The median of the colours when most of them are within a small distance of it; None when the ground is not flat."""
+    if len(seen) < 8:
+        return None
+    mid = tuple(sorted(c[i] for c in seen)[len(seen) // 2] for i in range(3))
+    flat = sum(abs(c[0] - mid[0]) + abs(c[1] - mid[1]) + abs(c[2] - mid[2]) <= 30 for c in seen)
+    return mid if flat >= 0.7 * len(seen) else None
+
+
+def ground_colour(pix, box):
+    """The flat colour of the ring 2.5 pt outside `box` in a 72 dpi render, or None."""
+    x0, y0, x1, y1 = box.x0 - 2.5, box.y0 - 2.5, box.x1 + 2.5, box.y1 + 2.5
+    xs = [x0 + 4 * i for i in range(int((x1 - x0) / 4) + 1)]
+    ys = [y0 + 4 * i for i in range(int((y1 - y0) / 4) + 1)]
+    ring = [(x, y) for x in xs for y in (y0, y1)] + [(x, y) for y in ys for x in (x0, x1)]
+    return flat_colour([pix.pixel(int(x), int(y)) for x, y in ring if 0 <= x < pix.width and 0 <= y < pix.height])
+
+
+def same_colour(ground, color):
+    """True when the colour integer of a span is the colour of the ground (r, g, b) to within a few levels a channel: text a little darker than its ground is faint, not hidden."""
+    return bool(ground) and abs(ground[0] - (color >> 16 & 255)) + abs(ground[1] - (color >> 8 & 255)) + abs(ground[2] - (color & 255)) <= 15
+
+
 def span_run(page, s, justified, meter, gap=None, last=False):
     """One <w:r>, or two when the line ends here against the cell's edge and the last letter must leave the letter spacing. `gap`: room between the line and the right edge of its cell, None outside a cell."""
     font = esc(meter.family(s))
@@ -535,6 +628,8 @@ def span_run(page, s, justified, meter, gap=None, last=False):
         rpr += "<w:i/><w:iCs/>"
     if s.get("st"):
         rpr += "<w:strike/>"
+    if s.get("hidden"):
+        rpr += "<w:vanish/>"
     if not by_color:
         rpr += f'<w:color w:val="{hexcolor(s["color"])}"/>'
     text = s["text"]
