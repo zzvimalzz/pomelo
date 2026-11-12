@@ -13,6 +13,7 @@ from .page import Para, runs_xml
 from .shapes import Box, Tbl
 
 CAPTION = re.compile(r"(?:Figure|Fig\.?|Table|Chart|Exhibit|Diagram)\s+[A-Z]?\d+(?:\.\d+)*[a-z]?\s*[.:–—-]\s*\S")
+BREAK = '<w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr>'
 
 
 class Builder:
@@ -27,6 +28,7 @@ class Builder:
         self.placed = False               # text boxes at fixed places: a line ends where the PDF's does, unless the paragraph is justified
         self.depth = 0
         self.titled = False
+        self.columns_ok = False           # running text in columns may be written as Word columns (the page is flowed, not placed or turned)
         self.emitted = set()
         self.nid = 1000 + page_obj.pno * 200
 
@@ -83,6 +85,122 @@ class Builder:
                 bands.append([it.y0, it.y1, [it]])
         return bands
 
+    def column_runs(self, bands, x0, x1):
+        """Runs of consecutive bands that are running text in two or three columns: [(first band, last band + 1, [(left, right) of each gutter])]. A line that is alone in
+        its band belongs to the column it stands in."""
+        info = []
+        for _, _, its in bands:
+            if not all(i.kind in ("line", "img") for i in its):
+                info.append("x")
+                continue
+            cols = self.v_cut(its)
+            info.append("s" if not cols else [(a[1], b[0]) for a, b in zip(cols, cols[1:])] if len(cols) <= 3 else "x")
+        runs, k = [], 0
+        while k < len(bands):
+            if info[k] == "x":
+                k += 1
+                continue
+            j, gaps = k, None
+            while j < len(bands) and info[j] != "x":
+                if isinstance(info[j], list):
+                    gaps = info[j] if gaps is None else self.shared(gaps, info[j])
+                    if gaps is None:
+                        break
+                j += 1
+            runs += self.settle(bands, info, k, j, x0, x1)
+            k = max(j, k + 1)
+        return runs
+
+    def shared(self, a, b):
+        """The gutters two bands have in common, or None when they do not line up."""
+        if len(a) != len(b):
+            return None
+        out = [(max(p[0], q[0]), min(p[1], q[1])) for p, q in zip(a, b)]
+        return out if all(r - l >= 3.0 for l, r in out) else None
+
+    def settle(self, bands, info, k, j, x0, x1):
+        """The runs inside bands k to j. A band that does not belong (a line across a gutter, a contents line with its page number) splits the run, and what is left must
+        be columns of text: several lines in each, about as wide as each other, close together and filled by their lines."""
+        gaps = None
+        for m in range(k, j):
+            if isinstance(info[m], list):
+                gaps = info[m] if gaps is None else self.shared(gaps, info[m])
+                if gaps is None:
+                    return []
+        if gaps is None:
+            return []
+        mids = [(a + b) / 2 for a, b in gaps]
+        while k < j and not isinstance(info[k], list) and all((i.x0 + i.x1) / 2 < mids[0] for i in bands[k][2]):
+            k += 1                                                   # a short line over the first column is the end of the paragraph above, not a column
+        edges = [x0] + mids + [x1]
+        wide = [b - a for a, b in zip(edges, edges[1:])]
+        for m in range(k, j):
+            if not self.belongs(bands[m][2], gaps, mids, edges, wide):
+                return self.settle(bands, info, k, m, x0, x1) + self.settle(bands, info, m + 1, j, x0, x1)
+        items = [i for b in bands[k:j] for i in b[2]]
+        per = [[i for i in items if sum(1 for m in mids if (i.x0 + i.x1) / 2 > m) == n] for n in range(len(wide))]
+        text = [[i for i in p if i.kind == "line"] for p in per]
+        if not all(len(t) >= 5 for t in text):
+            return []
+        gaps = [(max(i.x1 for i in per[n]), min(i.x0 for i in per[n + 1])) for n in range(len(mids))]
+        ok = (all(r - l >= 3.0 for l, r in gaps) and max(wide) <= 1.7 * min(wide) and max(r - l for l, r in gaps) <= 0.35 * min(wide)
+              and all(max(l.x1 for l in t) - min(l.x0 for l in t) >= 0.7 * w for t, w in zip(text, wide)))
+        return [(k, j, gaps)] if ok else []
+
+    def belongs(self, its, gaps, mids, edges, wide):
+        if any(l.x0 < m < l.x1 for l in its for m in mids):
+            return False
+        per = [[l for l in its if l.kind == "line" and sum(1 for m in mids if (l.x0 + l.x1) / 2 > m) == n] for n in range(len(wide))]
+        if sum(1 for p in per if p) < 2:
+            return True
+        return all(min(l.x0 for l in p) - (gaps[n - 1][1] if n else edges[0]) <= 0.3 * wide[n] for n, p in enumerate(per) if p)
+
+    def with_columns(self, bands, runs, x0, x1, cursor):
+        xml, at = "", 0
+        for first, last, gaps in runs:
+            before = [i for b in bands[at:first] for i in b[2]]
+            if before:
+                part, cursor = self.laid(before, x0, x1, cursor, False)
+                xml += part
+            part, cursor = self.columns([i for b in bands[first:last] for i in b[2]], gaps, x0, x1, cursor, bool(xml))
+            xml += part
+            at = last
+        rest = [i for b in bands[at:] for i in b[2]]
+        if rest:
+            part, cursor = self.laid(rest, x0, x1, cursor, False)
+            xml += part
+        return xml, cursor
+
+    def columns(self, items, gaps, x0, x1, cursor, lead):
+        """Running text in columns as a continuous section with Word columns: the text of each column in turn, a column break where a column ends. The section's own
+        properties are filled in once the page's margins are known, where the marks made of the control character \x01 stand (text can never hold one)."""
+        P = self.P
+        mids = [(a + b) / 2 for a, b in gaps]
+        n = len(mids) + 1
+        space = max(1.0, min(r - l for l, r in gaps))
+        total = P.w - x0 - max(0.0, P.w - x1 - self.slack)
+        lo = [x0] + [m + space / 2 for m in mids]
+        hi = [m - space / 2 for m in mids] + [x0 + total]
+        top = min(i.y0 for i in items)
+        if cursor is None and self.first_top is None:
+            self.first_top = top
+        start = top if cursor is None else cursor + 1
+        xml = f'<w:p><w:pPr>{BREAK}\x01SECT:\x01</w:pPr></w:p>' if lead else ""
+        ends = []
+        for k in range(n):
+            inner, end = self.in_cell([i for i in items if sum(1 for m in mids if (i.x0 + i.x1) / 2 > m) == k], lo[k], hi[k], start)
+            if not inner.rstrip().endswith("</w:p>"):
+                inner += self.spacer(1)
+            if k < n - 1:
+                inner = inner[:inner.rindex("</w:p>")] + '<w:r><w:br w:type="column"/></w:r></w:p>'
+            xml += inner
+            ends.append(end)
+        widths = [tw(hi[k] - lo[k]) for k in range(n)]
+        widths[-1] = tw(total) - sum(widths[:-1]) - (n - 1) * tw(space)
+        cols = (f'<w:cols w:num="{n}" w:space="{tw(space)}" w:equalWidth="0">'
+                + "".join(f'<w:col w:w="{w}"{f' w:space="{tw(space)}"' if k < n - 1 else ""}/>' for k, w in enumerate(widths)) + "</w:cols>")
+        return xml + f'<w:p><w:pPr>{BREAK}\x01SECT:{cols}\x01</w:pPr></w:p>', max(ends) + 1
+
     def group(self, lines, x0, x1):
         paras = []
         cur = None
@@ -103,15 +221,16 @@ class Builder:
         dy = l.base - prev.base
         if abs(l.size - prev.size) > 1.6 or (prev.bold_all != l.bold_all and (prev.bold_all or l.bold_all)):
             return False
-        if not (0.7 * s <= dy <= 2.1 * s):
+        if not (0.7 * s <= dy <= 2.1 * s) or (prev.bold_all and l.bold_all and dy > 1.5 * s):
             return False
         if len(cur.lines) >= 2:
             pitch = (cur.lines[-1].base - cur.lines[0].base) / (len(cur.lines) - 1)
             if abs(dy - pitch) > 0.3 * pitch:
                 return False
         cx_prev, cx = (prev.x0 + prev.x1) / 2, (l.x0 + l.x1) / 2
-        if abs(cx - cx_prev) <= 2.5 and abs(l.x0 - prev.x0) > 3:
-            return True                                              # centred lines
+        wide, narrow = max(prev.x1 - prev.x0, l.x1 - l.x0), min(prev.x1 - prev.x0, l.x1 - l.x0)
+        if abs(cx - cx_prev) <= 2.5 and abs(l.x0 - prev.x0) > 3 and not (wide >= 0.92 * width and narrow <= 0.8 * width):
+            return True                                              # centred lines, not a centred formula over a line that fills the width
         ref = cur.lines[1].x0 if len(cur.lines) >= 2 else prev.x0
         if len(cur.lines) == 1:
             if prev.marker:
@@ -579,11 +698,20 @@ class Builder:
         if not items:
             return "", cursor
         items = self.stripes(items)
-        cols = self.v_cut(items)
+        if self.columns_ok and not self.depth:
+            bands = self.h_bands(items)
+            runs = self.column_runs(bands, x0, x1)
+            if runs:
+                return self.with_columns(bands, runs, x0, x1, cursor)
+        return self.laid(items, x0, x1, cursor)
+
+    def laid(self, items, x0, x1, cursor, whole=True):
+        """`whole` is False for what lies between two runs of columns: a cut through all of it is then not a column structure of its own, and it is laid out band by band."""
+        cols = self.v_cut(items) if whole else None
         if cols:
             return self.row(cols, x0, x1, cursor)
         bands = self.h_bands(items)
-        if len(bands) > 1:
+        if len(bands) > 1 or not whole:
             grouped = []
             for y0, y1, its in bands:
                 sig = self.v_cut(its)
@@ -592,7 +720,7 @@ class Builder:
                     grouped[-1]["items"].extend(its)
                 else:
                     grouped.append({"key": key, "items": list(its)})
-            if len(grouped) > 1:
+            if len(grouped) > 1 or not whole:
                 xml = ""
                 for g in grouped:
                     part, cursor = self.leaf_or_row(g["items"], x0, x1, cursor)

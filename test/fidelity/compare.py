@@ -247,7 +247,8 @@ def check_metrics(da, db):
 def docx_text(path):
     """Text of the body, headers and footers. A tab or a line break separates words like a space does; the runs of
     one paragraph are joined as they are, because Word splits a word into runs wherever the formatting changes. A header
-    or footer counts once for every section that shows it: a section without a reference of its own shows the one before."""
+    or footer counts once for every page that shows it, a section that starts on a new sheet: a section without a reference of its own shows the one before, and a
+    continuous section is on the sheet of the one before."""
     w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
     def text_of(data):
@@ -268,7 +269,8 @@ def docx_text(path):
         for sect in re.findall(r"<w:sectPr[ >].*?</w:sectPr>", body.decode(), re.S):
             for kind, rid in re.findall(r'<w:(header|footer)Reference [^>]*?r:id="([^"]+)"', sect):
                 current[kind] = "word/" + rels[rid] if rid in rels else None
-            shown.update(t for t in current.values() if t)
+            if '<w:type w:val="continuous"/>' not in sect:
+                shown.update(t for t in current.values() if t)
         parts = [n for n in z.namelist() if re.fullmatch(r"word/(header|footer)\d*\.xml", n)]
         texts = [text_of(body)]
         for n in parts:

@@ -111,6 +111,16 @@ if kind == "columns":                               # two justified columns, the
     page.insert_textbox(pymupdf.Rect(60, 100, 280, 200), text, fontname="helv", fontsize=10, align=3)
     page.insert_textbox(pymupdf.Rect(320, 107, 535, 207), text, fontname="helv", fontsize=10, align=3)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "flow":                                  # a title over two columns of running text, each of several paragraphs
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((60, 80), "Findings of the review", fontname="hebo", fontsize=18)
+    para = "Every request is read by two people before the panel decides whether a meeting will be needed for it, and the applicant hears from the office within a week of the decision. "
+    for x0, tag in ((60, "Left"), (320, "Right")):
+        y = 110
+        for k in range(3):
+            page.insert_textbox(pymupdf.Rect(x0, y, x0 + 215, y + 96), "%s column paragraph %d. %s" % (tag, k + 1, para), fontname="helv", fontsize=10, align=3)
+            y += 110
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "chart":                                 # a picture that two gridlines cross, with labels at the left
     page = doc.new_page(width=595, height=842)
     pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 30), False)
@@ -417,6 +427,17 @@ const read = async (docx) => {
   const cells = d.xml.match(/<w:tc>.*?<\/w:tc>/gs) || [];
   expect('the columns are table cells', cells.length === 2, `${cells.length} cells`);
   expect('a line that fills its cell to the edge is set a little narrower, so a rounding in Word cannot wrap it', cells.length === 2 && /<w:spacing w:val="-1"\/>/.test(cells[1]) && !/w:right="-/.test(cells[1]), (cells[1] || '').slice(0, 300));
+  fs.rmSync(docx);
+
+  console.log('running text in two columns');
+  [docx] = await convert.convertFile(draw('flow', 'flow'), 'docx');
+  d = await read(docx);
+  const sects = d.xml.match(/<w:sectPr[ >].*?<\/w:sectPr>/gs) || [];
+  expect('the columns are a Word section of two columns, not table cells', /<w:cols w:num="2"/.test(d.xml) && !/<w:tc>/.test(d.xml), (d.xml.match(/<w:cols [^>]*>/) || [''])[0]);
+  expect('the section starts on the same sheet and the page keeps one size', sects.length === 3 && /<w:type w:val="continuous"\/>/.test(sects[1]) && new Set(sects.map((s) => (s.match(/<w:pgSz [^>]*>/) || [''])[0])).size === 1, sects.map((s) => s.slice(0, 60)).join(' | '));
+  expect('the first column ends in a column break', (d.xml.match(/<w:br w:type="column"\/>/g) || []).length === 1);
+  expect('the left column is read before the right one', d.text.indexOf('Left column paragraph 3') > -1 && d.text.indexOf('Left column paragraph 3') < d.text.indexOf('Right column paragraph 1'), d.text.slice(0, 200));
+  expect('the title stays above the columns, in the first section', d.xml.indexOf('Findings of the review') < d.xml.indexOf('<w:cols '));
   fs.rmSync(docx);
 
   console.log('a picture that gridlines cross');
