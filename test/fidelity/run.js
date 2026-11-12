@@ -108,7 +108,7 @@ const compare = (python, original, rendered, tag) => compareScript(python, [orig
       try { xml = compareScript(engines.pdf, ['--docx-words', src, docx]); } catch (e) { xml = { recall: null, missing: [], error: e.message }; }
     }
     let rendered;
-    try { rendered = word ? printWithWord(docx, dir) : renderDocx(engines.soffice, docx, dir); } catch (e) { rows.push(`${pad(name, 16)} ${e.message}  xml ${pct(xml.recall)}`); report[name] = { error: e.message, docx_words: xml }; continue; }
+    try { rendered = word ? printWithWord(docx, dir) : renderDocx(engines.soffice, docx, dir); } catch (e) { rows.push(`${pad(name, 16)} ${e.message}  xml ${pct(xml && xml.recall)}`); report[name] = { error: e.message, docx_words: xml }; continue; }
     if (!rendered) { rows.push(`${pad(name, 16)} could not render ${path.basename(docx)}`); continue; }
     try {
       const m = compare(engines.pdf, src, rendered, name);

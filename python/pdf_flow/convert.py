@@ -77,13 +77,17 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None):
         except Exception as e:                                         # one odd page must not lose the document: its text is kept
             log("page %d could not be rebuilt in full (%s); kept as text" % (pno + 1, e))
             xml, sect, furn = convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n, log, None, safe=True, turn=turns.get(pno, 0))
+        sections = xml.count("<w:sectPr>") + (pno == n - 1)
+        if len(furn) != sections:
+            log("page %d has %d sections but %d header and footer states" % (pno + 1, sections, len(furn)))
+            furn = (list(furn) + list(furn[-1:]) * sections)[:sections]
         states.extend(furn)
         for el in list(parse_xml(f'<w:body {NS}>{xml}</w:body>')):
             body.insert(len(body) - 1, el)
         if pno == n - 1:
             final = body.find(qn("w:sectPr"))
             body.replace(final, parse_xml(sect))
-    attach(out, states)
+    attach(out, states, log)
     meta = doc.metadata or {}
     props = out.core_properties
     props.title = meta.get("title") or ""
@@ -407,7 +411,6 @@ def design_page(P, out, meter, lists, pno, n_pages):
             P.work_all.add_redact_annot(r, fill=False)
     P.work_all.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE, text=pymupdf.PDF_REDACT_TEXT_REMOVE)
     B = Builder(out, P, meter, lists)
-    B.nid = 100000 + pno * 5000                                   # a cheat sheet holds over a hundred text boxes, more than the 200 ids a page has otherwise
     B.placed = True
     floats = ""
     dpi = min(HI_DPI, int(72 * math.sqrt(25e6 / (P.w * P.h))))           # a poster-sized sheet stays under about 25 megapixels
