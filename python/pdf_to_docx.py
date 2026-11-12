@@ -14,7 +14,7 @@ import pdf_flow  # noqa: E402
 
 
 def main(src, dst):
-    helper.run_pdf_job(src, lambda path, progress: pdf_flow.convert(path, dst, progress, lambda m: sys.stderr.write(m + "\n")))
+    helper.run_pdf_job(src, lambda path, progress: pdf_flow.convert(path, dst, progress, lambda m: sys.stderr.write(m + "\n"), original=src))
     print("OK")
 
 

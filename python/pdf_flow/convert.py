@@ -11,6 +11,7 @@ from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
 import pymupdf
 
+from pdf_ocr import page_needs_ocr
 from pdf_spans import dominant_size
 
 from .builder import Builder
@@ -43,8 +44,10 @@ def open_upright(src):
     return (*(pymupdf.open("pdf", blob) for _ in range(3)), turns)
 
 
-def convert(src, dst, progress=lambda f: None, log=lambda m: None):
+def convert(src, dst, progress=lambda f: None, log=lambda m: None, original=None):
+    """original: the PDF that src was made from when src is a copy with the text of scanned pages added (pdf_ocr.prepare); its pages are the pictures of the scans."""
     doc, work_all, work_keep, turns = open_upright(src)
+    scans = pymupdf.open(original) if original and original != src else None
     meter = FontMeter(doc)
     out = Document()
     body = out.element.body
@@ -71,11 +74,12 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None):
     for pno in range(n):
         progress(0.97 * pno / max(1, n))
         page = doc[pno]
+        source = scans[pno] if scans is not None and page_needs_ocr(scans[pno]) else None
         try:
-            xml, sect, furn = convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n, log, furniture, turn=turns.get(pno, 0))
+            xml, sect, furn = convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n, log, furniture, turn=turns.get(pno, 0), source=source)
         except Exception as e:                                         # one odd page must not lose the document: its text is kept
             log("page %d could not be rebuilt in full (%s); kept as text" % (pno + 1, e))
-            xml, sect, furn = convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n, log, None, safe=True, turn=turns.get(pno, 0))
+            xml, sect, furn = convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n, log, None, safe=True, turn=turns.get(pno, 0), source=source)
         sections = xml.count("<w:sectPr>") + (pno == n - 1)
         if len(furn) != sections:
             log("page %d has %d sections but %d header and footer states" % (pno + 1, sections, len(furn)))
@@ -95,6 +99,8 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None):
     props.subject = meta.get("subject") or ""
     props.keywords = meta.get("keywords") or ""
     out.save(dst)
+    if scans is not None:
+        scans.close()
 
 
 def boxes_of(l):
@@ -116,25 +122,56 @@ def mark_text(work, lines):
             work.add_redact_annot(r, fill=False)
 
 
-def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n_pages, log, furniture, safe=False, turn=0):
+def paper(pix, box):
+    """The colour of the paper around a box of pixels: the median of a ring of samples just outside it."""
+    x0, y0, x1, y1 = box
+    ring = []
+    for x in range(x0, x1 + 1, 4):
+        ring += [(x, y0 - 3), (x, y1 + 3)]
+    for y in range(y0, y1 + 1, 4):
+        ring += [(x0 - 3, y), (x1 + 3, y)]
+    seen = [pix.pixel(x, y) for x, y in ring if 0 <= x < pix.width and 0 <= y < pix.height]
+    return tuple(sorted(c[i] for c in seen)[len(seen) // 2] for i in range(pix.n)) if seen else (255,) * pix.n
+
+
+def scan_page(P, source):
+    """The picture of a scanned sheet, to lie behind its text, with the lines that become text painted out in the paper's colour around each. A line much larger
+    than the body text (a logo, a signature, a stamp) or turned is not text: it stays in the picture, and P keeps only the lines that are."""
+    text = [l for l in P.upright if l.size <= 1.6 * P.body]
+    dpi = min(HI_DPI, int(72 * math.sqrt(25e6 / (P.w * P.h))))
+    pix = source.get_pixmap(dpi=dpi, alpha=False)
+    k = dpi / 72
+    for l in text:
+        rise = min(0.4 * l.size, 0.015 * (l.x1 - l.x0))                # OCR text sits at the foot of the box found for a line, which on a skewed line is taller than the text by the skew over its width
+        box = (int((l.x0 - 1) * k), int((l.y0 - rise) * k), int((l.x1 + 1) * k), int((l.y1 + 1) * k))
+        pix.set_rect(pymupdf.IRect(box), paper(pix, box))
+    P.upright, P.rotated = text, []
+    fig = Fig((0.0, 0.0, P.w, P.h), pix.tobytes("jpeg", jpg_quality=85), "jpg", floating=True)
+    fig.overlay = True
+    return fig
+
+
+def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n_pages, log, furniture, safe=False, turn=0, source=None):
     """-> (the page's XML, its section's properties, the XML of the header and of the footer of each of its sections).
     safe: only the text, as paragraphs (what a page falls back to when something exotic in it cannot be rebuilt).
-    turn: the /Rotate of the page; it is built upright and shown turned, in a text box the size of the sheet."""
+    turn: the /Rotate of the page; it is built upright and shown turned, in a text box the size of the sheet.
+    source: the page of the original PDF whose picture is the scan this page's text was read from."""
     P = Page(doc, work_all[pno], work_keep[pno], page, pno, meter, body_pt)
     P.read()
     P.tbls = []
     if not safe:
         P.tables()
     P.decorate()
-    # a page that is one big picture with an invisible text layer is a scan: the picture is dropped, the text is kept
+    # a page that is one big picture with an invisible text layer is a scan, and so is a page whose text was read from a picture (source)
     big = [i for i in page.get_image_info() if area(tuple(i["bbox"])) > 0.85 * P.w * P.h]
-    scan = False
-    if big and P.upright:
+    scan = source is not None
+    if big and P.upright and not scan:
         try:
             trace = page.get_texttrace()
             hidden = sum(len(t.get("chars", [])) for t in trace if t.get("type") == 3)
             total = sum(len(t.get("chars", [])) for t in trace) or 1
             scan = hidden / total > 0.8
+            source = page
         except Exception:
             scan = False
     P.pictures(ocr_scan=scan)
@@ -144,6 +181,9 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     # a colour that covers the whole page is the page's background: a one-pixel picture stretched behind everything
     P.page_fills = []
     background = []
+    scanned = scan and not (safe or turn)
+    if scanned:
+        background.append(scan_page(P, source))
     for b in list(P.box_items):
         if area(b.bbox) >= 0.9 * P.w * P.h and b.fill:
             P.box_items.remove(b)
@@ -178,7 +218,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
             P.work_all.add_redact_annot(pymupdf.Rect(r.x0, r.y0 + inset, r.x1, r.y1 - inset), fill=False)
     if all_lines:
         P.work_all.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE, text=pymupdf.PDF_REDACT_TEXT_REMOVE)
-    if safe:
+    if safe or scanned:
         P.figs = []
     else:
         P.leftovers()
