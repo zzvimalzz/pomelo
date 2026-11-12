@@ -23,6 +23,7 @@ class Lists:
         self.next_a = 1
         self.next_n = 1
         self.last = {}                 # (indent key) -> (last number, numId)
+        self.looks = {}                # the look of each kind of table -> the id of its table style
 
     def setup(self, doc):
         part = doc.part.numbering_part.element
@@ -62,6 +63,9 @@ class Lists:
         num_id = self.define(f'<w:numFmt w:val="{fmt}"/><w:suff w:val="tab"/><w:lvlText w:val="{text}"/>', f'<w:rFonts w:ascii="{font}" w:hAnsi="{font}" w:cs="{font}"/><w:color w:val="{color}"/><w:sz w:val="{sz}"/>', start)
         self.last[key] = (start, num_id)
         return num_id
+
+    def table_style(self, look):
+        return self.looks.setdefault(look, f"PDFTable{len(self.looks) + 1}")
 
     def define(self, fmt, rpr, start):
         a, n = self.next_a, self.next_n

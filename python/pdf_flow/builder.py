@@ -8,11 +8,12 @@ import sys
 from types import SimpleNamespace
 
 from pdf_fonts import latin
+from pdf_spans import hexcolor
 
 from .common import cluster, inside, tw
-from .lines import is_letter
+from .lines import is_bold, is_letter
 from .page import Para, runs_xml
-from .shapes import Box, Tbl
+from .shapes import Box, SIDES, Tbl, rule_key, table_look
 
 CAPTION = re.compile(r"(?:Figure|Fig\.?|Table|Chart|Exhibit|Diagram)\s+[A-Z]?\d+(?:\.\d+)*[a-z]?\s*[.:–—-]\s*\S")
 NUMBERED = re.compile(r"\(\d{1,3}\)")
@@ -581,6 +582,12 @@ class Builder:
                f'<w:ind w:left="{tw(first.x0 - x0)}"/></w:pPr>')
         return f"<w:p>{ppr}{body}</w:p>", T, T + pitch
 
+    def blank(self, height):
+        """The paragraph of a cell with nothing in it. A cell tall enough for a line of text gets an ordinary empty paragraph, so that text typed into it shows and the row grows."""
+        if height < 1.6 * self.P.body:
+            return self.spacer(1)
+        return '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:p>'
+
     def spacer(self, h):
         if h < 1.0:
             return ""
@@ -871,16 +878,18 @@ class Builder:
                 xml += part
         return xml, cursor
 
-    def border_xml(self, borders, dashed=False):
+    def border_xml(self, borders, dashed=False, styled=False, rule=None):
         out = ""
-        for side in ("top", "left", "bottom", "right"):
+        for side in SIDES:
             b = borders.get(side)
+            if styled and rule_key(b) == rule:
+                continue
             if b:
                 w, color = b
                 out += f'<w:{side} w:val="{"dashed" if dashed else "single"}" w:sz="{max(2, min(96, int(round(w * 8))))}" w:space="0" w:color="{color}"/>'
             else:
                 out += f'<w:{side} w:val="nil"/>'
-        return f"<w:tcBorders>{out}</w:tcBorders>"
+        return f"<w:tcBorders>{out}</w:tcBorders>" if out else ""
 
     def box(self, bx, x0, x1, cursor):
         before = 0.0 if cursor is None else max(0.0, bx.y0 - cursor)
@@ -905,12 +914,19 @@ class Builder:
             self.first_top = t.y0
         xs, ys = t.xs, t.ys
         ncol, nrow = len(xs) - 1, len(ys) - 1
+        look = table_look(t)
+        rule, pad, head, stripes, first = look
+        hr = 1 if head else 0
         grid = [[None] * ncol for _ in range(nrow)]
         for c in t.cells:
             for r in range(c["r0"], c["r1"]):
                 for k in range(c["c0"], c["c1"]):
                     if 0 <= r < nrow and 0 <= k < ncol:
                         grid[r][k] = c
+            give = (head if c["r0"] == 0 else None) or (first if c["c0"] == 0 else None)
+            for l in [i for i in c["items"] if i.kind == "line"] if give else ():
+                for s in l.spans:
+                    s["by_style"] = (give[1] is not None and hexcolor(s["color"]) == give[1], bool(give[2]) and is_bold(s))
         rows = ""
         for r in range(nrow):
             tcs = ""
@@ -934,25 +950,31 @@ class Builder:
                 if r == c["r0"]:
                     cx0, cy0, cx1, cy1 = c["bbox"]
                     self.cap = min(b - a for a, b in zip(ys, ys[1:])) if placed else None
-                    inner, _ = self.in_cell(c["items"], cx0, cx1, cy0)
-                    if not inner or not inner.rstrip().endswith("</w:p>"):
+                    inner, _ = self.in_cell(c["items"], cx0 + pad / 20, cx1 - pad / 20, cy0)
+                    if not inner:
+                        inner = self.blank(cy1 - cy0)
+                    elif not inner.rstrip().endswith("</w:p>"):
                         inner += self.spacer(1)
                 else:
                     inner = self.spacer(1)
-                shd = f'<w:shd w:val="clear" w:color="auto" w:fill="{c["fill"]}"/>' if c["fill"] else ""
+                given = (head[0] if head and r == 0 else None) or (first[0] if first and k == 0 else None) or (stripes[(r - hr) % 2] if stripes and r >= hr else None)
+                shd = "" if c["fill"] == given else f'<w:shd w:val="clear" w:color="auto" w:fill="{c["fill"] or "auto"}"/>'
                 tcs += (f'<w:tc><w:tcPr><w:tcW w:w="{tw(width)}" w:type="dxa"/>' + (f'<w:gridSpan w:val="{span}"/>' if span > 1 else "") + vm
-                        + self.border_xml(c["borders"]) + shd
-                        + '<w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tcMar>'
-                        + f'</w:tcPr>{inner}</w:tc>')
+                        + self.border_xml(c["borders"], styled=True, rule=rule) + shd + f'</w:tcPr>{inner}</w:tc>')
                 k += span
-            rows += f'<w:tr><w:trPr>{self.keep(ys[r + 1] - ys[r])}<w:trHeight w:val="{tw(ys[r + 1] - ys[r])}" w:hRule="atLeast"/></w:trPr>{tcs}</w:tr>'
+            rows += (f'<w:tr><w:trPr>{self.keep(ys[r + 1] - ys[r])}<w:trHeight w:val="{tw(ys[r + 1] - ys[r])}" w:hRule="atLeast"/>'
+                     + ("<w:tblHeader/>" if head and r == 0 else "") + f'</w:trPr>{tcs}</w:tr>')
         self.cap = None
         tgrid = "".join(f'<w:gridCol w:w="{tw(xs[k + 1] - xs[k])}"/>' for k in range(ncol))
         xml = self.spacer(before)
-        at = (f'<w:tblpPr w:leftFromText="0" w:rightFromText="0" w:topFromText="0" w:bottomFromText="0" w:vertAnchor="page" w:horzAnchor="page" w:tblpX="{tw(xs[0])}" w:tblpY="{tw(ys[0])}"/>'
+        at = (f'<w:tblpPr w:leftFromText="0" w:rightFromText="0" w:topFromText="0" w:bottomFromText="0" w:vertAnchor="page" w:horzAnchor="page" w:tblpX="{tw(xs[0]) + pad}" w:tblpY="{tw(ys[0])}"/>'
               '<w:tblOverlap w:val="overlap"/>') if placed else ""
-        xml += (f'<w:tbl><w:tblPr>{at}<w:tblW w:w="{tw(xs[-1] - xs[0])}" w:type="dxa"/><w:tblInd w:w="{tw(max(0.0, xs[0] - x0))}" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
-                f'<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>'
+        look_flags = (0x20 if head else 0) | (0x80 if first else 0) | (0 if stripes else 0x200) | 0x400
+        xml += (f'<w:tbl><w:tblPr><w:tblStyle w:val="{self.lists.table_style(look)}"/>{at}<w:tblW w:w="{tw(xs[-1] - xs[0])}" w:type="dxa"/>'
+                f'<w:tblInd w:w="{tw(max(0.0, xs[0] - x0)) + pad}" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
+                f'<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="{pad}" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="{pad}" w:type="dxa"/></w:tblCellMar>'
+                f'<w:tblLook w:val="{look_flags:04X}" w:firstRow="{int(bool(head))}" w:lastRow="0" w:firstColumn="{int(bool(first))}" w:lastColumn="0" '
+                f'w:noHBand="{int(not stripes)}" w:noVBand="1"/></w:tblPr>'
                 f'<w:tblGrid>{tgrid}</w:tblGrid>{rows}</w:tbl>')
         xml += self.spacer(1)
         return xml, t.y1 + 1

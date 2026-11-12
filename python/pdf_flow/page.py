@@ -97,6 +97,8 @@ class Page:
                 continue
             xs = cluster([c[0] for c in cells] + [c[2] for c in cells])
             ys = cluster([c[1] for c in cells] + [c[3] for c in cells])
+            if len(xs) >= 2 and len(ys) >= 2:
+                xs, ys = self.rule_edges(xs, "v", (xs[0], ys[0], xs[-1], ys[-1])), self.rule_edges(ys, "h", (xs[0], ys[0], xs[-1], ys[-1]))
             if len(xs) < 3 and len(ys) < 3 or len(xs) < 2 or len(ys) < 2:
                 continue
             if len(xs) == 2 and len(ys) == 2:
@@ -106,11 +108,14 @@ class Page:
                 continue                                   # a grid read into unrelated parts of the page, not a table
             grid = []
             for c in cells:
-                grid.append(dict(c0=nearest(xs, c[0]), c1=nearest(xs, c[2]), r0=nearest(ys, c[1]), r1=nearest(ys, c[3]), bbox=tuple(c), items=[], fill=None, borders={}))
+                c0, c1, r0, r1 = nearest(xs, c[0]), nearest(xs, c[2]), nearest(ys, c[1]), nearest(ys, c[3])
+                grid.append(dict(c0=c0, c1=c1, r0=r0, r1=r1, bbox=(xs[c0], ys[r0], xs[c1], ys[r1]), raw=tuple(c), items=[], fill=None, borders={}))
             bbox = (min(xs), min(ys), max(xs), max(ys))
             if area(bbox) > 0.92 * self.w * self.h:
                 continue
             cells_ok = [g for g in grid if g["c1"] > g["c0"] and g["r1"] > g["r0"]]
+            span = lambda g: (g["c0"], g["c1"], g["r0"], g["r1"])
+            cells_ok = [g for g in cells_ok if not any(span(o) != span(g) and g["c0"] <= o["c0"] and o["c1"] <= g["c1"] and g["r0"] <= o["r0"] and o["r1"] <= g["r1"] for o in cells_ok)]    # a cell drawn twice, as one tall cell and as the shorter cells inside it, is the shorter ones
             # the finder sometimes reads a part of a grid: believe it only if no drawn box sticks out of it and every line of
             # text inside it belongs to one of its cells
             sticks = any(overlap(tuple(r), bbox) > 0 and (r.x0 < bbox[0] - 4 or r.x1 > bbox[2] + 4 or r.y0 < bbox[1] - 4 or r.y1 > bbox[3] + 4) and area(tuple(r)) < 0.5 * self.w * self.h
@@ -129,15 +134,15 @@ class Page:
         for t in self.tbls:
             for c in t.cells:
                 b = c["bbox"]
-                best = None
+                best, f0 = None, c["raw"]                       # the fill is looked for under the cell as the finder drew it: the edges moved onto the rules can lie further out than the fill
                 for r, fill, border, dashed in self.shapes:
-                    if fill and overlap(b, tuple(r)) >= 0.8 * area(b) and area(tuple(r)) <= 1.6 * area(b):
+                    if fill and overlap(f0, tuple(r)) >= 0.8 * area(f0) and area(tuple(r)) <= 1.6 * area(f0):
                         best = fill
                 if best is None:
                     # a fill rectangle drawn as a thin-bordered one is already in shapes; also try the raw drawings
                     for d in self.drawings:
                         f = d.get("fill")
-                        if f and not is_white(f) and (d.get("fill_opacity") if d.get("fill_opacity") is not None else 1) >= 0.85 and overlap(b, tuple(d["rect"])) >= 0.85 * area(b) and area(tuple(d["rect"])) <= 1.6 * area(b):
+                        if f and not is_white(f) and (d.get("fill_opacity") if d.get("fill_opacity") is not None else 1) >= 0.85 and overlap(f0, tuple(d["rect"])) >= 0.85 * area(f0) and area(tuple(d["rect"])) <= 1.6 * area(f0):
                             best = rgb_hex(f)
                 c["fill"] = best
                 for side, (o, pos) in {"top": ("h", b[1]), "bottom": ("h", b[3]), "left": ("v", b[0]), "right": ("v", b[2])}.items():
@@ -148,6 +153,24 @@ class Page:
                             self.used_segments.add(i)
                             break
             self.shapes = [sh for sh in self.shapes if not (overlap(tuple(sh[0]), t.bbox) >= 0.6 * area(tuple(sh[0])))]
+
+    def rule_edges(self, edges, o, box):
+        """Cell edges moved onto the rules drawn within 8 pt of them. Word draws a shaded cell as a fill the size of the cell and another inset by the cell's padding, so the
+        fills alone give a column on each side of every rule; edges that end up closer than 3 pt are one, and a column narrower than 12 pt with no text in it is not a column."""
+        x0, y0, x1, y1 = box
+        lo, hi, a0, a1 = (x0, x1, y0, y1) if o == "v" else (y0, y1, x0, x1)
+        rules = cluster([pos for so, pos, a, b, w, color, d in self.segments if so == o and lo - 2 <= pos <= hi + 2 and b - a >= 8 and min(b, a1) - max(a, a0) >= 8], 1.0)
+        out = cluster([min((r for r in rules if abs(r - e) <= 8), key=lambda r: abs(r - e), default=e) for e in edges], 3.0)
+        if o == "h":
+            return out
+        texts = [(l.x0 + l.x1) / 2 for l in self.upright if y0 <= l.y0 and l.y1 <= y1]
+        kept = out[:1]
+        for e in out[1:]:
+            if e - kept[-1] >= 12 or any(kept[-1] <= t <= e for t in texts):
+                kept.append(e)
+            elif e is out[-1]:
+                kept[-1] = e
+        return kept
 
     def aligned_tables(self):
         """Tables drawn with no grid: three or more rows of text that stand at the same left edges and that the PDF wrote as one block."""
@@ -505,13 +528,15 @@ def span_run(page, s, justified, meter, gap=None, last=False):
     size = s["size"]
     half = max(2, round(size * 2))
     rpr = f'<w:rFonts w:ascii="{font}" w:hAnsi="{font}" w:eastAsia="{font}" w:cs="{font}"/>' if font != meter.base[0] else ""
-    if is_bold(s):
+    by_color, by_bold = s.get("by_style", (False, False))             # what the table's style gives a header or first column cell, so the run does not state it
+    if is_bold(s) and not by_bold:
         rpr += "<w:b/><w:bCs/>"
     if is_italic(s):
         rpr += "<w:i/><w:iCs/>"
     if s.get("st"):
         rpr += "<w:strike/>"
-    rpr += f'<w:color w:val="{hexcolor(s["color"])}"/>'
+    if not by_color:
+        rpr += f'<w:color w:val="{hexcolor(s["color"])}"/>'
     text = s["text"]
     spacing = 0
     whole = s.get("whole") or s                                    # a span cut at its page numbers keeps the spacing of the whole

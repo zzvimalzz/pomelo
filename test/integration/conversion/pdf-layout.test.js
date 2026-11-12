@@ -231,6 +231,25 @@ if kind == "designtable":                           # a 3 x 3 ruled table on a c
         page.insert_text((60, 400 + i * 14), a, fontname="helv", fontsize=10)
         page.insert_text((140, 400 + i * 14), b, fontname="helv", fontsize=10)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "wordtable":                             # a table as Word draws it: 0.5 pt rules as filled rectangles, each shaded cell a whole-cell fill plus an inset one
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((60, 80), "Quarterly figures", fontname="hebo", fontsize=16)
+    for i in range(4):
+        page.insert_text((60, 110 + i * 14), "The figures below are in thousands and have not been audited at the date of writing.", fontname="helv", fontsize=11)
+    cols, ink = [60, 200, 340, 480], (0.79, 0.83, 0.88)
+    rows = [(200, 224, (0.07, 0.16, 0.29)), (224, 248, (0.93, 0.95, 0.97)), (248, 272, None), (272, 296, (0.93, 0.95, 0.97)), (296, 320, None)]
+    for r, (y0, y1, fill) in enumerate(rows):
+        for c in range(3):
+            x0, x1 = cols[c], cols[c + 1]
+            if fill:
+                page.draw_rect(pymupdf.Rect(x0, y0, x1, y1), color=None, fill=fill)
+                page.draw_rect(pymupdf.Rect(x0 + 5.4, y0, x1 - 5.4, y1), color=None, fill=fill)
+            page.insert_text((x0 + 5.4, y0 + 16), ["Region", "Units", "Revenue"][c] if r == 0 else "r%dc%d" % (r, c), fontname="hebo" if r == 0 else "helv", fontsize=11, color=(1, 1, 1) if r == 0 else (0, 0, 0))
+    for y in [200, 224, 248, 272, 296, 320]:
+        page.draw_rect(pymupdf.Rect(60, y - 0.25, 480, y + 0.25), color=None, fill=ink)
+    for x in cols:
+        page.draw_rect(pymupdf.Rect(x - 0.25, 200, x + 0.25, 320), color=None, fill=ink)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "scatter":                               # short pieces of text at many left edges and nothing drawn: an ordinary page, not a design
     page = doc.new_page(width=595, height=842)
     for i in range(20):
@@ -591,11 +610,29 @@ const read = async (docx) => {
   const inBoxes = [...d.xml.matchAll(/<w:txbxContent>(.*?)<\/w:txbxContent>/gs)].map((m) => m[1]).join('');
   expect('a ruled table and a table drawn with no rules are two Word tables placed on the sheet, one above the other',
     tbls.length === 2 && tbls.every((t) => /<w:tblpPr [^>]*w:vertAnchor="page"[^>]*w:tblpY="\d+"/.test(t) && /<w:tblOverlap w:val="overlap"\/>/.test(t)), `${tbls.length} tables`);
-  expect('the ruled table has its nine cells, its shaded header and its rules, and none of its text is in a text box',
-    (ruledTable.match(/<w:tc>/g) || []).length === 9 && /w:fill="1A4D80"/i.test(ruledTable) && /<w:left w:val="single"/.test(ruledTable) && !/cell \d\d|Price/.test(inBoxes), ruledTable.slice(0, 300));
+  const tableStyle = async (zip, tbl) => {
+    const id = (tbl.match(/<w:tblStyle w:val="(\w+)"/) || [])[1];
+    return ((await zip.file('word/styles.xml').async('string')).match(new RegExp(`<w:style [^>]*w:styleId="${id}".*?</w:style>`, 's')) || [''])[0];
+  };
+  const ruledStyle = await tableStyle(d.zip, ruledTable);
+  expect('the ruled table has its nine cells, and its rules and shaded header come from its table style; none of its text is in a text box',
+    (ruledTable.match(/<w:tc>/g) || []).length === 9 && /<w:tblStylePr w:type="firstRow">.*w:fill="1A4D80"/is.test(ruledStyle) && /<w:left w:val="single"/.test(ruledStyle) && !/cell \d\d|Price/.test(inBoxes), ruledStyle.slice(0, 300));
   expect('the rows without rules are four rows of two cells with no borders, and are not in text boxes',
     (bareTable.match(/<w:tr>/g) || []).length === 4 && (bareTable.match(/<w:tc>/g) || []).length === 8 && !/w:val="single"/.test(bareTable) && !/TCP|-sS/.test(inBoxes), bareTable.slice(0, 300));
   expect('the heading is still a text box and no row is an exact height', /PRICE LIST/.test(inBoxes) && !/<w:trHeight [^>]*w:hRule="exact"/.test(d.xml));
+  fs.rmSync(docx);
+
+  console.log('a table drawn as Word draws one');
+  [docx] = await convert.convertFile(draw('wordtable', 'wordtable'), 'docx');
+  d = await read(docx);
+  const wordTable = (d.xml.match(/<w:tbl>.*?<\/w:tbl>/s) || [''])[0];
+  const wordStyle = await tableStyle(d.zip, wordTable);
+  const left = Number((wordTable.match(/<w:tblCellMar>.*?<w:left w:w="(\d+)"/s) || [])[1]) / 20;
+  expect('three columns, not one for each side of a rule, and no merged cell', (wordTable.match(/<w:gridCol /g) || []).length === 3 && !/gridSpan/.test(wordTable) && (wordTable.match(/<w:tr>/g) || []).length === 5, wordTable.slice(0, 400));
+  expect('the table has a style of its own that holds the rule, the navy header and the grey stripe, and the first row repeats',
+    /<w:tblBorders>.*w:color="C9D4E0"/s.test(wordStyle) && /<w:tblStylePr w:type="firstRow">.*w:fill="12294A"/s.test(wordStyle) && /<w:tblStylePr w:type="band1Horz">.*w:fill="EDF2F7"/s.test(wordStyle)
+      && /<w:tblLook [^>]*w:firstRow="1"[^>]*w:noHBand="0"/.test(wordTable) && /<w:tr><w:trPr>(?:(?!<\/w:trPr>).)*<w:tblHeader\/>/s.test(wordTable), wordStyle.slice(0, 500));
+  expect('the cells state no fill and no border, and the padding is the gap between a rule and its text', !/<w:shd |<w:tcBorders/.test(wordTable) && Math.abs(left - 5.5) < 0.6, `padding ${left} pt`);
   fs.rmSync(docx);
 
   console.log('short pieces of text with nothing drawn');
