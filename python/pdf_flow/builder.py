@@ -5,14 +5,17 @@ import io
 import os
 import re
 import sys
+from types import SimpleNamespace
 
 from pdf_fonts import latin
 
 from .common import cluster, inside, tw
+from .lines import is_letter
 from .page import Para, runs_xml
 from .shapes import Box, Tbl
 
 CAPTION = re.compile(r"(?:Figure|Fig\.?|Table|Chart|Exhibit|Diagram)\s+[A-Z]?\d+(?:\.\d+)*[a-z]?\s*[.:–—-]\s*\S")
+NUMBERED = re.compile(r"\(\d{1,3}\)")
 BREAK = '<w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr>'
 
 
@@ -89,10 +92,10 @@ class Builder:
         its band belongs to the column it stands in."""
         info = []
         for _, _, its in bands:
-            if not all(i.kind in ("line", "img") for i in its):
+            if not all(i.kind in ("line", "img", "tbl", "box") for i in its):
                 info.append("x")
                 continue
-            cols = self.v_cut(its)
+            cols = self.v_cut(self.numbered(its))
             info.append("s" if not cols else [(a[1], b[0]) for a, b in zip(cols, cols[1:])] if len(cols) <= 3 else "x")
         runs, k = [], 0
         while k < len(bands):
@@ -109,6 +112,16 @@ class Builder:
             runs += self.settle(bands, info, k, j, x0, x1)
             k = max(j, k + 1)
         return runs
+
+    def numbered(self, its):
+        """The items of a band with an equation number counted as part of the line it stands beside, so that the gap between them is not taken for a gutter."""
+        for n in [l for l in its if l.kind == "line" and NUMBERED.fullmatch(l.text.strip())]:
+            beside = [o for o in its if o.kind == "line" and o is not n and o.x1 <= n.x0 and abs(o.base - n.base) <= 0.3 * n.size]
+            if beside:
+                o = max(beside, key=lambda o: o.x1)
+                joined = SimpleNamespace(kind="line", text=o.text, base=o.base, size=o.size, x0=o.x0, x1=n.x1, y0=min(o.y0, n.y0), y1=max(o.y1, n.y1))
+                its = [joined if i is o else i for i in its if i is not n]
+        return its
 
     def shared(self, a, b):
         """The gutters two bands have in common, or None when they do not line up."""
@@ -152,7 +165,8 @@ class Builder:
         per = [[l for l in its if l.kind == "line" and sum(1 for m in mids if (l.x0 + l.x1) / 2 > m) == n] for n in range(len(wide))]
         if sum(1 for p in per if p) < 2:
             return True
-        return all(min(l.x0 for l in p) - (gaps[n - 1][1] if n else edges[0]) <= 0.3 * wide[n] for n, p in enumerate(per) if p)
+        return all(min(l.x0 for l in p) - (gaps[n - 1][1] if n else edges[0]) <= 0.3 * wide[n]
+                   or all(abs((l.x0 + l.x1) / 2 - (edges[n] + edges[n + 1]) / 2) <= 0.06 * wide[n] for l in p) for n, p in enumerate(per) if p)
 
     def with_columns(self, bands, runs, x0, x1, cursor):
         xml, at = "", 0
@@ -185,15 +199,19 @@ class Builder:
             self.first_top = top
         start = top if cursor is None else cursor + 1
         xml = f'<w:p><w:pPr>{BREAK}\x01SECT:\x01</w:pPr></w:p>' if lead else ""
-        ends = []
+        ends, parts = [], []
         for k in range(n):
             inner, end = self.in_cell([i for i in items if sum(1 for m in mids if (i.x0 + i.x1) / 2 > m) == k], lo[k], hi[k], start)
             if not inner.rstrip().endswith("</w:p>"):
                 inner += self.spacer(1)
-            if k < n - 1:
-                inner = inner[:inner.rindex("</w:p>")] + '<w:r><w:br w:type="column"/></w:r></w:p>'
-            xml += inner
+            parts.append(inner)
             ends.append(end)
+        # Word balances a section that ends in a continuous break, so text typed into one column runs on into the next. Columns that end more than
+        # 1.5 lines (a line is about 1.2 times the body size) apart would come out different, so they keep a column break. The break is a paragraph
+        # of its own: inside the last paragraph of a column it stretches that paragraph's last line and takes a full line at the top of the next column.
+        if max(ends) - min(ends) > 1.5 * 1.2 * P.body:
+            parts = [p + f'<w:p><w:pPr>{BREAK}</w:pPr><w:r><w:br w:type="column"/></w:r></w:p>' for p in parts[:-1]] + parts[-1:]
+        xml += "".join(parts)
         widths = [tw(hi[k] - lo[k]) for k in range(n)]
         widths[-1] = tw(total) - sum(widths[:-1]) - (n - 1) * tw(space)
         cols = (f'<w:cols w:num="{n}" w:space="{tw(space)}" w:equalWidth="0">'
@@ -390,7 +408,32 @@ class Builder:
             body += runs_xml(self.P, spans, justified, self.doc.part, self.meter, gap)
             if not last_line and breaks[i]:
                 body += "<w:r><w:br/></w:r>"
-        return f"<w:p>{ppr}{body}</w:p>", T, B
+        return f"{self.drop_cap(p, pitch) if p.cap else ''}<w:p>{ppr}{body}</w:p>", T, B
+
+    def capped(self, items):
+        """A large single letter standing at the left of the first two to four lines of a paragraph is that paragraph's drop capital: it leaves the lines, and the lines it
+        stands beside start at the paragraph's left edge, where Word wraps them round it."""
+        lines = [i for i in items if i.kind == "line"]
+        for d in lines:
+            if not is_letter(d) or d.size < 2 * self.P.body:
+                continue
+            beside = sorted((l for l in lines if l is not d and not l.marker and l.size < d.size / 2 and d.x1 - 2 <= l.x0 <= d.x1 + 0.4 * d.size
+                             and d.y0 - 2 <= (l.y0 + l.y1) / 2 <= d.y1 + 2), key=lambda l: l.base)
+            if 2 <= len(beside) <= 4:
+                for l in beside:
+                    l.x0 = d.x0
+                beside[0].cap = d
+                items = [i for i in items if i is not d]
+        return items
+
+    def drop_cap(self, p, pitch):
+        d = p.cap
+        self.emitted.add(id(d))
+        spans = [dict(s, bsize=d.size) for s in d.spans]
+        lines = min(4, max(2, round((d.y1 - d.y0) / pitch)))
+        return (f'<w:p><w:pPr><w:framePr w:dropCap="drop" w:lines="{lines}" w:wrap="around" w:vAnchor="text" w:hAnchor="text"/>'
+                f'<w:spacing w:before="0" w:after="0" w:line="{tw(lines * pitch)}" w:lineRule="exact"/><w:textAlignment w:val="baseline"/></w:pPr>'
+                f'{runs_xml(self.P, spans, False, self.doc.part, self.meter)}</w:p>')
 
     def line_rule(self, lines, pitch, size):
         """(rule, line) for a paragraph. Lines are "at least" the PDF's pitch where the font's own height in Word is no taller, so they grow with the text when it is edited
@@ -514,7 +557,7 @@ class Builder:
         body = ""
         for i, l in enumerate(lines):
             if i:
-                if l.x1 >= x1 - 3 and l.x0 > first.x1 + 20:
+                if l.x1 >= x1 - 3 and (l.x0 > first.x1 + 20 or NUMBERED.fullmatch(l.text.strip())):
                     stops += f'<w:tab w:val="right" w:pos="{tw(l.x1 - x0)}"/>'
                 else:
                     stops += f'<w:tab w:val="left" w:pos="{tw(l.x0 - x0)}"/>'
@@ -695,7 +738,7 @@ class Builder:
         items = [i for i in items if i is not None]
         if not items:
             return "", cursor
-        items = self.stripes(items)
+        items = self.stripes(self.capped(items))
         if self.columns_ok and not self.depth:
             bands = self.h_bands(items)
             runs = self.column_runs(bands, x0, x1)

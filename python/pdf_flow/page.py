@@ -501,6 +501,10 @@ class Para:
         self.lines = lines
 
     @property
+    def cap(self):
+        return self.lines[0].cap
+
+    @property
     def x0(self):
         return min(l.x0 for l in self.lines)
 
