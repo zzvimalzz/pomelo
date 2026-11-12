@@ -225,6 +225,22 @@ if kind == "poster":                                # text set freely on a colou
     page.insert_text((400, 625), "Open daily 9 to 5", fontname="hebo", fontsize=12, color=(0.1, 0.2, 0.45))
     page.insert_text((60, 800), "www.example.com", fontname="helv", fontsize=10, color=(0.8, 0.8, 0.9))
     doc.save(sys.argv[1]); sys.exit()
+if kind == "figures":                               # a column of figures of the same width, on a coloured page or (with an extra argument) on paper
+    page = doc.new_page(width=595, height=842)
+    paper = len(sys.argv) > 3
+    if not paper:
+        page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
+    for i, t in enumerate(("1,198,420", "1,079,115", "496,302.0", "431,066.5")):
+        page.insert_text((60, 150 + i * 18), t, fontname="helv", fontsize=14 if paper else 10, color=(0, 0, 0) if paper else (1, 1, 1))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "tight":                                 # running text set tighter than the font's own line height, on paper or (with an extra argument) on a coloured page
+    page = doc.new_page(width=595, height=842)
+    design = len(sys.argv) > 3
+    if design:
+        page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
+    for i in range(6):
+        page.insert_text((60, 100 + i * 11), "Tightly set line number %d of a paragraph that runs on." % (i + 1), fontname="helv", fontsize=12, color=(1, 1, 1) if design else (0, 0, 0))
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "writtenorder":                          # a coloured page with two columns whose rows line up, written down the left column and then down the right one
     page = doc.new_page(width=595, height=842)
     page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
@@ -662,6 +678,26 @@ const read = async (docx) => {
   expect('the page without its text is one picture behind the text, the size of the sheet', (d.xml.match(/behindDoc="1"/g) || []).length === 1 && /<wp:extent cx="7556500" cy="10693400"\/>/.test(d.xml));
   expect('the page is one sheet: it cannot flow onto another', (d.xml.match(/<w:sectPr/g) || []).length === 1);
   fs.rmSync(docx);
+
+  console.log('line spacing of running text');
+  const tightPara = (x) => (x.match(/<w:p>(?:(?!<\/w:p>).)*Tightly(?:(?!<\/w:p>).)*<\/w:p>/s) || [''])[0];
+  [docx] = await convert.convertFile(draw('tight', 'tight'), 'docx');
+  d = await read(docx);
+  const multiple = Number((/w:line="(\d+)" w:lineRule="auto"/.exec(tightPara(d.xml)) || [])[1]);
+  expect('tight lines on a document page are a multiple of the font\'s own line height, below one and above a half, so they follow the font size', !/<wps:txbx>/.test(d.xml) && multiple > 150 && multiple < 240, String(multiple));
+  fs.rmSync(docx);
+  [docx] = await convert.convertFile(draw('tight-design', 'tight', 'design'), 'docx');
+  d = await read(docx);
+  expect('the same lines in a text box on a designed page keep an exact height', /<wps:txbx>/.test(d.xml) && /w:lineRule="exact"/.test(tightPara(d.xml)), tightPara(d.xml).slice(0, 300));
+  fs.rmSync(docx);
+
+  console.log('a column of figures');
+  for (const [name, extra] of [['figures', ''], ['figures-paper', 'paper']]) {
+    [docx] = await convert.convertFile(draw(name, 'figures', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: figures of the same width are not justified text, so Word cannot break one across two lines`, !/<w:jc w:val="both"\/>/.test(d.xml) && !missingFrom(d.text, ['1,198,420', '431,066.5']).length, d.xml.match(/<w:jc [^>]*>/g)?.join(' '));
+    fs.rmSync(docx);
+  }
 
   console.log('a designed page whose text the PDF wrote column by column');
   [docx] = await convert.convertFile(draw('writtenorder', 'writtenorder'), 'docx');
