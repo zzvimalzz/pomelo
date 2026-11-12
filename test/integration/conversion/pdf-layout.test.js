@@ -121,6 +121,42 @@ if kind == "flow":                                  # a title over two columns o
             page.insert_textbox(pymupdf.Rect(x0, y, x0 + 215, y + 96), "%s column paragraph %d. %s" % (tag, k + 1, para), fontname="helv", fontsize=10, align=3)
             y += 110
     doc.save(sys.argv[1]); sys.exit()
+if kind == "uneven":                                # two columns of running text, the right one shorter
+    page = doc.new_page(width=595, height=842)
+    para = "Every request is read by two people before the panel decides whether a meeting will be needed for it, and the applicant hears from the office within a week of the decision. "
+    for x0, count in ((60, 3), (320, 2)):
+        for k in range(count):
+            page.insert_textbox(pymupdf.Rect(x0, 110 + k * 110, x0 + 215, 206 + k * 110), "Paragraph %d. %s" % (k + 1, para), fontname="helv", fontsize=10, align=3)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "equation":                              # two columns of running text, an equation with its number at the column's edge in the left one
+    page = doc.new_page(width=595, height=842)
+    para = "Every request is read by two people before the panel decides whether a meeting will be needed for it, and the applicant hears from the office within a week. "
+    page.insert_textbox(pymupdf.Rect(60, 110, 280, 175), para, fontname="helv", fontsize=10, align=3)
+    page.insert_text((100, 214), "x = y + z", fontname="helv", fontsize=10)
+    page.insert_text((266, 214), "(3)", fontname="helv", fontsize=10)
+    page.insert_textbox(pymupdf.Rect(60, 230, 280, 295), para, fontname="helv", fontsize=10, align=3)
+    page.insert_textbox(pymupdf.Rect(320, 110, 535, 310), para * 4, fontname="helv", fontsize=10, align=3)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "tablecol":                              # two columns of running text, a ruled table inside the left one
+    page = doc.new_page(width=595, height=842)
+    para = "Every request is read by two people before the panel decides whether a meeting will be needed for it, and the applicant hears from the office within a week. "
+    page.insert_textbox(pymupdf.Rect(60, 110, 280, 175), para, fontname="helv", fontsize=10, align=3)
+    for r in range(3):
+        for c in range(2):
+            rect = pymupdf.Rect(60 + c * 100, 200 + r * 20, 160 + c * 100, 220 + r * 20)
+            page.draw_rect(rect, color=(0.4, 0.4, 0.4), width=0.8)
+            page.insert_text((rect.x0 + 6, rect.y0 + 14), "cell %d%d" % (r, c), fontname="helv", fontsize=9)
+    page.insert_textbox(pymupdf.Rect(60, 280, 280, 345), para, fontname="helv", fontsize=10, align=3)
+    page.insert_textbox(pymupdf.Rect(320, 110, 535, 360), para * 5, fontname="helv", fontsize=10, align=3)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "dropcap":                               # a large first letter beside the first three lines of a paragraph
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((60, 134), "T", fontname="helv", fontsize=30)
+    for i, t in enumerate(("he best views are free, but the", "guided sunrise hike is worth every", "cent and ends with a proper breakfast.")):
+        page.insert_text((84, 110 + i * 12), t, fontname="helv", fontsize=10)
+    for i, t in enumerate(("Wake early and walk down to the water while", "the light is still soft and the streets belong")):
+        page.insert_text((60, 148 + i * 12), t, fontname="helv", fontsize=10)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "chart":                                 # a picture that two gridlines cross, with labels at the left
     page = doc.new_page(width=595, height=842)
     pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 30), False)
@@ -445,9 +481,36 @@ const read = async (docx) => {
   const sects = d.xml.match(/<w:sectPr[ >].*?<\/w:sectPr>/gs) || [];
   expect('the columns are a Word section of two columns, not table cells', /<w:cols w:num="2"/.test(d.xml) && !/<w:tc>/.test(d.xml), (d.xml.match(/<w:cols [^>]*>/) || [''])[0]);
   expect('the section starts on the same sheet and the page keeps one size', sects.length === 3 && /<w:type w:val="continuous"\/>/.test(sects[1]) && new Set(sects.map((s) => (s.match(/<w:pgSz [^>]*>/) || [''])[0])).size === 1, sects.map((s) => s.slice(0, 60)).join(' | '));
-  expect('the first column ends in a column break', (d.xml.match(/<w:br w:type="column"\/>/g) || []).length === 1);
+  expect('columns that end together have no column break, so Word balances them and typing runs on into the next', !/<w:br w:type="column"\/>/.test(d.xml));
   expect('the left column is read before the right one', d.text.indexOf('Left column paragraph 3') > -1 && d.text.indexOf('Left column paragraph 3') < d.text.indexOf('Right column paragraph 1'), d.text.slice(0, 200));
   expect('the title stays above the columns, in the first section', d.xml.indexOf('Findings of the review') < d.xml.indexOf('<w:cols '));
+  fs.rmSync(docx);
+
+  console.log('columns that end at different heights');
+  [docx] = await convert.convertFile(draw('uneven', 'uneven'), 'docx');
+  d = await read(docx);
+  const breaks = d.xml.match(/<w:p>(?:(?!<\/w:p>).)*?<w:br w:type="column"\/><\/w:r><\/w:p>/gs) || [];
+  expect('the first column ends in a column break', (d.xml.match(/<w:br w:type="column"\/>/g) || []).length === 1);
+  expect('the break is a paragraph of its own, so it does not stretch the last line of the column or add a line to the next', breaks.length === 1 && !/<w:t[ >]/.test(breaks[0]), breaks.join(' | ').slice(0, 200));
+  fs.rmSync(docx);
+
+  console.log('an equation with its number, and a table, inside a column');
+  [docx] = await convert.convertFile(draw('equation', 'equation'), 'docx');
+  d = await read(docx);
+  expect('the equation does not end the columns: both columns are one Word section', (d.xml.match(/<w:cols w:num="2"/g) || []).length === 1 && !/<w:tc>/.test(d.xml));
+  expect('the equation and its number are one paragraph with a right tab at the edge of the column', /<w:tab w:val="right" [^>]*\/>(?:(?!<\/w:p>).)*x = y \+ z(?:(?!<\/w:p>).)*\(3\)/s.test(d.xml) || /x = y \+ z(?:(?!<\/w:p>).)*<w:tab\/>(?:(?!<\/w:p>).)*\(3\)/s.test(d.xml));
+  fs.rmSync(docx);
+  [docx] = await convert.convertFile(draw('tablecol', 'tablecol'), 'docx');
+  d = await read(docx);
+  expect('a table inside the left column stays in the columns, as a real Word table', (d.xml.match(/<w:cols w:num="2"/g) || []).length === 1 && (d.xml.match(/<w:tbl>/g) || []).length === 1 && d.xml.indexOf('<w:tbl>') < d.xml.indexOf('<w:cols '));
+  fs.rmSync(docx);
+
+  console.log('a drop capital');
+  [docx] = await convert.convertFile(draw('dropcap', 'dropcap'), 'docx');
+  d = await read(docx);
+  const cap = /<w:p><w:pPr><w:framePr w:dropCap="drop" w:lines="3" w:wrap="around" w:vAnchor="text" w:hAnchor="text"\/>(?:(?!<\/w:p>).)*<w:t[^>]*>T<\/w:t><\/w:r><\/w:p><w:p>(?:(?!<\/w:p>).)*?<w:t[^>]*>he best views/s;
+  expect('the large letter is a Word drop capital over three lines, followed by the paragraph that starts after it', cap.test(d.xml), d.text.slice(0, 120));
+  expect('the paragraph has no indent for the lines beside the capital', !/<w:ind [^>]*w:firstLine=/.test(d.xml.slice(d.xml.indexOf('he best views') - 600, d.xml.indexOf('he best views'))));
   fs.rmSync(docx);
 
   console.log('a picture that gridlines cross');

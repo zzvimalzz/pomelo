@@ -24,6 +24,7 @@ class Line:
         self.block = self.block_x1 = None   # the PDF text block the line came from, and where it ends on the right
         self.justified = False
         self.dir = (1.0, 0.0)
+        self.cap = None               # the drop capital that stands beside this line, when it starts the paragraph the capital opens
 
     @property
     def text(self):
@@ -172,6 +173,17 @@ def join_stretched(r, shapes):
     return sorted(out, key=lambda l: l.x0)
 
 
+def is_letter(l):
+    t = l.text.strip()
+    return len(t) == 1 and t.isalpha()
+
+
+def is_drop_cap(a, b):
+    """A single letter at least twice the size of the text beside it, on its baseline: the capital that opens a paragraph, not a part of its first line."""
+    big, small = (a, b) if a.size > b.size else (b, a)
+    return is_letter(big) and big.size >= 2 * small.size
+
+
 def merge_rows(lines, shapes=()):
     """Pieces on one row that sit close together are one line; pieces far apart stay apart (columns, a title and its date)."""
     lines = sorted(lines, key=lambda l: (l.base, l.x0))
@@ -188,7 +200,7 @@ def merge_rows(lines, shapes=()):
         r = join_stretched(sorted(r, key=lambda l: l.x0), shapes)
         cur = r[0]
         for nxt in r[1:]:
-            if nxt.x0 - cur.x1 < 0.8 * min(cur.size, nxt.size):
+            if nxt.x0 - cur.x1 < 0.8 * min(cur.size, nxt.size) and not is_drop_cap(cur, nxt):
                 cur = join_pieces(cur, nxt)
             else:
                 out.append(cur)
