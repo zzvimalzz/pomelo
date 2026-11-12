@@ -118,7 +118,7 @@ const compare = (python, original, rendered, tag) => compareScript(python, [orig
       const t = m.text;
       if (word) {
         const c = m.check;
-        rows.push(`${pad(name, 16)} pages ${m.pages.join('/')}  size ${c.size_ok}/${m.pages[0]}  recall ${pct(c.recall)}  order ${pct(c.order)}  visual ${pct(c.visual)}  xml ${pct(xml.recall)}  ${m.seconds}s`);
+        rows.push(`${pad(name, 16)} pages ${m.pages.join('/')}  size ${c.size_ok}/${m.pages[0]}  recall ${pct(c.recall)}  order ${pct(c.order)}  visual ${pct(c.visual)}  xml ${pct(xml.recall)}  tb ${pct(xml.tb)}  tables ${xml.tables}  headings ${xml.headings}  exact ${xml.exact}  ${m.seconds}s`);
         if (xml.missing.length) rows.push(`${pad('', 16)} not in the document: ${xml.missing.slice(0, 6).join(' | ').slice(0, 150)}`);
         continue;
       }
