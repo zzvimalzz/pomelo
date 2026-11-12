@@ -77,7 +77,7 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None):
         except Exception as e:                                         # one odd page must not lose the document: its text is kept
             log("page %d could not be rebuilt in full (%s); kept as text" % (pno + 1, e))
             xml, sect, furn = convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n, log, None, safe=True, turn=turns.get(pno, 0))
-        states.append(furn)
+        states.extend(furn)
         for el in list(parse_xml(f'<w:body {NS}>{xml}</w:body>')):
             body.insert(len(body) - 1, el)
         if pno == n - 1:
@@ -101,7 +101,7 @@ def boxes_of(l):
 
 
 def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n_pages, log, furniture, safe=False, turn=0):
-    """-> (the page's XML, its section's properties, the XML of its header and of its footer).
+    """-> (the page's XML, its section's properties, the XML of the header and of the footer of each of its sections).
     safe: only the text, as paragraphs (what a page falls back to when something exotic in it cannot be rebuilt).
     turn: the /Rotate of the page; it is built upright and shown turned, in a text box the size of the sheet."""
     P = Page(doc, work_all[pno], work_keep[pno], page, pno, meter, body_pt)
@@ -171,7 +171,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     if os.environ.get("POMELO_DEBUG"):
         sys.stderr.write("page %d: %s page (%s)\n" % (pno + 1, kind, why))
     if kind == "design" and not (safe or scan or turn):
-        return (*design_page(P, out, meter, lists, pno, n_pages), ("", ""))
+        return (*design_page(P, out, meter, lists, pno, n_pages), [("", "")])
     merged = []
     for b in P.rot_boxes:
         box = list(b)
@@ -319,6 +319,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
             P.floaters.append(i)
     # rotated text: a text box, rotated
     B = Builder(out, P, meter, lists)
+    B.columns_ok = not (safe or scan or turn)
     if flow:
         x0 = max(0.0, min(i.x0 for i in flow))
         x1 = max(i.x1 for i in flow)
@@ -359,15 +360,32 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         sheet_w, sheet_h, margins = (P.w, P.h, (0.0,) * 4) if turn == 180 else (P.h, P.w, (0.0,) * 4)
     else:
         sheet_w, sheet_h = P.w, P.h
-    closing, sect = close_page(sheet_w, sheet_h, margins, floats, pno, n_pages)
-    return xml + closing, sect, furn
+    props = page_props(sheet_w, sheet_h, margins)
+    xml, count = end_sections(xml, props)
+    closing, sect = close_page(props, floats, pno, n_pages, count)
+    return xml + closing, sect, [furn] * (count + 1)
 
 
-def close_page(sheet_w, sheet_h, margins, floats, pno, n_pages):
-    """The closing paragraph of a page, which carries its pictures and ends its section, and the section's properties."""
+def page_props(sheet_w, sheet_h, margins):
+    return (f'<w:pgSz w:w="{tw(sheet_w)}" w:h="{tw(sheet_h)}"{' w:orient="landscape"' if sheet_w > sheet_h else ''}/>'
+            f'<w:pgMar w:top="{tw(margins[0])}" w:right="{tw(margins[1])}" w:bottom="{tw(margins[2])}" w:left="{tw(margins[3])}" w:header="0" w:footer="0" w:gutter="0"/>')
+
+
+def end_sections(xml, props):
+    """The marks that columns leave in the page's XML become the sections they end: the first section of a page starts on a new sheet, the others follow on the same one."""
+    count = 0
+
+    def section(m):
+        nonlocal count
+        count += 1
+        return f'<w:sectPr><w:type w:val="{"nextPage" if count == 1 else "continuous"}"/>{props}{m.group(1)}</w:sectPr>'
+    return re.sub("\x01SECT:(.*?)\x01", section, xml), count
+
+
+def close_page(props, floats, pno, n_pages, count):
+    """The closing paragraph of a page, which carries its pictures and ends its last section, and the section's properties."""
     mark = '<w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr>'
-    inner = (f'<w:type w:val="nextPage"/><w:pgSz w:w="{tw(sheet_w)}" w:h="{tw(sheet_h)}"{' w:orient="landscape"' if sheet_w > sheet_h else ''}/>'
-             f'<w:pgMar w:top="{tw(margins[0])}" w:right="{tw(margins[1])}" w:bottom="{tw(margins[2])}" w:left="{tw(margins[3])}" w:header="0" w:footer="0" w:gutter="0"/>')
+    inner = f'<w:type w:val="{"continuous" if count else "nextPage"}"/>{props}'
     sect = f'<w:sectPr {nsdecls("w")}>{inner}</w:sectPr>'
     if pno < n_pages - 1:
         return f'<w:p><w:pPr>{mark}<w:sectPr>{inner}</w:sectPr></w:pPr>{floats}</w:p>', sect
@@ -397,4 +415,4 @@ def design_page(P, out, meter, lists, pno, n_pages):
     if data:
         floats = B.picture_xml(Fig((0.0, 0.0, P.w, P.h), data[0], data[1], floating=True), floating=True, name="Picture")
     floats += B.text_boxes(P.upright) + "".join(B.turned_text_box(l) for l in turned)
-    return close_page(P.w, P.h, (0.0, 0.0, 0.0, 0.0), floats, pno, n_pages)
+    return close_page(page_props(P.w, P.h, (0.0, 0.0, 0.0, 0.0)), floats, pno, n_pages, 0)
