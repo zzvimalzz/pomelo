@@ -64,7 +64,6 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None):
     font = body_font(sample, body_pt, meter)
     half = max(2, round(body_pt * 2))
     meter.base = (font, half)
-    set_styles(out, font, half)
 
     n = len(doc)
     furniture = Furniture(doc, turns) if n > 1 else None
@@ -87,6 +86,7 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None):
         if pno == n - 1:
             final = body.find(qn("w:sectPr"))
             body.replace(final, parse_xml(sect))
+    set_styles(out, font, half, lists.looks)
     attach(out, states, log)
     meta = doc.metadata or {}
     props = out.core_properties

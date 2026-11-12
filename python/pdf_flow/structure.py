@@ -31,7 +31,29 @@ def body_font(lines, size, meter):
     return count.most_common(1)[0][0] if count else None
 
 
-def set_styles(out, font, half):
+def table_style(look, n):
+    """A table style for the look of a table (see `table_look`): its rules and padding, and the header row, stripes and first column that the cells would otherwise
+    each state. Word's own designs take their colours from the theme, so the PDF's colours need a style of their own, which Table Design lists beside them."""
+    rule, pad, head, stripes, first = look
+    shd = lambda fill: f'<w:shd w:val="clear" w:color="auto" w:fill="{fill}"/>' if fill else ""
+    side = lambda s: f'<w:{s} w:val="single" w:sz="{rule[0]}" w:space="0" w:color="{rule[1]}"/>'
+    borders = "<w:tblBorders>" + "".join(side(s) for s in ("top", "left", "bottom", "right", "insideH", "insideV")) + "</w:tblBorders>" if rule else ""
+    margins = "".join(f'<w:{s} w:w="{pad if s in ("left", "right") else 0}" w:type="dxa"/>' for s in ("top", "left", "bottom", "right"))
+
+    def part(kind, give, fill=None):
+        color, bold = (give[1], give[2]) if give else (None, None)
+        rpr = ("<w:b/><w:bCs/>" if bold else "") + (f'<w:color w:val="{color}"/>' if color else "")
+        tcpr = shd(give[0] if give else fill)
+        return f'<w:tblStylePr w:type="{kind}">' + (f"<w:rPr>{rpr}</w:rPr>" if rpr else "") + (f"<w:tcPr>{tcpr}</w:tcPr>" if tcpr else "") + "</w:tblStylePr>"
+    band = '<w:tblStyleRowBandSize w:val="1"/>' if stripes else ""
+    parts = (part("firstRow", head) if head else "") + (part("firstCol", first) if first else "")
+    if stripes:
+        parts += "".join(part(kind, None, fill) for kind, fill in (("band1Horz", stripes[0]), ("band2Horz", stripes[1])) if fill)
+    return (f'<w:style w:type="table" w:customStyle="1" w:styleId="PDFTable{n}"><w:name w:val="PDF Table {n}"/><w:basedOn w:val="TableNormal"/><w:uiPriority w:val="59"/><w:qFormat/>'
+            f'<w:tblPr>{band}{borders}<w:tblCellMar>{margins}</w:tblCellMar></w:tblPr>{parts}</w:style>')
+
+
+def set_styles(out, font, half, looks=()):
     """The styles the paragraphs refer to. They carry no look of their own beyond the body font: every run states its own, so a style changes nothing on the page and
     only gives Word the structure (the Navigation pane, a list, a caption). Heading styles do not keep a heading with the next paragraph, which would move it to another sheet."""
     base = (f'<w:rFonts w:ascii="{esc(font)}" w:hAnsi="{esc(font)}" w:eastAsia="{esc(font)}" w:cs="{esc(font)}"/>' if font else "") + f'<w:sz w:val="{half}"/><w:szCs w:val="{half}"/>'
@@ -49,6 +71,8 @@ def set_styles(out, font, half):
             if old.get(qn("w:styleId")) == style_id:
                 root.remove(old)
         root.append(parse_xml(xml.replace("<w:style ", f"<w:style {NS} ", 1)))
+    for n, look in enumerate(looks, 1):
+        root.append(parse_xml(table_style(look, n).replace("<w:style ", f"<w:style {NS} ", 1)))
 
 
 def readings(text, pno, n):

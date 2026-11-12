@@ -1,7 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The things on a page that are not text: pictures, rules, shaded boxes, tables and figures, and the drawings they come from."""
 
-from .common import is_white, rgb_hex
+from collections import Counter
+
+from pdf_spans import hexcolor
+
+from .common import is_white, rgb_hex, tw
+from .lines import is_bold
+
+SIDES = ("top", "left", "bottom", "right")
 
 
 class Img:
@@ -54,6 +61,50 @@ class Tbl:
     @property
     def bbox(self):
         return (self.x0, self.y0, self.x1, self.y1)
+
+
+def rule_key(b):
+    return (round(b[0] * 8), b[1]) if b else None
+
+
+def traits(c):
+    spans = [s for i in c["items"] if i.kind == "line" for s in i.spans if s["text"].strip()]
+    colors = {hexcolor(s["color"]) for s in spans}
+    return c["fill"], colors.pop() if len(colors) == 1 else None, bool(spans) and all(is_bold(s) for s in spans), bool(spans)
+
+
+def region(cells, rest):
+    """(fill, colour, bold) that all of the cells share and the rest of the table does not usually have; None when there is no such look."""
+    out = []
+    for i in range(3):
+        mine = Counter(traits(c)[i] for c in cells if i == 0 or traits(c)[3])
+        usual = Counter(traits(c)[i] for c in rest if i == 0 or traits(c)[3]).most_common(1)
+        v = next(iter(mine)) if len(mine) == 1 else None
+        out.append(v if v and (not usual or v != usual[0][0]) else None)
+    return tuple(out) if any(out) else None
+
+
+def table_look(t):
+    """What the cells of a table share, so that a Word table style can give it and the cells need not repeat it: (rule as `rule_key`, cell padding in twips, header row,
+    stripes, first column), each None where the table has none; a header and a first column are (fill, colour, bold)."""
+    cells = t.cells
+    nrow = max(c["r1"] for c in cells)
+    count = Counter(rule_key(c["borders"].get(s)) for c in cells for s in SIDES)
+    top = [(k, n) for k, n in count.most_common() if k]
+    rule = top[0][0] if top and top[0][1] >= 0.6 * 4 * len(cells) else None
+    gaps = [min(i.x0 for i in lines) - c["bbox"][0] for c in cells for lines in [[i for i in c["items"] if i.kind == "line"]] if lines]
+    pad = tw(round(min(14.0, max(0.0, min(gaps))) * 2) / 2) if gaps else 0
+    head = region([c for c in cells if c["r0"] == 0], [c for c in cells if c["r0"] > 0]) if nrow >= 2 else None
+    body = [c for c in cells if c["r0"] >= (1 if head else 0)]
+    first = region([c for c in body if c["c0"] == 0], [c for c in body if c["c0"] > 0])
+    rows = sorted({c["r0"] for c in body})
+    fills = []
+    for r in rows:
+        seen = {c["fill"] for c in body if c["r0"] == r}
+        fills.append(next(iter(seen)) if len(seen) == 1 else "?")
+    full = rows == list(range(1 if head else 0, nrow)) and "?" not in fills
+    stripes = (fills[0], fills[1]) if full and len(fills) >= 3 and len(set(fills[0::2])) == 1 and len(set(fills[1::2])) == 1 and fills[0] != fills[1] else None
+    return rule, pad, head, stripes, first
 
 
 class Fig:
