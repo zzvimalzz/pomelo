@@ -300,13 +300,14 @@ class Builder:
         if n >= 2:
             left_flush = all(abs(x - ref) <= tol for x in xs0[1:])
             right_all = all(abs(x - right_edge) <= tol for x in xs1)
+            spaced = any(" " in l.text.strip() for l in lines)    # a column of single words as wide as each other is not justified text
             if all(abs(c - cxs[0]) <= tol for c in cxs) and spread > tol:
                 jc = "center"
             elif right_all and spread > tol and not (left_flush and (n >= 3 or any(l.justified for l in lines))):
                 jc = "right"
-            elif left_flush and all(abs(x - right_edge) <= tol for x in xs1[:-1]) and abs(lines[0].x0 - ref) <= 4.5 * lines[0].size                     and xs1[0] >= x1 - 0.12 * w and (right_edge - ref) > 0.4 * w and n >= 3:
+            elif spaced and left_flush and all(abs(x - right_edge) <= tol for x in xs1[:-1]) and abs(lines[0].x0 - ref) <= 4.5 * lines[0].size                     and xs1[0] >= x1 - 0.12 * w and (right_edge - ref) > 0.4 * w and n >= 3:
                 jc = "both"
-            elif left_flush and any(l.justified for l in lines[:-1]) and all(abs(x - right_edge) <= tol for x in xs1[:-1]):
+            elif spaced and left_flush and any(l.justified for l in lines[:-1]) and all(abs(x - right_edge) <= tol for x in xs1[:-1]):
                 jc = "both"
         else:
             if abs(cxs[0] - (L + w / 2)) <= max(2.5, 0.012 * w) and (lines[0].x0 - L) > 0.08 * w and (x1 - lines[0].x1) > 0.08 * w:
@@ -447,15 +448,20 @@ class Builder:
     def line_rule(self, lines, pitch, size):
         """(rule, line) for a paragraph. Lines are "at least" the PDF's pitch where the font's own height in Word is no taller, so they grow with the text when it is edited
         and Word still sets them at the PDF's pitch; they are exact where the PDF sets them tighter than the font (a title, a drop cap), where sizes are mixed, where the font
-        is not known and where the text is not Latin, which Word sets in a fallback font of its own height."""
+        is not known and where the text is not Latin, which Word sets in a fallback font of its own height. Those exact lines are a multiple of Word's own line height
+        instead when the paragraph is not placed (a text box, a row of a placed table), so they follow a change of font size."""
         if pitch >= 1.32 * size:
             return "atLeast", tw(pitch)
         spans = [s for l in lines for s in l.spans if s["text"].strip()]
         heights = [self.meter.height(s) for s in spans]
         sizes = [s["size"] for s in spans]
-        if not spans or None in heights or max(sizes) > 1.08 * min(sizes) or not all(latin(s["text"]) for s in spans):
-            return "exact", tw(pitch)
-        return ("atLeast" if pitch >= 1.003 * max(h * z for h, z in zip(heights, sizes)) else "exact"), tw(pitch)
+        known = bool(spans) and None not in heights
+        if known and max(sizes) <= 1.08 * min(sizes) and all(latin(s["text"]) for s in spans) and pitch >= 1.003 * max(h * z for h, z in zip(heights, sizes)):
+            return "atLeast", tw(pitch)
+        if not self.placed:
+            natural = max(h * z for h, z in zip(heights, sizes)) if known else 1.2 * size
+            return "auto", round(240 * pitch / natural)
+        return "exact", tw(pitch)
 
     def said(self, lines, text):
         """Large text that is spoken or signed, not a title: a pull quote, a sentence, or a name under the closing of a letter."""
