@@ -133,12 +133,15 @@ class Furniture:
         return None
 
 
-def attach(out, states):
-    """Header and footer parts for the sections. `states` holds, for each page, the XML of its header and of its footer. A section that differs from the one before it
-    gets its own references; the others carry on with the previous one, as the headers of a Word document do."""
+def attach(out, states, log=lambda m: None):
+    """Header and footer parts for the sections. `states` holds, for each section, the XML of its header and of its footer. A section that differs from the one before it
+    gets its own references; the others carry on with the previous one, as the headers of a Word document do. When the counts differ, the lines that were taken out of the
+    pages are still kept: the first header and the first footer that exist go to the first section."""
     sections = out.sections
     if len(sections) != len(states):
-        return
+        log("%d sections but %d header and footer states; the header and footer go to the first section" % (len(sections), len(states)))
+        states = [tuple(next((s[i] for s in states if s[i]), "") for i in (0, 1))]
+        sections = sections[:1]
     part = out.part
     made = {}
     before = ("", "")

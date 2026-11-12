@@ -225,6 +225,16 @@ if kind == "nested":                                # a table whose cells are an
             page.insert_text((x0 + 8, y0 + 10), text, fontname="helv", fontsize=9)
         page.draw_rect(pymupdf.Rect(cols[0], y1, cols[-1], y1 + 1), color=None, fill=mid)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "manypictures":                          # 250 tiny pictures on the first page, a few on the second
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 4, 4), False)
+    pix.clear_with(90)
+    for count in (250, 5):
+        page = doc.new_page(width=595, height=842)
+        for i in range(count):
+            x, y = 40 + (i % 25) * 20, 60 + (i // 25) * 20
+            page.insert_image(pymupdf.Rect(x, y, x + 8, y + 8), pixmap=pix)
+        page.insert_text((60, 700), "Pictures above", fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "circle":                                # a wide photo cropped to a circle
     page = doc.new_page(width=595, height=842)
     pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 200, 100), False)
@@ -534,6 +544,14 @@ const read = async (docx) => {
   d = await read(docx);
   expect('a transparent black shadow does not turn a card black', !/w:fill="000000"/.test(d.xml));
   expect('the text of the cards is there', !missingFrom(d.text, ['Card 1', 'Card 3', 'A figure for the card']).length);
+  fs.rmSync(docx);
+
+  console.log('a page with hundreds of pictures, then another page with pictures');
+  [docx] = await convert.convertFile(draw('manypictures', 'manypictures'), 'docx');
+  d = await read(docx);
+  const ids = [...d.xml.matchAll(/<wp:docPr id="(\d+)"/g)].map((m) => m[1]);
+  expect('the pictures are all there', ids.length >= 255, `${ids.length} drawings`);
+  expect('every drawing id in the document is different, so Word has nothing to repair', new Set(ids).size === ids.length, `${ids.length - new Set(ids).size} repeated`);
   fs.rmSync(docx);
 
   console.log('speed: 40 pages of plain text');

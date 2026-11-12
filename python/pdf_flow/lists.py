@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Numbering: the bullet and numbered lists the document needs."""
 
+import itertools
 import re
 
 from docx.oxml import parse_xml
@@ -14,9 +15,10 @@ from .common import esc
 
 
 class Lists:
-    """Bullet and numbering definitions, made once per look and per run of numbers."""
+    """Bullet and numbering definitions, made once per look and per run of numbers. It also hands out the drawing ids, which must be unique in the whole document."""
 
     def __init__(self):
+        self.drawing_ids = itertools.count(1001)
         self.made = {}
         self.next_a = 1
         self.next_n = 1

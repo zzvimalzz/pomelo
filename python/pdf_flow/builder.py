@@ -30,7 +30,6 @@ class Builder:
         self.titled = False
         self.columns_ok = False           # running text in columns may be written as Word columns (the page is flowed, not placed or turned)
         self.emitted = set()
-        self.nid = 1000 + page_obj.pno * 200
 
     def room(self, x1):
         """The slack the page's right margin leaves to a paragraph that reaches the right edge; a table is only as wide as its columns, so a cell gets none."""
@@ -532,8 +531,7 @@ class Builder:
         return f'<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="{tw(h)}" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>'
 
     def next_id(self):
-        self.nid += 1
-        return self.nid
+        return next(self.lists.drawing_ids)
 
     def picture_xml(self, it, floating=False, name="Picture"):
         rid, _ = self.doc.part.get_or_add_image(io.BytesIO(it.data))
