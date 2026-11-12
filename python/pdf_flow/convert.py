@@ -20,7 +20,7 @@ from .lines import read_lines
 from .lists import Lists
 from .page import Page, page_kind
 from .shapes import Fig, Img, Rule
-from .structure import Furniture, attach, body_font, set_styles
+from .structure import ONE_POINT, Furniture, attach, body_font, set_styles
 
 
 def body_size(all_lines):
@@ -87,7 +87,7 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None):
             final = body.find(qn("w:sectPr"))
             body.replace(final, parse_xml(sect))
     set_styles(out, font, half, lists.looks)
-    attach(out, states, log)
+    attach(out, states, log, furniture and furniture.pictures)
     meta = doc.metadata or {}
     props = out.core_properties
     props.title = meta.get("title") or ""
@@ -188,6 +188,19 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         sys.stderr.write("page %d: %s page (%s)\n" % (pno + 1, kind, why))
     if kind == "design" and not (safe or scan or turn):
         return (*design_page(P, out, meter, lists, pno, n_pages), [("", "")])
+    logos = []
+    if furniture and not (safe or scan or turn):
+        for r, info in list(P.imgs):
+            band = furniture.logo(info, P.h)
+            if not band:
+                continue
+            if info["xref"] not in furniture.pictures:
+                data = P.encode_image(info, r)
+                if not data:
+                    continue
+                furniture.pictures[info["xref"]] = (data[0], next(lists.drawing_ids))
+            logos.append((band, r, info["xref"]))
+            P.imgs.remove((r, info))
     merged = []
     for b in P.rot_boxes:
         box = list(b)
@@ -347,7 +360,8 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     xml, cursor = B.emit(flow, x0, x1, None)
     if framed:
         xml += B.frames(framed)
-    furn = tuple("".join(B.frames([l], 1.2 * l.size if any(sp.get("field") for sp in l.spans) else 0.0) for l in taken[k]) for k in ("header", "footer"))
+    furn = tuple("".join(ONE_POINT % B.picture_xml(Img(r, b"", "png", floating=True), floating=True, name="Logo", rid=f"\x02{xref}", pid=furniture.pictures[xref][1]) for band, r, xref in logos if band == k)
+                 + "".join(B.frames([l], 1.2 * l.size if any(sp.get("field") for sp in l.spans) else 0.0) for l in taken[k]) for k in ("header", "footer"))
     if os.environ.get("POMELO_DEBUG"):
         lost = [l for l in P.upright if not l.absorbed and id(l) not in B.emitted]
         if lost:
@@ -407,7 +421,7 @@ def close_page(props, floats, pno, n_pages, count):
     sect = f'<w:sectPr {nsdecls("w")}>{inner}</w:sectPr>'
     if pno < n_pages - 1:
         return f'<w:p><w:pPr>{mark}<w:sectPr>{inner}</w:sectPr></w:pPr>{floats}</w:p>', sect
-    return f'<w:p><w:pPr>{mark}</w:pPr>{floats}</w:p>', sect
+    return f'<w:p>{floats}</w:p>', sect
 
 
 def design_page(P, out, meter, lists, pno, n_pages):

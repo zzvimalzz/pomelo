@@ -213,8 +213,8 @@ def merge_rows(lines, shapes=()):
 
 
 def bullet(token):
-    """The letter "o" counts as a bullet only on its own; a word that starts with it never does."""
-    return token[0] in BULLETS and (token[0] != "o" or token == "o")
+    """A bullet is made only of bullet characters, so a flag such as "-sU" is not one. The letter "o" counts only on its own."""
+    return all(c in BULLETS for c in token) and (token == "o" or "o" not in token)
 
 
 def attach_markers(lines):

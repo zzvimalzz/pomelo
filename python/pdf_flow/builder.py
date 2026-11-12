@@ -16,6 +16,8 @@ from .lines import is_bold, is_letter
 from .page import Para, runs_xml
 from .shapes import Box, SIDES, Tbl, rule_key, table_look
 
+QUOTES = "“”\"‘’«»"
+CLOSINGS = {"yours sincerely", "yours faithfully", "sincerely", "regards", "best regards", "kind regards", "warm regards"}
 CAPTION = re.compile(r"(?:Figure|Fig\.?|Table|Chart|Exhibit|Diagram)\s+[A-Z]?\d+(?:\.\d+)*[a-z]?\s*[.:–—-]\s*\S")
 NUMBERED = re.compile(r"\(\d{1,3}\)")
 BREAK = '<w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr>'
@@ -321,7 +323,7 @@ class Builder:
             breaks.append(not natural)
         if self.placed and jc != "both":
             breaks = [True] * len(breaks)
-        reflow = n >= 2 and not any(breaks)
+        reflow = n >= 2 and not all(breaks)
         ind_left = ind_right = 0.0
         first_line = (marker[3] if marker else lines[0].x0) - ref if n >= 2 and jc != "center" else 0.0
         if jc == "right":
@@ -389,6 +391,8 @@ class Builder:
             style = f"Heading{lvl + 1}"
             if lvl == 0 and not self.titled and self.P.pno == 0 and size >= 2 * self.P.body and size >= max(l.size for l in self.P.upright):
                 style, heading, self.titled = "Title", '<w:outlineLvl w:val="0"/>', True
+            elif self.said(lines, text):
+                style = ""
         elif n <= 2 and len(text) <= 140 and CAPTION.match(text):
             style = "Caption"
         elif n == 1 and not self.placed and self.labels(lines[0], text):
@@ -452,6 +456,15 @@ class Builder:
         if not spans or None in heights or max(sizes) > 1.08 * min(sizes) or not all(latin(s["text"]) for s in spans):
             return "exact", tw(pitch)
         return ("atLeast" if pitch >= 1.003 * max(h * z for h, z in zip(heights, sizes)) else "exact"), tw(pitch)
+
+    def said(self, lines, text):
+        """Large text that is spoken or signed, not a title: a pull quote, a sentence, or a name under the closing of a letter."""
+        words = text.split()
+        if len(lines) > 2 or len(words) > 12 or text[0] in QUOTES or text[-1] in QUOTES or (text.endswith(".") and len(words) > 6):
+            return True
+        first = lines[0]
+        return len(words) <= 3 and any(m.text.strip(" ,.").lower() in CLOSINGS and 0 <= first.y0 - m.y1 <= 2.5 * first.size and m.x0 < first.x1 and m.x1 > first.x0 - first.size
+                                       for m in self.P.upright if m is not first)
 
     def labels(self, l, text):
         """A short bold line of body size standing alone above text that is not bold, and not a cell of a table: a heading Word should list."""
@@ -619,10 +632,10 @@ class Builder:
     def next_id(self):
         return next(self.lists.drawing_ids)
 
-    def picture_xml(self, it, floating=False, name="Picture"):
-        rid, _ = self.doc.part.get_or_add_image(io.BytesIO(it.data))
+    def picture_xml(self, it, floating=False, name="Picture", rid=None, pid=None):
+        rid = rid or self.doc.part.get_or_add_image(io.BytesIO(it.data))[0]
         cx, cy = int((it.x1 - it.x0) * 12700), int((it.y1 - it.y0) * 12700)
-        pid = self.next_id()
+        pid = pid or self.next_id()
         x, y, turn = it.x0, it.y0, ""
         if floating and self.turn:
             x, y = self.turned_corner(it)
