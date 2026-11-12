@@ -326,9 +326,45 @@ if kind == "manypictures":                          # 250 tiny pictures on the f
     for count in (250, 5):
         page = doc.new_page(width=595, height=842)
         for i in range(count):
-            x, y = 40 + (i % 25) * 20, 60 + (i // 25) * 20
+            x, y = 40 + (i % 25) * 20, 120 + (i // 25) * 20
             page.insert_image(pymupdf.Rect(x, y, x + 8, y + 8), pixmap=pix)
         page.insert_text((60, 700), "Pictures above", fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "limits":                                # a heading, a pull quote, a letter's closing and signature, and rows whose first cell has a trailing space
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((60, 100), "Section One", fontname="hebo", fontsize=18)
+    page.insert_text((60, 130), '"Trust is built one careful decision at a time."', fontname="heit", fontsize=18)
+    for i in range(3):
+        page.insert_text((60, 165 + i * 14), "Ordinary body text, line %d of the letter." % (i + 1), fontname="helv", fontsize=11)
+    page.insert_text((60, 240), "Yours sincerely", fontname="helv", fontsize=11)
+    page.insert_text((60, 270), "A. Rahman", fontname="heit", fontsize=20)
+    for i, flag in enumerate(("-sS", "-sT", "-sU ", "-sA")):
+        page.insert_text((60, 340 + i * 14), flag, fontname="helv", fontsize=12)
+        page.insert_text((60 + pymupdf.get_text_length(flag, fontname="helv", fontsize=12) + 50, 340 + i * 14), "scan type %d" % (i + 1), fontname="helv", fontsize=12)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "abstract":                              # a title, then an indented paragraph that wraps by itself and ends in a line break before its keywords
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((60, 80), "A Title That Spans The Width Of The Whole Page", fontname="hebo", fontsize=18)
+    words = "We measured the response of the system under a range of operating conditions and report the mean of five independent runs. The effect saturates above a critical threshold, in agreement with the theoretical prediction. The experiment was repeated by a second group using different equipment, and the outcome was consistent within uncertainty.".split()
+    rows, row = [], ""
+    for w in words:
+        if pymupdf.get_text_length(row + " " + w, fontname="helv", fontsize=9) > 420:
+            rows.append(row); row = w
+        else:
+            row = (row + " " + w).strip()
+    rows += [row, "both synthetic and experimental data."]
+    for i, row in enumerate(rows):
+        page.insert_text((80, 110 + i * 11.2), row, fontname="helv", fontsize=9)
+    page.insert_text((80, 110 + len(rows) * 11.2), "Keywords:", fontname="hebo", fontsize=9)
+    page.insert_text((80 + pymupdf.get_text_length("Keywords: ", fontname="hebo", fontsize=9), 110 + len(rows) * 11.2), "sensing networks, coupling", fontname="helv", fontsize=9)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "logo":                                  # the same small picture at the top of each of three pages, and a line of text
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 30, 12), False)
+    pix.clear_with(60)
+    for n in range(3):
+        page = doc.new_page(width=595, height=842)
+        page.insert_image(pymupdf.Rect(60, 30, 120, 54), pixmap=pix)
+        page.insert_text((60, 200), "Body text of page %d" % (n + 1), fontname="helv", fontsize=11)
     doc.save(sys.argv[1]); sys.exit()
 if kind == "circle":                                # a wide photo cropped to a circle
     page = doc.new_page(width=595, height=842)
@@ -738,6 +774,35 @@ const read = async (docx) => {
   const ids = [...d.xml.matchAll(/<wp:docPr id="(\d+)"/g)].map((m) => m[1]);
   expect('the pictures are all there', ids.length >= 255, `${ids.length} drawings`);
   expect('every drawing id in the document is different, so Word has nothing to repair', new Set(ids).size === ids.length, `${ids.length - new Set(ids).size} repeated`);
+  fs.rmSync(docx);
+
+  console.log('a letter: a pull quote, a closing and signature, and rows that start with a flag');
+  [docx] = await convert.convertFile(draw('limits', 'limits'), 'docx');
+  d = await read(docx);
+  const styled = (text) => ((d.xml.match(new RegExp(`<w:p>(?:(?!</w:p>).)*?${text}(?:(?!</w:p>).)*</w:p>`, 's')) || [''])[0].match(/<w:pStyle w:val="(\w+)"/) || [])[1];
+  expect('a real heading is still a heading', styled('Section One') === 'Heading2', styled('Section One'));
+  expect('a pull quote in quotation marks is not a heading', styled('Trust is built') === undefined, styled('Trust is built'));
+  expect('a signature under a closing is not a heading', styled('A\\. Rahman') === undefined, styled('A\\. Rahman'));
+  const flagParas = (d.xml.match(/<w:p>(?:(?!<\/w:p>).)*<\/w:p>/gs) || []).filter((p) => p.includes('-sU') || p.includes('scan type 3'));
+  expect('a flag with a trailing space is not a list marker: it is not joined to the text beside it', !/<w:numPr>/.test(d.xml) && flagParas.length > 0 && !flagParas.some((p) => p.includes('-sU') && p.includes('scan type 3')), flagParas.join(' | ').slice(0, 300));
+  const lastPara = (d.xml.match(/<w:p(?: [^>]*)?(?:\/>|>(?:(?!<\/w:p>).)*<\/w:p>)(?=<w:sectPr)/s) || ['none'])[0];
+  expect('the last paragraph of the document is an ordinary one, so text typed at the end is visible', !/w:line="20"|<w:sz w:val="2"\/>/.test(lastPara), lastPara.slice(0, 300));
+  fs.rmSync(docx);
+
+  console.log('a paragraph that wraps by itself and ends in a line break');
+  [docx] = await convert.convertFile(draw('abstract', 'abstract'), 'docx');
+  d = await read(docx);
+  const abstractPara = (d.xml.match(/<w:p>(?:(?!<\/w:p>).)*Keywords:(?:(?!<\/w:p>).)*<\/w:p>/s) || [''])[0];
+  expect('it keeps the width of the PDF\'s lines as its right indent, so Word wraps it in the same places', /We measured/.test(abstractPara) && /<w:ind [^>]*w:right="\d+"/.test(abstractPara), abstractPara.slice(0, 300));
+  fs.rmSync(docx);
+
+  console.log('the same logo at the top of every page');
+  [docx] = await convert.convertFile(draw('logo', 'logo'), 'docx');
+  d = await read(docx);
+  const headerPart = d.zip.file('word/header1.xml') ? await d.zip.file('word/header1.xml').async('string') : '';
+  const headerRels = d.zip.file('word/_rels/header1.xml.rels') ? await d.zip.file('word/_rels/header1.xml.rels').async('string') : '';
+  expect('the logo is one picture in the header part, related from it, and not on the pages', (headerPart.match(/<pic:pic>/g) || []).length === 1 && /relationships\/image"/.test(headerRels) && !/<pic:pic>/.test(d.xml), `${(headerPart.match(/<pic:pic>/g) || []).length} in the header`);
+  expect('every page has the same header, so the logo is edited once', (d.xml.match(/<w:headerReference /g) || []).length === 1 && !d.zip.file('word/header2.xml') && !missingFrom(d.text, ['Body text of page 1', 'Body text of page 3']).length);
   fs.rmSync(docx);
 
   console.log('speed: 40 pages of plain text');

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """What makes the DOCX a Word document and not only a drawing of the PDF: the styles, and the headers and footers that repeat on the pages."""
 
+import io
 import itertools
 import re
 from collections import Counter
@@ -18,7 +19,9 @@ from .lines import merge_rows, read_lines
 
 NUMBER = re.compile(r"\d+")
 BAND = 0.1
-SPACER = '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>'
+ONE_POINT = '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr>%s</w:p>'
+SPACER = ONE_POINT % ""
+LOGO = re.compile('r:embed="\x02(\\d+)"')
 
 
 def body_font(lines, size, meter):
@@ -120,12 +123,20 @@ def with_fields(line, cuts):
     return out
 
 
+def band_of(bbox, h):
+    return "header" if bbox[3] <= BAND * h else "footer" if bbox[1] >= (1 - BAND) * h else None
+
+
+def same_place(a, b):
+    return all(abs(u - v) <= 2 for u, v in zip(a, b))
+
+
 class Furniture:
-    """The lines that repeat in the top or bottom tenth of most pages (a running title, a reference, a page number). They are written once, in header and footer parts."""
+    """The lines and pictures that repeat in the top or bottom tenth of most pages (a running title, a reference, a page number, a logo). They are written once, in header and footer parts."""
 
     def __init__(self, doc, turns):
         self.n = len(doc)
-        seen = {}
+        seen, logos = {}, {}
         for pno, page in enumerate(doc):
             if turns.get(pno):
                 continue
@@ -134,8 +145,20 @@ class Furniture:
                 for l in merge_rows([l for l in read_lines(page, clip) if not l.rot]):
                     for key, _ in readings(l.text.strip(), pno, self.n):
                         seen.setdefault((band, key), set()).add(pno)
+            for info in page.get_image_info(xrefs=True):
+                edge = band_of(info["bbox"], h)
+                if edge and info["xref"]:
+                    logos.setdefault((edge, info["xref"]), []).append((pno, info["bbox"]))
         need = max(2, round(0.75 * self.n))
         self.keep = {k for k, pages in seen.items() if len(pages) >= need}
+        self.logos = {k: found[0][1] for k, found in logos.items() if len({pno for pno, b in found if same_place(b, found[0][1])}) >= need}
+        self.pictures = {}
+
+    def logo(self, info, h):
+        """("header" or "footer") when the picture is one that repeats at the same place on most pages."""
+        band = band_of(info["bbox"], h)
+        ref = self.logos.get((band, info["xref"]))
+        return band if ref and not info.get("full") and same_place(info["bbox"], ref) else None
 
     def take(self, l, pno, h):
         """("header" or "footer") when the line is part of what repeats; the line's spans are then cut at its page numbers."""
@@ -157,10 +180,11 @@ class Furniture:
         return None
 
 
-def attach(out, states, log=lambda m: None):
+def attach(out, states, log=lambda m: None, pictures=None):
     """Header and footer parts for the sections. `states` holds, for each section, the XML of its header and of its footer. A section that differs from the one before it
     gets its own references; the others carry on with the previous one, as the headers of a Word document do. When the counts differ, the lines that were taken out of the
-    pages are still kept: the first header and the first footer that exist go to the first section."""
+    pages are still kept: the first header and the first footer that exist go to the first section. A picture in a part is named by its xref after a control character, which
+    no text can hold, and is related from the part itself, which `pictures` ({xref: (image bytes, drawing id)}) supplies."""
     sections = out.sections
     if len(sections) != len(states):
         log("%d sections but %d header and footer states; the header and footer go to the first section" % (len(sections), len(states)))
@@ -176,6 +200,7 @@ def attach(out, states, log=lambda m: None):
             if (kind, state[i]) not in made:
                 new, rid = (part.add_header_part if kind == "header" else part.add_footer_part)()
                 xml = re.sub(r'<w:hyperlink r:id="(rId\d+)"', lambda m: '<w:hyperlink r:id="%s"' % new.relate_to(part.rels[m.group(1)].target_ref, RELATIONSHIP_TYPE.HYPERLINK, is_external=True), state[i])
+                xml = LOGO.sub(lambda m: 'r:embed="%s"' % new.get_or_add_image(io.BytesIO(pictures[int(m.group(1))][0]))[0], xml)
                 for old in list(new.element):
                     new.element.remove(old)
                 for el in parse_xml(f'<w:body {NS}>{xml}{SPACER}</w:body>'):
