@@ -51,11 +51,11 @@ def is_italic(s):
     return bool(s["flags"] & 2) or "italic" in n or "oblique" in n
 
 
-def span_ok(s):
+def span_ok(s, hidden_ok=False):
     t = s["text"]
     if s["size"] < 2.5:
         return False
-    if s.get("alpha", 255) == 0:
+    if s.get("alpha", 255) == 0 and not hidden_ok:
         return False
     return not has_unmapped_symbols(t, BULLETS)
 
@@ -93,7 +93,7 @@ def repair_tracked(page, blocks):
         s["text"] = out
 
 
-def read_lines(page, clip=None):
+def read_lines(page, clip=None, hidden_ok=False):
     out = []
     blocks = page.get_text("dict", flags=TEXT_FLAGS, clip=clip)["blocks"]
     try:
@@ -110,9 +110,9 @@ def read_lines(page, clip=None):
             dx, dy = ln["dir"]
             rot = abs(dy) > 0.02 or dx < 0.98
             real = [s for s in spans if s["text"].strip()]
-            if not all(span_ok(s) for s in real):
+            if not all(span_ok(s, hidden_ok) for s in real):
                 # a symbol-font glyph that has no Unicode meaning stays in the picture, whatever else the line holds
-                spans = [s for s in spans if span_ok(s)]
+                spans = [s for s in spans if span_ok(s, hidden_ok)]
                 if not any(s["text"].strip() for s in spans):
                     continue
             size = max(s["size"] for s in spans if s["text"].strip())

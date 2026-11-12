@@ -6,7 +6,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const JSZip = require('jszip');
 const convert = require('../../../src/features/conversion');
 
@@ -215,6 +215,14 @@ if kind == "stamp":                                 # a word turned 30 degrees u
     page.insert_text((180, 370), "APPROVED", fontname="hebo", fontsize=30, color=(0, 0.6, 0), morph=(pymupdf.Point(180, 370), pymupdf.Matrix(30)))
     page.insert_text((60, 500), "Text after the stamp.", fontname="helv", fontsize=11)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "watermark":                             # a large pale word turned across running text, the text black; with an extra argument: another angle, size and place
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    for i in range(6):
+        page.insert_text((60, 150 + i * 16), "Running paragraph number %d goes straight across the whole width of the sheet." % (i + 1), fontname="helv", fontsize=12)
+    at, angle, size = (pymupdf.Point(90, 330), 20, 90) if other else (pymupdf.Point(100, 330), 45, 120)
+    page.insert_text(at, "DRAFT", fontname="hebo", fontsize=size, color=(0.95, 0.75, 0.75), morph=(at, pymupdf.Matrix(angle)))
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "poster":                                # text set freely on a coloured page, as on a slide or a flyer
     page = doc.new_page(width=595, height=842)
     page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
@@ -291,6 +299,42 @@ if kind == "wordtable":                             # a table as Word draws it: 
         page.draw_rect(pymupdf.Rect(60, y - 0.25, 480, y + 0.25), color=None, fill=ink)
     for x in cols:
         page.draw_rect(pymupdf.Rect(x - 0.25, 200, x + 0.25, 320), color=None, fill=ink)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "bandtable":                             # a ruled table whose header and stripes are one rectangle for the whole row ("cell": one for each cell, "wide": four columns in other colours)
+    page = doc.new_page(width=595, height=842)
+    mode = sys.argv[3] if len(sys.argv) > 3 else "row"
+    cols = [60, 160, 260, 360, 460] if mode == "wide" else [60, 200, 340, 480]
+    navy, band = ((115 / 255, 26 / 255, 51 / 255), (245 / 255, 230 / 255, 179 / 255)) if mode == "wide" else ((0.07, 0.16, 0.29), (0.93, 0.95, 0.97))
+    page.insert_text((60, 80), "Quarterly figures", fontname="hebo", fontsize=16)
+    for i in range(4):
+        page.insert_text((60, 110 + i * 14), "The figures below are in thousands and have not been audited at the date of writing.", fontname="helv", fontsize=11)
+    for r, (y0, y1, fill) in enumerate([(200, 224, navy), (224, 248, band), (248, 272, None), (272, 296, band), (296, 320, None)]):
+        if fill and mode == "cell":
+            for c in range(len(cols) - 1):
+                page.draw_rect(pymupdf.Rect(cols[c], y0, cols[c + 1], y1), color=None, fill=fill)
+        elif fill:
+            page.draw_rect(pymupdf.Rect(cols[0], y0, cols[-1], y1), color=None, fill=fill)
+        for c in range(len(cols) - 1):
+            page.insert_text((cols[c] + 5.4, y0 + 16), ["Region", "Units", "Revenue", "Margin"][c] if r == 0 else "r%dc%d" % (r, c), fontname="hebo" if r == 0 else "helv", fontsize=11, color=(1, 1, 1) if r == 0 else (0, 0, 0))
+    for y in [200, 224, 248, 272, 296, 320]:
+        page.draw_rect(pymupdf.Rect(cols[0], y - 0.25, cols[-1], y + 0.25), color=None, fill=(0.79, 0.83, 0.88))
+    for x in cols:
+        page.draw_rect(pymupdf.Rect(x - 0.25, 200, x + 0.25, 320), color=None, fill=(0.79, 0.83, 0.88))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "hiding":                                # text the sheet does not show beside text it does; with an extra argument: larger text, a tinted band as the ground and a navy cover
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    size = 20 if other else 12
+    cream = (0.99, 0.93, 0.75)
+    page.insert_text((60, 100), "Visible black line", fontname="helv", fontsize=size)
+    page.insert_text((60, 160), "Covered words", fontname="helv", fontsize=size)
+    page.draw_rect(pymupdf.Rect(50, 160 - 1.3 * size, 400, 160 + 0.5 * size), color=None, fill=(0.1, 0.2, 0.4) if other else (0.8, 0.8, 0.8))
+    if other:
+        page.draw_rect(pymupdf.Rect(40, 200, 555, 250), color=None, fill=cream)
+    page.insert_text((60, 235 if other else 220), "Same as the ground", fontname="helv", fontsize=size, color=cream if other else (1, 1, 1))
+    page.insert_text((60, 290), "Invisible mode", fontname="helv", fontsize=size, render_mode=3)
+    page.draw_rect(pymupdf.Rect(50, 330, 400, 330 + 2 * size), color=None, fill=(0.1, 0.2, 0.4))
+    page.insert_text((60, 330 + 1.4 * size), "White on a dark box", fontname="helv", fontsize=size, color=(1, 1, 1))
     doc.save(sys.argv[1]); sys.exit()
 if kind == "scatter":                               # short pieces of text at many left edges and nothing drawn: an ordinary page, not a design
     page = doc.new_page(width=595, height=842)
@@ -763,6 +807,44 @@ const read = async (docx) => {
   expect('the cells state no fill and no border, and the padding is the gap between a rule and its text', !/<w:shd |<w:tcBorders/.test(wordTable) && Math.abs(left - 5.5) < 0.6, `padding ${left} pt`);
   fs.rmSync(docx);
 
+  console.log('a header and stripes drawn as one rectangle for a whole row');
+  for (const [name, mode, navy, band] of [['bandrow', 'row', '12294A', 'EDF2F7'], ['bandwide', 'wide', '731A33', 'F5E6B3'], ['bandcell', 'cell', '12294A', 'EDF2F7']]) {
+    [docx] = await convert.convertFile(draw(name, 'bandtable', mode), 'docx');
+    d = await read(docx);
+    const bandTable = (d.xml.match(/<w:tbl[ >].*?<\/w:tbl>/s) || [''])[0];
+    const bandStyle = await tableStyle(d.zip, bandTable);
+    expect(`${name}: the white header text has its navy header and the stripes are in the table style, and no picture is left behind`,
+      new RegExp(`<w:tblStylePr w:type="firstRow">.*w:fill="${navy}"`, 's').test(bandStyle) && new RegExp(`<w:tblStylePr w:type="band1Horz">.*w:fill="${band}"`, 's').test(bandStyle) && !/<w:drawing>/.test(d.xml), bandStyle.slice(0, 400));
+    fs.rmSync(docx);
+  }
+
+  console.log('a turned word across running text');
+  for (const [name, extra] of [['watermark', ''], ['watermark-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'watermark', extra), 'docx');
+    d = await read(docx);
+    let dark = 0;
+    for (const media of Object.keys(d.zip.files).filter((f) => /^word\/media\//.test(f))) {
+      const { data } = await require('sharp')(await d.zip.file(media).async('nodebuffer')).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+      for (let i = 0; i < data.length; i += 3) if (data[i] < 90 && data[i + 1] < 90 && data[i + 2] < 90) dark++;
+    }
+    expect(`${name}: the running text under the turned word is written once, and no picture holds it as well`,
+      d.text.split('Running paragraph number 1 ').length === 2 && d.text.split('Running paragraph number 6 ').length === 2 && dark < 20, `${dark} dark pixels in the pictures`);
+    fs.rmSync(docx);
+  }
+
+  console.log('text the sheet does not show');
+  const hiddenWords = (xml) => [...xml.matchAll(/<w:r><w:rPr>(?:(?!<\/w:rPr>).)*<w:vanish\/>(?:(?!<\/w:rPr>).)*<\/w:rPr><w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('|');
+  for (const [name, extra, hides, shows] of [['hiding', '', ['Covered words', 'Same as the ground', 'Invisible mode'], ['Visible black line', 'White on a dark box']],
+    ['hiding-other', 'other', ['Covered words', 'Same as the ground', 'Invisible mode'], ['Visible black line', 'White on a dark box']]]) {
+    [docx] = await convert.convertFile(draw(name, 'hiding', extra), 'docx');
+    d = await read(docx);
+    const gone = hiddenWords(d.xml);
+    expect(`${name}: what the sheet hides is written as hidden text, so the words are in the file`, hides.every((t) => gone.includes(t)) && !missingFrom(d.text, hides).length, gone);
+    expect(`${name}: what the sheet shows is not hidden, white text on a dark box included`, shows.every((t) => !gone.includes(t)) && !missingFrom(d.text, shows).length, gone);
+    expect(`${name}: the hidden text takes no room, so the page is still one sheet`, (d.xml.match(/<w:sectPr/g) || []).length === 1);
+    fs.rmSync(docx);
+  }
+
   console.log('short pieces of text with nothing drawn');
   [docx] = await convert.convertFile(draw('scatter', 'scatter'), 'docx');
   d = await read(docx);
@@ -786,8 +868,8 @@ const read = async (docx) => {
   console.log('a table drawn as nested rectangles');
   [docx] = await convert.convertFile(draw('nested', 'nested'), 'docx');
   d = await read(docx);
-  expect('it is one table', (d.xml.match(/<w:tbl>/g) || []).length === 1, (d.xml.match(/<w:tbl>/g) || []).length + ' tables');
-  expect('its figures are text, not a picture', !/<w:drawing>/.test(d.xml) && !missingFrom(d.text, ['317', '334', '426', '443', '535', '644', '787', 'Gross profit']).length, d.text);
+  expect('it is one table', (d.xml.match(/<w:tbl[ >]/g) || []).length === 1, (d.xml.match(/<w:tbl[ >]/g) || []).length + ' tables');
+  expect('its figures are text, not a picture; what the table does not paint is behind it, not in a cell', !/<wp:inline/.test(d.xml) && !missingFrom(d.text, ['317', '334', '426', '443', '535', '644', '787', 'Gross profit']).length, d.text);
   fs.rmSync(docx);
 
   console.log('a photo cropped to a circle');
@@ -892,6 +974,15 @@ const read = async (docx) => {
       `text ${mean(55, 185, 330, 262).toFixed(0)}, heading ${mean(55, 70, 300, 105).toFixed(0)}`);
     fs.rmSync(docx);
   }
+
+  console.log('light text has something darker under it in every PDF drawn above');
+  const bare = [];
+  for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.pdf') && fs.statSync(path.join(dir, n)).size < 150000)) {
+    const r = spawnSync(engines.pdf, ['-W', 'ignore', path.join(__dirname, '..', '..', '..', 'python', 'pdf_to_docx.py'), path.join(dir, f), path.join(dir, 'ground.docx')],
+      { encoding: 'utf8', env: { ...process.env, POMELO_DEBUG: '1' }, windowsHide: true });
+    bare.push(...(String(r.stderr).match(/light text with no ground under it: .*/g) || []).map((m) => `${f}: ${m}`));
+  }
+  expect('no light run is written on bare paper', !bare.length, bare.join(' | '));
 
   console.log(failed() ? `\n${failed()} failed` : '\nall good');
   finish();

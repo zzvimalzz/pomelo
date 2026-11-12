@@ -12,7 +12,7 @@ from docx.oxml.ns import nsdecls, qn
 import pymupdf
 
 from pdf_ocr import page_needs_ocr
-from pdf_spans import dominant_size
+from pdf_spans import dominant_size, hexcolor
 
 from .builder import Builder
 from .common import HI_DPI, NS, area, inside, overlap, tw
@@ -101,6 +101,24 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None, original=None
     out.save(dst)
     if scans is not None:
         scans.close()
+
+
+def light_text_check(P, lines, containers, elements, owner):
+    """Under POMELO_DEBUG, reports light text that has nothing darker under it in the Word file: a cell or box fill, a highlight or a picture. Word has no page behind it to
+    lean on, so such text prints white on white."""
+    def lum(rgb):
+        lin = [v / 255 / 12.92 if v <= 10.3 else ((v / 255 + 0.055) / 1.055) ** 2.4 for v in rgb]
+        return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+    rgb = lambda h: tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+    for l in lines:
+        light = [s for s in l.spans if s["text"].strip() and not s.get("hidden") and lum(rgb(hexcolor(s["color"]))) > 0.8]
+        if not light:
+            continue
+        o = owner(l.bbox)
+        fills = [s.get("hl") for s in light] + [o[2]["fill"] if o and o[0] == "cell" else None]
+        fills += [c.fill for c in containers if c.kind == "box" and inside(l.bbox, c.bbox, 1.0)]
+        if not any(f and lum(rgb(f)) < 0.8 for f in fills) and not any(e.kind == "img" and overlap(e.bbox, l.bbox) >= 0.5 * area(l.bbox) for e in elements):
+            sys.stderr.write("page %d: light text with no ground under it: %s\n" % (P.pno + 1, l.text[:60]))
 
 
 def boxes_of(l):
@@ -210,7 +228,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
             rot_boxes.append(b)
     P.rot_boxes = [tuple(b) for b in rot_boxes]
     rot_boxes = P.rot_boxes
-    all_lines = [l for l in P.upright if not any(overlap(l.bbox, r) > 0.05 * area(l.bbox) for r in rot_boxes)]
+    all_lines = list(P.upright)
     for l in all_lines:
         for bb in boxes_of(l):
             r = pymupdf.Rect(bb)
@@ -226,6 +244,9 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     kind, why = page_kind(P)
     if os.environ.get("POMELO_DEBUG"):
         sys.stderr.write("page %d: %s page (%s)\n" % (pno + 1, kind, why))
+        for f in P.figs:
+            if any(inside(f, t.bbox, 0) for t in P.tbls):
+                sys.stderr.write("page %d: figure inside a table at %s\n" % (pno + 1, tuple(round(v) for v in f)))
     if kind == "design" and not (safe or scan or turn):
         return (*design_page(P, out, meter, lists, pno, n_pages), [("", "")])
     logos = []
@@ -254,6 +275,8 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     # text that belongs to a picture (chart labels): stays in the picture
     absorbed = set()
     for f in P.figs:
+        if any(inside(f, t.bbox, 0) for t in P.tbls):
+            continue
         inside_lines = [l for l in P.upright if inside(l.bbox, f, 1.0)]
         if len(inside_lines) >= 5 and sum(len(l.text) for l in inside_lines) / len(inside_lines) <= 16 and 8000 < area(f) <= 0.35 * P.w * P.h:
             for l in inside_lines:
@@ -278,7 +301,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     boxes = P.box_items
     # pictures: in line with the text, or behind it when text sits on top
     def sits_on(bb):
-        return any(overlap(l.bbox, bb) >= 0.5 * area(l.bbox) for l in text_lines)
+        return any(overlap(l.bbox, bb) >= 0.5 * area(l.bbox) for l in text_lines + P.hidden_lines)
 
     def ends_page(bb):
         # a wide picture at the foot of the page is placed, not set in the line: when Word sets the text above a little
@@ -300,7 +323,10 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         data = P.render_clip(f)
         if not data:
             continue
-        elements.append(Fig(f, data[0], data[1], floating=sits_on(f) and area(f) > 600))
+        # art inside a table (a bar across days, an icon) cannot sit in a cell: it stays behind the table at its place on the sheet
+        under = any(inside(f, t.bbox, 0) for t in tbls)
+        elements.append(Fig(f, data[0], data[1], floating=under or (sits_on(f) and area(f) > 600)))
+        elements[-1].under_table = under
     pics = [e for e in elements if e.kind == "img"]
     for a in pics:
         if any(b is not a and overlap(a.bbox, b.bbox) >= 0.5 * min(area(a.bbox), area(b.bbox)) for b in pics):
@@ -334,9 +360,9 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
                 best = ("box", c, None)
         return best
     top_items = []
-    behind = [e.bbox for e in elements if e.kind == "img" and e.floating and not getattr(e, "overlay", False)]
+    behind = [e.bbox for e in elements if e.kind == "img" and e.floating and not getattr(e, "overlay", False) and not getattr(e, "under_table", False)]
     framed = [l for l in text_lines if any(overlap(l.bbox, b) >= 0.5 * area(l.bbox) for b in behind)]
-    feet = [e.bbox for e in elements if e.kind == "img" and e.floating and ends_page(e.bbox)]
+    feet = [e.bbox for e in elements if e.kind == "img" and e.floating and ends_page(e.bbox) and not getattr(e, "under_table", False)]
     framed += [l for l in text_lines if l not in framed and any(0 <= l.y0 - b[3] <= 30 and l.x0 >= b[0] - 2 and l.x1 <= b[2] + 2 for b in feet)]
     taken = {"header": [], "footer": []}
     if furniture and not (safe or scan or turn):
@@ -354,13 +380,15 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     text_lines = [l for l in text_lines if l not in framed]
     pool = text_lines + elements + rules
     for it in pool:
-        o = owner(it.bbox)
+        o = None if getattr(it, "under_table", False) else owner(it.bbox)
         if o is None:
             top_items.append(it)
         elif o[0] == "cell":
             o[2]["items"].append(it)
         else:
             o[1].children.append(it)
+    if os.environ.get("POMELO_DEBUG") and not (scan or turn):
+        light_text_check(P, text_lines, containers, elements, owner)
     # a box inside a box goes inside; a box inside a table cell goes in the cell
     for b in sorted(boxes + tbls, key=lambda b: area(b.bbox)):
         placed = False
@@ -400,6 +428,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     xml, cursor = B.emit(flow, x0, x1, None)
     if framed:
         xml += B.frames(framed)
+    xml += B.hidden(P.hidden_lines)
     furn = tuple("".join(ONE_POINT % B.picture_xml(Img(r, b"", "png", floating=True), floating=True, name="Logo", rid=f"\x02{xref}", pid=furniture.pictures[xref][1]) for band, r, xref in logos if band == k)
                  + "".join(B.frames([l], 1.2 * l.size if any(sp.get("field") for sp in l.spans) else 0.0) for l in taken[k]) for k in ("header", "footer"))
     if os.environ.get("POMELO_DEBUG"):
@@ -496,4 +525,4 @@ def design_page(P, out, meter, lists, pno, n_pages):
     body, boxes = B.text_boxes([l for l in P.upright if id(l) not in held], tables)
     floats += boxes + "".join(B.turned_text_box(l) for l in P.rotated)
     closing, sect = close_page(page_props(P.w, P.h, (0.0, 0.0, 0.0, 0.0)), floats, pno, n_pages, 0)
-    return body + closing, sect
+    return body + B.hidden(P.hidden_lines) + closing, sect
