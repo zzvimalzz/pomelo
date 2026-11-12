@@ -17,6 +17,7 @@ DPI = 150
 MIN_CHARS = 25
 SCAN_COVER = 0.35
 COPY_ID = "19869de063b97343198a3ff4d0a6116d352c5c375efc0fa08874bb6de8cb2169"
+JOINED = re.compile(r"(?<=[a-z][.,;!?])(?=[A-Z][a-z])|(?<=[a-z]:)(?=[A-Z])")      # the English model often drops the space after a full stop or a colon
 
 
 class OcrUnavailable(Exception):
@@ -64,7 +65,7 @@ def read_page(page):
     k = 72.0 / DPI
     out = []
     for txt, box, score in zip(result.txts, result.boxes, result.scores):
-        txt = (txt or "").strip()
+        txt = JOINED.sub(" ", (txt or "").strip())
         if not txt or (score is not None and float(score) < 0.45):
             continue
         xs = [float(p[0]) * k for p in box]

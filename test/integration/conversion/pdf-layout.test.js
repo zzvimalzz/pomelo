@@ -841,6 +841,19 @@ const read = async (docx) => {
     const found = ['Quarterly Report', 'Revenue grew', 'team@example.com', 'A bullet that wraps'].filter((t) => squash(d.text.toLowerCase()).includes(squash(t.toLowerCase())));
     expect('the text of the scan is recognised and is real, editable text', found.length >= 3, `${found.length} of 4: ${d.text.slice(0, 120)}`);
     expect('and the temporary OCR copy of the PDF is deleted', left.length === 0, left.join(', '));
+    const sheet = /<wp:anchor [^>]*behindDoc="1"[^>]*>.*?<wp:extent cx="(\d+)" cy="(\d+)"/s.exec(d.xml) || [];
+    expect('the scan stays as one picture the size of the sheet behind the text', Math.abs(sheet[1] / 12700 - 595) < 1 && Math.abs(sheet[2] / 12700 - 842) < 1, `${sheet[1]} x ${sheet[2]}`);
+    const sharp = require('sharp');
+    const name = Object.keys(d.zip.files).find((n) => n.startsWith('word/media/'));
+    const { data, info } = await sharp(await d.zip.file(name).async('nodebuffer')).greyscale().raw().toBuffer({ resolveWithObject: true });
+    const mean = (x0, y0, x1, y1) => {
+      const k = info.width / 595;
+      let sum = 0, count = 0;
+      for (let y = Math.floor(y0 * k); y < y1 * k; y++) for (let x = Math.floor(x0 * k); x < x1 * k; x++) { sum += data[y * info.width + x]; count++; }
+      return sum / count;
+    };
+    expect('the lines that are text are painted out of the picture, and the large heading stays in it', mean(55, 185, 330, 262) > 250 && mean(55, 70, 300, 105) < 245,
+      `text ${mean(55, 185, 330, 262).toFixed(0)}, heading ${mean(55, 70, 300, 105).toFixed(0)}`);
     fs.rmSync(docx);
   }
 
