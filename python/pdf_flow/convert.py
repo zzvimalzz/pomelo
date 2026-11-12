@@ -104,6 +104,18 @@ def boxes_of(l):
     return out
 
 
+def mark_text(work, lines):
+    """Queue the lines of text on a copy of the page for removal. A line's box is cut short on its thin side, so that the next line's letters are not taken with it."""
+    for l in lines:
+        for bb in boxes_of(l):
+            r = pymupdf.Rect(bb)
+            if r.width >= r.height:
+                r = pymupdf.Rect(r.x0, r.y0 + 0.18 * r.height, r.x1, r.y1 - 0.18 * r.height)
+            else:
+                r = pymupdf.Rect(r.x0 + 0.18 * r.width, r.y0, r.x1 - 0.18 * r.width, r.y1)
+            work.add_redact_annot(r, fill=False)
+
+
 def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n_pages, log, furniture, safe=False, turn=0):
     """-> (the page's XML, its section's properties, the XML of the header and of the footer of each of its sections).
     safe: only the text, as paragraphs (what a page falls back to when something exotic in it cannot be rebuilt).
@@ -202,7 +214,8 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
             r = pymupdf.Rect(bb)
             inset = r.height * 0.18
             P.work_keep.add_redact_annot(pymupdf.Rect(r.x0, r.y0 + inset, r.x1, r.y1 - inset), fill=False)
-    if keep_lines:
+    mark_text(P.work_keep, P.rotated)
+    if keep_lines or P.rotated:
         P.work_keep.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE, text=pymupdf.PDF_REDACT_TEXT_REMOVE)
 
     text_lines = [l for l in P.upright if not l.absorbed]
@@ -240,7 +253,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         if any(b is not a and overlap(a.bbox, b.bbox) >= 0.5 * min(area(a.bbox), area(b.bbox)) for b in pics):
             a.floating = True                                       # a picture on a picture keeps its place on the page
     elements += background
-    for b in P.rot_boxes:                                           # rotated text (a stamp, a margin label) stays a picture
+    for b in P.rot_boxes:                                           # what surrounds turned text (a stamp's frame and colour) stays a picture
         data = P.render_clip(pymupdf.Rect(b) + (-2, -2, 2, 2))
         if data:
             fig = Fig(b, data[0], data[1], floating=True)
@@ -348,6 +361,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     # larger pictures go underneath; pictures of about the same size are stacked as the PDF painted them
     for it in sorted(P.floaters, key=lambda i: (-round(math.log(max(area(i.bbox), 1.0)) / 0.1), getattr(i, "order", 0))):
         floats += B.picture_xml(it, floating=True, name="Picture")
+    floats += "".join(B.turned_text_box(l) for l in P.rotated)
     # the pictures are anchored in the page's first paragraph: when the text runs a line over, the closing paragraph moves
     # to the next sheet, and the background would go with it. A page that starts with something else keeps them in the closing one.
     if floats and not turned and xml.startswith("<w:p><w:pPr>") and not re.match(r"<w:p><w:pPr>(<w:pStyle [^>]*/>)?<w:framePr", xml):
@@ -398,17 +412,9 @@ def close_page(props, floats, pno, n_pages, count):
 
 def design_page(P, out, meter, lists, pno, n_pages):
     """A page set freely over pictures and colour: the page without its text is one picture behind everything, and each
-    paragraph of text is a text box at its place on the sheet, turned where the text is. Nothing flows, so the page cannot
-    spill onto a second sheet. Text turned by anything but a quarter stays in the picture."""
-    turned = [l for l in P.rotated if max(abs(l.dir[0]), abs(l.dir[1])) > 0.999]
-    for l in P.upright + turned:
-        for bb in boxes_of(l):
-            r = pymupdf.Rect(bb)
-            if r.width >= r.height:
-                r = pymupdf.Rect(r.x0, r.y0 + 0.18 * r.height, r.x1, r.y1 - 0.18 * r.height)
-            else:
-                r = pymupdf.Rect(r.x0 + 0.18 * r.width, r.y0, r.x1 - 0.18 * r.width, r.y1)
-            P.work_all.add_redact_annot(r, fill=False)
+    paragraph of text is a text box at its place on the sheet. Nothing flows, so the page cannot spill onto a second sheet.
+    A line turned at any angle is a turned text box."""
+    mark_text(P.work_all, P.upright + P.rotated)
     P.work_all.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE, text=pymupdf.PDF_REDACT_TEXT_REMOVE)
     for t in P.tbls:
         for l in P.upright:
@@ -434,6 +440,6 @@ def design_page(P, out, meter, lists, pno, n_pages):
         floats = B.picture_xml(Fig((0.0, 0.0, P.w, P.h), data[0], data[1], floating=True), floating=True, name="Picture")
     held = {id(l) for t in tables for c in t.cells for l in c["items"]}
     body, boxes = B.text_boxes([l for l in P.upright if id(l) not in held], tables)
-    floats += boxes + "".join(B.turned_text_box(l) for l in turned)
+    floats += boxes + "".join(B.turned_text_box(l) for l in P.rotated)
     closing, sect = close_page(page_props(P.w, P.h, (0.0, 0.0, 0.0, 0.0)), floats, pno, n_pages, 0)
     return body + closing, sect
