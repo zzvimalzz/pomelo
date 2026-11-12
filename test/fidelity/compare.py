@@ -3,7 +3,8 @@
 back to PDF first), so words, fonts, links, images and drawn shapes can be compared exactly, not eyeballed.
 
 usage: python compare.py <original.pdf> <rendered.pdf> [png-dir tag]    prints one JSON object
-       python compare.py --docx-words <original.pdf> <converted.docx>   prints how many source words the DOCX holds
+       python compare.py --docx-words <original.pdf> <converted.docx>   prints how many source words the DOCX holds,
+                                                                        and how editable it is (text boxes, tables, headings)
 
 Words are matched in reading order; for every matched pair the position, font family, size, bold/italic and colour
 are compared. Numbers are fractions 0..1 unless the key says otherwise. "check" is the summary of what a user sees
@@ -278,11 +279,51 @@ def docx_text(path):
     return "".join(texts)
 
 
+def docx_editability(path):
+    """How editable the body is: the share of its words inside text boxes, Word tables, heading paragraphs, and
+    paragraphs with text whose line height is fixed. A paragraph holding a text box does not count the box's words."""
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    with zipfile.ZipFile(path) as z:
+        body = z.read("word/document.xml")
+    stack, boxes = [], 0
+    words = in_boxes = tables = headings = exact = 0
+    for event, el in ET.iterparse(io.BytesIO(body), events=("start", "end")):
+        tag = el.tag
+        if event == "start":
+            if tag == w + "p":
+                stack.append({"text": [], "heading": False, "exact": False})
+            elif tag == w + "txbxContent":
+                boxes += 1
+            elif tag == w + "pStyle" and stack:
+                style = el.get(w + "val", "")
+                stack[-1]["heading"] = bool(re.fullmatch(r"Heading[1-9]|Title", style))
+            elif tag == w + "spacing" and stack and el.get(w + "lineRule") == "exact":
+                stack[-1]["exact"] = True
+            continue
+        if tag == w + "t" and stack:
+            stack[-1]["text"].append(el.text or "")
+        elif tag in (w + "tab", w + "br", w + "cr") and stack:
+            stack[-1]["text"].append(" ")
+        elif tag == w + "tbl":
+            tables += 1
+        elif tag == w + "txbxContent":
+            boxes -= 1
+        elif tag == w + "p":
+            para = stack.pop()
+            n = len("".join(para["text"]).split())
+            words += n
+            in_boxes += n if boxes else 0
+            headings += para["heading"]
+            exact += bool(n and para["exact"])
+    return {"tb": round(in_boxes / words, 3) if words else 0.0, "tables": tables, "headings": headings, "exact": exact}
+
+
 def docx_words(pdf, docx):
     src = plain_words(pymupdf.open(pdf))
     have = [t for t in (re.sub(r"\W+", "", x.lower()) for x in docx_text(docx).split()) if t]
     lost = Counter(src) - Counter(have)
-    return {"words": len(src), "recall": round(1 - sum(lost.values()) / len(src), 3) if src else None, "missing": sorted(lost)[:10]}
+    return {"words": len(src), "recall": round(1 - sum(lost.values()) / len(src), 3) if src else None, "missing": sorted(lost)[:10],
+            **docx_editability(docx)}
 
 
 def main():
