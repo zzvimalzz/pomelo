@@ -149,6 +149,82 @@ class Page:
                             break
             self.shapes = [sh for sh in self.shapes if not (overlap(tuple(sh[0]), t.bbox) >= 0.6 * area(tuple(sh[0])))]
 
+    def aligned_tables(self):
+        """Tables drawn with no grid: three or more rows of text that stand at the same left edges and that the PDF wrote as one block."""
+        grid = [t.bbox for t in self.tbls]
+        blocks = {}
+        for l in self.upright:
+            if l.block is not None and not l.marker and not any(inside(l.bbox, g, 1.0) for g in grid):
+                blocks.setdefault(l.block, []).append(l)
+        return [t for lines in blocks.values() for t in self.table_runs(sorted(lines, key=lambda l: (l.base, l.x0)))]
+
+    def table_runs(self, lines):
+        columns = [x for x in cluster([l.x0 for l in lines], 2.0) if sum(abs(l.x0 - x) <= 2.0 for l in lines) >= 3]
+        col = lambda l: next((i for i, x in enumerate(columns) if abs(l.x0 - x) <= 2.0), None)
+        others = [o for o in self.upright if o not in lines]
+        rows = []
+        for l in lines:
+            if rows and abs(rows[-1][0].base - l.base) <= 0.3 * min(rows[-1][0].size, l.size):
+                rows[-1].append(l)
+            else:
+                rows.append([l])
+        runs, run = [], []
+        for r in rows:
+            r.sort(key=lambda l: l.x0)
+            if len(r) >= 2 and all(col(l) is not None for l in r) and all(b.x0 - a.x1 > 2 for a, b in zip(r, r[1:])):
+                if run and r[0].y0 - max(l.y1 for l in run[-1]) > 0.7 * r[0].size:
+                    runs.append(run)
+                    run = []
+                run.append(r)
+            elif (run and len(r) == 1 and col(r[0]) and r[0].y0 - max(l.y1 for l in run[-1]) <= 0.4 * r[0].size
+                  and not any(o.x1 < r[0].x0 and abs(o.base - r[0].base) <= 0.3 * r[0].size for o in others)):
+                run[-1].append(r[0])                              # the second line of a cell
+            else:
+                runs.append(run)
+                run = []
+        runs.append(run)
+        tables = []
+        while runs:
+            run = runs.pop()
+            used = sorted({col(l) for r in run for l in r})
+            if len(run) < 3 or len(used) < 2:
+                continue
+            xs = [columns[i] for i in used]
+            over = next((i for i, r in enumerate(run) if any(k + 1 < len(used) and l.x1 > xs[k + 1] + 1 for l in r for k in [used.index(col(l))])), None)
+            if over is not None:                                  # a line that runs into the next column cannot be a cell of this table
+                runs += [run[:over], run[over + 1:]]
+                continue
+            end = max(l.x1 for r in run for l in r if col(l) == used[-1])
+            edges = xs + [min(self.w - 2, end + 0.1 * (end - xs[-1]) + 4.0)]               # a stand-in font wider than the PDF's must not wrap the last column
+            bases = [r[0].base for r in run]
+            pitch = [b - a for a, b in zip(bases, bases[1:])]
+            pitch.append(pitch[-1])
+            line = min(pitch)
+            ys = [min(l.base - line - l.desc * l.size for l in r if abs(l.base - r[0].base) <= 0.3 * l.size) for r in run]
+            ys.append(ys[-1] + pitch[-1])
+            cells = [dict(c0=k, c1=k + 1, r0=i, r1=i + 1, bbox=(edges[k], ys[i], edges[k + 1], ys[i + 1]), items=[l for l in r if col(l) == c], fill=None, borders={})
+                     for i, r in enumerate(run) for k, c in enumerate(used)]
+            tables.append(Tbl((edges[0], ys[0], edges[-1], ys[-1]), edges, ys, cells))
+        return tables
+
+    def table_art(self, t):
+        """The drawings that a Word table paints for itself (its rules and cell colours), or None when they cannot be taken out of the page picture: a picture or
+        figure under the table, a shape that runs out of it, or a colour the table does not paint. A shape that holds the whole table, such as a panel or the colour of
+        the page, is not part of the table and stays."""
+        if any(overlap(r, t.bbox) > 0 for r in [r for r, _ in self.imgs] + self.figs):
+            return None
+        painted = {c["fill"] for c in t.cells} | {color for c in t.cells for _, color in c["borders"].values()}
+        art = []
+        for d in self.drawings:
+            r = tuple(d["rect"])
+            if overlap(r, t.bbox) <= 0 or (r[0] <= t.x0 + 2 and r[1] <= t.y0 + 2 and r[2] >= t.x1 - 2 and r[3] >= t.y1 - 2):
+                continue
+            shown = {rgb_hex(d[k]) for k, kind in (("fill", "f"), ("color", "s")) if kind in d["type"] and d.get(k)}
+            if not (r[0] >= t.x0 - 2 and r[1] >= t.y0 - 2 and r[2] <= t.x1 + 2 and r[3] <= t.y1 + 2) or not shown <= painted or not {it[0] for it in d["items"]} <= {"re", "l", "qu"}:
+                return None
+            art.append(r)
+        return art
+
     # -- boxes
     def boxes(self):
         self.box_items = []

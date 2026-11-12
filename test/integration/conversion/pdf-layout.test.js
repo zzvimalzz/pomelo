@@ -217,6 +217,20 @@ if kind == "poster":                                # text set freely on a colou
     page.insert_text((400, 625), "Open daily 9 to 5", fontname="hebo", fontsize=12, color=(0.1, 0.2, 0.45))
     page.insert_text((60, 800), "www.example.com", fontname="helv", fontsize=10, color=(0.8, 0.8, 0.9))
     doc.save(sys.argv[1]); sys.exit()
+if kind == "designtable":                           # a 3 x 3 ruled table on a coloured page, then rows of a table drawn with no rules
+    page = doc.new_page(width=595, height=842)
+    page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.9, 0.95, 1.0))
+    page.draw_circle((480, 700), 80, color=None, fill=(0.95, 0.7, 0.1))
+    page.insert_text((60, 100), "PRICE LIST", fontname="hebo", fontsize=30)
+    for r in range(3):
+        for c in range(3):
+            rect = pymupdf.Rect(60 + c * 150, 200 + r * 30, 210 + c * 150, 230 + r * 30)
+            page.draw_rect(rect, color=(0.4, 0.4, 0.4), fill=(0.1, 0.3, 0.5) if r == 0 else None, width=0.8)
+            page.insert_text((rect.x0 + 8, rect.y0 + 19), ["Item", "Unit", "Price"][c] if r == 0 else "cell %d%d" % (r, c), fontname="helv", fontsize=11, color=(1, 1, 1) if r == 0 else (0, 0, 0))
+    for i, (a, b) in enumerate((("-sS", "TCP SYN scan"), ("-sU", "UDP scan"), ("-sA", "TCP ACK scan"), ("-sW", "TCP window scan"))):
+        page.insert_text((60, 400 + i * 14), a, fontname="helv", fontsize=10)
+        page.insert_text((140, 400 + i * 14), b, fontname="helv", fontsize=10)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "scatter":                               # short pieces of text at many left edges and nothing drawn: an ordinary page, not a design
     page = doc.new_page(width=595, height=842)
     for i in range(20):
@@ -566,6 +580,22 @@ const read = async (docx) => {
   expect('the title box sits where the title is on the sheet', Math.abs(at(/<wp:positionH [^>]*><wp:posOffset>(\d+)</) - 60) < 4 && Math.abs(at(/<wp:positionV [^>]*><wp:posOffset>(\d+)</) - 115) < 12, heading.slice(0, 400));
   expect('the page without its text is one picture behind the text, the size of the sheet', (d.xml.match(/behindDoc="1"/g) || []).length === 1 && /<wp:extent cx="7556500" cy="10693400"\/>/.test(d.xml));
   expect('the page is one sheet: it cannot flow onto another', (d.xml.match(/<w:sectPr/g) || []).length === 1);
+  fs.rmSync(docx);
+
+  console.log('tables on a designed page');
+  [docx] = await convert.convertFile(draw('designtable', 'designtable'), 'docx');
+  d = await read(docx);
+  const tbls = d.xml.match(/<w:tbl>.*?<\/w:tbl>/gs) || [];
+  const ruledTable = tbls.find((t) => t.includes('cell 22')) || '';
+  const bareTable = tbls.find((t) => t.includes('TCP window scan')) || '';
+  const inBoxes = [...d.xml.matchAll(/<w:txbxContent>(.*?)<\/w:txbxContent>/gs)].map((m) => m[1]).join('');
+  expect('a ruled table and a table drawn with no rules are two Word tables placed on the sheet, one above the other',
+    tbls.length === 2 && tbls.every((t) => /<w:tblpPr [^>]*w:vertAnchor="page"[^>]*w:tblpY="\d+"/.test(t) && /<w:tblOverlap w:val="overlap"\/>/.test(t)), `${tbls.length} tables`);
+  expect('the ruled table has its nine cells, its shaded header and its rules, and none of its text is in a text box',
+    (ruledTable.match(/<w:tc>/g) || []).length === 9 && /w:fill="1A4D80"/i.test(ruledTable) && /<w:left w:val="single"/.test(ruledTable) && !/cell \d\d|Price/.test(inBoxes), ruledTable.slice(0, 300));
+  expect('the rows without rules are four rows of two cells with no borders, and are not in text boxes',
+    (bareTable.match(/<w:tr>/g) || []).length === 4 && (bareTable.match(/<w:tc>/g) || []).length === 8 && !/w:val="single"/.test(bareTable) && !/TCP|-sS/.test(inBoxes), bareTable.slice(0, 300));
+  expect('the heading is still a text box and no row is an exact height', /PRICE LIST/.test(inBoxes) && !/<w:trHeight [^>]*w:hRule="exact"/.test(d.xml));
   fs.rmSync(docx);
 
   console.log('short pieces of text with nothing drawn');

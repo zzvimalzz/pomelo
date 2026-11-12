@@ -410,6 +410,21 @@ def design_page(P, out, meter, lists, pno, n_pages):
                 r = pymupdf.Rect(r.x0 + 0.18 * r.width, r.y0, r.x1 - 0.18 * r.width, r.y1)
             P.work_all.add_redact_annot(r, fill=False)
     P.work_all.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE, text=pymupdf.PDF_REDACT_TEXT_REMOVE)
+    for t in P.tbls:
+        for l in P.upright:
+            cell = next((c for c in t.cells if inside(l.bbox, c["bbox"], 1.0)), None)
+            if cell:
+                cell["items"].append(l)
+    tables = P.tbls + P.aligned_tables()
+    for t in P.tbls:
+        art = P.table_art(t)
+        if art is None:
+            for c in t.cells:
+                c["fill"], c["borders"] = None, {}
+        for rect in art or []:
+            P.work_all.add_redact_annot(pymupdf.Rect(rect), fill=False)
+    if P.work_all.first_annot:
+        P.work_all.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED, text=pymupdf.PDF_REDACT_TEXT_NONE)
     B = Builder(out, P, meter, lists)
     B.placed = True
     floats = ""
@@ -417,5 +432,8 @@ def design_page(P, out, meter, lists, pno, n_pages):
     data = P.render_clip((0.0, 0.0, P.w, P.h), dpi=dpi, from_keep=False)
     if data:
         floats = B.picture_xml(Fig((0.0, 0.0, P.w, P.h), data[0], data[1], floating=True), floating=True, name="Picture")
-    floats += B.text_boxes(P.upright) + "".join(B.turned_text_box(l) for l in turned)
-    return close_page(page_props(P.w, P.h, (0.0, 0.0, 0.0, 0.0)), floats, pno, n_pages, 0)
+    held = {id(l) for t in tables for c in t.cells for l in c["items"]}
+    body, boxes = B.text_boxes([l for l in P.upright if id(l) not in held], tables)
+    floats += boxes + "".join(B.turned_text_box(l) for l in turned)
+    closing, sect = close_page(page_props(P.w, P.h, (0.0, 0.0, 0.0, 0.0)), floats, pno, n_pages, 0)
+    return body + closing, sect

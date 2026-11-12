@@ -32,6 +32,7 @@ class Builder:
         self.depth = 0
         self.titled = False
         self.columns_ok = False           # running text in columns may be written as Word columns (the page is flowed, not placed or turned)
+        self.cap = None                   # the height of the shortest row of the placed table being written: the font's own line height may be taller than the PDF's rows
         self.emitted = set()
 
     def room(self, x1):
@@ -266,6 +267,8 @@ class Builder:
             pitch = ds[len(ds) // 2]
         else:
             pitch = max(nat, size)
+            if self.cap:
+                pitch = max(size, min(pitch, self.cap))
         T = first.base - pitch + (-first.desc * first.size)
         return pitch, T, T + len(lines) * pitch
 
@@ -472,8 +475,10 @@ class Builder:
             xml += re.sub(r"<w:pPr>(<w:pStyle [^>]*/>)?", lambda m: m.group(0) + frame, part, 1)
         return xml
 
-    def text_boxes(self, lines):
-        """The text of a design page: every paragraph a text box anchored to the sheet at its PDF position, still real text."""
+    def text_boxes(self, lines, tables=()):
+        """The text of a design page: every paragraph a text box anchored to the sheet at its PDF position, still real text. -> (the tables, each after the text boxes that
+        come before it in reading order, which sit in a paragraph of their own; the text boxes after the last table). Word prints a table's text first whatever the order,
+        but the file's own order is what the cursor, a screen reader and select all follow."""
         paras = []
         for l in sorted(lines, key=lambda l: (l.base, l.x0)):
             above = [p for p in paras if self.joins(p, l, 0.0, 0.0)]
@@ -481,14 +486,22 @@ class Builder:
                 max(above, key=lambda p: p.lines[-1].base).lines.append(l)
             else:
                 paras.append(Para([l]))
-        xml = ""
-        for p in self.reading_order(paras):
+        order, mixed = self.reading_order(paras), self.reading_order(paras + list(tables))
+        for t in [i for i in mixed if i.kind == "tbl"]:                       # the text boxes keep the order they have without the tables
+            after = next((i for i in mixed[mixed.index(t):] if i.kind == "para"), None)
+            order.insert(order.index(after) if after else len(order), t)
+        xml = runs = ""
+        for p in order:
+            if p.kind == "tbl":
+                xml += (f'<w:p><w:pPr>{BREAK}</w:pPr>{runs}</w:p>' if runs else "") + self.table(p, p.x0, p.x1, None, placed=True)[0]
+                runs = ""
+                continue
             first = p.lines[0]
             fx0 = p.x0 - (first.x0 - (first.marker[2] if first.marker else first.x0))
             fx1 = p.x1 + 3.0
             part, T, B = self.para_xml(p, fx0, fx1, self.metrics(p)[1])
-            xml += self.text_box_xml(part, fx0, T, fx1 - fx0, B - T, wraps='<w:jc w:val="left"/>' not in part)
-        return xml
+            runs += self.text_box_xml(part, fx0, T, fx1 - fx0, B - T, wraps='<w:jc w:val="left"/>' not in part)
+        return xml, runs
 
     def reading_order(self, items):
         """Columns of text one after the other, but the cells of a table row by row: the order Word reads text boxes in."""
@@ -886,7 +899,7 @@ class Builder:
         xml += self.spacer(1)
         return xml, bx.y1 + 1
 
-    def table(self, t, x0, x1, cursor):
+    def table(self, t, x0, x1, cursor, placed=False):
         before = 0.0 if cursor is None else max(0.0, t.y0 - cursor)
         if cursor is None and self.first_top is None:
             self.first_top = t.y0
@@ -920,6 +933,7 @@ class Builder:
                     vm = '<w:vMerge w:val="restart"/>' if r == c["r0"] else "<w:vMerge/>"
                 if r == c["r0"]:
                     cx0, cy0, cx1, cy1 = c["bbox"]
+                    self.cap = min(b - a for a, b in zip(ys, ys[1:])) if placed else None
                     inner, _ = self.in_cell(c["items"], cx0, cx1, cy0)
                     if not inner or not inner.rstrip().endswith("</w:p>"):
                         inner += self.spacer(1)
@@ -932,9 +946,12 @@ class Builder:
                         + f'</w:tcPr>{inner}</w:tc>')
                 k += span
             rows += f'<w:tr><w:trPr>{self.keep(ys[r + 1] - ys[r])}<w:trHeight w:val="{tw(ys[r + 1] - ys[r])}" w:hRule="atLeast"/></w:trPr>{tcs}</w:tr>'
+        self.cap = None
         tgrid = "".join(f'<w:gridCol w:w="{tw(xs[k + 1] - xs[k])}"/>' for k in range(ncol))
         xml = self.spacer(before)
-        xml += (f'<w:tbl><w:tblPr><w:tblW w:w="{tw(xs[-1] - xs[0])}" w:type="dxa"/><w:tblInd w:w="{tw(max(0.0, xs[0] - x0))}" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
+        at = (f'<w:tblpPr w:leftFromText="0" w:rightFromText="0" w:topFromText="0" w:bottomFromText="0" w:vertAnchor="page" w:horzAnchor="page" w:tblpX="{tw(xs[0])}" w:tblpY="{tw(ys[0])}"/>'
+              '<w:tblOverlap w:val="overlap"/>') if placed else ""
+        xml += (f'<w:tbl><w:tblPr>{at}<w:tblW w:w="{tw(xs[-1] - xs[0])}" w:type="dxa"/><w:tblInd w:w="{tw(max(0.0, xs[0] - x0))}" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
                 f'<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>'
                 f'<w:tblGrid>{tgrid}</w:tblGrid>{rows}</w:tbl>')
         xml += self.spacer(1)
