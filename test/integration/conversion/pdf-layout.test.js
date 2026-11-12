@@ -217,6 +217,24 @@ if kind == "poster":                                # text set freely on a colou
     page.insert_text((400, 625), "Open daily 9 to 5", fontname="hebo", fontsize=12, color=(0.1, 0.2, 0.45))
     page.insert_text((60, 800), "www.example.com", fontname="helv", fontsize=10, color=(0.8, 0.8, 0.9))
     doc.save(sys.argv[1]); sys.exit()
+if kind == "writtenorder":                          # a coloured page with two columns whose rows line up, written down the left column and then down the right one
+    page = doc.new_page(width=595, height=842)
+    page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
+    page.draw_circle((460, 620), 90, color=None, fill=(0.95, 0.7, 0.1))
+    for x, side in ((60, "Left"), (330, "Right")):
+        for i in range(3):
+            page.insert_text((x, 150 + i * 120), "%s paragraph %d" % (side, i + 1), fontname="helv", fontsize=14, color=(1, 1, 1))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "across":                                # label and value rows written across, then three columns written down each column
+    page = doc.new_page(width=595, height=842)
+    for i in range(4):
+        page.insert_text((60, 100 + i * 20), "Label %d" % (i + 1), fontname="helv", fontsize=11)
+        page.insert_text((200, 100 + i * 20), "Value %d" % (i + 1), fontname="helv", fontsize=11)
+    page.insert_text((60, 230), "A sentence that runs across the whole width of the page between the two blocks.", fontname="helv", fontsize=11)
+    for x, name in ((60, "Left"), (200, "Middle"), (340, "Right")):
+        for i in range(3):
+            page.insert_text((x, 300 + i * 14), "%s column line %d" % (name, i + 1), fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "designtable":                           # a 3 x 3 ruled table on a coloured page, then rows of a table drawn with no rules
     page = doc.new_page(width=595, height=842)
     page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.9, 0.95, 1.0))
@@ -599,6 +617,22 @@ const read = async (docx) => {
   expect('the title box sits where the title is on the sheet', Math.abs(at(/<wp:positionH [^>]*><wp:posOffset>(\d+)</) - 60) < 4 && Math.abs(at(/<wp:positionV [^>]*><wp:posOffset>(\d+)</) - 115) < 12, heading.slice(0, 400));
   expect('the page without its text is one picture behind the text, the size of the sheet', (d.xml.match(/behindDoc="1"/g) || []).length === 1 && /<wp:extent cx="7556500" cy="10693400"\/>/.test(d.xml));
   expect('the page is one sheet: it cannot flow onto another', (d.xml.match(/<w:sectPr/g) || []).length === 1);
+  fs.rmSync(docx);
+
+  console.log('a designed page whose text the PDF wrote column by column');
+  [docx] = await convert.convertFile(draw('writtenorder', 'writtenorder'), 'docx');
+  d = await read(docx);
+  const placed = ['Left paragraph 1', 'Left paragraph 2', 'Left paragraph 3', 'Right paragraph 1', 'Right paragraph 2', 'Right paragraph 3'].map((t) => d.xml.indexOf(t));
+  expect('the text boxes are in the order the PDF wrote them, not row by row', placed.every((p, i) => p >= 0 && (!i || placed[i - 1] < p)), placed.join(' '));
+  fs.rmSync(docx);
+
+  console.log('label and value rows, and columns, on a flowing page');
+  [docx] = await convert.convertFile(draw('across', 'across'), 'docx');
+  d = await read(docx);
+  const rowOrder = ['Label 1', 'Value 1', 'Label 2', 'Value 2', 'Label 4', 'Value 4'].map((t) => d.text.indexOf(t));
+  expect('rows the PDF wrote across read label, value, label, value', rowOrder.every((p, i) => p >= 0 && (!i || rowOrder[i - 1] < p)), d.text.slice(0, 300));
+  const acrossCells = [...d.xml.matchAll(/<w:tc>.*?<\/w:tc>/gs)].map((m) => m[0].replace(/<[^>]+>/g, ''));
+  expect('three columns the PDF wrote down each column are the three cells of one row', acrossCells.length === 3 && acrossCells[0].includes('Left column line 3') && acrossCells[1].includes('Middle column line 1') && !acrossCells[0].includes('Middle'), acrossCells.join(' | '));
   fs.rmSync(docx);
 
   console.log('tables on a designed page');

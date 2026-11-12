@@ -22,6 +22,7 @@ class Line:
         self.marker_box = None
         self.absorbed = False
         self.block = self.block_x1 = None   # the PDF text block the line came from, and where it ends on the right
+        self.seq = 0                  # where the PDF wrote the line among the lines of its page
         self.justified = False
         self.dir = (1.0, 0.0)
         self.cap = None               # the drop capital that stands beside this line, when it starts the paragraph the capital opens
@@ -117,6 +118,7 @@ def read_lines(page, clip=None):
             size = max(s["size"] for s in spans if s["text"].strip())
             line = Line([dict(s) for s in spans], ln["bbox"], spans[0]["origin"][1], size, rot)
             line.block, line.block_x1 = bi, block["bbox"][2]
+            line.seq = len(out)
             line.dir = (dx, dy)
             out.append(line)
     return out
@@ -152,6 +154,7 @@ def join_pieces(cur, nxt):
         spans = spans + [dict(cur.spans[-1], text=" ", bbox=(cur.x1, cur.y0, nxt.x0, cur.y1))]
     merged = Line(spans + nxt.spans, (cur.x0, min(cur.y0, nxt.y0), nxt.x1, max(cur.y1, nxt.y1)), cur.base, max(cur.size, nxt.size))
     merged.block, merged.block_x1 = cur.block, cur.block_x1
+    merged.seq = min(cur.seq, nxt.seq)
     return merged
 
 
@@ -227,6 +230,7 @@ def attach_markers(lines):
         o = min(mates, key=lambda o: o.x0 - m.x1)
         gap = dict(m.spans[-1], text=" ", bbox=(m.x1, m.y0, o.x0, m.y1))
         merged = Line(m.spans + [gap] + o.spans, (m.x0, min(m.y0, o.y0), o.x1, max(m.y1, o.y1)), o.base, max(m.size, o.size))
+        merged.seq = min(m.seq, o.seq)
         out.remove(m)
         out[out.index(o)] = merged
     return out

@@ -606,6 +606,10 @@ class Para:
         return self.lines[0].cap
 
     @property
+    def seq(self):
+        return min(l.seq for l in self.lines)
+
+    @property
     def x0(self):
         return min(l.x0 for l in self.lines)
 
