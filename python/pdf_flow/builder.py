@@ -2,6 +2,7 @@
 """Laying out a region of a page as Word content: columns, bands, paragraphs, tables and pictures."""
 
 import io
+import math
 import os
 import re
 import sys
@@ -542,15 +543,22 @@ class Builder:
         return rows(items)
 
     def turned_text_box(self, l):
-        """A line that runs up, down or upside down: a text box as long as the line, turned about its centre."""
+        """A line at any angle: a text box as long as the line and as thick as a line of its font, turned about its middle. The box of a turned line holds the line
+        and is wider than the text by the thickness it covers, so the length along the text is read back from it. Word turns clockwise by the angle and the PDF's y
+        axis points down, so the angle of the text's direction is the angle to give."""
         dx, dy = l.dir
-        turn = 90 if dy > 0 else 270 if dy < 0 else 180
-        long, thick = (l.y1 - l.y0, l.x1 - l.x0) if turn != 180 else (l.x1 - l.x0, l.y1 - l.y0)
-        spans = [dict(s, bbox=(s["bbox"][1], s["bbox"][0], s["bbox"][3], s["bbox"][2]) if turn != 180 else s["bbox"]) for s in l.spans]
+        thick = (l.asc - l.desc) * l.size
+        along = lambda b: (b[2] - b[0]) * abs(dx) + (b[3] - b[1]) * abs(dy) - 2 * thick * abs(dx) * abs(dy)
+        long = along(l.bbox)
+        spans = [dict(s, bbox=(0.0, 0.0, along(s["bbox"]), thick)) for s in l.spans]
         content = (f'<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="{tw(thick)}" w:lineRule="exact"/><w:jc w:val="left"/></w:pPr>'
                    f'{runs_xml(self.P, spans, False, self.doc.part, self.meter)}</w:p>')
-        cx, cy = (l.x0 + l.x1) / 2, (l.y0 + l.y1) / 2
-        return self.text_box_xml(content, cx - (long + 3.0) / 2, cy - thick / 2, long + 3.0, thick, wraps=False, turn=turn)
+        # the text's first letter is where the PDF's is, and a box two points taller than the text turns about a point one point off the middle of the text
+        cx, cy = (l.x0 + l.x1) / 2 + 1.5 * dx - dy, (l.y0 + l.y1) / 2 + dx + 1.5 * dy
+        angle = math.degrees(math.atan2(dy, dx)) % 360
+        if self.turn:
+            cx, cy, angle = *self.turned_centre(cx, cy), (angle + self.turn) % 360
+        return self.text_box_xml(content, cx - (long + 3.0) / 2, cy - (thick + 2.0) / 2, long + 3.0, thick, wraps=False, turn=angle)
 
     def text_box_xml(self, content, x, y, w, h, wraps, turn=0):
         """A text box without fill or line and with no inset, anchored to the sheet. A left-aligned paragraph is not allowed to wrap, so a substitute font that is a little wider cannot break a line; Word places centred and right-aligned text inside a box that does not wrap as if the box were empty, so those keep a box as wide as the text."""
@@ -563,7 +571,7 @@ class Builder:
                 f'<wp:docPr id="{pid}" name="Text {pid}"/><wp:cNvGraphicFramePr/>'
                 f'<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">'
                 f'<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:cNvSpPr txBox="1"/>'
-                f'<wps:spPr><a:xfrm{f' rot="{turn * 60000}"' if turn else ''}><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr>'
+                f'<wps:spPr><a:xfrm{f' rot="{round(turn * 60000)}"' if turn else ''}><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr>'
                 f'<wps:txbx><w:txbxContent>{content}</w:txbxContent></wps:txbx>'
                 f'<wps:bodyPr wrap="{"square" if wraps else "none"}" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"><a:noAutofit/></wps:bodyPr></wps:wsp>'
                 f'</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>')
@@ -635,10 +643,12 @@ class Builder:
     def turned_corner(self, it):
         """Top left corner, on the sheet as it is shown, of a picture that is placed upright and then turned about its centre."""
         w, h = it.x1 - it.x0, it.y1 - it.y0
-        cx, cy = it.x0 + w / 2, it.y0 + h / 2
-        sw, sh = self.P.w, self.P.h
-        nx, ny = {90: (sh - cy, cx), 180: (sw - cx, sh - cy), 270: (cy, sw - cx)}[self.turn]
+        nx, ny = self.turned_centre(it.x0 + w / 2, it.y0 + h / 2)
         return nx - w / 2, ny - h / 2
+
+    def turned_centre(self, cx, cy):
+        sw, sh = self.P.w, self.P.h
+        return {90: (sh - cy, cx), 180: (sw - cx, sh - cy), 270: (cy, sw - cx)}[self.turn]
 
     def turned_page(self, xml, margins):
         """The page, built upright, as one text box the size of the upright sheet turned about its centre, so the shown sheet

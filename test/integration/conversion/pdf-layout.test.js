@@ -207,6 +207,14 @@ if kind == "words":                                # lines that start with a wor
     for i, t in enumerate(("o A real bullet written as the letter o", "• A bullet glyph")):
         page.insert_text((60, 200 + i * 16), t, fontname="helv", fontsize=11)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "stamp":                                 # a word turned 30 degrees up to the right, in green across a red frame, on a page of running text
+    page = doc.new_page(width=595, height=842)
+    for i in range(6):
+        page.insert_text((60, 100 + i * 18), "Ordinary body text line number %d of the page." % (i + 1), fontname="helv", fontsize=11)
+    page.draw_rect(pymupdf.Rect(150, 300, 450, 400), color=(0.8, 0.1, 0.1), width=2)
+    page.insert_text((180, 370), "APPROVED", fontname="hebo", fontsize=30, color=(0, 0.6, 0), morph=(pymupdf.Point(180, 370), pymupdf.Matrix(30)))
+    page.insert_text((60, 500), "Text after the stamp.", fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "poster":                                # text set freely on a coloured page, as on a slide or a flyer
     page = doc.new_page(width=595, height=842)
     page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
@@ -633,6 +641,20 @@ const read = async (docx) => {
   expect('rows the PDF wrote across read label, value, label, value', rowOrder.every((p, i) => p >= 0 && (!i || rowOrder[i - 1] < p)), d.text.slice(0, 300));
   const acrossCells = [...d.xml.matchAll(/<w:tc>.*?<\/w:tc>/gs)].map((m) => m[0].replace(/<[^>]+>/g, ''));
   expect('three columns the PDF wrote down each column are the three cells of one row', acrossCells.length === 3 && acrossCells[0].includes('Left column line 3') && acrossCells[1].includes('Middle column line 1') && !acrossCells[0].includes('Middle'), acrossCells.join(' | '));
+  fs.rmSync(docx);
+
+  console.log('a word turned by an angle that is not a quarter');
+  [docx] = await convert.convertFile(draw('stamp', 'stamp'), 'docx');
+  d = await read(docx);
+  const angle = Number((/<a:xfrm rot="(\d+)"/.exec(d.xml) || [])[1]) / 60000;
+  expect('it is real text in a text box turned 330 degrees clockwise, which is the 30 up to the right that the PDF shows', d.text.includes('APPROVED') && Math.abs(angle - 330) < 1, String(angle));
+  const sharp = require('sharp');
+  let green = 0;
+  for (const name of Object.keys(d.zip.files).filter((n) => n.startsWith('word/media/'))) {
+    const { data, info } = await sharp(await d.zip.file(name).async('nodebuffer')).raw().toBuffer({ resolveWithObject: true });
+    for (let i = 0; i < data.length; i += info.channels) green += data[i] < 80 && data[i + 1] > 120 && data[i + 2] < 80;
+  }
+  expect('the word is not also in a picture, while the frame it crosses still is', green === 0 && /<pic:pic>/.test(d.xml), `${green} green pixels`);
   fs.rmSync(docx);
 
   console.log('tables on a designed page');
