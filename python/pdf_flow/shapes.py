@@ -62,6 +62,10 @@ class Tbl:
     def bbox(self):
         return (self.x0, self.y0, self.x1, self.y1)
 
+    @property
+    def seq(self):
+        return min((l.seq for c in self.cells for l in c["items"] if l.kind == "line"), default=0)
+
 
 def rule_key(b):
     return (round(b[0] * 8), b[1]) if b else None

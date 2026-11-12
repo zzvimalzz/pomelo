@@ -487,7 +487,13 @@ class Builder:
                 max(above, key=lambda p: p.lines[-1].base).lines.append(l)
             else:
                 paras.append(Para([l]))
-        order, mixed = self.reading_order(paras), self.reading_order(paras + list(tables))
+        written = self.written_order(paras + list(tables))
+        if written:
+            order, mixed = [i for i in written if i.kind == "para"], written
+        else:
+            order, mixed = self.reading_order(paras), self.reading_order(paras + list(tables))
+        if os.environ.get("POMELO_DEBUG"):
+            sys.stderr.write("page %d: text boxes in %s order\n" % (self.P.pno + 1, "the PDF's" if written else "reading"))
         for t in [i for i in mixed if i.kind == "tbl"]:                       # the text boxes keep the order they have without the tables
             after = next((i for i in mixed[mixed.index(t):] if i.kind == "para"), None)
             order.insert(order.index(after) if after else len(order), t)
@@ -503,6 +509,15 @@ class Builder:
             part, T, B = self.para_xml(p, fx0, fx1, self.metrics(p)[1])
             runs += self.text_box_xml(part, fx0, T, fx1 - fx0, B - T, wraps='<w:jc w:val="left"/>' not in part)
         return xml, runs
+
+    def written_order(self, items):
+        """The items in the order the PDF wrote them, when that reads like a page (at least 80 % of the steps go down, along the row or on to the right), else None. Word prints
+        text boxes in the order of the file, and the author's order is also the one Tab follows."""
+        ordered = sorted(items, key=lambda i: i.seq)
+        steps = list(zip(ordered, ordered[1:]))
+        if steps and sum(b.y0 >= a.y0 - 2.5 or b.x0 >= a.x1 - 2 for a, b in steps) >= 0.8 * len(steps):
+            return ordered
+        return None
 
     def reading_order(self, items):
         """Columns of text one after the other, but the cells of a table row by row: the order Word reads text boxes in."""
@@ -769,7 +784,7 @@ class Builder:
     def laid(self, items, x0, x1, cursor, whole=True):
         """`whole` is False for what lies between two runs of columns: a cut through all of it is then not a column structure of its own, and it is laid out band by band."""
         cols = self.v_cut(items) if whole else None
-        if cols:
+        if cols and not self.across(items):
             return self.row(cols, x0, x1, cursor)
         bands = self.h_bands(items)
         if len(bands) > 1 or not whole:
@@ -777,7 +792,8 @@ class Builder:
             for y0, y1, its in bands:
                 sig = self.v_cut(its)
                 key = None if not sig else [(round(c[0]), round(c[1])) for c in sig]
-                if grouped and grouped[-1]["key"] == key and (key is None or all(abs(a[0] - b[0]) < 8 and abs(a[1] - b[1]) < 8 for a, b in zip(grouped[-1]["key"], key))):
+                if grouped and (key is None and grouped[-1]["key"] is None or key and grouped[-1]["key"] and len(key) == len(grouped[-1]["key"])
+                                and all(abs(a[0] - b[0]) < 8 for a, b in zip(grouped[-1]["key"], key)) and not self.across(grouped[-1]["items"] + its)):
                     grouped[-1]["items"].extend(its)
                 else:
                     grouped.append({"key": key, "items": list(its)})
@@ -788,6 +804,16 @@ class Builder:
                     xml += part
                 return xml, cursor
         return self.leaf(items, x0, x1, cursor)
+
+    def across(self, items):
+        """True when the PDF wrote these columns across, a label and then its value, and not down one column and then down the next: Word reads a column of a table down before it goes on to the next."""
+        cols = self.v_cut(items)
+        if not cols or any(i.kind != "line" for i in items) or len(self.h_bands(items)) < 2:
+            return False
+        home = {id(i): k for k, c in enumerate(cols) for i in c[2]}
+        written = sorted(items, key=lambda l: l.seq)
+        steps = list(zip(written, written[1:]))
+        return sum(home[id(a)] != home[id(b)] for a, b in steps) >= 0.8 * len(steps)
 
     def leaf_or_row(self, items, x0, x1, cursor):
         cols = self.v_cut(items)
