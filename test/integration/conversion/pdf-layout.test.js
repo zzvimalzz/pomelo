@@ -419,6 +419,19 @@ if kind == "doublespace":                           # one paragraph of five full
     for i in range(5):
         page.insert_text((60, 150 + i * pitch), "%s Line %d." % (text, i + 1), fontname="helv", fontsize=9.5)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "sideways":                              # a landscape sheet stored turned (/Rotate), as a drawing with labels on a coloured ground, or (second argument) running text; 270 as a third argument
+    page = doc.new_page(width=842, height=595)
+    what, angle = (sys.argv[3] if len(sys.argv) > 3 else "drawing"), (int(sys.argv[4]) if len(sys.argv) > 4 else 90)
+    if what == "drawing":
+        page.draw_rect(pymupdf.Rect(0, 0, 842, 595), color=None, fill=(0.85, 0.92, 0.9))
+        page.draw_rect(pymupdf.Rect(150, 150, 450, 400), color=(0.2, 0.5, 0.5), fill=(0.7, 0.85, 0.8), width=2)
+        for i, label in enumerate(("North gate", "Stage", "Queue lane", "First aid", "Plant room")):
+            page.insert_text((170 + (i % 2) * 150, 190 + i * 40), label, fontname="helv", fontsize=14, color=(0.1, 0.3, 0.3))
+    else:
+        for i in range(14):
+            page.insert_text((60, 90 + i * 16), "Running paragraph line %d of text set on a sheet stored sideways, long enough to span the sheet." % (i + 1), fontname="helv", fontsize=11)
+    page.set_rotation(angle)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "poster":                                # text set freely on a coloured page, as on a slide or a flyer
     page = doc.new_page(width=595, height=842)
     page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
@@ -697,7 +710,7 @@ const read = async (docx) => {
   const dir = tmp.dir('layout');
   const make = path.join(dir, 'make.py');
   fs.writeFileSync(make, MAKE_PDF);
-  const draw = (name, kind, extra = '') => { const f = path.join(dir, `${name}.pdf`); execFileSync(engines.pdf, ['-W', 'ignore', make, f, kind, ...(extra ? [extra] : [])], { windowsHide: true }); return f; };
+  const draw = (name, kind, extra = '', more = '') => { const f = path.join(dir, `${name}.pdf`); execFileSync(engines.pdf, ['-W', 'ignore', make, f, kind, ...(extra ? [extra] : []), ...(more ? [more] : [])], { windowsHide: true }); return f; };
   const WANTED = ['Quarterly Report', 'Revenue grew 18%', 'team@example.com', 'A bullet that wraps', 'keeps its indent', 'Region', 'cell 21'];
 
   console.log('a designed page (white heading on a coloured banner)');
@@ -1201,6 +1214,17 @@ const read = async (docx) => {
     d = await read(docx);
     const para = (d.xml.match(/<w:p>(?:(?!<\/w:p>).)*Line 1\.(?:(?!<\/w:p>).)*<\/w:p>/s) || [''])[0];
     expect(`${name}: five lines at double spacing are one paragraph, whatever the spacing`, para.includes('Line 5.') && /w:lineRule="(atLeast|auto|exact)"/.test(para), para.slice(0, 200));
+    fs.rmSync(docx);
+  }
+
+  console.log('a sheet stored sideways');
+  for (const [name, what, angle, boxes] of [['sideways-drawing', 'drawing', '90', true], ['sideways-drawing-270', 'drawing', '270', true], ['sideways-text', 'text', '90', false], ['sideways-text-270', 'text', '270', false]]) {
+    [docx] = await convert.convertFile(draw(name, 'sideways', what, angle), 'docx');
+    d = await read(docx);
+    const turned = (d.xml.match(/<wps:txbx>/g) || []).length;
+    const sheet = /<w:pgSz w:w="(\d+)" w:h="(\d+)"/.exec(d.xml) || [];
+    expect(`${name}: ${boxes ? 'a drawing with labels on a sideways sheet is a picture with a text box for each label' : 'running text on a sideways sheet stays flowing text in the one turned page'}, on one sheet the shape the PDF shows`,
+      (d.xml.match(/<w:sectPr/g) || []).length === 1 && Number(sheet[1]) < Number(sheet[2]) && (boxes ? turned >= 5 && !missingFrom(d.text, ['North gate', 'Plant room']).length : turned === 1 && !missingFrom(d.text, ['line 1 of', 'line 14 of']).length), `${turned} text boxes, ${sheet[1]} x ${sheet[2]}`);
     fs.rmSync(docx);
   }
 
