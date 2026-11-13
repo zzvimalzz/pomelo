@@ -600,6 +600,28 @@ class Builder:
                 f'<wps:bodyPr wrap="{"square" if wraps else "none"}" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"><a:noAutofit/></wps:bodyPr></wps:wsp>'
                 f'</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>')
 
+    def shape_xml(self, x, y, w, h, prst, fill=None, line=None, adj=None, flow=None):
+        """A shape without text behind the text: a rule (`line`, as wide or as tall as it is long) or a rounded box (`roundRect`, `adj` the corner radius as a share of the
+        shorter side in 1/100000). It is anchored to the sheet, or with `flow` to the paragraph that holds it (`x` from the column, `y` from the paragraph's top), so that
+        it moves with the text. fill: hex or None; line: (width in points, hex, dash name or None) or None."""
+        pid = self.next_id()
+        ln = '<a:ln><a:noFill/></a:ln>'
+        if line:
+            ln = (f'<a:ln w="{int(max(0.25, line[0]) * 12700)}"><a:solidFill><a:srgbClr val="{line[1]}"/></a:solidFill>'
+                  f'{f"<a:prstDash val={chr(34)}{line[2]}{chr(34)}/>" if line[2] else ""}</a:ln>')
+        paint = f'<a:solidFill><a:srgbClr val="{fill}"/></a:solidFill>' if fill else '<a:noFill/>'
+        guide = f'<a:gd name="adj" fmla="val {adj}"/>' if adj is not None else ""
+        cx, cy = int(w * 12700), int(h * 12700)
+        return (f'<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="{pid}" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1">'
+                f'<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="{"column" if flow else "page"}"><wp:posOffset>{int(x * 12700)}</wp:posOffset></wp:positionH>'
+                f'<wp:positionV relativeFrom="{"paragraph" if flow else "page"}"><wp:posOffset>{int(y * 12700)}</wp:posOffset></wp:positionV>'
+                f'<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>'
+                f'<wp:docPr id="{pid}" name="Shape {pid}"/><wp:cNvGraphicFramePr/>'
+                f'<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">'
+                f'<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:cNvSpPr/>'
+                f'<wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="{prst}"><a:avLst>{guide}</a:avLst></a:prstGeom>{paint}{ln}</wps:spPr>'
+                f'<wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>')
+
     def tabbed_para(self, lines, x0, x1, cursor):
         """Several single pieces on one row, as one paragraph with tab stops."""
         P = self.P
@@ -707,7 +729,7 @@ class Builder:
     def stripes(self, items):
         """Boxes of the same width stacked one above another (the shaded rows of a table drawn without grid lines) are one
         table; so are the rows between them that have no shading."""
-        boxes = sorted([i for i in items if i.kind == "box" and (i.fill or i.border)], key=lambda b: (b.y0, b.x0))
+        boxes = sorted([i for i in items if i.kind == "box" and (i.fill or i.border) and not i.edges], key=lambda b: (b.y0, b.x0))
         if len(boxes) < 2:
             return items
         items = list(items)
@@ -959,8 +981,17 @@ class Builder:
         if not inner or not inner.rstrip().endswith("</w:p>"):
             inner += self.spacer(1)
         sides = {s: bx.border for s in ("top", "left", "bottom", "right")} if bx.border else {}
+        sides.update(bx.edges)
         shd = f'<w:shd w:val="clear" w:color="auto" w:fill="{bx.fill}"/>' if bx.fill else ""
         xml = self.spacer(before)
+        if bx.radius >= 3 and not self.depth:
+            # the shape sits in a paragraph just above the box, a point or more tall, and reaches down to the box's top, so it moves with the box's text
+            lead = max(before, 1.0)
+            w, h = bx.x1 - bx.x0, bx.y1 - bx.y0
+            shape = self.shape_xml(bx.x0 - x0, lead, w, h, "roundRect", bx.fill, (bx.border[0], bx.border[1], "dash" if bx.dashed else None) if bx.border else None,
+                                   min(50000, round(bx.radius / min(w, h) * 100000)), flow=True)
+            xml = f'<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="{tw(lead)}" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr>{shape}</w:p>'
+            sides, shd = {}, ""
         xml += (f'<w:tbl><w:tblPr><w:tblW w:w="{tw(bx.x1 - bx.x0)}" w:type="dxa"/><w:tblInd w:w="{tw(max(0.0, bx.x0 - x0))}" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
                 f'<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>'
                 f'<w:tblGrid><w:gridCol w:w="{tw(bx.x1 - bx.x0)}"/></w:tblGrid><w:tr><w:trPr>{self.keep(bx.y1 - bx.y0)}<w:trHeight w:val="{tw(bx.y1 - bx.y0)}" w:hRule="atLeast"/></w:trPr>'

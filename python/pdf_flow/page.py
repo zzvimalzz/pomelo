@@ -12,7 +12,7 @@ from pdf_spans import RTL, dedupe, hexcolor
 
 from .common import HI_DPI, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
 from .lines import attach_markers, hangs, is_bold, is_italic, merge_rows, read_lines, split_marker
-from .shapes import Box, Tbl, polygon_area, rect_shapes, segments_of
+from .shapes import Box, Tbl, corner_radius, polygon_area, rect_shapes, segments_of
 
 
 class Page:
@@ -36,6 +36,7 @@ class Page:
             self.drawings = []
         self.segments = segments_of(self.drawings)
         self.shapes = rect_shapes(self.drawings)
+        self.radii = {tuple(round(v) for v in d["rect"]): corner_radius(d["items"]) for d in self.drawings if "c" in {it[0] for it in d["items"]}}
         scan = any(area(tuple(i["bbox"])) > 0.85 * self.w * self.h for i in page.get_image_info())     # the invisible text layer of a scan is not hidden text
         lines = read_lines(page, hidden_ok=not scan)
         if not scan:
@@ -321,6 +322,7 @@ class Page:
             holds_image = any(inside(tuple(i["bbox"]), rr) for i in self.page.get_image_info())
             if n or holds_image:
                 cands.append(Box(rr, fill, border, dashed))
+                cands[-1].radius = self.radii.get(tuple(round(v) for v in rr), 0.0)
         # a box drawn with its shadow, accent or outline (a few points apart) is one box: the innermost colour fills it, the
         # outermost colour shows as its border
         out = []
@@ -335,6 +337,27 @@ class Page:
                 outer.border = outer.border or (max(1.0, gap), outer.fill)
             outer.fill = inner_fill
         self.box_items = out
+        self.edge_bars()
+
+    def edge_bars(self):
+        """A filled bar at most 6 pt thick along the whole of one edge of a box, such as the coloured side of a callout, is that side's border."""
+        self.bar_rects = []
+        for d in self.drawings:
+            f, r = d.get("fill"), d["rect"]
+            opacity = d.get("fill_opacity") if d.get("fill_opacity") is not None else 1
+            if not f or is_white(f) or "f" not in d["type"] or opacity < 0.85 or [it[0] for it in d["items"]] != ["re"]:
+                continue
+            thick = min(r.width, r.height)
+            if not 0.5 <= thick <= 6 or max(r.width, r.height) < 14:
+                continue
+            for bx in self.box_items:
+                sides = (("left", r.width <= 6 and abs(r.x0 - bx.x0) <= 1, (r.y0 - bx.y0, r.y1 - bx.y1)), ("right", r.width <= 6 and abs(r.x1 - bx.x1) <= 1, (r.y0 - bx.y0, r.y1 - bx.y1)),
+                         ("top", r.height <= 6 and abs(r.y0 - bx.y0) <= 1, (r.x0 - bx.x0, r.x1 - bx.x1)), ("bottom", r.height <= 6 and abs(r.y1 - bx.y1) <= 1, (r.x0 - bx.x0, r.x1 - bx.x1)))
+                side = next((s for s, flush, ends in sides if flush and max(abs(v) for v in ends) <= 1.5 and s not in bx.edges), None)
+                if side:
+                    bx.edges[side] = (thick, rgb_hex(f))
+                    self.bar_rects.append(tuple(r))
+                    break
 
     # -- pictures and what is left of the page when the text is taken away
     def ellipse_clips(self):
@@ -356,11 +379,14 @@ class Page:
         uses = Counter(i.get("xref") for i in infos)
         # a picture clipped by the page (a photo cropped to a panel or a circle) shows less than its own rectangle: the text layer reports the shown part
         visible = {b["number"]: tuple(b["bbox"]) for b in page.get_text("dict")["blocks"] if b["type"] == 1} if infos else {}
+        over = self.overdrawn()
         covered = []
         for info in infos:
             r = tuple(info["bbox"])
             if area(r) < 20 or (r[2] - r[0]) < 3 or (r[3] - r[1]) < 3:
                 continue
+            if tuple(round(v) for v in r) in over:
+                info = dict(info, overdrawn=True)
             tf = info.get("transform")
             if tf and (abs(tf[1]) > 0.05 or abs(tf[2]) > 0.05):
                 continue                                              # rotated picture: left to the leftovers pass
@@ -376,9 +402,23 @@ class Page:
             covered.append(info.get("full", r))
         self.picture_boxes = covered
 
+    def overdrawn(self):
+        """The pictures (by their rounded box) that a filled shape is drawn over later, such as a caption band. Such a picture is cut from the page, because the file's own copy has no band."""
+        try:
+            log = self.page.get_bboxlog()
+        except Exception:
+            return set()
+        out = set()
+        for k, (kind, bb) in enumerate(log):
+            if kind != "fill-image":
+                continue
+            if any(t == "fill-path" and area(tuple(b)) >= 100 and area(tuple(b)) < 0.9 * area(tuple(bb)) and overlap(tuple(b), tuple(bb)) >= 0.8 * area(tuple(b)) for t, b in log[k + 1:]):
+                out.add(tuple(round(v) for v in bb))
+        return out
+
     def encode_image(self, info, r, dpi_cap=300):
         xref = info.get("xref")
-        if xref:
+        if xref and not info.get("overdrawn"):
             try:
                 raw = self.doc.extract_image(xref)
                 if raw and raw.get("ext") in ("jpeg", "jpg") and not raw.get("smask") and raw.get("colorspace", 3) in (1, 3) and raw.get("cs-name", "") != "DeviceCMYK":
@@ -448,7 +488,7 @@ class Page:
         for bx in self.box_items:
             if bx.fill:
                 col = tuple(int(bx.fill[i:i + 2], 16) for i in (0, 2, 4))
-                blank(bx.bbox, 0.5, colors=col)
+                blank(bx.bbox, 0.5, colors=col, edges=[(255, 255, 255)])
             if bx.border:
                 bw = bx.border[0] + 1.5
                 blank((bx.x0, bx.y0, bx.x1, bx.y0 + bw), 1.5)
@@ -457,6 +497,8 @@ class Page:
                 blank((bx.x1 - bw, bx.y0, bx.x1, bx.y1), 1.5)
         for r, fill, border, dashed in self.highlight_shapes:
             blank(tuple(r), 1.0)
+        for r in self.bar_rects:
+            blank(r, 1.0)
         for (r, info) in self.imgs:
             blank(r, 1.0)
         for b in self.rot_boxes:

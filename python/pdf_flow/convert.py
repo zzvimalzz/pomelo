@@ -339,11 +339,32 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
             fig.overlay = True
             elements.append(fig)
     # rules
-    rules = []
+    rules, free = [], []
+    holders = [bx.bbox for bx in boxes if bx.border or bx.edges] + [t.bbox for t in tbls]
+    art = [r for r, _ in P.imgs] + list(P.figs) + list(P.rot_boxes)
     for i, (o, pos, a, b, width, color, d) in enumerate(P.segments):
         edge_of_box = any(bx.border and min(b, bx.x1) - max(a, bx.x0) >= 0.9 * (b - a) and (abs(pos - bx.y0) <= 2 or abs(pos - bx.y1) <= 2) for bx in boxes)
         if o == "h" and i not in P.used_segments and (b - a) >= 0.28 * P.w and width <= 4 and not edge_of_box:
             rules.append(Rule((a, pos - width / 2, b, pos + width / 2), width, color))
+        elif i not in P.used_segments and b - a >= 12 and not (safe or scan or turn):
+            # a signature line or a separator; what a table, a box or a picture draws for itself is written already
+            ends = (b - a) * 0.8
+            on_edge = any((o == "h" and (abs(pos - h[1]) <= 2.5 or abs(pos - h[3]) <= 2.5) and min(b, h[2]) - max(a, h[0]) >= ends)
+                          or (o == "v" and (abs(pos - h[0]) <= 2.5 or abs(pos - h[2]) <= 2.5) and min(b, h[3]) - max(a, h[1]) >= ends) for h in holders)
+            mid = (((a + b) / 2, pos) if o == "h" else (pos, (a + b) / 2))
+            if not on_edge and not any(inside((*mid, *mid), r, 1.0) for r in art + [t.bbox for t in tbls]):
+                dashes = d.get("dashes")
+                dash = None
+                if dashes and "[]" not in str(dashes):
+                    dash = "sysDot" if float(re.findall(r"[\d.]+", str(dashes))[0]) <= 1.5 * width else "dash"
+                free.append((o, pos, a, b, width, color, dash))
+    joined = []
+    for seg in sorted(free, key=lambda s: (s[0], round(s[1]), s[4], s[5], str(s[6]), s[2])):       # the cells of a row draw their rule piece by piece: touching pieces are one rule
+        if joined and joined[-1][0] == seg[0] and abs(joined[-1][1] - seg[1]) <= 0.6 and joined[-1][4:] == seg[4:] and seg[2] - joined[-1][3] <= 2:
+            joined[-1] = (*joined[-1][:3], max(joined[-1][3], seg[3]), *seg[4:])
+        else:
+            joined.append(seg)
+    free = joined
     for e in pics:
         if any(e.y0 + 1 < (r.y0 + r.y1) / 2 < e.y1 - 1 and min(r.x1, e.x1) - max(r.x0, e.x0) >= 0.5 * (r.x1 - r.x0) for r in rules):
             e.floating = True
@@ -445,6 +466,8 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     for it in sorted(P.floaters, key=lambda i: (-round(math.log(max(area(i.bbox), 1.0)) / 0.1), getattr(i, "order", 0))):
         floats += B.picture_xml(it, floating=True, name="Picture")
     floats += "".join(B.turned_text_box(l) for l in P.rotated)
+    for o, pos, a, b, width, color, dash in free:
+        floats += B.shape_xml(*((a, pos, b - a, 0) if o == "h" else (pos, a, 0, b - a)), "line", None, (width, color, dash))
     # the pictures are anchored in the page's first paragraph: when the text runs a line over, the closing paragraph moves
     # to the next sheet, and the background would go with it. A page that starts with something else keeps them in the closing one.
     if floats and not turned and xml.startswith("<w:p><w:pPr>") and not re.match(r"<w:p><w:pPr>(<w:pStyle [^>]*/>)?<w:framePr", xml):

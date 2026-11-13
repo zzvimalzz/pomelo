@@ -45,6 +45,8 @@ class Box:
         self.x0, self.y0, self.x1, self.y1 = bbox
         self.fill, self.border, self.dashed = fill, border, dashed      # border: (width, hex) or None
         self.children = []
+        self.edges = {}               # a side that is a bar drawn along it, as a border: {side: (width, hex)}
+        self.radius = 0
 
     @property
     def bbox(self):
@@ -168,6 +170,14 @@ def polygon_area(items):
     for (x1, y1), (x2, y2) in zip(pts, pts[1:] + pts[:1]):
         a += x1 * y2 - x2 * y1
     return abs(a) / 2
+
+
+def corner_radius(items):
+    """The corner radius of a rounded rectangle path in points, 0 for anything else: four curves, one at each corner, each a quarter of a circle."""
+    curves = [it for it in items if it[0] == "c"]
+    if len(curves) != 4:
+        return 0.0
+    return min(max(abs(c[4].x - c[1].x), abs(c[4].y - c[1].y)) for c in curves)
 
 
 def rect_shapes(drawings):

@@ -223,6 +223,51 @@ if kind == "watermark":                             # a large pale word turned a
     at, angle, size = (pymupdf.Point(90, 330), 20, 90) if other else (pymupdf.Point(100, 330), 45, 120)
     page.insert_text(at, "DRAFT", fontname="hebo", fontsize=size, color=(0.95, 0.75, 0.75), morph=(at, pymupdf.Matrix(angle)))
     doc.save(sys.argv[1]); sys.exit()
+if kind == "sigline":                               # a short line to the right of its label, a stroke or (with an extra argument) a thin bar
+    page = doc.new_page(width=595, height=842)
+    bar = len(sys.argv) > 3
+    for i in range(3):
+        page.insert_text((60, 100 + i * 14), "Ordinary line of text above the signature block, number %d." % i, fontname="helv", fontsize=11)
+    page.insert_text((60, 300), "Signature", fontname="helv", fontsize=11)
+    if bar:
+        page.draw_rect(pymupdf.Rect(130, 300, 290, 301.2), color=None, fill=(0.2, 0.4, 0.6))
+    else:
+        page.draw_line((130, 301), (270, 301), color=(0.4, 0.2, 0.0), width=1.0)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "callout":                               # a filled box with a bar along its left edge (with an extra argument: along its top edge, other colours)
+    page = doc.new_page(width=595, height=842)
+    top = len(sys.argv) > 3
+    for i in range(3):
+        page.insert_text((60, 100 + i * 14), "Ordinary line of text above the callout, number %d." % i, fontname="helv", fontsize=11)
+    page.draw_rect(pymupdf.Rect(60, 300, 420, 360), color=None, fill=(0.9, 0.95, 0.98) if top else (0.95, 0.95, 0.8))
+    page.draw_rect(pymupdf.Rect(60, 300, 420, 303) if top else pymupdf.Rect(60, 300, 64, 360), color=None, fill=(0.2, 0.2, 0.6) if top else (0.8, 0.4, 0.0))
+    page.insert_text((75, 325), "Note: the callout text sits inside the box.", fontname="helv", fontsize=11)
+    page.insert_text((75, 342), "A second line of the callout.", fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "caption":                               # a photo with a dark band drawn over its foot (with an extra argument: over its top) and a white caption on the band
+    page = doc.new_page(width=595, height=842)
+    top = len(sys.argv) > 3
+    for i in range(3):
+        page.insert_text((60, 100 + i * 14), "Ordinary line of text above the photo, number %d." % i, fontname="helv", fontsize=11)
+    photo = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 160, 100), False)
+    photo.clear_with(225)
+    page.insert_image(pymupdf.Rect(60, 200, 400, 400), stream=photo.tobytes("jpeg"))
+    page.draw_rect(pymupdf.Rect(60, 200, 400, 230) if top else pymupdf.Rect(60, 370, 400, 400), color=None, fill=(0.4, 0.0, 0.0) if top else (0.1, 0.15, 0.3))
+    page.insert_text((70, 220 if top else 390), "Caption on the band", fontname="helv", fontsize=11, color=(1, 1, 1))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "rounded":                               # a rounded filled box and a square one, each with text (with an extra argument: a rounded outline only)
+    page = doc.new_page(width=595, height=842)
+    outline = len(sys.argv) > 3
+    for i in range(3):
+        page.insert_text((60, 100 + i * 14), "Ordinary line of text above the boxes, number %d." % i, fontname="helv", fontsize=11)
+    if outline:
+        page.draw_rect(pymupdf.Rect(60, 300, 400, 350), color=(0.2, 0.2, 0.6), fill=None, width=2, radius=0.3)
+    else:
+        page.draw_rect(pymupdf.Rect(60, 300, 400, 360), color=None, fill=(0.8, 0.8, 1.0), radius=0.25)
+    page.insert_text((75, 330), "Text inside the rounded box.", fontname="helv", fontsize=11)
+    page.draw_rect(pymupdf.Rect(60, 420, 400, 480), color=None, fill=(1.0, 0.8, 0.8))
+    page.insert_text((75, 450), "Text inside the square box.", fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "poster":                                # text set freely on a coloured page, as on a slide or a flyer
     page = doc.new_page(width=595, height=842)
     page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
@@ -815,6 +860,43 @@ const read = async (docx) => {
     const bandStyle = await tableStyle(d.zip, bandTable);
     expect(`${name}: the white header text has its navy header and the stripes are in the table style, and no picture is left behind`,
       new RegExp(`<w:tblStylePr w:type="firstRow">.*w:fill="${navy}"`, 's').test(bandStyle) && new RegExp(`<w:tblStylePr w:type="band1Horz">.*w:fill="${band}"`, 's').test(bandStyle) && !/<w:drawing>/.test(d.xml), bandStyle.slice(0, 400));
+    fs.rmSync(docx);
+  }
+
+  console.log('rules, bars and shapes that are not text');
+  const shapes = (x) => x.match(/<wps:wsp[ >][^]*?<wps:cNvSpPr\/><wps:spPr>.*?<\/wps:spPr>/gs) || [];
+  for (const [name, extra, color, length] of [['sigline', '', '663300', 140], ['sigline-bar', 'bar', '336699', 160]]) {
+    [docx] = await convert.convertFile(draw(name, 'sigline', extra), 'docx');
+    d = await read(docx);
+    const lines = shapes(d.xml).filter((s) => /prst="line"/.test(s));
+    const cx = Number((/<a:ext cx="(\d+)"/.exec(lines[0] || '') || [])[1]) / 12700;
+    expect(`${name}: a line right of its label is a line shape of its colour and length`, lines.length === 1 && lines[0].includes(`<a:srgbClr val="${color}"/>`) && Math.abs(cx - length) < 2, `${lines.length} lines, ${cx} pt`);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra, side, size, color] of [['callout', '', 'left', 32, 'CC6600'], ['callout-top', 'top', 'top', 24, '333399']]) {
+    [docx] = await convert.convertFile(draw(name, 'callout', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: the bar along the ${side} edge is that side of the box's border, and not a picture`,
+      new RegExp(`<w:${side} w:val="single" w:sz="${size}" w:space="0" w:color="${color}"/>`).test(d.xml) && !/<w:drawing>/.test(d.xml) && !missingFrom(d.text, ['the callout text sits inside the box']).length, (d.xml.match(/<w:tcBorders>.*?<\/w:tcBorders>/s) || [''])[0]);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra, top] of [['caption', '', false], ['caption-top', 'top', true]]) {
+    [docx] = await convert.convertFile(draw(name, 'caption', extra), 'docx');
+    d = await read(docx);
+    const media = await Promise.all(Object.keys(d.zip.files).filter((f) => /^word\/media\//.test(f)).map((f) => d.zip.file(f).async('nodebuffer')));
+    const { data, info } = await require('sharp')(media.sort((p, q) => q.length - p.length)[0]).greyscale().raw().toBuffer({ resolveWithObject: true });
+    const mean = (y0, y1) => { let sum = 0, n = 0; for (let y = Math.floor(info.height * y0); y < info.height * y1; y++) for (let x = 0; x < info.width; x++) { sum += data[y * info.width + x]; n++; } return sum / n; };
+    const band = top ? mean(0.02, 0.1) : mean(0.9, 0.98), photo = top ? mean(0.5, 0.9) : mean(0.1, 0.5);
+    expect(`${name}: the band drawn over the photo is in the picture, and the caption is text`, band < 90 && photo > 180 && !missingFrom(d.text, ['Caption on the band']).length, `band ${band.toFixed(0)}, photo ${photo.toFixed(0)}`);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra, fill, line] of [['rounded', '', 'CCCCFF', null], ['rounded-outline', 'outline', null, '<a:ln w="25400"><a:solidFill><a:srgbClr val="333399"/>']]) {
+    [docx] = await convert.convertFile(draw(name, 'rounded', extra), 'docx');
+    d = await read(docx);
+    const round = shapes(d.xml).filter((s) => /prst="roundRect"/.test(s));
+    expect(`${name}: the rounded box is a roundRect shape with its fill and border behind its text, the square one is not`,
+      round.length === 1 && /<a:gd name="adj" fmla="val \d+"\/>/.test(round[0]) && (fill ? round[0].includes(`<a:solidFill><a:srgbClr val="${fill}"/>`) : round[0].includes('<a:noFill/>')) && (!line || round[0].includes(line))
+        && (d.xml.match(/<w:shd /g) || []).length === 1 && !missingFrom(d.text, ['Text inside the rounded box', 'Text inside the square box']).length, round[0] ? round[0].slice(0, 300) : 'no shape');
     fs.rmSync(docx);
   }
 
