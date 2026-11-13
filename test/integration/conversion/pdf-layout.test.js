@@ -432,6 +432,27 @@ if kind == "sideways":                              # a landscape sheet stored t
             page.insert_text((60, 90 + i * 16), "Running paragraph line %d of text set on a sheet stored sideways, long enough to span the sheet." % (i + 1), fontname="helv", fontsize=11)
     page.set_rotation(angle)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "layer":                                 # a scan that carries a text layer: the picture of a page with a title, three lines and a signature, and the text of them drawn invisibly over it
+    # (with an extra argument "under": the text drawn first and the picture over it; "skew": the lines of the layer slanted by 1.5 degrees)
+    how = sys.argv[3] if len(sys.argv) > 3 else ""
+    ink = pymupdf.open(); ip = ink.new_page(width=595, height=842)
+    lines = [(60, 100, "Quarterly Report of the Harbour", 26)] + [(60, 200 + i * 20, t, 11) for i, t in enumerate(("The first line of the letter runs across the page.", "A second line follows it on the same sheet.", "And a third line closes the paragraph."))]
+    for x, y, t, size in lines:
+        ip.insert_text((x, y), t, fontname="helv", fontsize=size)
+    for i in range(14):
+        ip.draw_line((60 + i * 6, 340 + (i % 3) * 9), (95 + i * 8, 372 - (i % 4) * 7), color=(0, 0, 0), width=2.5)
+    pix = ip.get_pixmap(dpi=100)
+    page = doc.new_page(width=595, height=842)
+    def text():
+        for x, y, t, size in lines + [(60, 368, "Okafor", 26)]:
+            kw = dict(morph=(pymupdf.Point(297, 421), pymupdf.Matrix(1.5))) if how == "skew" else {}
+            page.insert_text((x, y), t, fontname="helv", fontsize=size, render_mode=0 if how == "under" else 3, color=(0, 0, 0), **kw)
+    if how == "under":
+        text()
+    page.insert_image(page.rect, pixmap=pix)
+    if how != "under":
+        text()
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "poster":                                # text set freely on a coloured page, as on a slide or a flyer
     page = doc.new_page(width=595, height=842)
     page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
@@ -1228,6 +1249,22 @@ const read = async (docx) => {
     fs.rmSync(docx);
   }
 
+  console.log('a scan that carries its own text layer');
+  for (const [name, extra] of [['layer', ''], ['layer-under', 'under'], ['layer-skew', 'skew']]) {
+    [docx] = await convert.convertFile(draw(name, 'layer', extra), 'docx');
+    d = await read(docx);
+    const sheetPic = /<wp:anchor [^>]*behindDoc="1"[^>]*>.*?<wp:extent cx="(\d+)" cy="(\d+)"/s.exec(d.xml) || [];
+    const media = Object.keys(d.zip.files).find((n) => n.startsWith('word/media/'));
+    const { data: grey, info: gi } = await require('sharp')(await d.zip.file(media).async('nodebuffer')).greyscale().raw().toBuffer({ resolveWithObject: true });
+    const mean = (x0, y0, x1, y1) => { const k = gi.width / 595; let sum = 0, n = 0; for (let y = Math.floor(y0 * k); y < y1 * k; y++) for (let x = Math.floor(x0 * k); x < x1 * k; x++) { sum += grey[y * gi.width + x]; n++; } return sum / n; };
+    expect(`${name}: the layer is the text, as paragraphs, without the OCR component, and the picture stays behind it the size of the sheet`,
+      !missingFrom(d.text, ['Quarterly Report of the Harbour', 'The first line of the letter', 'second line follows', 'third line closes']).length && !/w:vanish/.test(d.xml) && Math.abs(sheetPic[1] / 12700 - 595) < 1 && Math.abs(sheetPic[2] / 12700 - 842) < 1, `${d.text.slice(0, 120)} | ${sheetPic[1]}`);
+    expect(`${name}: the lines that are text are painted out of the picture, a title on plain paper included, and a signature stays in it`,
+      mean(55, 200, 330, 262) > 245 && mean(55, 70, 400, 108) > 245 && mean(55, 340, 250, 380) < 235 && !d.text.includes('Okafor'), `lines ${mean(55, 200, 330, 262).toFixed(0)}, title ${mean(55, 70, 400, 108).toFixed(0)}, signature ${mean(55, 340, 250, 380).toFixed(0)}`);
+    if (name === 'layer-skew') expect('a slanted layer is written level, not as turned boxes', !/<wps:txbx>/.test(d.xml) && !/ rot="/.test(d.xml));
+    fs.rmSync(docx);
+  }
+
   console.log('short pieces of text with nothing drawn');
   [docx] = await convert.convertFile(draw('scatter', 'scatter'), 'docx');
   d = await read(docx);
@@ -1340,7 +1377,7 @@ const read = async (docx) => {
     Object.assign(process.env, savedTemp);
     d = await read(docx);
     const found = ['Quarterly Report', 'Revenue grew', 'team@example.com', 'A bullet that wraps'].filter((t) => squash(d.text.toLowerCase()).includes(squash(t.toLowerCase())));
-    expect('the text of the scan is recognised and is real, editable text', found.length >= 3, `${found.length} of 4: ${d.text.slice(0, 120)}`);
+    expect('the text of the scan is recognised and is real, editable text, the large heading on plain paper too', found.length === 4, `${found.length} of 4: ${d.text.slice(0, 120)}`);
     expect('and the temporary OCR copy of the PDF is deleted', left.length === 0, left.join(', '));
     const sheet = /<wp:anchor [^>]*behindDoc="1"[^>]*>.*?<wp:extent cx="(\d+)" cy="(\d+)"/s.exec(d.xml) || [];
     expect('the scan stays as one picture the size of the sheet behind the text', Math.abs(sheet[1] / 12700 - 595) < 1 && Math.abs(sheet[2] / 12700 - 842) < 1, `${sheet[1]} x ${sheet[2]}`);
@@ -1353,7 +1390,7 @@ const read = async (docx) => {
       for (let y = Math.floor(y0 * k); y < y1 * k; y++) for (let x = Math.floor(x0 * k); x < x1 * k; x++) { sum += data[y * info.width + x]; count++; }
       return sum / count;
     };
-    expect('the lines that are text are painted out of the picture, and the large heading stays in it', mean(55, 185, 330, 262) > 250 && mean(55, 70, 300, 105) < 245,
+    expect('the lines that are text are painted out of the picture, the large heading on plain paper with them', mean(55, 185, 330, 262) > 250 && mean(55, 70, 300, 105) > 250,
       `text ${mean(55, 185, 330, 262).toFixed(0)}, heading ${mean(55, 70, 300, 105).toFixed(0)}`);
     fs.rmSync(docx);
   }
