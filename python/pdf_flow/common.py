@@ -11,7 +11,7 @@ from pdf_spans import BAD_XML
 TW = 20                                   # twips per point
 
 
-NS = nsdecls("w", "wp", "a", "pic", "r")
+NS = nsdecls("w", "wp", "a", "pic", "r", "w14")
 
 
 
