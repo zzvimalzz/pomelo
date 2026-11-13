@@ -75,7 +75,7 @@ function compareScript(python, scriptArgs) {
   return JSON.parse(r.stdout.trim().split('\n').pop());
 }
 
-const compare = (python, original, rendered, tag) => compareScript(python, [original, rendered, path.join(OUT, 'png'), tag]);
+const compare = (python, original, rendered, tag, docx) => compareScript(python, [original, rendered, path.join(OUT, 'png'), tag, ...(docx ? [docx] : [])]);
 
 (async () => {
   const word = flag('--word');
@@ -111,14 +111,15 @@ const compare = (python, original, rendered, tag) => compareScript(python, [orig
     try { rendered = word ? printWithWord(docx, dir) : renderDocx(engines.soffice, docx, dir); } catch (e) { rows.push(`${pad(name, 16)} ${e.message}  xml ${pct(xml && xml.recall)}`); report[name] = { error: e.message, docx_words: xml }; continue; }
     if (!rendered) { rows.push(`${pad(name, 16)} could not render ${path.basename(docx)}`); continue; }
     try {
-      const m = compare(engines.pdf, src, rendered, name);
+      const m = compare(engines.pdf, src, rendered, name, word && docx);
       m.seconds = +seconds.toFixed(1);
       if (xml) m.docx_words = xml;
       report[name] = m;
       const t = m.text;
       if (word) {
         const c = m.check;
-        rows.push(`${pad(name, 16)} pages ${m.pages.join('/')}  size ${c.size_ok}/${m.pages[0]}  recall ${pct(c.recall)}  order ${pct(c.order)}  visual ${pct(c.visual)}  xml ${pct(xml.recall)}  tb ${pct(xml.tb)}  tables ${xml.tables}  headings ${xml.headings}  exact ${xml.exact}  ${m.seconds}s`);
+        rows.push(`${pad(name, 16)} pages ${m.pages.join('/')}  size ${c.size_ok}/${m.pages[0]}  recall ${pct(c.recall)}  order ${pct(c.order)}  visual ${pct(c.visual)}  xml ${pct(xml.recall)}  tb ${pct(xml.tb)}  tables ${xml.tables}  headings ${xml.headings}  exact ${xml.exact}  hidden ${xml.hidden}  ${m.seconds}s`);
+        if (xml.hidden) rows.push(`${pad('', 16)} hidden: ${xml.hidden_words.slice(0, 12).join(' ').slice(0, 150)}`);
         if (xml.missing.length) rows.push(`${pad('', 16)} not in the document: ${xml.missing.slice(0, 6).join(' | ').slice(0, 150)}`);
         continue;
       }
