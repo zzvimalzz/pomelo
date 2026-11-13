@@ -268,8 +268,8 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         for f in P.figs:
             if any(inside(f, t.bbox, 0) for t in P.tbls):
                 sys.stderr.write("page %d: figure inside a table at %s\n" % (pno + 1, tuple(round(v) for v in f)))
-    if kind == "design" and not (safe or scan or turn):
-        return (*design_page(P, out, meter, lists, pno, n_pages), [("", "")])
+    if kind == "design" and not (safe or scan):
+        return (*design_page(P, out, meter, lists, pno, n_pages, turn), [("", "")])
     logos = []
     if furniture and not (safe or scan or turn):
         for r, info in list(P.imgs):
@@ -542,10 +542,11 @@ def close_page(props, floats, pno, n_pages, count):
     return f'<w:p>{floats}</w:p>', sect
 
 
-def design_page(P, out, meter, lists, pno, n_pages):
+def design_page(P, out, meter, lists, pno, n_pages, turn=0):
     """A page set freely over pictures and colour: the page without its text is one picture behind everything, and each
     paragraph of text is a text box at its place on the sheet. Nothing flows, so the page cannot spill onto a second sheet.
-    A line turned at any angle is a turned text box."""
+    A line turned at any angle is a turned text box. A page the PDF stores sideways (`turn`) is read upright and shown turned: its picture is turned, and each line is a
+    turned text box of its own; its tables stay in the picture."""
     mark_text(P.work_all, P.upright + P.rotated)
     P.work_all.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE, text=pymupdf.PDF_REDACT_TEXT_REMOVE)
     for t in P.tbls:
@@ -553,8 +554,8 @@ def design_page(P, out, meter, lists, pno, n_pages):
             cell = next((c for c in t.cells if inside(l.bbox, c["bbox"], 1.0)), None)
             if cell:
                 cell["items"].append(l)
-    tables = P.tbls + P.aligned_tables()
-    for t in P.tbls:
+    tables = [] if turn else P.tbls + P.aligned_tables()
+    for t in [] if turn else P.tbls:
         art = P.table_art(t)
         if art is None:
             for c in t.cells:
@@ -565,13 +566,18 @@ def design_page(P, out, meter, lists, pno, n_pages):
         P.work_all.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED, text=pymupdf.PDF_REDACT_TEXT_NONE)
     B = Builder(out, P, meter, lists)
     B.placed = True
+    B.turn = turn
     floats = ""
     dpi = min(HI_DPI, int(72 * math.sqrt(25e6 / (P.w * P.h))))           # a poster-sized sheet stays under about 25 megapixels
     data = P.render_clip((0.0, 0.0, P.w, P.h), dpi=dpi, from_keep=False)
     if data:
         floats = B.picture_xml(Fig((0.0, 0.0, P.w, P.h), data[0], data[1], floating=True), floating=True, name="Picture")
     held = {id(l) for t in tables for c in t.cells for l in c["items"]}
-    body, boxes = B.text_boxes([l for l in P.upright if id(l) not in held], tables)
+    if turn:
+        body, boxes = "", "".join(B.turned_text_box(l) for l in P.upright)
+    else:
+        body, boxes = B.text_boxes([l for l in P.upright if id(l) not in held], tables)
     floats += boxes + "".join(B.turned_text_box(l) for l in P.rotated)
-    closing, sect = close_page(page_props(P.w, P.h, (0.0, 0.0, 0.0, 0.0)), floats, pno, n_pages, 0)
+    sheet = (P.w, P.h) if turn in (0, 180) else (P.h, P.w)
+    closing, sect = close_page(page_props(*sheet, (0.0, 0.0, 0.0, 0.0)), floats, pno, n_pages, 0)
     return body + B.hidden(P.hidden_lines) + closing, sect
