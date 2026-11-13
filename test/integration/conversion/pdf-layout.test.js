@@ -234,12 +234,13 @@ if kind == "sigline":                               # a short line to the right 
     else:
         page.draw_line((130, 301), (270, 301), color=(0.4, 0.2, 0.0), width=1.0)
     doc.save(sys.argv[1]); sys.exit()
-if kind == "callout":                               # a filled box with a bar along its left edge (with an extra argument: along its top edge, other colours)
+if kind == "callout":                               # a filled box with a bar along its left edge (with an extra argument: along its top edge, other colours; or a bar beside the box, not over it)
     page = doc.new_page(width=595, height=842)
-    top = len(sys.argv) > 3
+    top = len(sys.argv) > 3 and sys.argv[3] == "top"
+    beside = len(sys.argv) > 3 and sys.argv[3] == "beside"
     for i in range(3):
         page.insert_text((60, 100 + i * 14), "Ordinary line of text above the callout, number %d." % i, fontname="helv", fontsize=11)
-    page.draw_rect(pymupdf.Rect(60, 300, 420, 360), color=None, fill=(0.9, 0.95, 0.98) if top else (0.95, 0.95, 0.8))
+    page.draw_rect(pymupdf.Rect(64 if beside else 60, 300, 420, 360), color=None, fill=(0.9, 0.95, 0.98) if top else (0.95, 0.95, 0.8))
     page.draw_rect(pymupdf.Rect(60, 300, 420, 303) if top else pymupdf.Rect(60, 300, 64, 360), color=None, fill=(0.2, 0.2, 0.6) if top else (0.8, 0.4, 0.0))
     page.insert_text((75, 325), "Note: the callout text sits inside the box.", fontname="helv", fontsize=11)
     page.insert_text((75, 342), "A second line of the callout.", fontname="helv", fontsize=11)
@@ -297,6 +298,95 @@ if kind == "clipmode":                              # text in the invisible mode
         page.insert_text((60, 100), "Plain visible line", fontname="helv", fontsize=14)
         page.insert_text((60, 160), "Invisible mode", fontname="helv", fontsize=size, render_mode=3)
         page.insert_text((60, 240), "Clipped mode", fontname="hebo", fontsize=size, render_mode=7)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "leaders":                               # contents lines: a title, a run of spaced dots and a page number, in one piece (with an extra argument: solid dots as a piece of their own, another size)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    size = 10 if other else 12
+    for i, (title, number) in enumerate((("Introduction", "3"), ("Methods and materials", "14"), ("Results", "127"))):
+        y = 120 + i * 24
+        wide = pymupdf.get_text_length(title, fontname="helv", fontsize=size)
+        if other:
+            page.insert_text((60, y), title, fontname="helv", fontsize=size)
+            dots = "." * int((460 - 60 - wide) / pymupdf.get_text_length(".", fontname="helv", fontsize=size))
+            page.insert_text((60 + wide + 6, y), dots + " " + number, fontname="helv", fontsize=size)
+        else:
+            dots = ". " * int((470 - 60 - wide) / pymupdf.get_text_length(". ", fontname="helv", fontsize=size))
+            page.insert_text((60, y), title + " " + dots + number, fontname="helv", fontsize=size)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "stroke":                                # menu lines: a name, a dotted stroke along the baseline and a price (with an extra argument: a dashed one, another size)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    size = 10 if other else 12
+    for i, (name, price) in enumerate((("Tomato soup", "4.50"), ("Grilled halloumi with herbs", "9.00"), ("Lemon tart", "5.25"))):
+        y = 120 + i * 24
+        wide = pymupdf.get_text_length(name, fontname="helv", fontsize=size)
+        page.insert_text((60, y), name, fontname="helv", fontsize=size)
+        page.insert_text((450, y), price, fontname="helv", fontsize=size)
+        page.draw_line((60 + wide + 6, y), (444, y), color=(0.3, 0.3, 0.3), width=1.0, dashes="[4 3] 0" if other else "[1 3] 0")
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "huge":                                  # a page larger than Word's 22 inches, portrait (with an extra argument: a long banner), with a link on a line of its text
+    banner = len(sys.argv) > 3
+    page = doc.new_page(width=3000 if banner else 1700, height=400 if banner else 2400)
+    size = 60 if banner else 40
+    page.insert_text((60, 150), "Visit the example site", fontname="helv", fontsize=size)
+    page.insert_link({"kind": pymupdf.LINK_URI, "from": pymupdf.Rect(60, 150 - size, 60 + 12 * size, 150 + size / 4), "uri": "https://example.com/"})
+    page.insert_text((60, 300), "A second line of the page that Word must still hold as text", fontname="helv", fontsize=size)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "spaced":                                # a word whose letters are set apart one by one (with an extra argument: another size and spacing), among ordinary lines
+    page = doc.new_page(width=595, height=842)
+    size, extra = (10, 0.6) if len(sys.argv) > 3 else (14, 1.0)
+    for i in range(3):
+        page.insert_text((60, 100 + i * 14), "Ordinary line of running text number %d." % i, fontname="helv", fontsize=11)
+    buf = open(os.path.join(os.environ.get("WINDIR", "C:/Windows"), "Fonts", "arial.ttf"), "rb").read()
+    page.insert_font(fontname="Trk", fontbuffer=buf, set_simple=True)
+    font = pymupdf.Font(fontbuffer=buf)
+    x = 60
+    for ch in "TRACKED":
+        page.insert_text((x, 200), ch, fontname="Trk", fontsize=size)
+        x += font.text_length(ch, fontsize=size) + extra
+    page.insert_text((60, 260), "A closing ordinary line of text.", fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "marker":                                # short words after a bullet (with an extra argument: after a number, in another size)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    buf = open(os.path.join(os.environ.get("WINDIR", "C:/Windows"), "Fonts", "arial.ttf"), "rb").read()
+    page.insert_font(fontname="Trk", fontbuffer=buf, set_simple=True)
+    for i, word in enumerate(("Gym", "Pool", "Spa")):
+        page.insert_text((60, 100 + i * 16), ("%d. %s" % (i + 1, word)) if other else ("• " + word), fontname="Trk", fontsize=12 if other else 11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "captions":                              # a photo with a one-line caption and a two-line caption on it (with an extra argument: other places and sizes)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    for i in range(3):
+        page.insert_text((60, 100 + i * 14), "Ordinary line of text above the photo, number %d." % i, fontname="helv", fontsize=11)
+    photo = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 160, 100), False)
+    photo.clear_with(60)
+    page.insert_image(pymupdf.Rect(60, 200, 500, 420), stream=photo.tobytes("jpeg"))
+    size = 13 if other else 11
+    page.insert_text((100, 260), "One line caption", fontname="helv", fontsize=size, color=(1, 1, 1))
+    page.insert_text((300 if other else 100, 340), "First of two", fontname="helv", fontsize=size, color=(1, 1, 1))
+    page.insert_text((300 if other else 100, 340 + 1.3 * size), "Second of two", fontname="helv", fontsize=size, color=(1, 1, 1))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "footrow":                               # a title at the left and a page number at the right in the last 30 pt of the sheet, close under the text (with an extra argument: a letter-size sheet)
+    letter = len(sys.argv) > 3
+    height = 792 if letter else 842
+    page = doc.new_page(width=595, height=height)
+    for i in range(42 if letter else 45):
+        page.insert_text((60, 100 + i * 16), "Running line of the report, number %d, which fills the page." % i, fontname="helv", fontsize=11)
+    page.insert_text((60, height - 8), "Annual report", fontname="helv", fontsize=8)
+    page.insert_text((480, height - 8), "Page 7", fontname="helv", fontsize=8)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "footrule":                              # text and a long rule below all of it (with an extra argument: the rule as a thin bar, nearer the text)
+    page = doc.new_page(width=595, height=842)
+    bar = len(sys.argv) > 3
+    for i in range(8):
+        page.insert_text((60, 100 + i * 16), "Running line of the report, number %d, above the rule." % i, fontname="helv", fontsize=11)
+    y = 400 if bar else 800
+    if bar:
+        page.draw_rect(pymupdf.Rect(40, y, 555, y + 1.2), color=None, fill=(0.4, 0.4, 0.5))
+    else:
+        page.draw_line((40, y), (555, y), color=(0.8, 0.8, 0.85), width=0.75)
     doc.save(sys.argv[1]); sys.exit()
 if kind == "poster":                                # text set freely on a coloured page, as on a slide or a flyer
     page = doc.new_page(width=595, height=842)
@@ -903,7 +993,7 @@ const read = async (docx) => {
     expect(`${name}: a line right of its label is a line shape of its colour and length`, lines.length === 1 && lines[0].includes(`<a:srgbClr val="${color}"/>`) && Math.abs(cx - length) < 2, `${lines.length} lines, ${cx} pt`);
     fs.rmSync(docx);
   }
-  for (const [name, extra, side, size, color] of [['callout', '', 'left', 32, 'CC6600'], ['callout-top', 'top', 'top', 24, '333399']]) {
+  for (const [name, extra, side, size, color] of [['callout', '', 'left', 32, 'CC6600'], ['callout-top', 'top', 'top', 24, '333399'], ['callout-beside', 'beside', 'left', 32, 'CC6600']]) {
     [docx] = await convert.convertFile(draw(name, 'callout', extra), 'docx');
     d = await read(docx);
     expect(`${name}: the bar along the ${side} edge is that side of the box's border, and not a picture`,
@@ -989,6 +1079,76 @@ const read = async (docx) => {
     const gone = hiddenWords(d.xml);
     expect(`${name}: the invisible mode is hidden text, and the clip mode is neither hidden text nor written as text, since the picture shows through its letters`,
       gone === hides && !d.text.includes(clipped) && !missingFrom(d.text, [shows]).length, `hidden "${gone}", text "${d.text.slice(0, 120)}"`);
+    fs.rmSync(docx);
+  }
+
+  console.log('dot leaders');
+  for (const [name, kind, extra, tails] of [['leaders', 'leaders', '', ['3', '14', '127']], ['leaders-other', 'leaders', 'other', ['3', '14', '127']]]) {
+    [docx] = await convert.convertFile(draw(name, kind, extra), 'docx');
+    d = await read(docx);
+    const stops = d.xml.match(/<w:tab w:val="right" w:leader="dot" w:pos="\d+"\/>/g) || [];
+    expect(`${name}: each contents line is a title, a tab with a dot leader and its page number, and no run of dots is written`,
+      stops.length === 3 && (d.xml.match(/<w:tab\/>/g) || []).length === 3 && !/[.·]{3,}/.test(d.text) && !missingFrom(d.text, ['Introduction', 'Methods and materials', 'Results', ...tails]).length, `${stops.length} stops, ${d.text.slice(0, 160)}`);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra, leader] of [['stroke', '', 'dot'], ['stroke-dashed', 'other', 'hyphen']]) {
+    [docx] = await convert.convertFile(draw(name, 'stroke', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: a ${leader === 'dot' ? 'dotted' : 'dashed'} stroke between a name and its price is the leader of the tab between them, and is not also drawn as a line`,
+      new RegExp(`<w:tab w:val="(right|left)" w:leader="${leader}" w:pos="\\d+"/>`).test(d.xml) && !/prst="line"/.test(d.xml) && !missingFrom(d.text, ['Tomato soup', '4.50', 'Lemon tart', '5.25']).length, (d.xml.match(/<w:tabs>.*?<\/w:tabs>/) || [''])[0]);
+    fs.rmSync(docx);
+  }
+
+  console.log('pages larger than Word allows');
+  for (const [name, extra, ratio] of [['huge', '', 1700 / 2400], ['huge-banner', 'banner', 3000 / 400]]) {
+    [docx] = await convert.convertFile(draw(name, 'huge', extra), 'docx');
+    d = await read(docx);
+    const sheet = /<w:pgSz w:w="(\d+)" w:h="(\d+)"/.exec(d.xml) || [];
+    const [pw, ph] = [Number(sheet[1]), Number(sheet[2])];
+    expect(`${name}: the page is scaled to fit the largest sheet Word has, in proportion, with its text and its link`,
+      Math.max(pw, ph) <= 31680 && Math.max(pw, ph) > 31000 && Math.abs(pw / ph - ratio) < 0.02 * ratio && /<w:hyperlink /.test(d.xml) && !missingFrom(d.text, ['Visit the example site', 'A second line of the page that Word must still hold as text']).length, `${pw} x ${ph} twips`);
+    fs.rmSync(docx);
+  }
+
+  console.log('letter spacing');
+  const spacingOf = (xml, word) => Number((new RegExp(`<w:rPr>(?:(?!</w:rPr>).)*?<w:spacing w:val="(-?\\d+)"/>(?:(?!</w:rPr>).)*</w:rPr><w:t[^>]*>${word}</w:t>`, 's').exec(xml) || [])[1] || 0);
+  for (const [name, extra, twips] of [['spaced', '', 20], ['spaced-other', 'other', 12]]) {
+    [docx] = await convert.convertFile(draw(name, 'spaced', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: letters set apart are written with that spacing`, Math.abs(spacingOf(d.xml, 'TRACKED') - twips) <= 3 && !missingFrom(d.text, ['TRACKED']).length, String(spacingOf(d.xml, 'TRACKED')));
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['marker', ''], ['marker-number', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'marker', extra), 'docx');
+    d = await read(docx);
+    const spaced = ['Gym', 'Pool', 'Spa'].filter((w) => spacingOf(d.xml, w) > 0);
+    expect(`${name}: a short word after a list marker has no letter spacing, whatever the marker took of its box`, !spaced.length && !missingFrom(d.text, ['Gym', 'Pool', 'Spa']).length, spaced.join(' '));
+    fs.rmSync(docx);
+  }
+
+  console.log('frames and the foot of the sheet');
+  for (const [name, extra] of [['captions', ''], ['captions-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'captions', extra), 'docx');
+    d = await read(docx);
+    const frame = (word) => (new RegExp(`<w:framePr([^>]*)/>(?:(?!</w:p>).)*${word}`, 's').exec(d.xml) || [])[1] || '';
+    expect(`${name}: the frame of one line has no width, so Word sizes it to its text, and the frame of two lines keeps one`,
+      frame('One line caption') !== '' && !/w:w=/.test(frame('One line caption')) && /w:w="\d+"/.test(frame('First of two')), `${frame('One line caption')} | ${frame('First of two')}`);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['footrow', ''], ['footrow-letter', 'letter']]) {
+    [docx] = await convert.convertFile(draw(name, 'footrow', extra), 'docx');
+    d = await read(docx);
+    const placed = (word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>).)*${word}`, 's').exec(d.xml) || [''])[0].match(/<w:p>(?:(?!<w:p>).)*$/s)?.[0] || '');
+    expect(`${name}: a title and a number in the last 30 pt of the sheet are placed on it, not set after the text, where Word's own foot margin would push them to a new sheet`,
+      placed('Annual report') && placed('Page 7') && !missingFrom(d.text, ['Annual report', 'Page 7']).length, 'not placed');
+    fs.rmSync(docx);
+  }
+
+  console.log('a rule below all the text');
+  for (const [name, extra] of [['footrule', ''], ['footrule-bar', 'bar']]) {
+    [docx] = await convert.convertFile(draw(name, 'footrule', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: a rule below everything is a line on the sheet and not a paragraph with a long space before it`, /prst="line"/.test(d.xml) && !/<w:pBdr><w:bottom/.test(d.xml) && !missingFrom(d.text, ['number 0', 'number 7']).length, (d.xml.match(/<w:pBdr>.*?<\/w:pBdr>/) || [''])[0]);
     fs.rmSync(docx);
   }
 

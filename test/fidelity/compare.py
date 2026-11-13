@@ -225,7 +225,9 @@ def plain_words(doc):
 
 def grey_pages(da, db, dpi=36):
     for i in range(min(len(da), len(db))):
-        pa, pb = (d[i].get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY) for d in (da, db))
+        k = dpi / 72
+        pa = da[i].get_pixmap(matrix=pymupdf.Matrix(k * db[i].rect.width / da[i].rect.width, k * db[i].rect.height / da[i].rect.height), colorspace=pymupdf.csGRAY)     # a page scaled to fit Word is compared at its new size
+        pb = db[i].get_pixmap(dpi=dpi, colorspace=pymupdf.csGRAY)
         w, h = min(pa.width, pb.width), min(pa.height, pb.height)
         yield [b"".join(p.samples[y * p.width:y * p.width + w] for y in range(h)) for p in (pa, pb)]
 
@@ -316,7 +318,7 @@ def docx_editability(path):
             boxes -= 1
         elif tag == w + "p":
             para = stack.pop()
-            n = len("".join(para["text"]).split())
+            n = sum(1 for t in "".join(para["text"]).split() if re.search(r"\w", t))        # leader dots and rules are not words
             words += n
             in_boxes += n if boxes else 0
             headings += para["heading"]

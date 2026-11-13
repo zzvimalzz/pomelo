@@ -26,6 +26,8 @@ class Line:
         self.justified = False
         self.dir = (1.0, 0.0)
         self.cap = None               # the drop capital that stands beside this line, when it starts the paragraph the capital opens
+        self.leader = None            # (Word's name for the leader, where the end piece ends) when a tab with a leader leads to the end of the line
+        self.lead_in = None           # Word's name for the leader of the tab that leads to this line, when a dotted stroke runs to it on its row
 
     @property
     def text(self):
@@ -63,43 +65,45 @@ def span_ok(s, hidden_ok=False):
 TRACKED = re.compile(r"^(?:[^\s]{1,3} ){2,}[^\s]{1,3}$|(?:^|\s)[A-Z] [A-Z]{1,3} ")
 
 
-def repair_tracked(page, blocks):
+def repair_tracked(blocks):
     """Letter-spaced capitals (a label with tracking) come out of the text layer with spaces inside the words. The gaps
     between the real characters say where the real spaces are."""
-    suspects = [s for b in blocks if b["type"] == 0 for ln in b["lines"] for s in ln["spans"]
-                if s["text"].count(" ") >= 2 and s["text"].strip().upper() == s["text"].strip() and TRACKED.search(s["text"].strip())]
-    if not suspects:
-        return
-    raw = page.get_text("rawdict", flags=TEXT_FLAGS)["blocks"]
-    index = {}
-    for b in raw:
-        if b["type"] == 0:
-            for ln in b["lines"]:
-                for s in ln["spans"]:
-                    index[(round(s["bbox"][0]), round(s["bbox"][1]))] = s
-    for s in suspects:
-        r = index.get((round(s["bbox"][0]), round(s["bbox"][1])))
-        if not r or not r.get("chars"):
+    for b in blocks:
+        if b["type"] != 0:
             continue
-        out = ""
-        last = None
-        for ch in r["chars"]:
-            if ch["c"].isspace():
-                continue
-            if last is not None and ch["bbox"][0] - last["bbox"][2] > 0.34 * s["size"] and out and not out.endswith(" "):
-                out += " "
-            out += ch["c"]
-            last = ch
-        s["text"] = out
+        for ln in b["lines"]:
+            for s in ln["spans"]:
+                t = s["text"].strip()
+                if s["text"].count(" ") < 2 or t.upper() != t or not TRACKED.search(t):
+                    continue
+                kept, last = [], None
+                for ch in s["chars"]:
+                    if ch["c"].isspace():
+                        continue
+                    if last is not None and ch["bbox"][0] - last["bbox"][2] > 0.34 * s["size"] and kept and kept[-1]["c"] != " ":
+                        kept.append({"c": " ", "origin": ch["origin"]})
+                    kept.append(ch)
+                    last = ch
+                s["chars"] = kept
+                s["text"] = "".join(c["c"] for c in kept)
 
 
 def read_lines(page, clip=None, hidden_ok=False):
     out = []
-    blocks = page.get_text("dict", flags=TEXT_FLAGS, clip=clip)["blocks"]
+    blocks = page.get_text("rawdict", flags=TEXT_FLAGS, clip=clip)["blocks"]
+    for block in blocks:
+        for ln in block.get("lines", ()):
+            for s in ln["spans"]:
+                s["text"] = "".join(c["c"] for c in s["chars"])
     try:
-        repair_tracked(page, blocks)
+        repair_tracked(blocks)
     except Exception:
         pass
+    for block in blocks:
+        for ln in block.get("lines", ()):
+            for s in ln["spans"]:
+                s["org"] = [c["origin"] for c in s.pop("chars")]       # where each letter starts, for the letter spacing
+                s["raw"] = s["text"]                                   # what those starts belong to, since the text is cut later
     for bi, block in enumerate(blocks):
         if block["type"] != 0:
             continue
@@ -187,6 +191,9 @@ def is_drop_cap(a, b):
     return is_letter(big) and big.size >= 2 * small.size
 
 
+LEADER_PIECE = re.compile(r"\s*(?:[.·…_\-]\s*){4,}\S{1,12}\s*$")
+
+
 def merge_rows(lines, shapes=()):
     """Pieces on one row that sit close together are one line; pieces far apart stay apart (columns, a title and its date)."""
     lines = sorted(lines, key=lambda l: (l.base, l.x0))
@@ -203,13 +210,43 @@ def merge_rows(lines, shapes=()):
         r = join_stretched(sorted(r, key=lambda l: l.x0), shapes)
         cur = r[0]
         for nxt in r[1:]:
-            if nxt.x0 - cur.x1 < 0.8 * min(cur.size, nxt.size) and not is_drop_cap(cur, nxt):
+            if (nxt.x0 - cur.x1 < 0.8 * min(cur.size, nxt.size) or LEADER_PIECE.match(nxt.text)) and not is_drop_cap(cur, nxt):
                 cur = join_pieces(cur, nxt)
             else:
                 out.append(cur)
                 cur = nxt
         out.append(cur)
     return out
+
+
+LEADER = re.compile(r"(?P<run>\s*(?:[.·…_\-]\s*){4,})(?P<tail>[^\s.·…_\-]\S{0,11}(?:\s\S{1,5})?)\s*$")
+LEADERS = {".": "dot", "·": "dot", "…": "dot", "_": "underscore", "-": "hyphen"}
+
+
+def split_leader(line):
+    """A text, a run of leader characters and a short end piece (a contents entry, a price on a menu) becomes the text, a tab that carries the leader, and the end piece:
+    Word's tab leader fills the gap at any width, where literal dots would wrap a line that is a little wider in Word."""
+    text = line.text
+    m = LEADER.search(text) if len(text) <= 400 else None
+    if not m or not text[:m.start()].strip() or line.marker:
+        return
+    a, b, pos = m.start(), m.start("tail"), 0
+    head, tail = [], []
+    for s in line.spans:
+        t = s["text"]
+        lo, hi, pos = pos, pos + len(t), pos + len(t)
+        x0, x1 = s["bbox"][0], s["bbox"][2]
+        cut = lambda i, j: dict(s, text=t[i:j], bbox=(x0 + (x1 - x0) * i / len(t), s["bbox"][1], x0 + (x1 - x0) * j / len(t), s["bbox"][3]))
+        if lo < a:
+            head.append(cut(0, min(len(t), a - lo)))
+        if hi > b:
+            tail.append(cut(max(0, b - lo), len(t)))
+    if not head or not tail or tail[0]["bbox"][0] - head[-1]["bbox"][2] < 2.5 * line.size:
+        return
+    tab = {k: v for k, v in head[-1].items() if k not in ("ul", "st", "hl", "link", "field")}
+    tab.update(text="\t", bbox=(head[-1]["bbox"][2], head[-1]["bbox"][1], tail[0]["bbox"][0], head[-1]["bbox"][3]))        # the gap it stands for, so the dots leave the picture
+    line.spans = head + [tab] + tail
+    line.leader = (LEADERS[m.group("run").strip()[0]], line.x1)
 
 
 def bullet(token):
