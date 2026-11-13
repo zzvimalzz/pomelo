@@ -26,6 +26,7 @@ class Page:
         self.used_segments = set()
         self.xml_id = 0
         self.ground_pix = None
+        self.layer = False
 
     # -- reading
     def read(self):
@@ -41,8 +42,9 @@ class Page:
         self.shapes = rect_shapes(self.drawings, faint)
         self.blend(faint, page)
         self.radii = {tuple(round(v) for v in d["rect"]): corner_radius(d["items"]) for d in self.drawings if "c" in {it[0] for it in d["items"]}}
-        scan = any(area(tuple(i["bbox"])) > 0.85 * self.w * self.h for i in page.get_image_info())     # the invisible text layer of a scan is not hidden text
-        lines = read_lines(page, hidden_ok=not scan)
+        self.layer = self.text_layer(page)
+        scan = self.layer or any(area(tuple(i["bbox"])) > 0.85 * self.w * self.h for i in page.get_image_info())     # the invisible text layer of a scan is not hidden text
+        lines = read_lines(page, hidden_ok=not scan or self.layer)
         if not scan:
             self.hide(lines)
             lines = [l for l in lines if any(s["text"].strip() for s in l.spans)]
@@ -70,6 +72,19 @@ class Page:
                     end.lead_in = "dot" if float(re.findall(r"[\d.]+", str(dashes))[0]) <= 1.5 * width else "hyphen"
                     self.used_segments.add(i)
                     break
+
+    def text_layer(self, page):
+        """True when one picture covers at least 80 % of the sheet and at least 80 % of the text is invisible or drawn under it: the searchable layer a scanner or an OCR program adds to a scan."""
+        try:
+            log = page.get_bboxlog()
+        except Exception:
+            return False
+        sheet = pymupdf.Rect(0, 0, self.w, self.h)
+        pictures = [(k, pymupdf.Rect(box) & sheet) for k, (kind, box) in enumerate(log) if kind == "fill-image"]
+        pictures = [(k, r) for k, r in pictures if r.get_area() >= 0.8 * self.w * self.h]
+        words = [(k, kind, pymupdf.Rect(box)) for k, (kind, box) in enumerate(log) if kind.endswith("-text")]
+        hidden = sum(kind == "ignore-text" or any(k < pk and (r & box).get_area() >= 0.9 * box.get_area() for pk, r in pictures) for k, kind, box in words)
+        return bool(pictures and words) and hidden >= 0.8 * len(words)
 
     def blend(self, faint, page):
         """A translucent fill is the colour it makes with what is under it when that is flat (paper or a flat colour round the shape), because Word's shading has no

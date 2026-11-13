@@ -19,7 +19,7 @@ from .common import HI_DPI, NS, area, inside, overlap, tw
 from .fonts import FontMeter
 from .lines import read_lines
 from .lists import Lists
-from .page import Page, page_kind
+from .page import Page, flat_colour, page_kind
 from .shapes import Fig, Img, Rule
 from .structure import ONE_POINT, Furniture, attach, body_font, set_styles
 
@@ -161,29 +161,133 @@ def mark_text(work, lines):
             work.add_redact_annot(r, fill=False)
 
 
+def ring(pix, box):
+    """The colours of a ring of samples just outside a box of pixels."""
+    x0, y0, x1, y1 = box
+    around = []
+    for x in range(x0, x1 + 1, 4):
+        around += [(x, y0 - 3), (x, y1 + 3)]
+    for y in range(y0, y1 + 1, 4):
+        around += [(x0 - 3, y), (x1 + 3, y)]
+    return [pix.pixel(x, y) for x, y in around if 0 <= x < pix.width and 0 <= y < pix.height]
+
+
 def paper(pix, box):
     """The colour of the paper around a box of pixels: the median of a ring of samples just outside it."""
-    x0, y0, x1, y1 = box
-    ring = []
-    for x in range(x0, x1 + 1, 4):
-        ring += [(x, y0 - 3), (x, y1 + 3)]
-    for y in range(y0, y1 + 1, 4):
-        ring += [(x0 - 3, y), (x1 + 3, y)]
-    seen = [pix.pixel(x, y) for x, y in ring if 0 <= x < pix.width and 0 <= y < pix.height]
+    seen = ring(pix, box)
     return tuple(sorted(c[i] for c in seen)[len(seen) // 2] for i in range(pix.n)) if seen else (255,) * pix.n
+
+
+def plain_title(l, pix, k):
+    """A large line on a scan is text, not art (a logo, a stamp, a signature), when it is wider than four times its height, holds two words of letters and stands on plain
+    paper in neutral ink: the paper round it is flat and what is inked inside it is grey or black and less than two fifths of it."""
+    words = [w for w in l.text.split() if re.search(r"[^\W\d_]", w)]
+    if len(words) < 2 or l.x1 - l.x0 <= 4 * (l.y1 - l.y0):
+        return False
+    box = (int(l.x0 * k), int(l.y0 * k), int(l.x1 * k), int(l.y1 * k))
+    ground = flat_colour(ring(pix, box))
+    if ground is None:
+        return False
+    inked = neutral = total = 0
+    step = max(3, int(math.sqrt((box[2] - box[0]) * (box[3] - box[1]) / 10000)))        # at most about ten thousand samples, whatever box a crafted layer claims
+    for y in range(box[1], box[3], step):
+        for x in range(box[0], box[2], step):
+            c = pix.pixel(x, y)
+            total += 1
+            if sum(abs(a - b) for a, b in zip(c, ground)) > 60:
+                inked += 1
+                neutral += max(c) - min(c) <= 40
+    return total > 0 and inked <= 0.4 * total and neutral == inked
+
+
+def straighten(l, tilt, centre):
+    """The line as an upright box: its length and thickness kept, its middle turned about the page's centre by minus `tilt` degrees, so the lines of a skewed scan stand level."""
+    dx, dy = l.dir
+    thick = (l.asc - l.desc) * l.size
+    along = lambda b: (b[2] - b[0]) * abs(dx) + (b[3] - b[1]) * abs(dy) - 2 * thick * abs(dx) * abs(dy)
+    long = along(l.bbox)
+    cx, cy = (l.x0 + l.x1) / 2 - centre[0], (l.y0 + l.y1) / 2 - centre[1]
+    t = math.radians(-tilt)
+    cx, cy = centre[0] + cx * math.cos(t) - cy * math.sin(t), centre[1] + cx * math.sin(t) + cy * math.cos(t)
+    parts = [along(sp["bbox"]) for sp in l.spans]
+    x = cx - long / 2
+    for sp, w in zip(l.spans, parts):
+        w = w * long / (sum(parts) or 1)
+        sp["bbox"] = (x, cy - thick / 2, x + w, cy + thick / 2)
+        x += w
+    l.x0, l.y0, l.x1, l.y1 = cx - long / 2, cy - thick / 2, cx + long / 2, cy + thick / 2
+    l.base, l.rot, l.dir = l.y0 + l.asc * l.size, False, (1.0, 0.0)
+
+
+def ink_colour(pix, box):
+    """The colour a line of a scan is inked in: the middle of the pixels in its box that are clearly darker than the paper, as a colour number; None when there are none."""
+    ground = paper(pix, box)
+    seen = []
+    step = max(2, int(math.sqrt((box[2] - box[0]) * (box[3] - box[1]) / 10000)))
+    for y in range(max(0, box[1]), min(pix.height, box[3]), step):
+        for x in range(max(0, box[0]), min(pix.width, box[2]), step):
+            c = pix.pixel(x, y)
+            if sum(ground) - sum(c) > 150:
+                seen.append(c)
+    if len(seen) < 8:
+        return None
+    seen.sort(key=sum)
+    r, g, b = seen[len(seen) // 4][:3]                                 # the darker quarter, where the stroke's own colour is, not its antialiased edge
+    return r << 16 | g << 8 | b
+
+
+def paint_quad(pix, corners, colour):
+    """Fills the quadrilateral of a line, pixel row by pixel row."""
+    ys = [c[1] for c in corners]
+    for y in range(max(0, int(min(ys))), min(pix.height, int(max(ys)) + 1)):
+        xs = []
+        for (ax, ay), (bx, by) in zip(corners, corners[1:] + corners[:1]):
+            if (ay <= y + 0.5 < by) or (by <= y + 0.5 < ay):
+                xs.append(ax + (y + 0.5 - ay) * (bx - ax) / (by - ay))
+        if len(xs) >= 2:
+            x0, x1 = max(0, int(min(xs))), min(pix.width, int(max(xs)) + 1)
+            if x1 > x0:
+                pix.set_rect(pymupdf.IRect(x0, y, x1, y + 1), colour)
 
 
 def scan_page(P, source):
     """The picture of a scanned sheet, to lie behind its text, with the lines that become text painted out in the paper's colour around each. A line much larger
-    than the body text (a logo, a signature, a stamp) or turned is not text: it stays in the picture, and P keeps only the lines that are."""
-    text = [l for l in P.upright if l.size <= 1.6 * P.body]
+    than the body text (a logo, a signature, a stamp) stays in the picture unless it is a title on plain paper (`plain_title`); so does a line at another angle than
+    the rest. When the lines of a skewed scan share one angle under 2 degrees they are written level (`straighten`) and painted out along their own slant. A mark of
+    one or two characters that is not a word, alone at the top or left edge, is noise and stays in the picture. P keeps only the lines that are text."""
     dpi = min(HI_DPI, int(72 * math.sqrt(25e6 / (P.w * P.h))))
     pix = source.get_pixmap(dpi=dpi, alpha=False)
     k = dpi / 72
-    for l in text:
-        rise = min(0.4 * l.size, 0.015 * (l.x1 - l.x0))                # OCR text sits at the foot of the box found for a line, which on a skewed line is taller than the text by the skew over its width
-        box = (int((l.x0 - 1) * k), int((l.y0 - rise) * k), int((l.x1 + 1) * k), int((l.y1 + 1) * k))
-        pix.set_rect(pymupdf.IRect(box), paper(pix, box))
+    angle = lambda l: math.degrees(math.atan2(l.dir[1], l.dir[0]))
+    lines = [l for l in P.upright + P.rotated
+             if not (len(l.text.strip()) <= 2 and not re.search(r"[^\W\d_]", l.text) and (l.y1 <= 0.1 * P.h or l.x1 <= 0.1 * P.w) and not any(m is not l and abs(m.base - l.base) <= 0.5 * l.size for m in P.upright))]
+    mid = sorted(angle(l) for l in lines)[len(lines) // 2] if lines else 0.0
+    tilt = mid if abs(mid) < 2 else 0.0                                  # a slant of a few degrees is straightened; a photograph turned further keeps its lines in the picture
+    text = []
+    for l in lines:
+        if abs(angle(l) - tilt) > 1.5:
+            continue
+        if l.size > 1.6 * P.body and not plain_title(l, pix, k):
+            continue
+        slant = angle(l)
+        shape = (int((l.x0 - 1) * k), int((l.y0 - 1) * k), int((l.x1 + 1) * k), int((l.y1 + 1) * k))
+        ink = ink_colour(pix, shape)
+        if ink is not None:
+            for sp in l.spans:
+                sp["color"] = ink
+        if abs(slant) > 0.3:
+            thick, long = (l.asc - l.desc) * l.size, ((l.x1 - l.x0) * abs(l.dir[0]) + (l.y1 - l.y0) * abs(l.dir[1]) - 2 * (l.asc - l.desc) * l.size * abs(l.dir[0]) * abs(l.dir[1]))
+            cx, cy, c, s_ = (l.x0 + l.x1) / 2, (l.y0 + l.y1) / 2, math.cos(math.radians(slant)), math.sin(math.radians(slant))
+            quad = [((cx + sx * (long / 2 + 1) * c - sy * (0.625 * thick + 1) * s_) * k, (cy + sx * (long / 2 + 1) * s_ + sy * (0.625 * thick + 1) * c) * k) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+            xs, ys = [q[0] for q in quad], [q[1] for q in quad]
+            paint_quad(pix, quad, paper(pix, (int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys)))))
+        else:
+            rise = min(0.4 * l.size, 0.015 * (l.x1 - l.x0))                # OCR text sits at the foot of the box found for a line, which on a skewed line is taller than the text by the skew over its width
+            box = (int((l.x0 - 1) * k), int((l.y0 - rise) * k), int((l.x1 + 1) * k), int((l.y1 + 1) * k))
+            pix.set_rect(pymupdf.IRect(box), paper(pix, box))
+        if tilt or slant:
+            straighten(l, tilt, (P.w / 2, P.h / 2))
+        text.append(l)
     P.upright, P.rotated = text, []
     fig = Fig((0.0, 0.0, P.w, P.h), pix.tobytes("jpeg", jpg_quality=85), "jpg", floating=True)
     fig.overlay = True
@@ -201,18 +305,9 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     if not safe:
         P.tables()
     P.decorate()
-    # a page that is one big picture with an invisible text layer is a scan, and so is a page whose text was read from a picture (source)
-    big = [i for i in page.get_image_info() if area(tuple(i["bbox"])) > 0.85 * P.w * P.h]
-    scan = source is not None
-    if big and P.upright and not scan:
-        try:
-            trace = page.get_texttrace()
-            hidden = sum(len(t.get("chars", [])) for t in trace if t.get("type") == 3)
-            total = sum(len(t.get("chars", [])) for t in trace) or 1
-            scan = hidden / total > 0.8
-            source = page
-        except Exception:
-            scan = False
+    # a page that is one big picture with a text layer is a scan, and so is a page whose text was read from a picture (source)
+    scan = source is not None or P.layer
+    source = source or page
     P.pictures(ocr_scan=scan)
     P.boxes()
     if safe:
