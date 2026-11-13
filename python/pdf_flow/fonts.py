@@ -57,6 +57,16 @@ class FontMeter:
         """How tall Word sets a line of the span's family per point of size, or None when that is not known."""
         return line_height(self.family(s), is_bold(s), is_italic(s))
 
+    def advance(self, s, letter, size):
+        """The width of one letter in the font Word draws it in: the installed family when there is one, since the widths of an embedded subset cannot be trusted, else as `width`."""
+        f = installed_font(self.family(s), is_bold(s), is_italic(s))
+        if f is None:
+            return self.width(s, letter, size)
+        try:
+            return f.text_length(letter, fontsize=size) or None
+        except Exception:
+            return None
+
     def width(self, s, text, size):
         """Natural width in the font Word will use, or None when it cannot be measured."""
         family = self.family(s)

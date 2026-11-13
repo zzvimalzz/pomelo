@@ -28,6 +28,26 @@ def body_size(all_lines):
     return dominant_size((sp["text"], sp["size"]) for l in all_lines for sp in l.spans)
 
 
+SHEET_MAX = 1584.0            # the longest side of a page Word can hold, 22 inches
+
+
+def fit_sheets(doc):
+    """A page longer than Word's largest sheet is placed, scaled to fit with its proportions, on a new page of that size, so its text is still text and its links stay."""
+    big = [p.number for p in doc if max(p.rect.width, p.rect.height) > SHEET_MAX]
+    if not big:
+        return
+    src = pymupdf.open("pdf", doc.tobytes())
+    for n in big:
+        sheet = doc[n].rect
+        k = SHEET_MAX / max(sheet.width, sheet.height)
+        links = doc[n].get_links()
+        page = doc.new_page(n, width=sheet.width * k, height=sheet.height * k)
+        page.show_pdf_page(page.rect, src, n)
+        for link in links:
+            page.insert_link(dict(link, **{"from": link["from"] * pymupdf.Matrix(k, k)}))
+        doc.delete_page(n + 1)
+
+
 def open_upright(src):
     """The document and two working copies, with /Rotate pages turned upright, and the rotation each page had: the text
     coordinates of a rotated page are those of the unrotated sheet, so reading them as they are scatters the page."""
@@ -35,10 +55,11 @@ def open_upright(src):
     if doc.needs_pass:
         raise RuntimeError("This PDF is password-protected")
     turns = {p.number: p.rotation for p in doc if p.rotation}
-    if not turns:
+    if not turns and max(max(p.rect.width, p.rect.height) for p in doc) <= SHEET_MAX:
         return doc, pymupdf.open(src), pymupdf.open(src), turns
     for p in doc:
         p.set_rotation(0)
+    fit_sheets(doc)
     blob = doc.tobytes()
     doc.close()
     return (*(pymupdf.open("pdf", blob) for _ in range(3)), turns)
@@ -396,7 +417,8 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         low = [l for l in text_lines if l not in framed and l.y0 >= 0.9 * P.h and owner(l.bbox) is None]
         above = [l.y1 for l in text_lines if l not in framed and l not in low] + [e.bbox[3] for e in elements if not getattr(e, "floating", False)]
         # a footer sits at the foot of the sheet whatever the text above grows to, so it is placed, not set after a long gap
-        if low and (not above or min(l.y0 for l in low) - max(above) >= 24):
+        # a line set lower than 30 pt from the foot also counts: Word may keep the printer's least margin there, and would move it to a new sheet
+        if low and (not above or min(l.y0 for l in low) - max(above) >= 24 or any(l.y1 > P.h - 30 for l in low)):
             framed += low
     text_lines = [l for l in text_lines if l not in framed]
     pool = text_lines + elements + rules
@@ -433,6 +455,10 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         c.children = [i for i in c.children if i is not c]
 
     flow = [i for i in top_items if not (i.kind == "img" and i.floating)]
+    end = max((i.y1 for i in flow if i.kind != "rule"), default=0.0)
+    for rule in [i for i in flow if i.kind == "rule" and i.y0 >= end]:             # a rule below everything else would sit after a long gap that a taller page cannot give it, and push a sheet
+        free.append(("h", (rule.y0 + rule.y1) / 2, rule.x0, rule.x1, rule.width, rule.color, None))
+        flow.remove(rule)
     for i in top_items:
         if i.kind == "img" and i.floating:
             P.floaters.append(i)

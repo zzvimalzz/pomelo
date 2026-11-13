@@ -2,6 +2,7 @@
 """One page: its lines, shapes and pictures, and the runs and paragraphs written from them."""
 
 import math
+import re
 from collections import Counter
 
 from docx.opc.constants import RELATIONSHIP_TYPE
@@ -11,7 +12,7 @@ from pdf_fonts import latin
 from pdf_spans import RTL, dedupe, hexcolor
 
 from .common import HI_DPI, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
-from .lines import attach_markers, hangs, is_bold, is_italic, merge_rows, read_lines, split_marker
+from .lines import attach_markers, hangs, is_bold, is_italic, merge_rows, read_lines, split_leader, split_marker
 from .shapes import Box, Tbl, corner_radius, polygon_area, rect_shapes, segments_of
 
 
@@ -53,7 +54,22 @@ class Page:
         for l in self.upright:
             if hangs(l, self.upright):
                 split_marker(l, self.body)
+            split_leader(l)
+        self.stroke_leaders()
         self.links = links
+
+    def stroke_leaders(self):
+        """A dotted or dashed stroke on the baseline that runs from one piece of a row to the next (a menu line and its price) is the leader of the tab between them."""
+        for i, (o, pos, a, b, width, color, d) in enumerate(self.segments):
+            dashes = d.get("dashes")
+            if o != "h" or not dashes or "[]" in str(dashes):
+                continue
+            for end in self.upright:
+                near = abs(end.x0 - b) <= 0.8 * end.size and -0.5 * end.size <= pos - end.base <= 0.3 * end.size
+                if near and any(l is not end and abs(l.base - end.base) <= 0.3 * end.size and abs(l.x1 - a) <= 0.8 * end.size for l in self.upright):
+                    end.lead_in = "dot" if float(re.findall(r"[\d.]+", str(dashes))[0]) <= 1.5 * width else "hyphen"
+                    self.used_segments.add(i)
+                    break
 
     def blend(self, faint, page):
         """A translucent fill is the colour it makes with what is under it when that is flat (paper or a flat colour round the shape), because Word's shading has no
@@ -377,13 +393,19 @@ class Page:
             if not 0.5 <= thick <= 6 or max(r.width, r.height) < 14:
                 continue
             for bx in self.box_items:
-                sides = (("left", r.width <= 6 and abs(r.x0 - bx.x0) <= 1, (r.y0 - bx.y0, r.y1 - bx.y1)), ("right", r.width <= 6 and abs(r.x1 - bx.x1) <= 1, (r.y0 - bx.y0, r.y1 - bx.y1)),
-                         ("top", r.height <= 6 and abs(r.y0 - bx.y0) <= 1, (r.x0 - bx.x0, r.x1 - bx.x1)), ("bottom", r.height <= 6 and abs(r.y1 - bx.y1) <= 1, (r.x0 - bx.x0, r.x1 - bx.x1)))
-                side = next((s for s, flush, ends in sides if flush and max(abs(v) for v in ends) <= 1.5 and s not in bx.edges), None)
-                if side:
-                    bx.edges[side] = (thick, rgb_hex(f))
-                    self.bar_rects.append(tuple(r))
-                    break
+                across = (r.y0 - bx.y0, r.y1 - bx.y1), (r.x0 - bx.x0, r.x1 - bx.x1)
+                sides = (("left", r.width <= 6, r.x0 - bx.x0, r.x1 - bx.x0, across[0], "x0", r.x0), ("right", r.width <= 6, r.x1 - bx.x1, r.x0 - bx.x1, across[0], "x1", r.x1),
+                         ("top", r.height <= 6, r.y0 - bx.y0, r.y1 - bx.y0, across[1], "y0", r.y0), ("bottom", r.height <= 6, r.y1 - bx.y1, r.y0 - bx.y1, across[1], "y1", r.y1))
+                for side, thin, inner, outer, ends, edge, at in sides:
+                    if thin and side not in bx.edges and max(abs(v) for v in ends) <= 1.5 and min(abs(inner), abs(outer)) <= 1:
+                        if abs(inner) > 1:
+                            setattr(bx, edge, at)                     # the bar stands just outside the box, which then reaches out to it
+                        bx.edges[side] = (thick, rgb_hex(f))
+                        self.bar_rects.append(tuple(r))
+                        break
+                else:
+                    continue
+                break
 
     # -- pictures and what is left of the page when the text is taken away
     def ellipse_clips(self):
@@ -653,7 +675,7 @@ def page_kind(P):
     if len(sections) >= 2:
         return "design", "%d boxes holding text of their own" % len(sections)
     loose = [l for l in P.upright if not any(inside(l.bbox, t.bbox, 0.5) for t in P.tbls)]
-    short = [l for l in loose if len(l.text.strip()) <= 25]
+    short = [l for l in loose if len(l.text.strip()) <= 25 and not l.leader]               # a leader line reaches across the page, whatever is left of its text
     drawn = P.imgs or P.figs or P.box_items
     if drawn and not P.tbls and len(loose) >= 15 and len(short) >= 0.6 * len(loose) and len(cluster([l.x0 for l in loose], 6)) >= 6:
         return "design", "%d short pieces of text at %d left edges" % (len(short), len(cluster([l.x0 for l in loose], 6)))
@@ -683,6 +705,43 @@ def same_colour(ground, color):
     return bool(ground) and abs(ground[0] - (color >> 16 & 255)) + abs(ground[1] - (color >> 8 & 255)) + abs(ground[2] - (color & 255)) <= 15
 
 
+def letter_step(whole, size, meter):
+    """The letter spacing of a span in points, read from where its letters start: the median over neighbouring letters of the step minus the first letter's own width.
+    None unless at least two letters agree within 0.1 pt. A span's box is no use for this, as it holds a removed list marker, trailing spaces and the font's side bearings."""
+    text, raw, org = whole["text"].rstrip(), whole.get("raw"), whole.get("org")
+    start = raw.find(text) if raw and org else -1
+    if start < 0 or len(text) < 3:
+        return None
+    steps = []
+    for k in range(len(text) - 1):
+        if text[k].isspace() or text[k + 1].isspace():
+            continue
+        advance = meter.advance(whole, text[k], size)
+        if advance:
+            (x0, y0), (x1, y1) = org[start + k], org[start + k + 1]
+            steps.append(math.hypot(x1 - x0, y1 - y0) - advance)
+    steps.sort()
+    if len(steps) < 2:
+        return None
+    mid = steps[len(steps) // 2]
+    return mid if sum(abs(v - mid) <= 0.1 for v in steps) >= 2 else None
+
+
+def tracking(whole, justified, meter):
+    """The letter spacing of a span in twips: the spacing its letters have, or the squeeze that fits a justified line's text in its box."""
+    size, src = whole["size"], whole["text"]
+    step = None if justified else letter_step(whole, size, meter)
+    if step is not None and 0.35 < step < 0.5 * size:
+        return tw(step)
+    if latin(src) and meter.width(whole, src, size):
+        shown = src.rstrip()
+        w = whole["bbox"][2] - whole["bbox"][0]
+        tight = (w - (meter.width(whole, shown, size) or w)) / max(1, len(shown) - 1)
+        if tight <= -0.05:
+            return tw(max(tight, -0.8))
+    return 0
+
+
 def span_run(page, s, justified, meter, gap=None, last=False):
     """One <w:r>, or two when the line ends here against the cell's edge and the last letter must leave the letter spacing. `gap`: room between the line and the right edge of its cell, None outside a cell."""
     font = esc(meter.family(s))
@@ -701,25 +760,17 @@ def span_run(page, s, justified, meter, gap=None, last=False):
     if not by_color:
         rpr += f'<w:color w:val="{hexcolor(s["color"])}"/>'
     text = s["text"]
+    if text == "	":
+        return f'<w:r><w:rPr>{rpr}</w:rPr><w:tab/></w:r>'
     spacing = 0
     whole = s.get("whole") or s                                    # a span cut at its page numbers keeps the spacing of the whole
     src = whole["text"]
     if len(src) >= 3:
-        nat = meter.width(whole, src, size)
-        w = whole["bbox"][2] - whole["bbox"][0]
-        if nat:
-            extra = (w - nat) / max(1, len(src) - 1)
-            if not justified and 0.35 < extra < 14 and src.count(" ") <= len(src) // 3:
-                spacing = tw(extra)
-            elif latin(src):
-                shown = src.rstrip()
-                tight = ((w - (meter.width(whole, shown, size) or w)) / max(1, len(shown) - 1))
-                if tight <= -0.05:
-                    spacing = tw(max(tight, -0.8))
+        spacing = tracking(whole, justified, meter)
     if gap is not None and gap < 1.5 and latin(text):
         spacing -= 1
-    tracking = f'<w:spacing w:val="{spacing}"/>' if spacing else ""
-    rpr += tracking + (f'<w:sz w:val="{half}"/><w:szCs w:val="{half}"/>' if half != meter.base[1] else "")
+    letters = f'<w:spacing w:val="{spacing}"/>' if spacing else ""
+    rpr += letters + (f'<w:sz w:val="{half}"/><w:szCs w:val="{half}"/>' if half != meter.base[1] else "")
     if s.get("ul"):
         rpr += f'<w:u w:val="single" w:color="{s["ul"]}"/>'
     if s.get("hl"):
@@ -736,7 +787,7 @@ def span_run(page, s, justified, meter, gap=None, last=False):
         return (mark("begin") + f'<w:r><w:rPr>{rpr}</w:rPr><w:instrText xml:space="preserve"> {s["field"]} </w:instrText></w:r>'
                 + mark("separate") + run(rpr, text) + mark("end"))
     if last and gap is not None and spacing > 0 and gap < 1.5 + spacing / 20 and len(text) > 1 and text[-1] != " ":
-        return run(rpr, text[:-1]) + run(rpr.replace(tracking, ""), text[-1])   # Word adds the letter spacing after the last letter too, which wraps a line that fills its cell
+        return run(rpr, text[:-1]) + run(rpr.replace(letters, ""), text[-1])   # Word adds the letter spacing after the last letter too, which wraps a line that fills its cell
     return run(rpr, text)
 
 

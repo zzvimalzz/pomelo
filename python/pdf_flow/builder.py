@@ -11,9 +11,9 @@ from types import SimpleNamespace
 from pdf_fonts import latin
 from pdf_spans import hexcolor
 
-from .common import cluster, inside, tw
+from .common import TW, cluster, inside, tw
 from .lines import is_bold, is_letter
-from .page import Para, runs_xml
+from .page import Para, runs_xml, tracking
 from .shapes import Box, SIDES, Tbl, rule_key, table_look
 
 QUOTES = "“”\"‘’«»"
@@ -237,7 +237,7 @@ class Builder:
 
     def joins(self, cur, l, rx0, width):
         prev = cur.lines[-1]
-        if l.marker:
+        if l.marker or l.leader or prev.leader:
             return False
         s = max(prev.size, l.size)
         dy = l.base - prev.base
@@ -314,6 +314,8 @@ class Builder:
                 jc = "center"
             elif x1 - lines[0].x1 <= max(2.5, 0.012 * w) and (lines[0].x0 - L) > 0.12 * w:
                 jc = "right"
+        if first.leader and n == 1:
+            jc = "left"
         # which line ends are the text wrapping (it may reflow) and which are the author's own line breaks
         word = lambda l: (l.text.split() or [""])[0]
         breaks = []
@@ -381,7 +383,7 @@ class Builder:
             B += bw + sp
         borders = f"<w:pBdr>{bt}{bb}</w:pBdr>" if (bt or bb) else ""
         # tabs for rows of cells joined into one paragraph
-        tabs = ""
+        tabs = f'<w:tabs><w:tab w:val="right" w:leader="{first.leader[0]}" w:pos="{tw(min(first.leader[1], x1) - x0)}"/></w:tabs>' if first.leader else ""
         spacing = f'<w:spacing w:before="{tw(before)}" w:after="0" w:line="{line}" w:lineRule="{rule}"/>'
         style = heading = ""
         text = " ".join(l.text for l in lines).strip()
@@ -489,12 +491,17 @@ class Builder:
         xml = ""
         for p in self.group(lines, min(l.x0 for l in lines), max(l.x1 for l in lines)):
             pitch, T, B = self.metrics(p)
-            fx0, fx1 = p.x0 - (p.lines[0].x0 - (p.lines[0].marker[2] if p.lines[0].marker else p.lines[0].x0)), p.x1 + 3.0 + extra
+            fx0, fx1 = p.x0 - (p.lines[0].x0 - (p.lines[0].marker[2] if p.lines[0].marker else p.lines[0].x0)), p.x1 + 3.0 + extra + self.spacing_written(p.lines)
             part, T, B = self.para_xml(p, fx0, fx1, T)
-            frame = (f'<w:framePr w:w="{tw(fx1 - fx0)}" w:h="{tw(B - T)}" w:hRule="atLeast" w:hSpace="0" w:vSpace="0" w:wrap="none" '
+            width = "" if len(p.lines) == 1 else f' w:w="{tw(fx1 - fx0)}"'      # Word sizes the frame of a single line to its text, which no substitute font or letter spacing can overflow
+            frame = (f'<w:framePr{width} w:h="{tw(B - T)}" w:hRule="atLeast" w:hSpace="0" w:vSpace="0" w:wrap="none" '
                      f'w:vAnchor="page" w:hAnchor="page" w:x="{tw(fx0)}" w:y="{tw(T)}"/>')
             xml += re.sub(r"<w:pPr>(<w:pStyle [^>]*/>)?", lambda m: m.group(0) + frame, part, 1)
         return xml
+
+    def spacing_written(self, lines):
+        """The letter spacing, in points, that the longest line adds to its text: a frame or a box that is only as wide as the PDF's line wraps once Word adds it."""
+        return max(sum(max(0, tracking(s.get("whole") or s, False, self.meter)) * len(s["text"]) for s in l.spans) for l in lines) / TW
 
     def hidden(self, lines):
         """Text the PDF does not show, as paragraphs of hidden text whose marks are hidden too, so they take no room until Word is asked to show hidden text."""
@@ -530,7 +537,7 @@ class Builder:
                 continue
             first = p.lines[0]
             fx0 = p.x0 - (first.x0 - (first.marker[2] if first.marker else first.x0))
-            fx1 = p.x1 + 3.0
+            fx1 = p.x1 + 3.0 + self.spacing_written(p.lines)
             part, T, B = self.para_xml(p, fx0, fx1, self.metrics(p)[1])
             runs += self.text_box_xml(part, fx0, T, fx1 - fx0, B - T, wraps='<w:jc w:val="left"/>' not in part)
         return xml, runs
@@ -640,10 +647,11 @@ class Builder:
         body = ""
         for i, l in enumerate(lines):
             if i:
+                leader = f' w:leader="{l.lead_in}"' if l.lead_in else ""
                 if l.x1 >= x1 - 3 and (l.x0 > first.x1 + 20 or NUMBERED.fullmatch(l.text.strip())):
-                    stops += f'<w:tab w:val="right" w:pos="{tw(l.x1 - x0)}"/>'
+                    stops += f'<w:tab w:val="right"{leader} w:pos="{tw(l.x1 - x0)}"/>'
                 else:
-                    stops += f'<w:tab w:val="left" w:pos="{tw(l.x0 - x0)}"/>'
+                    stops += f'<w:tab w:val="left"{leader} w:pos="{tw(l.x0 - x0)}"/>'
                 body += "<w:r><w:tab/></w:r>"
             body += runs_xml(P, l.spans, False, self.doc.part, self.meter)
         rule, line = self.line_rule(lines, pitch, size)
