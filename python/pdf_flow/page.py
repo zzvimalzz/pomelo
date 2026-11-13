@@ -44,6 +44,7 @@ class Page:
         lines = read_lines(page, hidden_ok=not scan)
         if not scan:
             self.hide(lines)
+            lines = [l for l in lines if any(s["text"].strip() for s in l.spans)]
         self.hidden_lines = [l for l in lines if not any(s["text"].strip() and not s.get("hidden") for s in l.spans)]
         gone = {id(l) for l in self.hidden_lines}
         lines = dedupe([l for l in lines if id(l) not in gone], 3)
@@ -66,6 +67,7 @@ class Page:
             if ground:
                 rgb = [int(fill[i:i + 2], 16) for i in (0, 2, 4)]
                 self.shapes[index] = (r, "%02X%02X%02X" % tuple(round(opacity * c + (1 - opacity) * g) for c, g in zip(rgb, ground)), border, dashed)
+        self.shapes = [sh for sh in self.shapes if sh[1] or sh[2]]
 
     def render72(self):
         if self.ground_pix is None:
@@ -103,13 +105,18 @@ class Page:
                 for e in near:
                     box = pymupdf.Rect(e[3]) if e is near[0] else box | e[3]
                 if s.get("alpha", 255) == 0:
-                    s["hidden"] = True
+                    if near:
+                        s["hidden"] = True
+                    else:
+                        s["clip"] = True                                  # clip render modes are not in the text trace and paint nothing: the picture shows through the letters, so they stay in the picture
                 elif near and area(tuple(box)) > 0 and any(sq > max(e[1] for e in near) and overlap(tuple(box), r) >= 0.9 * area(tuple(box))
                                   for sq, r in covers.get((int((box.x0 + box.x1) // 64), int((box.y0 + box.y1) // 64)), ())):
                     s["hidden"] = True
                 elif not l.rot and not any(e[2] != 0 for e in near):          # outlined letters show whatever their fill is
                     if same_colour(ground_colour(self.render72(), box), s["color"]):
                         maybe.append((s, box))
+        for l in lines:
+            l.spans = [s for s in l.spans if not s.get("clip")]
         if maybe:
             # the same colour all round is only a hint (white text on a snug dark label has white paper round it): what counts is the ground under the text
             for s, box in maybe:

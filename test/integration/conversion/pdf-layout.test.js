@@ -277,6 +277,27 @@ if kind == "faint":                                 # a see-through word over bl
     page.draw_rect(pymupdf.Rect(60, 300, 400, 360), color=None, fill=(0.2, 0.4, 0.6) if other else (0, 0, 1), fill_opacity=0.4 if other else 0.5)
     page.insert_text((75, 335), "Text in the tinted box", fontname="helv", fontsize=11)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "veil":                                  # a very faint box over running text (with an extra argument: another colour, opacity, size and place)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    size = 14 if other else 12
+    for i in range(6):
+        page.insert_text((60, 100 + i * 20), "Running paragraph number %d goes straight across the whole width of the sheet." % (i + 1), fontname="helv", fontsize=size)
+    box = pymupdf.Rect(50, 128, 480, 206) if other else pymupdf.Rect(50, 140, 420, 200)
+    page.draw_rect(box, color=None, fill=(0.2, 0.3, 0.9) if other else (1, 0.8, 0), fill_opacity=0.2 if other else 0.15)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "clipmode":                              # text in the invisible mode beside text in a clip mode (with an extra argument: all on one line, in another size)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    size = 24 if other else 40
+    if other:
+        for word, x, mode in (("Plain", 60, 0), ("Invisible", 130, 3), ("Clipped", 250, 7), ("Closing", 360, 0)):
+            page.insert_text((x, 200), word, fontname="hebo", fontsize=size, render_mode=mode)
+    else:
+        page.insert_text((60, 100), "Plain visible line", fontname="helv", fontsize=14)
+        page.insert_text((60, 160), "Invisible mode", fontname="helv", fontsize=size, render_mode=3)
+        page.insert_text((60, 240), "Clipped mode", fontname="hebo", fontsize=size, render_mode=7)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "poster":                                # text set freely on a coloured page, as on a slide or a flyer
     page = doc.new_page(width=595, height=842)
     page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
@@ -920,6 +941,20 @@ const read = async (docx) => {
     fs.rmSync(docx);
   }
 
+  console.log('a see-through box too faint for shading');
+  for (const [name, extra] of [['veil', ''], ['veil-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'veil', extra), 'docx');
+    d = await read(docx);
+    let tinted = 0;
+    for (const media of Object.keys(d.zip.files).filter((f) => /^word\/media\//.test(f))) {
+      const { data } = await require('sharp')(await d.zip.file(media).async('nodebuffer')).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+      for (let i = 0; i < data.length; i += 3) if (Math.min(data[i], data[i + 1], data[i + 2]) > 150 && Math.min(data[i], data[i + 1], data[i + 2]) < 235) tinted++;
+    }
+    expect(`${name}: the colour stays in a picture, and the lines under it are ordinary text and not a table`,
+      !/<w:tbl[ >]/.test(d.xml) && tinted > 500 && !missingFrom(d.text, ['Running paragraph number 4', 'Running paragraph number 6']).length, `${(d.xml.match(/<w:tbl[ >]/g) || []).length} tables, ${tinted} tinted pixels`);
+    fs.rmSync(docx);
+  }
+
   console.log('a turned word across running text');
   for (const [name, extra] of [['watermark', ''], ['watermark-other', 'other']]) {
     [docx] = await convert.convertFile(draw(name, 'watermark', extra), 'docx');
@@ -944,6 +979,16 @@ const read = async (docx) => {
     expect(`${name}: what the sheet hides is written as hidden text, so the words are in the file`, hides.every((t) => gone.includes(t)) && !missingFrom(d.text, hides).length, gone);
     expect(`${name}: what the sheet shows is not hidden, white text on a dark box included`, shows.every((t) => !gone.includes(t)) && !missingFrom(d.text, shows).length, gone);
     expect(`${name}: the hidden text takes no room, so the page is still one sheet`, (d.xml.match(/<w:sectPr/g) || []).length === 1);
+    fs.rmSync(docx);
+  }
+
+  console.log('text in a clip mode is not hidden text');
+  for (const [name, extra, hides, shows, clipped] of [['clipmode', '', 'Invisible mode', 'Plain visible line', 'Clipped mode'], ['clipmode-line', 'other', 'Invisible', 'Plain', 'Clipped']]) {
+    [docx] = await convert.convertFile(draw(name, 'clipmode', extra), 'docx');
+    d = await read(docx);
+    const gone = hiddenWords(d.xml);
+    expect(`${name}: the invisible mode is hidden text, and the clip mode is neither hidden text nor written as text, since the picture shows through its letters`,
+      gone === hides && !d.text.includes(clipped) && !missingFrom(d.text, [shows]).length, `hidden "${gone}", text "${d.text.slice(0, 120)}"`);
     fs.rmSync(docx);
   }
 

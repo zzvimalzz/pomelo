@@ -2,9 +2,12 @@
 """How closely does a converted document match the original? Both are PDFs here (the converted DOCX is printed
 back to PDF first), so words, fonts, links, images and drawn shapes can be compared exactly, not eyeballed.
 
-usage: python compare.py <original.pdf> <rendered.pdf> [png-dir tag]    prints one JSON object
+usage: python compare.py <original.pdf> <rendered.pdf> [png-dir tag [converted.docx]]    prints one JSON object; with the
+                                                                        DOCX, the words it writes as hidden text are not
+                                                                        expected in the printout
        python compare.py --docx-words <original.pdf> <converted.docx>   prints how many source words the DOCX holds,
-                                                                        and how editable it is (text boxes, tables, headings)
+                                                                        how editable it is (text boxes, tables, headings)
+                                                                        and the words it writes as hidden text
 
 Words are matched in reading order; for every matched pair the position, font family, size, bold/italic and colour
 are compared. Numbers are fractions 0..1 unless the key says otherwise. "check" is the summary of what a user sees
@@ -227,8 +230,11 @@ def grey_pages(da, db, dpi=36):
         yield [b"".join(p.samples[y * p.width:y * p.width + w] for y in range(h)) for p in (pa, pb)]
 
 
-def check_metrics(da, db):
+def check_metrics(da, db, hidden=()):
     wa, wb = plain_words(da), plain_words(db)
+    for word in hidden:
+        if word in wa:
+            wa.remove(word)
     recall = order = None
     if wa:
         recall = round(sum((Counter(wa) & Counter(wb)).values()) / len(wa), 3)
@@ -318,12 +324,39 @@ def docx_editability(path):
     return {"tb": round(in_boxes / words, 3) if words else 0.0, "tables": tables, "headings": headings, "exact": exact}
 
 
+def docx_hidden(path):
+    """The words of the body that the DOCX writes as hidden text, in the form `plain_words` gives them. Word does not
+    print them, so a printout is not expected to hold them; the caller lists them so each can be checked against the PDF."""
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    with zipfile.ZipFile(path) as z:
+        body = z.read("word/document.xml")
+    stack, out = [], []
+    for event, el in ET.iterparse(io.BytesIO(body), events=("start", "end")):
+        tag = el.tag
+        if event == "start":
+            if tag in (w + "p", w + "r"):
+                stack.append({"para": tag == w + "p", "hidden": False, "text": []})
+            elif tag == w + "vanish" and stack and not stack[-1]["para"]:
+                stack[-1]["hidden"] = True
+            continue
+        if tag == w + "t" and stack:
+            stack[-1]["text"].append(el.text or "")
+        elif tag in (w + "p", w + "r"):
+            item = stack.pop()
+            if item["para"]:
+                out += [t for t in (re.sub(r"\W+", "", x.lower()) for x in "".join(item["text"]).split()) if t]
+            elif item["hidden"]:
+                next(p for p in reversed(stack) if p["para"])["text"].append("".join(item["text"]))
+    return out
+
+
 def docx_words(pdf, docx):
     src = plain_words(pymupdf.open(pdf))
     have = [t for t in (re.sub(r"\W+", "", x.lower()) for x in docx_text(docx).split()) if t]
     lost = Counter(src) - Counter(have)
+    hidden = docx_hidden(docx)
     return {"words": len(src), "recall": round(1 - sum(lost.values()) / len(src), 3) if src else None, "missing": sorted(lost)[:10],
-            **docx_editability(docx)}
+            **docx_editability(docx), "hidden": len(hidden), "hidden_words": hidden}
 
 
 def main():
@@ -340,7 +373,7 @@ def main():
         "links": link_metrics(da, db),
         "drawings": drawing_metrics(da, db),
         "visual": visual_metrics(da, db),
-        "check": check_metrics(da, db),
+        "check": check_metrics(da, db, docx_hidden(sys.argv[5]) if len(sys.argv) > 5 else ()),
     }
     if len(sys.argv) > 4:
         os.makedirs(sys.argv[3], exist_ok=True)
