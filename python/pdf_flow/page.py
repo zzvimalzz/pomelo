@@ -24,6 +24,7 @@ class Page:
         self.textboxes = []               # rotated lines
         self.used_segments = set()
         self.xml_id = 0
+        self.ground_pix = None
 
     # -- reading
     def read(self):
@@ -35,7 +36,9 @@ class Page:
         except Exception:
             self.drawings = []
         self.segments = segments_of(self.drawings)
-        self.shapes = rect_shapes(self.drawings)
+        faint = []
+        self.shapes = rect_shapes(self.drawings, faint)
+        self.blend(faint, page)
         self.radii = {tuple(round(v) for v in d["rect"]): corner_radius(d["items"]) for d in self.drawings if "c" in {it[0] for it in d["items"]}}
         scan = any(area(tuple(i["bbox"])) > 0.85 * self.w * self.h for i in page.get_image_info())     # the invisible text layer of a scan is not hidden text
         lines = read_lines(page, hidden_ok=not scan)
@@ -50,6 +53,24 @@ class Page:
             if hangs(l, self.upright):
                 split_marker(l, self.body)
         self.links = links
+
+    def blend(self, faint, page):
+        """A translucent fill is the colour it makes with what is under it when that is flat (paper or a flat colour round the shape), because Word's shading has no
+        transparency. Under a picture or a gradient it stays in the picture. Below a quarter it is a shadow or a glow, which stays in the picture too."""
+        images = [tuple(i["bbox"]) for i in page.get_image_info()]
+        for index, fill, opacity in faint:
+            r, _, border, dashed = self.shapes[index]
+            if opacity < 0.25 or any(overlap(tuple(r), ib) >= 0.5 * area(tuple(r)) for ib in images):
+                continue
+            ground = ground_colour(self.render72(), pymupdf.Rect(r))
+            if ground:
+                rgb = [int(fill[i:i + 2], 16) for i in (0, 2, 4)]
+                self.shapes[index] = (r, "%02X%02X%02X" % tuple(round(opacity * c + (1 - opacity) * g) for c, g in zip(rgb, ground)), border, dashed)
+
+    def render72(self):
+        if self.ground_pix is None:
+            self.ground_pix = self.page.get_pixmap(dpi=72, alpha=False)
+        return self.ground_pix
 
     def hide(self, lines):
         """Marks `hidden` on the spans the PDF does not show, which Word then keeps as hidden text: drawn in the invisible render mode, under an opaque rectangle drawn
@@ -71,7 +92,7 @@ class Page:
                 for cy in range(int(r.y0 // 32), int(r.y1 // 32) + 1):
                     for cx in range(int(r.x0 // 32), int(r.x1 // 32) + 1):
                         covers.setdefault((cx, cy), []).append((d["seqno"], tuple(r)))
-        pix, maybe = None, []
+        maybe = []
         for l in lines:
             for s in l.spans:
                 if not s["text"].strip():
@@ -87,9 +108,7 @@ class Page:
                                   for sq, r in covers.get((int((box.x0 + box.x1) // 64), int((box.y0 + box.y1) // 64)), ())):
                     s["hidden"] = True
                 elif not l.rot and not any(e[2] != 0 for e in near):          # outlined letters show whatever their fill is
-                    if pix is None:
-                        pix = self.page.get_pixmap(dpi=72, alpha=False)
-                    if same_colour(ground_colour(pix, box), s["color"]):
+                    if same_colour(ground_colour(self.render72(), box), s["color"]):
                         maybe.append((s, box))
         if maybe:
             # the same colour all round is only a hint (white text on a snug dark label has white paper round it): what counts is the ground under the text
@@ -702,6 +721,8 @@ def span_run(page, s, justified, meter, gap=None, last=False):
         rpr += '<w:vertAlign w:val="superscript"/>'
     if RTL.search(text):
         rpr += "<w:rtl/>"
+    if 0 < s.get("alpha", 255) < 250:
+        rpr += f'<w14:textFill><w14:solidFill><w14:srgbClr w14:val="{hexcolor(s["color"])}"><w14:alpha w14:val="{round((1 - s["alpha"] / 255) * 100000)}"/></w14:srgbClr></w14:solidFill></w14:textFill>'
     run = lambda props, t: f'<w:r><w:rPr>{props}</w:rPr><w:t xml:space="preserve">{esc(t)}</w:t></w:r>'
     if s.get("field"):                                             # a complex field: Word sets a simple field's result in the paragraph's size, not the run's
         mark = lambda kind: f'<w:r><w:rPr>{rpr}</w:rPr><w:fldChar w:fldCharType="{kind}"/></w:r>'

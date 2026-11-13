@@ -268,6 +268,15 @@ if kind == "rounded":                               # a rounded filled box and a
     page.draw_rect(pymupdf.Rect(60, 420, 400, 480), color=None, fill=(1.0, 0.8, 0.8))
     page.insert_text((75, 450), "Text inside the square box.", fontname="helv", fontsize=11)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "faint":                                 # a see-through word over black text, and a see-through box on paper with text in it (with an extra argument: other opacities, colours and size)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    size = 14 if other else 24
+    page.insert_text((60, 100), "Black text that a pale word crosses", fontname="helv", fontsize=size)
+    page.insert_text((60, 100), "STAMP", fontname="hebo", fontsize=size, color=(0.2, 0.2, 0.6) if other else (1, 0, 0), fill_opacity=0.6 if other else 0.3)
+    page.draw_rect(pymupdf.Rect(60, 300, 400, 360), color=None, fill=(0.2, 0.4, 0.6) if other else (0, 0, 1), fill_opacity=0.4 if other else 0.5)
+    page.insert_text((75, 335), "Text in the tinted box", fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "poster":                                # text set freely on a coloured page, as on a slide or a flyer
     page = doc.new_page(width=595, height=842)
     page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
@@ -897,6 +906,17 @@ const read = async (docx) => {
     expect(`${name}: the rounded box is a roundRect shape with its fill and border behind its text, the square one is not`,
       round.length === 1 && /<a:gd name="adj" fmla="val \d+"\/>/.test(round[0]) && (fill ? round[0].includes(`<a:solidFill><a:srgbClr val="${fill}"/>`) : round[0].includes('<a:noFill/>')) && (!line || round[0].includes(line))
         && (d.xml.match(/<w:shd /g) || []).length === 1 && !missingFrom(d.text, ['Text inside the rounded box', 'Text inside the square box']).length, round[0] ? round[0].slice(0, 300) : 'no shape');
+    fs.rmSync(docx);
+  }
+
+  console.log('see-through text and colour');
+  for (const [name, extra, alpha, fill] of [['faint', '', 70000, '8080FF'], ['faint-other', 'other', 40000, 'ADC2D6']]) {
+    [docx] = await convert.convertFile(draw(name, 'faint', extra), 'docx');
+    d = await read(docx);
+    const stamp = (d.xml.match(/<w:r><w:rPr>(?:(?!<\/w:rPr>).)*<\/w:rPr><w:t[^>]*>STAMP<\/w:t>/s) || [''])[0];
+    const val = Number((/<w14:alpha w14:val="(\d+)"\/>/.exec(stamp) || [])[1]);
+    expect(`${name}: the see-through word keeps its transparency and the text under it is still there`, Math.abs(val - alpha) < 600 && /<w:color w:val="[0-9A-F]{6}"\/>/.test(stamp) && !missingFrom(d.text, ['Black text that a pale word crosses', 'STAMP']).length, `${val} in ${stamp.slice(0, 200)}`);
+    expect(`${name}: the see-through box is shaded with the colour it makes on the paper`, d.xml.includes(`w:fill="${fill}"`) && !missingFrom(d.text, ['Text in the tinted box']).length, (d.xml.match(/w:fill="[0-9A-F]{6}"/g) || []).join(' '));
     fs.rmSync(docx);
   }
 

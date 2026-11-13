@@ -180,8 +180,9 @@ def corner_radius(items):
     return min(max(abs(c[4].x - c[1].x), abs(c[4].y - c[1].y)) for c in curves)
 
 
-def rect_shapes(drawings):
-    """Filled or outlined rectangle-like shapes: (rect, fill hex or None, border (width, hex) or None, dashed)."""
+def rect_shapes(drawings, faint=None):
+    """Filled or outlined rectangle-like shapes: (rect, fill hex or None, border (width, hex) or None, dashed). A fill that is not opaque is left out of the shape; with `faint`,
+    a list, (the shape's index, the fill, its opacity) is added to it for the caller to blend."""
     shapes = []
     for d in drawings:
         items = d["items"]
@@ -200,12 +201,16 @@ def rect_shapes(drawings):
         fill = d.get("fill")
         color = d.get("color")
         fill = None if (fill is None or is_white(fill, 0.012)) else rgb_hex(fill)
-        if (d.get("fill_opacity") if d.get("fill_opacity") is not None else 1) < 0.85:
-            fill = None
+        opacity = d.get("fill_opacity") if d.get("fill_opacity") is not None else 1
+        tint = None
+        if opacity < 0.85:
+            fill, tint = None, fill
         border = (d.get("width") or 1.0, rgb_hex(color)) if color else None
-        if not fill and not border:
+        if not fill and not border and not tint:
             continue
         if len(items) <= 2 and "l" in ops and not fill:
             continue                                              # an open line, not a box
         shapes.append((r, fill, border, bool(d.get("dashes")) and "[]" not in str(d.get("dashes"))))
+        if tint and faint is not None:
+            faint.append((len(shapes) - 1, tint, opacity))
     return shapes
