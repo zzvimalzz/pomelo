@@ -227,15 +227,16 @@ class Builder:
         paras = []
         cur = None
         width = max(1.0, x1 - x0)
-        for l in sorted(lines, key=lambda l: (l.base, l.x0)):
-            if cur is not None and self.joins(cur, l, x0, width):
+        ordered = sorted(lines, key=lambda l: (l.base, l.x0))
+        for i, l in enumerate(ordered):
+            if cur is not None and self.joins(cur, l, x0, width, ordered[i + 1] if i + 1 < len(ordered) else None):
                 cur.lines.append(l)
             else:
                 cur = Para([l])
                 paras.append(cur)
         return paras
 
-    def joins(self, cur, l, rx0, width):
+    def joins(self, cur, l, rx0, width, nxt=None):
         prev = cur.lines[-1]
         if l.marker or l.leader or prev.leader:
             return False
@@ -243,7 +244,11 @@ class Builder:
         dy = l.base - prev.base
         if abs(l.size - prev.size) > 1.6 or (prev.bold_all != l.bold_all and (prev.bold_all or l.bold_all)):
             return False
-        if not (0.7 * s <= dy <= 2.1 * s) or (prev.bold_all and l.bold_all and dy > 1.5 * s):
+        # lines set further apart than two lines still run on when a third keeps the same rhythm under the same left edge and the one above reached the right edge: double spacing, ruled paper
+        spaced = dy > 2.1 * s and nxt is not None and abs(nxt.base - l.base - dy) <= 0.1 * dy and abs(nxt.x0 - l.x0) <= 3 and prev.x1 >= rx0 + 0.85 * width and width > 0
+        if len(cur.lines) >= 2:
+            spaced = width > 0 and dy > 2.1 * s and abs(dy - (cur.lines[-1].base - cur.lines[0].base) / (len(cur.lines) - 1)) <= 0.1 * dy and prev.x1 >= rx0 + 0.85 * width
+        if not (0.7 * s <= dy <= 2.1 * s or spaced) or (prev.bold_all and l.bold_all and dy > 1.5 * s):
             return False
         if len(cur.lines) >= 2:
             pitch = (cur.lines[-1].base - cur.lines[0].base) / (len(cur.lines) - 1)
@@ -400,6 +405,8 @@ class Builder:
             style = "Caption"
         elif n == 1 and not self.placed and self.labels(lines[0], text):
             style = "Heading3"
+        if style.startswith("Heading") and not self.heading_ok(first, text):
+            style = ""
         ppr = f'<w:pPr>{f'<w:pStyle w:val="{style}"/>' if style else ""}{num_pr}{borders}{tabs}{spacing}{ind_attr}<w:jc w:val="{jc}"/>{heading}</w:pPr>'
         # runs
         justified = jc == "both"
@@ -473,6 +480,14 @@ class Builder:
         first = lines[0]
         return len(words) <= 3 and any(m.text.strip(" ,.").lower() in CLOSINGS and 0 <= first.y0 - m.y1 <= 2.5 * first.size and m.x0 < first.x1 and m.x1 > first.x0 - first.size
                                        for m in self.P.upright if m is not first)
+
+    def heading_ok(self, l, text):
+        """Headings are few: not in a table, not without a letter, and not in a look (font, size, weight, colour) that the page uses more than eight times or three times on one row, as a grid of cards, a list of products or the days of a calendar do."""
+        if not re.search(r"[^\W\d_]", text) or any(inside(l.bbox, t.bbox, 0.5) for t in self.P.tbls):
+            return False
+        look = lambda m: (m.spans[0]["font"], round(m.size, 1), m.bold_all, m.spans[0]["color"])
+        same = [m for m in self.P.upright if look(m) == look(l)]
+        return len(same) <= 8 and sum(abs(m.base - l.base) <= 0.3 * l.size for m in same) < 3
 
     def labels(self, l, text):
         """A short bold line of body size standing alone above text that is not bold, and not a cell of a table: a heading Word should list."""

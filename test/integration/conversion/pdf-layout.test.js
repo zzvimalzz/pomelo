@@ -388,6 +388,37 @@ if kind == "footrule":                              # text and a long rule below
     else:
         page.draw_line((40, y), (555, y), color=(0.8, 0.8, 0.85), width=0.75)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "letterhead":                            # a letter with a logo at the top, a two-line address and paragraphs (with an extra argument: other sizes)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    size = 12 if other else 11
+    logo = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 60), False)
+    logo.clear_with(90)
+    page.insert_image(pymupdf.Rect(50, 40, 110, 100), stream=logo.tobytes("png"))
+    page.insert_text((130, 60), "Harbour and Sons Ltd", fontname="hebo", fontsize=14)
+    page.insert_text((130, 76), "12 Quay Street, Portside", fontname="helv", fontsize=9)
+    page.insert_text((130, 88), "Telephone 020 5550 0142", fontname="helv", fontsize=9)
+    for i in range(12):
+        page.insert_text((50, 150 + i * size * 1.4), "Dear customer, this paragraph of the letter runs across the page and on to line %d of it." % (i + 1), fontname="helv", fontsize=size)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "daygrid":                               # a month as a grid of ruled cells, each with a large bold day number (with an extra argument: other size)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    size = 16 if other else 20
+    for r in range(5):
+        for c in range(7):
+            x, y = 40 + c * 73, 100 + r * 90
+            page.draw_rect(pymupdf.Rect(x, y, x + 73, y + 90), color=(0.6, 0.6, 0.6), width=0.8)
+            page.insert_text((x + 6, y + size + 4), str(r * 7 + c + 1), fontname="hebo", fontsize=size)
+            page.insert_text((x + 6, y + 70), "note", fontname="helv", fontsize=9)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "doublespace":                           # one paragraph of five full lines set at double spacing (with an extra argument: two and a half lines)
+    page = doc.new_page(width=595, height=842)
+    pitch = 30 if len(sys.argv) > 3 else 24
+    text = "The quick brown fox jumps over the lazy dog while the afternoon light fades slowly across the valley."
+    for i in range(5):
+        page.insert_text((60, 150 + i * pitch), "%s Line %d." % (text, i + 1), fontname="helv", fontsize=9.5)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "poster":                                # text set freely on a coloured page, as on a slide or a flyer
     page = doc.new_page(width=595, height=842)
     page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
@@ -1149,6 +1180,27 @@ const read = async (docx) => {
     [docx] = await convert.convertFile(draw(name, 'footrule', extra), 'docx');
     d = await read(docx);
     expect(`${name}: a rule below everything is a line on the sheet and not a paragraph with a long space before it`, /prst="line"/.test(d.xml) && !/<w:pBdr><w:bottom/.test(d.xml) && !missingFrom(d.text, ['number 0', 'number 7']).length, (d.xml.match(/<w:pBdr>.*?<\/w:pBdr>/) || [''])[0]);
+    fs.rmSync(docx);
+  }
+
+  console.log('a letter, a calendar and double spacing');
+  for (const [name, extra] of [['letterhead', ''], ['letterhead-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'letterhead', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: a letter with a logo and a short address is ordinary text, not text boxes`, !/<wps:txbx>/.test(d.xml) && !missingFrom(d.text, ['Harbour and Sons Ltd', 'Telephone 020 5550 0142', 'line 12 of it']).length, `${(d.xml.match(/<wps:txbx>/g) || []).length} text boxes`);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['daygrid', ''], ['daygrid-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'daygrid', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: the day numbers of a calendar grid are not headings`, !/<w:pStyle w:val="Heading\d"\/>/.test(d.xml) && !missingFrom(d.text, ['35']).length, (d.xml.match(/<w:pStyle w:val="Heading\d"\/>/g) || []).length + ' headings');
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['doublespace', ''], ['doublespace-wide', 'wide']]) {
+    [docx] = await convert.convertFile(draw(name, 'doublespace', extra), 'docx');
+    d = await read(docx);
+    const para = (d.xml.match(/<w:p>(?:(?!<\/w:p>).)*Line 1\.(?:(?!<\/w:p>).)*<\/w:p>/s) || [''])[0];
+    expect(`${name}: five lines at double spacing are one paragraph, whatever the spacing`, para.includes('Line 5.') && /w:lineRule="(atLeast|auto|exact)"/.test(para), para.slice(0, 200));
     fs.rmSync(docx);
   }
 
