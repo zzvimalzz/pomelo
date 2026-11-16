@@ -128,6 +128,20 @@ def read_lines(page, clip=None, hidden_ok=False):
     return out
 
 
+def field_marks(page):
+    """The check boxes and radio buttons of a form as one character each in Segoe UI Symbol, the way Word draws its own: they are widgets, which the text of the page does not hold and its drawings may not."""
+    out = []
+    for w in [] if page.rotation else page.widgets() or []:
+        radio = w.field_type_string == "RadioButton"
+        if radio or w.field_type_string == "CheckBox":
+            on = str(w.field_value) not in ("Off", "False", "", "None")
+            r, size = w.rect, max(7.0, min(14.0, 1.15 * w.rect.height))
+            text = ("◉" if on else "◯") if radio else ("☒" if on else "☐")
+            span = {"size": size, "flags": 0, "font": "Segoe UI Symbol", "color": 0, "ascender": 1.0, "descender": -0.3, "text": text, "raw": text, "origin": (r.x0, r.y1), "org": [(r.x0, r.y1)], "bbox": tuple(r)}
+            out.append(Line([span], tuple(r), r.y1, size))
+    return out
+
+
 def in_separate_boxes(r, shapes):
     """True when the pieces sit in different drawn boxes (the pills of a tag list), which a justified line never does."""
     homes = set()

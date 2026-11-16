@@ -13,8 +13,8 @@ from pdf_fonts import latin
 from pdf_spans import RTL, dedupe, hexcolor
 
 from .common import HI_DPI, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
-from .lines import attach_markers, hangs, is_bold, is_italic, merge_rows, read_lines, split_leader, split_marker
-from .shapes import Box, Tbl, corner_radius, polygon_area, rect_shapes, segments_of
+from .lines import attach_markers, field_marks, hangs, is_bold, is_italic, merge_rows, read_lines, split_leader, split_marker
+from .shapes import Box, Tbl, corner_radius, field_borders, polygon_area, rect_shapes, segments_of
 
 SHAPED = re.compile(r"[\ufb50-\ufdff\ufe70-\ufeff]+")
 
@@ -44,6 +44,12 @@ class Page:
         self.segments = segments_of(self.drawings)
         faint = []
         self.shapes = rect_shapes(self.drawings, faint)
+        self.field_boxes = field_borders(page)
+        self.field_lines = field_marks(page)
+        for i, (o, pos, a, b, *_) in enumerate(self.segments):          # the border of a check box that is a character already
+            mid = ((a + b) / 2, pos) if o == "h" else (pos, (a + b) / 2)
+            if any(inside((*mid, *mid), f.bbox, 1.5) for f in self.field_lines):
+                self.used_segments.add(i)
         self.blend(faint, page)
         self.radii = {tuple(round(v) for v in d["rect"]): corner_radius(d["items"]) for d in self.drawings if "c" in {it[0] for it in d["items"]}}
         self.layer = self.text_layer(page)
@@ -55,6 +61,7 @@ class Page:
         self.hidden_lines = [l for l in lines if not any(s["text"].strip() and not s.get("hidden") for s in l.spans)]
         gone = {id(l) for l in self.hidden_lines}
         lines = dedupe([l for l in lines if id(l) not in gone], 3)
+        lines = [l for l in lines if not any(inside(l.bbox, f.bbox, 1.0) for f in self.field_lines)]       # the tick in the appearance of a check box is written as the box
         self.upright = attach_markers(merge_rows([l for l in lines if not l.rot], self.shapes))
         self.rotated = [l for l in lines if l.rot]
         for l in self.upright:
@@ -636,6 +643,8 @@ class Page:
         found = []
         for f in kept:
             fw, fh = f[2] - f[0], f[3] - f[1]
+            if any(overlap(tuple(f[:4]), l.bbox) >= 0.5 * area(l.bbox) for l in self.field_lines):
+                continue                                              # a check box or a radio button is written as a character
             mate = None
             if fw <= 1.4 * self.body and fh <= 1.4 * self.body:
                 mate = next((l for l in self.upright if not l.marker and 0 < l.x0 - f[2] <= 3.2 * l.size and l.y0 - 2 <= (f[1] + f[3]) / 2 <= l.y1 + 2), None)
@@ -646,7 +655,11 @@ class Page:
             try:
                 pix = self.work_all.get_pixmap(dpi=144, clip=pymupdf.Rect(f[0], f[1], f[2], f[3]), alpha=False)
                 c = (pix.height // 2) * pix.width * pix.n + (pix.width // 2) * pix.n
-                if min(pix.samples[c:c + 3]) > 200:
+                hollow = min(pix.samples[c:c + 3]) > 200
+                square = any({"re", "qu"} & {it[0] for it in d["items"]} and 0.8 <= d["rect"].width / max(d["rect"].height, 0.1) <= 1.25 and inside(tuple(d["rect"]), tuple(f[:4]), 2.5) for d in self.drawings)
+                if square:
+                    glyph = "☐" if hollow else "☒"                        # a box drawn as a rectangle, empty or with a cross in it
+                elif hollow:
                     glyph = "o"                                           # hollow: a circle bullet
             except Exception:
                 pass

@@ -569,6 +569,8 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     xml, cursor = B.emit(flow, x0, x1, None)
     if framed:
         xml += B.frames(framed)
+    if P.field_lines:
+        xml += B.frames(P.field_lines)
     xml += B.hidden(P.hidden_lines)
     furn = tuple("".join(ONE_POINT % B.picture_xml(Img(r, b"", "png", floating=True), floating=True, name="Logo", rid=f"\x02{xref}", pid=furniture.pictures[xref][1]) for band, r, xref in logos if band == k)
                  + "".join(B.frames([l], 1.2 * l.size if any(sp.get("field") for sp in l.spans) else 0.0) for l in taken[k]) for k in ("header", "footer"))
@@ -588,6 +590,8 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     floats += "".join(B.turned_text_box(l) for l in P.rotated)
     for o, pos, a, b, width, color, dash in free:
         floats += B.shape_xml(*((a, pos, b - a, 0) if o == "h" else (pos, a, 0, b - a)), "line", None, (width, color, dash))
+    for r, _, border, _ in P.field_boxes:
+        floats += B.shape_xml(r.x0, r.y0, r.width, r.height, "rect", None, (border[0], border[1], None))
     # the pictures are anchored in the page's first paragraph: when the text runs a line over, the closing paragraph moves
     # to the next sheet, and the background would go with it. A page that starts with something else keeps them in the closing one.
     if floats and not turned and xml.startswith("<w:p><w:pPr>") and not re.match(r"<w:p><w:pPr>(<w:pStyle [^>]*/>)?<w:framePr", xml):
