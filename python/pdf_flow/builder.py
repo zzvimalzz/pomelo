@@ -12,7 +12,7 @@ from pdf_fonts import latin
 from pdf_spans import hexcolor
 
 from .common import TW, cluster, inside, tw
-from .lines import is_bold, is_letter
+from .lines import end_figures, is_bold, is_letter
 from .page import Para, runs_xml, tracking
 from .shapes import Box, SIDES, Tbl, rule_key, table_look
 
@@ -29,6 +29,7 @@ class Builder:
     def __init__(self, doc, page_obj, meter, lists):
         self.doc, self.P, self.meter, self.lists = doc, page_obj, meter, lists
         self.first_top = None
+        self.page_x0 = 0.0
         self.page_x1 = None
         self.slack = 0.0
         self.turn = 0
@@ -60,6 +61,8 @@ class Builder:
         cols = []
         for x0, x1, it in spans:
             gap_needed = -0.5 if (cols and it.kind == "box" and all(i.kind == "box" for i in cols[-1][2])) else g
+            if cols and getattr(it, "leader", None) and all(getattr(i, "leader", None) for i in cols[-1][2]):
+                gap_needed = 2.0                                  # an entry ends at its figure, so the next entry that starts a little after it is the next column
             if cols and x0 < cols[-1][1] + gap_needed:
                 cols[-1][1] = max(cols[-1][1], x1)
                 cols[-1][2].append(it)
@@ -504,11 +507,15 @@ class Builder:
     def frames(self, lines, extra=0.0):
         """Text that sits on a picture: positioned paragraphs (frames), each one still real text that reflows inside its frame."""
         xml = ""
-        for p in self.group(lines, min(l.x0 for l in lines), max(l.x1 for l in lines)):
+        paras = self.group(lines, min(l.x0 for l in lines), max(l.x1 for l in lines))
+        for p in self.written_order(paras) or paras:
             pitch, T, B = self.metrics(p)
             fx0, fx1 = p.x0 - (p.lines[0].x0 - (p.lines[0].marker[2] if p.lines[0].marker else p.lines[0].x0)), p.x1 + 3.0 + extra + self.spacing_written(p.lines)
             part, T, B = self.para_xml(p, fx0, fx1, T)
-            width = "" if len(p.lines) == 1 else f' w:w="{tw(fx1 - fx0)}"'      # Word sizes the frame of a single line to its text, which no substitute font or letter spacing can overflow
+            # Word sizes the frame of a single line to its text, which no substitute font or letter spacing can overflow, but only inside the text column: outside it the frame wraps at the margin
+            outside = self.page_x1 is not None and (fx0 < self.page_x0 - 0.5 or fx1 > self.page_x1 + 0.5)
+            single = len(p.lines) == 1
+            width = "" if single and not outside else f' w:w="{tw((fx1 - fx0) * (1.1 if single else 1.0))}"'
             frame = (f'<w:framePr{width} w:h="{tw(B - T)}" w:hRule="atLeast" w:hSpace="0" w:vSpace="0" w:wrap="none" '
                      f'w:vAnchor="page" w:hAnchor="page" w:x="{tw(fx0)}" w:y="{tw(T)}"/>')
             xml += re.sub(r"<w:pPr>(<w:pStyle [^>]*/>)?", lambda m: m.group(0) + frame, part, 1)
@@ -785,7 +792,10 @@ class Builder:
             for g in groups:
                 last = g[-1]
                 reach = 2.2 * max(self.P.body, 10) if b.fill or last.fill else 2.2           # outlined boxes with a gap between them are boxes, not the rows of one table
-                if abs(last.x0 - b.x0) <= 2.5 and abs(last.x1 - b.x1) <= 2.5 and -2 <= b.y0 - last.y1 <= reach:
+                gap = b.y0 - last.y1
+                zebra = (b.fill and last.fill and 0 < gap <= 1.15 * max(last.y1 - last.y0, b.y1 - b.y0)       # a band every other row: the gap is a row of the same height with its text in it
+                         and any(i.kind == "line" and last.y1 <= (i.y0 + i.y1) / 2 <= b.y0 and b.x0 <= i.x0 and i.x1 <= b.x1 for i in items))
+                if abs(last.x0 - b.x0) <= 2.5 and abs(last.x1 - b.x1) <= 2.5 and -2 <= gap and (gap <= reach or zebra):
                     g.append(b)
                     break
             else:
@@ -809,7 +819,14 @@ class Builder:
                         taken += between
                         rows.append({"y0": prev.y1, "y1": b.y0, "fill": None, "border": None, "items": between})
                 rows.append({"y0": b.y0, "y1": b.y1, "fill": b.fill, "border": b.border, "items": list(b.children), "parts": getattr(b, "parts", None)})
-            content = [i for r in rows for i in r["items"] if i.kind in ("line", "img")]
+            gaps = [r["y1"] - r["y0"] for r in rows if r["fill"] is None and r["border"] is None]
+            if gaps:
+                tail = [i for i in out if i.kind in ("line", "img", "rule") and i not in taken and x0 - 1 <= (i.x0 + i.x1) / 2 <= x1 + 1 and g[-1].y1 - 1 <= (i.y0 + i.y1) / 2 <= g[-1].y1 + max(gaps) + 1]
+                if any(i.kind == "line" for i in tail):
+                    taken += tail
+                    rows.append({"y0": g[-1].y1, "y1": g[-1].y1 + max(gaps), "fill": None, "border": None, "items": tail})
+            pieces = lambda its: [i for i in its if i.kind in ("line", "img")]
+            content = [i for r in rows if len(pieces(r["items"])) > 1 for i in pieces(r["items"])] or [i for r in rows for i in pieces(r["items"])]       # a heading that runs across the columns does not join them
             cols = self.v_cut(content) if content else None
             inner = []
             if cols:
@@ -834,6 +851,10 @@ class Builder:
                 if r["border"]:
                     borders.setdefault("bottom", r["border"])
                     borders.setdefault("top", r["border"])
+                across = pieces(keep)
+                if len(across) == 1 and across[0].kind == "line" and any(across[0].x0 < e < across[0].x1 for e in edges[1:-1]):
+                    cells.append(dict(c0=0, c1=len(edges) - 1, r0=ri, r1=ri + 1, bbox=(edges[0], ys[ri], edges[-1], ys[ri + 1]), items=keep, fill=r["fill"], borders=dict(borders)))
+                    continue
                 for k in range(len(edges) - 1):
                     mine = [i for i in keep if edges[k] - 0.5 <= (i.x0 + i.x1) / 2 < edges[k + 1] + 0.5]
                     mid = (edges[k] + edges[k + 1]) / 2
@@ -852,7 +873,7 @@ class Builder:
         items = [i for i in items if i is not None]
         if not items:
             return "", cursor
-        items = self.stripes(self.capped(items))
+        items = end_figures(self.stripes(self.capped(items)))
         if self.columns_ok and not self.depth:
             bands = self.h_bands(items)
             runs = self.column_runs(bands, x0, x1)
@@ -939,7 +960,8 @@ class Builder:
         xml = ""
         items = sorted(items, key=lambda i: (i.y0, i.x0))
         for it in items:
-            if it.kind == "img" and not it.floating and sum(1 for l in items if l.kind == "line" and l.y1 > it.y0 + 2 and l.y0 < it.y1 - 2) >= 2:
+            beside = [l for l in items if l.kind == "line" and l.y1 > it.y0 + 2 and l.y0 < it.y1 - 2]
+            if it.kind == "img" and not it.floating and (len(beside) >= 2 or beside and it.y1 - it.y0 >= 2 * (beside[0].y1 - beside[0].y0)):      # a logo with its name beside it, taller than two lines, is placed
                 it.floating = True
         blocks = []
         run = []
@@ -1041,6 +1063,11 @@ class Builder:
             for l in [i for i in c["items"] if i.kind == "line"] if give else ():
                 for s in l.spans:
                     s["by_style"] = (give[1] is not None and hexcolor(s["color"]) == give[1], bool(give[2]) and is_bold(s))
+        edge = [0.0] * (nrow + 1)                                     # the width of the rule on each edge between rows: Word adds half of it to each row beside it
+        for c in t.cells:
+            for side, k in (("top", c["r0"]), ("bottom", c["r1"])):
+                if c["borders"].get(side) and 0 <= k <= nrow:
+                    edge[k] = max(edge[k], max(2, round(c["borders"][side][0] * 8)) / 8)
         rows = ""
         for r in range(nrow):
             tcs = ""
@@ -1076,7 +1103,7 @@ class Builder:
                 tcs += (f'<w:tc><w:tcPr><w:tcW w:w="{tw(width)}" w:type="dxa"/>' + (f'<w:gridSpan w:val="{span}"/>' if span > 1 else "") + vm
                         + self.border_xml(c["borders"], styled=True, rule=rule) + shd + f'</w:tcPr>{inner}</w:tc>')
                 k += span
-            rows += (f'<w:tr><w:trPr>{self.keep(ys[r + 1] - ys[r])}<w:trHeight w:val="{tw(ys[r + 1] - ys[r])}" w:hRule="atLeast"/>'
+            rows += (f'<w:tr><w:trPr>{self.keep(ys[r + 1] - ys[r])}<w:trHeight w:val="{tw(max(0.0, ys[r + 1] - ys[r] - (edge[r] + edge[r + 1]) / 2))}" w:hRule="atLeast"/>'
                      + ("<w:tblHeader/>" if head and r == 0 else "") + f'</w:trPr>{tcs}</w:tr>')
         self.cap = None
         tgrid = "".join(f'<w:gridCol w:w="{tw(xs[k + 1] - xs[k])}"/>' for k in range(ncol))

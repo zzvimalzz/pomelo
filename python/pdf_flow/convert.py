@@ -388,29 +388,24 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         merged.append(tuple(box))
     P.rot_boxes = merged
 
-    # text that belongs to a picture (chart labels): stays in the picture
-    absorbed = set()
+    # the labels of a chart (five or more short pieces on a drawing, none a sentence) are placed on it as text, not left in the picture as pixels
+    chart = set()
     for f in P.figs:
         if any(inside(f, t.bbox, 0) for t in P.tbls):
             continue
         inside_lines = [l for l in P.upright if inside(l.bbox, f, 1.0)]
-        if len(inside_lines) >= 5 and sum(len(l.text) for l in inside_lines) / len(inside_lines) <= 16 and 8000 < area(f) <= 0.35 * P.w * P.h:
-            for l in inside_lines:
-                absorbed.add(id(l))
-    for l in P.upright:
-        if id(l) in absorbed:
-            l.absorbed = True
-    keep_lines = [l for l in all_lines if not l.absorbed]
-    for l in keep_lines:
+        if len(inside_lines) >= 5 and sum(len(l.text) for l in inside_lines) / len(inside_lines) <= 16 and 8000 < area(f) <= 0.35 * P.w * P.h and not any(len(l.text.split()) > 5 for l in inside_lines):
+            chart.update(id(l) for l in inside_lines)
+    for l in all_lines:
         for bb in boxes_of(l):
             r = pymupdf.Rect(bb)
             inset = r.height * 0.18
             P.work_keep.add_redact_annot(pymupdf.Rect(r.x0, r.y0 + inset, r.x1, r.y1 - inset), fill=False)
     mark_text(P.work_keep, P.rotated)
-    if keep_lines or P.rotated:
+    if all_lines or P.rotated:
         P.work_keep.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE, text=pymupdf.PDF_REDACT_TEXT_REMOVE)
 
-    text_lines = [l for l in P.upright if not l.absorbed]
+    text_lines = list(P.upright)
     # elements
     elements = []
     tbls = P.tbls
@@ -423,6 +418,10 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         # a wide picture at the foot of the page is placed, not set in the line: when Word sets the text above a little
         # taller, an in-line picture would move to a new sheet whole
         return bb[2] - bb[0] >= 0.6 * P.w and bb[3] >= 0.88 * P.h
+
+    def in_margin(bb):
+        # printers' marks (mailing and sorting bars) stand in the outer edge of the sheet; set in the line they would be a column of their own beside the text
+        return bb[2] <= 0.08 * P.w or bb[0] >= 0.92 * P.w
     # a photo cropped to a circle is placed as the photo itself, so the page copy the ring and shadow under it are cut from must not show it again
     placed = {}
     for r, info in P.imgs:
@@ -434,14 +433,14 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         data = placed.get(id(info)) or P.encode_image(info, r)
         if not data:
             continue
-        elements.append(Img(r, data[0], data[1], floating=sits_on(r) or ends_page(r), crop=info.get("crop"), ellipse=info.get("ellipse"), order=info.get("number") or 0))
+        elements.append(Img(r, data[0], data[1], floating=sits_on(r) or ends_page(r) or in_margin(r), crop=info.get("crop"), ellipse=info.get("ellipse"), order=info.get("number") or 0))
     for f in P.figs:
         data = P.render_clip(f)
         if not data:
             continue
         # art inside a table (a bar across days, an icon) cannot sit in a cell: it stays behind the table at its place on the sheet
         under = any(inside(f, t.bbox, 0) for t in tbls)
-        elements.append(Fig(f, data[0], data[1], floating=under or (sits_on(f) and area(f) > 600)))
+        elements.append(Fig(f, data[0], data[1], floating=under or in_margin(f) or (sits_on(f) and area(f) > 600)))
         elements[-1].under_table = under
     pics = [e for e in elements if e.kind == "img"]
     for a in pics:
@@ -498,7 +497,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         return best
     top_items = []
     behind = [e.bbox for e in elements if e.kind == "img" and e.floating and not getattr(e, "overlay", False) and not getattr(e, "under_table", False)]
-    framed = [l for l in text_lines if any(overlap(l.bbox, b) >= 0.5 * area(l.bbox) for b in behind)]
+    framed = [l for l in text_lines if id(l) in chart or any(overlap(l.bbox, b) >= 0.5 * area(l.bbox) for b in behind)]
     feet = [e.bbox for e in elements if e.kind == "img" and e.floating and ends_page(e.bbox) and not getattr(e, "under_table", False)]
     framed += [l for l in text_lines if l not in framed and any(0 <= l.y0 - b[3] <= 30 and l.x0 >= b[0] - 2 and l.x1 <= b[2] + 2 for b in feet)]
     taken = {"header": [], "footer": []}
@@ -565,7 +564,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         x1 = max(i.x1 for i in flow)
     else:
         x0, x1 = 0.0, P.w
-    B.page_x1 = x1
+    B.page_x0, B.page_x1 = x0, x1
     B.slack = max(0.0, min(10.0, P.w - x1 - 0.5))
     xml, cursor = B.emit(flow, x0, x1, None)
     if framed:
@@ -574,7 +573,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     furn = tuple("".join(ONE_POINT % B.picture_xml(Img(r, b"", "png", floating=True), floating=True, name="Logo", rid=f"\x02{xref}", pid=furniture.pictures[xref][1]) for band, r, xref in logos if band == k)
                  + "".join(B.frames([l], 1.2 * l.size if any(sp.get("field") for sp in l.spans) else 0.0) for l in taken[k]) for k in ("header", "footer"))
     if os.environ.get("POMELO_DEBUG"):
-        lost = [l for l in P.upright if not l.absorbed and id(l) not in B.emitted]
+        lost = [l for l in P.upright if id(l) not in B.emitted]
         if lost:
             sys.stderr.write("page %d: %d lines never written: %s\n" % (pno + 1, len(lost), " | ".join(l.text for l in lost)[:300]))
     top_margin = max(0.0, B.first_top if B.first_top is not None else 0.0)

@@ -401,6 +401,151 @@ if kind == "letterhead":                            # a letter with a logo at th
     for i in range(12):
         page.insert_text((50, 150 + i * size * 1.4), "Dear customer, this paragraph of the letter runs across the page and on to line %d of it." % (i + 1), fontname="helv", fontsize=size)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "stripedrows":                           # thirty rows of figures, every other row on a shaded band that spans the page, no lines (with an extra argument: other size, colour and band)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    size, pitch = (9, 19) if other else (11, 22)
+    for i in range(40 if other else 30):
+        y = 80 + i * pitch
+        if i % 2 == 0:
+            page.draw_rect(pymupdf.Rect(40, y - pitch + 6, 555, y + 6), color=None, fill=(0.85, 0.9, 0.8) if other else (0.94, 0.95, 0.97))
+        for j, x in enumerate((50, 200, 330, 450)):
+            page.insert_text((x, y), ("Item %d" % i, "Units %d" % (i * 3), "Cost %d.50" % (i + 10), "Total %d" % (i * 7))[j], fontname="helv", fontsize=size)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "ruledpaper":                            # running text inside rules down both sides and along the foot: the rules are one figure whose box covers the sheet and whose ink does not (with an extra argument: another pitch and place)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    pitch, left, right = (18, 70, 540) if other else (24, 100, 580)
+    for i in range(28):
+        page.insert_text((left + 6, 80 + i * pitch), "Line %d of the ruled page runs across the sheet from the left edge to the right edge." % (i + 1), fontname="helv", fontsize=9)
+    page.draw_line((left, 10), (left, 800), color=(0, 0, 0), width=1)
+    page.draw_line((right, 10), (right, 800), color=(0, 0, 0), width=1)
+    page.draw_line((left, 780), (right, 780), color=(0, 0, 0), width=1)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "mathpage":                              # paragraphs of running text and rows of short pieces of an equation, with a small picture (with an extra argument: other size)
+    page = doc.new_page(width=595, height=842)
+    size = 10 if len(sys.argv) > 3 else 11
+    pic = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 60), False)
+    pic.clear_with(120)
+    page.insert_image(pymupdf.Rect(450, 40, 510, 100), stream=pic.tobytes("png"))
+    y = 120
+    for p in range(3):
+        for i in range(5):
+            page.insert_text((72, y), "Paragraph %d line %d holds a sentence that fills the width of the page." % (p + 1, i + 1), fontname="helv", fontsize=size)
+            y += 1.4 * size
+        y += 8
+        for r in range(6):
+            for x, t in zip((100, 150, 200, 290, 420), ("E%d" % (p * 6 + r), "=", "m", "c2", "(%d)" % (p * 6 + r + 1))):
+                page.insert_text((x, y), t, fontname="helv", fontsize=size)
+            y += 1.8 * size
+        y += 8
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "examgrid":                              # a box and a ruled grid of short labels that touch, with a sentence of instructions inside both, on a page of plain text (with an extra argument: other size)
+    page = doc.new_page(width=595, height=842)
+    size = 10 if len(sys.argv) > 3 else 9
+    for i in range(8):
+        page.insert_text((50, 70 + i * 14), "Plain text of the exam paper runs across the page, line %d." % (i + 1), fontname="helv", fontsize=size)
+    page.draw_rect(pymupdf.Rect(50, 363, 420, 391), color=(0, 0, 0), width=1)
+    page.draw_rect(pymupdf.Rect(397, 397, 533, 437), color=None, fill=(0.9, 0.91, 0.92))
+    for k in range(11):
+        page.draw_line((397, 397 + k * 19.8), (533, 397 + k * 19.8), color=(0, 0, 0), width=0.7)
+    for x in (397, 476, 533):
+        page.draw_line((x, 397), (x, 615), color=(0, 0, 0), width=0.7)
+    page.insert_text((410, 412), "Question", fontname="hebo", fontsize=size)
+    page.insert_text((490, 412), "Mark", fontname="hebo", fontsize=size)
+    for k in range(8):
+        page.insert_text((430, 450 + k * 19.8), str(k + 1), fontname="helv", fontsize=size)
+    page.insert_text((55, 430), "Instructions", fontname="hebo", fontsize=size)
+    page.insert_text((55, 450), "Use black ink or black ball-point pen. Draw diagrams in pencil.", fontname="helv", fontsize=size)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "chartlabels":                           # a line chart with its axis labels on a page of plain text (with an extra argument: other labels and size)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    size = 10 if other else 9
+    for i in range(20):
+        page.insert_text((60, 60 + i * 13), "Plain text above the chart runs across the page, line %d of the report." % (i + 1), fontname="helv", fontsize=9)
+    page.draw_line((120, 400), (120, 580), color=(0, 0, 0), width=1)
+    page.draw_line((120, 580), (420, 580), color=(0, 0, 0), width=1)
+    points = [(120, 560), (180, 520), (240, 540), (300, 470), (360, 440), (420, 420)]
+    for a, b in zip(points, points[1:]):
+        page.draw_line(a, b, color=(0.8, 0.1, 0.1), width=2)
+    for k, v in enumerate(("0", "5", "10", "15", "20") if other else ("0", "50", "100", "150", "200")):
+        page.insert_text((125, 556 - k * 35), v, fontname="helv", fontsize=size)
+    for k, m in enumerate(("Q1", "Q2", "Q3", "Q4", "Q5", "Q6") if other else ("Jan", "Feb", "Mar", "Apr", "May", "Jun")):
+        page.insert_text((140 + k * 45, 574), m, fontname="helv", fontsize=size)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "wordmark":                              # a mark drawn in vector next to its name on one line, then a paragraph (with an extra argument: a taller mark and another size)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    page.draw_oval(pymupdf.Rect(68, 43, 102, 90 if other else 81), color=None, fill=(0.2, 0.5, 0.35))
+    page.draw_line((85, 47), (85, 86 if other else 77), color=(1, 1, 1), width=1)
+    page.insert_text((104, 70 if other else 66), "Verdant and Co", fontname="hebo", fontsize=16 if other else 14)
+    for i in range(10):
+        page.insert_text((68, 160 + i * 15), "Dear customer, this paragraph of the letter runs across the page and on to line %d of it." % (i + 1), fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "fragments":                             # rows of pieces of mathematics placed at points, with a fraction bar and a small picture, among a few lines of text (with an extra argument: other places)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    pic = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 30), False)
+    pic.clear_with(150)
+    page.insert_image(pymupdf.Rect(480, 40, 540, 70), stream=pic.tobytes("png"))
+    for i in range(3):
+        page.insert_text((72, 70 + i * 14), "A sentence of the thesis that runs across the whole width of the page, line %d." % (i + 1), fontname="helv", fontsize=11)
+    for r in range(12):
+        y = 160 + r * 32
+        for x, t in zip((90, 130, 180, 250, 330, 420) if not other else (100, 160, 205, 300, 360, 450), ("x", "=", "a", "+", "b", "%d" % r)):
+            page.insert_text((x, y), t, fontname="helv", fontsize=11)
+        page.draw_line((170, y - 14), (230, y - 14), color=(0, 0, 0), width=0.8)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "beyond":                                # a column of running text on the left, a picture behind a label on the right (with an extra argument: the label on another line)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    pic = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 100, 40), False)
+    pic.clear_with(200)
+    page.insert_image(pymupdf.Rect(430, 700 if other else 100, 530, 740 if other else 140), stream=pic.tobytes("png"))
+    page.insert_text((450, 725 if other else 125), "Label on picture", fontname="helv", fontsize=9, color=(0, 0, 0))
+    for i in range(12):
+        page.insert_text((72, 100 + i * 14), "A column of text at the left of the sheet, line %d." % (i + 1), fontname="helv", fontsize=10)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "statement":                             # a statement: a header band, rows of date, two-line description, category and figures, every other row shaded, a rule under each row, printers' marks in the margin (with an extra argument: Letter paper, fills only, other columns, the marks at the right edge)
+    other = len(sys.argv) > 3
+    page = doc.new_page(width=612 if other else 595, height=792 if other else 842)
+    left, right = (36, 560) if other else (42.5, 552.8)
+    pitch, size = (27.0, 9) if other else (23.2, 8)
+    cols = (44, 100, 290, 400) if other else (48.5, 91, 306, 424.9)
+    page.draw_rect(pymupdf.Rect(left, 100, right, 116), color=None, fill=(0.04, 0.36, 0.48))
+    for x, t in zip(cols, ("Date", "Description", "Category", "Amount")):
+        page.insert_text((x, 111), t, fontname="hebo", fontsize=size, color=(1, 1, 1))
+    for i in range(22 if other else 30):
+        top = 116 + i * pitch
+        if i % 2 == 0:
+            page.draw_rect(pymupdf.Rect(left, top, right, top + pitch), color=None, fill=(0.96, 0.97, 0.98))
+        if not other:
+            page.draw_line((left, top + pitch), (right, top + pitch), color=(0.87, 0.89, 0.91), width=0.25)
+        page.insert_text((cols[0], top + 11), "%d Aug" % (i + 1), fontname="helv", fontsize=size)
+        page.insert_text((cols[1], top + 11), "SHOP NUMBER %d" % i, fontname="helv", fontsize=size)
+        if not other or i % 3:
+            page.insert_text((cols[1], top + 19), "CARD 4417 REF %d" % (i * 7), fontname="helv", fontsize=size - 2)
+        page.insert_text((cols[2], top + 11), ("Groceries", "Transport", "Health")[i % 3], fontname="helv", fontsize=size)
+        figure = "%d.%02d" % (i * 3 + 5, i * 7 % 100)
+        page.insert_text((cols[3] + 60 - pymupdf.get_text_length(figure, fontname="helv", fontsize=size), top + 11), figure, fontname="helv", fontsize=size)
+    for y in (160, 172, 230):
+        x = 586 if other else 11.3
+        page.draw_rect(pymupdf.Rect(x, y, x + 17, y + 2.3), color=None, fill=(0, 0, 0))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "indexcols":                             # an index in three columns, each entry a name and its page number flush right, the columns eight points apart (with an extra argument: two columns, numbers of one to three digits, another size)
+    page = doc.new_page(width=595, height=842)
+    other = len(sys.argv) > 3
+    size = 10 if other else 8.5
+    page.insert_text((48.5, 90), "Index", fontname="hebo", fontsize=26)
+    starts = (50, 300) if other else (48.5, 214.6, 380.7)
+    wide = 238 if other else 158
+    for c, x in enumerate(starts):
+        for i in range(24):
+            number = str(i * 7 + 3 if other else i + 3)
+            page.insert_text((x, 120 + i * 13), "Entry %d of column %d" % (i + 1, c + 1), fontname="helv", fontsize=size)
+            page.insert_text((x + wide - pymupdf.get_text_length(number, fontname="helv", fontsize=size), 120 + i * 13), number, fontname="helv", fontsize=size)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "daygrid":                               # a month as a grid of ruled cells, each with a large bold day number (with an extra argument: other size)
     page = doc.new_page(width=595, height=842)
     other = len(sys.argv) > 3
@@ -1235,6 +1380,74 @@ const read = async (docx) => {
     d = await read(docx);
     const para = (d.xml.match(/<w:p>(?:(?!<\/w:p>).)*Line 1\.(?:(?!<\/w:p>).)*<\/w:p>/s) || [''])[0];
     expect(`${name}: five lines at double spacing are one paragraph, whatever the spacing`, para.includes('Line 5.') && /w:lineRule="(atLeast|auto|exact)"/.test(para), para.slice(0, 200));
+    fs.rmSync(docx);
+  }
+
+  console.log('statements, ruled paper and equations are ordinary text');
+  for (const [name, extra] of [['stripedrows', ''], ['stripedrows-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'stripedrows', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: shaded rows without lines are one Word table of ordinary text, not text boxes`, !/<wps:txbx>/.test(d.xml) && (d.xml.match(/<w:tbl[ >]/g) || []).length >= 1 && !missingFrom(d.text, ['Item 0', 'Total 203']).length, `${(d.xml.match(/<wps:txbx>/g) || []).length} text boxes, ${(d.xml.match(/<w:tbl[ >]/g) || []).length} tables`);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['ruledpaper', ''], ['ruledpaper-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'ruledpaper', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: running text on ruled paper is ordinary text, not text boxes`, !/<wps:txbx>/.test(d.xml) && !missingFrom(d.text, ['Line 1 of', 'Line 28 of']).length, `${(d.xml.match(/<wps:txbx>/g) || []).length} text boxes`);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['mathpage', ''], ['mathpage-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'mathpage', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: paragraphs with rows of short equation pieces are ordinary text, not text boxes`, !/<wps:txbx>/.test(d.xml) && !missingFrom(d.text, ['Paragraph 1 line 1', 'Paragraph 3 line 5', 'E17']).length, `${(d.xml.match(/<wps:txbx>/g) || []).length} text boxes`);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['examgrid', ''], ['examgrid-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'examgrid', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: the labels of a ruled box that holds a sentence are text, not part of a picture`, !missingFrom(d.text, ['Instructions', 'Use black ink or black ball-point pen', 'Question', 'Mark']).length, d.text.slice(0, 300));
+    fs.rmSync(docx);
+  }
+  for (const [name, extra, words] of [['chartlabels', '', ['Mar', 'Jun']], ['chartlabels-other', 'other', ['Q3', 'Q6']]]) {
+    [docx] = await convert.convertFile(draw(name, 'chartlabels', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: the labels of a chart are text placed on the drawing, not pixels in it`, !missingFrom(d.text, words).length, d.text.slice(-200));
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['wordmark', ''], ['wordmark-tall', 'tall']]) {
+    [docx] = await convert.convertFile(draw(name, 'wordmark', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: a logo with its name beside it is placed on the sheet, so the name does not drop below it`, /<wp:anchor /.test(d.xml) && !/<wp:inline/.test(d.xml) && !missingFrom(d.text, ['Verdant and Co']).length, `${(d.xml.match(/<wp:inline/g) || []).length} inline pictures`);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['fragments', ''], ['fragments-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'fragments', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: pieces of mathematics that are no word stay text boxes at their places`, /<wps:txbx>/.test(d.xml), `${(d.xml.match(/<wps:txbx>/g) || []).length} text boxes`);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['beyond', ''], ['beyond-low', 'low']]) {
+    [docx] = await convert.convertFile(draw(name, 'beyond', extra), 'docx');
+    d = await read(docx);
+    const frame = (new RegExp('<w:framePr([^>]*)/>(?:(?!</w:p>).)*Label on picture', 's').exec(d.xml) || [])[1] || '';
+    expect(`${name}: the frame of one line outside the text column has a width, which Word would otherwise cut at the margin`, /w:w="\d+"/.test(frame) && !missingFrom(d.text, ['Label on picture']).length, frame);
+    fs.rmSync(docx);
+  }
+
+  console.log('a statement with shaded rows and rules, and an index of names and numbers');
+  for (const [name, extra, last] of [['statement', '', 29], ['statement-other', 'other', 21]]) {
+    [docx] = await convert.convertFile(draw(name, 'statement', extra), 'docx');
+    d = await read(docx);
+    const tables = (d.xml.match(/<w:tbl[ >]/g) || []).length;
+    const columns = (d.xml.match(/<w:gridCol /g) || []).length;
+    expect(`${name}: the rows are one Word table of four columns, with no nested table and no text box`, tables === 1 && columns === 4 && !/<wps:txbx>/.test(d.xml) && !missingFrom(d.text, ['SHOP NUMBER 0', `SHOP NUMBER ${last}`, 'Amount']).length, `${tables} tables, ${columns} columns`);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['indexcols', ''], ['indexcols-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'indexcols', extra), 'docx');
+    d = await read(docx);
+    const entry = (new RegExp('<w:p>(?:(?!</w:p>).)*Entry 24 of column 2(?:(?!</w:p>).)*</w:p>', 's').exec(d.xml) || [''])[0];
+    expect(`${name}: a name and its number are one line with a tab to the number's edge, not two lines`, !/<w:br\/>/.test(d.xml) && /<w:tab w:val="right" w:leader="none"/.test(entry) && /<w:t[^>]*>\d+<\/w:t>/.test(entry) && !missingFrom(d.text, ['Entry 1 of column 1', extra ? 'Entry 24 of column 2' : 'Entry 24 of column 3']).length, entry.slice(0, 300));
     fs.rmSync(docx);
   }
 

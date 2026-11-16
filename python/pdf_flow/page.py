@@ -27,6 +27,7 @@ class Page:
         self.xml_id = 0
         self.ground_pix = None
         self.layer = False
+        self.fig_ink = {}
 
     # -- reading
     def read(self):
@@ -179,8 +180,8 @@ class Page:
                         s["st"] = color
                         self.used_segments.add(i)
                 for si, (r, fill, border, dashed) in enumerate(self.shapes):
-                    if not fill or border or r.height > 1.9 * size or overlap(bb, tuple(r)) < 0.6 * area(bb):
-                        continue
+                    if not fill or border or r.height > 1.9 * size or r.width > 4 * w + 8 * size or overlap(bb, tuple(r)) < 0.6 * area(bb):
+                        continue                                      # a band much wider than its words is the shading of a row
                     rr = tuple(r)
                     if len([m for m in self.upright if overlap(m.bbox, rr) > 0.5 * area(m.bbox)]) > 1:
                         continue                                      # a block of text on a colour: a box, not a highlight
@@ -605,18 +606,19 @@ class Page:
                                 seen[k] = 1
                                 stack.append(k)
             # the component's true extent in pixels (the cells above are 3 x 3 pixels coarse)
-            px0, py0, px1, py1 = w, h, 0, 0
+            px0, py0, px1, py1, ink = w, h, 0, 0, 0
             for y in range(ys0 * 3, min(h, (ys1 + 1) * 3)):
                 row = y * w
                 for x in range(xs0 * 3, min(w, (xs1 + 1) * 3)):
                     if mask[row + x]:
+                        ink += 1
                         if x < px0: px0 = x
                         if x > px1: px1 = x
                         if y < py0: py0 = y
                         if y > py1: py1 = y
             if px1 < px0:
                 continue
-            found.append([px0 / scale, py0 / scale, (px1 + 1) / scale, (py1 + 1) / scale, count])
+            found.append([px0 / scale, py0 / scale, (px1 + 1) / scale, (py1 + 1) / scale, count, ink / scale ** 2])
         outlines = [b.bbox for b in self.box_items] + [c["bbox"] for t in self.tbls for c in t.cells]
         kept = []
         for f in found:
@@ -654,13 +656,36 @@ class Page:
                 for j in range(i + 1, len(found)):
                     a, b = found[i], found[j]
                     if a[0] - 13 <= b[2] and b[0] - 13 <= a[2] and a[1] - 10 <= b[3] and b[1] - 10 <= a[3]:
-                        found[i] = [min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]), a[4] + b[4]]
+                        found[i] = [min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]), a[4] + b[4], a[5] + b[5]]
                         del found[j]
                         changed = True
                         break
                 if changed:
                     break
         self.figs = [tuple(f[:4]) for f in found]
+        self.fig_ink = {tuple(f[:4]): f[5] for f in found}            # what a figure paints, in square points: its box says nothing about a grid of rules
+
+
+LETTERS = re.compile(r"[^\W\d_]{3}")
+
+
+def stacked(lines):
+    """The lines that stand one under another, left-aligned, of one size and weight, three to twelve: a paragraph or an address, whatever its line spacing. A longer column is a list or an index."""
+    chains = []
+    for l in sorted(lines, key=lambda l: l.base):
+        for c in chains:
+            if abs(l.x0 - c[-1].x0) <= 3 and abs(l.size - c[-1].size) <= 1.6 and l.bold_all == c[-1].bold_all and 0.7 * max(l.size, c[-1].size) <= l.base - c[-1].base <= 2.1 * max(l.size, c[-1].size):
+                c.append(l)
+                break
+        else:
+            chains.append([l])
+    return {id(l) for c in chains if 3 <= len(c) <= 12 for l in c}
+
+
+def striped(boxes):
+    """The boxes that are the shaded rows of a table drawn without grid lines: three or more of one width, none taller than a row."""
+    rows = [b for b in boxes if b.y1 - b.y0 <= 40]
+    return {id(b) for b in rows if sum(abs(c.x0 - b.x0) <= 2 and abs(c.x1 - b.x1) <= 2 for c in rows) >= 3}
 
 
 def page_kind(P):
@@ -672,16 +697,24 @@ def page_kind(P):
     cell = 8.0
     cols, rows = int(P.w // cell) + 1, int(P.h // cell) + 1
     covered = bytearray(cols * rows)
-    rects = [r for r, _ in P.imgs] + [f for f in P.figs if not any(inside(f, t.bbox, 0) for t in P.tbls)] + [b.bbox for b in P.box_items if b.fill] + [bb for bb, _ in P.page_fills]
+    shaded = striped(P.box_items)
+    rects = [r for r, _ in P.imgs] + [bb for bb, _ in P.page_fills]
+    rects += [b.bbox for b in P.box_items if b.fill and id(b) not in shaded and sum(1 for l in P.upright if inside(l.bbox, b.bbox)) < 3]
     for r in rects:
         for y in range(max(0, int(r[1] // cell)), min(rows, int(r[3] // cell) + 1)):
             for x in range(max(0, int(r[0] // cell)), min(cols, int(r[2] // cell) + 1)):
                 covered[y * cols + x] = 1
-    share = sum(covered) / len(covered)
+    ink = sum(P.fig_ink.get(f, area(f)) for f in P.figs if not any(inside(f, t.bbox, 0) for t in P.tbls))
+    share = sum(covered) / len(covered) + ink / (P.w * P.h)       # what is painted, not the boxes round it: a grid of rules or a shaded row of a table is not a design
     if P.page_fills:
         return "design", "a coloured background"
     if share > 0.4:
         return "design", "pictures and colour cover %d%% of the sheet" % round(share * 100)
+    for f in P.figs:
+        if area(f) > 0.4 * P.w * P.h and not any(inside(f, t.bbox, 0) for t in P.tbls):
+            marks = [l for l in P.upright if inside(l.bbox, f, 1.0)]
+            if marks and sum(len(l.text.split()) for l in marks if len(l.text.strip()) <= 25) > 0.5 * sum(len(l.text.split()) for l in marks):
+                return "design", "labels on a drawing that covers %d%% of the sheet" % round(100 * area(f) / (P.w * P.h))     # ruled paper under running text has long lines, a plan or a chart short ones
     held = [(b, sum(1 for l in P.upright if inside(l.bbox, b.bbox))) for b in P.box_items]
     for b, n in held:
         if b.fill and n >= 8 and area(b.bbox) >= 0.15 * P.w * P.h:
@@ -690,10 +723,17 @@ def page_kind(P):
     if len(sections) >= 2:
         return "design", "%d boxes holding text of their own" % len(sections)
     loose = [l for l in P.upright if not any(inside(l.bbox, t.bbox, 0.5) for t in P.tbls)]
-    short = [l for l in loose if len(l.text.strip()) <= 25 and not l.leader]               # a leader line reaches across the page, whatever is left of its text
-    drawn = P.imgs or P.figs or P.box_items
-    if drawn and not P.tbls and len(loose) >= 15 and len(short) >= 0.6 * len(loose) and len(cluster([l.x0 for l in loose], 6)) >= 6:
-        return "design", "%d short pieces of text at %d left edges" % (len(short), len(cluster([l.x0 for l in loose], 6)))
+    runs = stacked(loose)
+    short = [l for l in loose if len(l.text.strip()) <= 25 and not l.leader and id(l) not in runs]     # a leader line reaches across the page, whatever is left of its text
+    words = lambda ls: sum(len(l.text.split()) for l in ls)
+    art = P.imgs or sum(P.fig_ink.get(f, area(f)) for f in P.figs) >= 0.01 * P.w * P.h or [b for b in P.box_items if id(b) not in shaded]       # shaded rows and ruled lines are a table, not art
+    bits = [l for l in loose if not LETTERS.search(l.text)]       # pieces of mathematics and labels that are no word, placed at points: only a text box keeps them where they are
+    drawn = P.imgs or P.figs or P.box_items                         # fraction bars and roots are rules too
+    if drawn and not P.tbls and len(loose) >= 15 and len(cluster([l.x0 for l in loose], 6)) >= 6:
+        if art and words(short) > 0.5 * words(loose):
+            return "design", "%d short pieces of text at %d left edges" % (len(short), len(cluster([l.x0 for l in loose], 6)))
+        if len(bits) >= 0.4 * len(loose) and len(cluster([l.x0 for l in bits], 6)) >= 6:
+            return "design", "%d pieces that are no word at %d left edges" % (len(bits), len(cluster([l.x0 for l in bits], 6)))
     return "document", "pictures and colour cover %d%% of the sheet" % round(share * 100)
 
 

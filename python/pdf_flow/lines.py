@@ -20,7 +20,6 @@ class Line:
         self.desc = big.get("descender") or -0.2
         self.marker = None            # (kind, token, marker_x0, text_x0)
         self.marker_box = None
-        self.absorbed = False
         self.block = self.block_x1 = None   # the PDF text block the line came from, and where it ends on the right
         self.seq = 0                  # where the PDF wrote the line among the lines of its page
         self.justified = False
@@ -247,6 +246,40 @@ def split_leader(line):
     tab.update(text="\t", bbox=(head[-1]["bbox"][2], head[-1]["bbox"][1], tail[0]["bbox"][0], head[-1]["bbox"][3]))        # the gap it stands for, so the dots leave the picture
     line.spans = head + [tab] + tail
     line.leader = (LEADERS[m.group("run").strip()[0]], line.x1)
+
+
+FIGURE = re.compile(r"[£$€]?\d[\d.,]*%?")
+
+
+def end_figures(items):
+    """Rows made only of texts that each have a figure after them (an index with page numbers, a price list set in columns): the text, a tab and the figure are one line,
+    with the tab at the figure's right edge, so that a column of figures keeps its edge whatever the text before it is set in. Three such pairs are needed: a table
+    has figures after figures or text after text on its rows and is left to the table code."""
+    rows = []
+    for l in sorted([i for i in items if i.kind == "line" and not (i.leader or i.marker)], key=lambda l: (l.base, l.x0)):
+        if rows and abs(rows[-1][0].base - l.base) <= 0.3 * min(rows[-1][0].size, l.size):
+            rows[-1].append(l)
+        else:
+            rows.append([l])
+    pairs = []
+    for r in rows:
+        r.sort(key=lambda l: l.x0)
+        figure = [len(l.text.strip()) <= 12 and bool(FIGURE.fullmatch(l.text.strip())) for l in r]
+        if len(r) % 2 == 0 and figure[1::2] == [True] * (len(r) // 2) and not any(figure[0::2]) and not any(l.lead_in for l in r) and all(re.search(r"[^\W\d_]", l.text) for l in r[0::2]) and all(
+                b.x0 - a.x1 >= 2.5 * a.size for a, b in zip(r[0::2], r[1::2])):
+            pairs += zip(r[0::2], r[1::2])
+    if len(pairs) < 3:
+        return items
+    joined, gone = {}, set()
+    for text, fig in pairs:
+        tab = {k: v for k, v in text.spans[-1].items() if k not in ("ul", "st", "hl", "link", "field")}
+        tab.update(text="	", bbox=(text.x1, text.y0, fig.x0, text.y1))
+        line = Line(text.spans + [tab] + fig.spans, (text.x0, min(text.y0, fig.y0), fig.x1, max(text.y1, fig.y1)), text.base, max(text.size, fig.size))
+        line.block, line.block_x1, line.seq = text.block, text.block_x1, min(text.seq, fig.seq)
+        line.leader = ("none", fig.x1)
+        joined[id(text)] = line
+        gone.add(id(fig))
+    return [joined.get(id(i), i) for i in items if id(i) not in gone]
 
 
 def bullet(token):
