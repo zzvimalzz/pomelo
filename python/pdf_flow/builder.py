@@ -82,7 +82,18 @@ class Builder:
             else:
                 prev[1] = max(prev[1], c[1])
                 prev[2].extend(c[2])
-        return good if len(good) >= 2 else None
+        if len(good) < 2 or self.scattered(good, items):
+            return None
+        return good
+
+    def scattered(self, cols, items):
+        """True when a column has no item on a row of any other column: pieces that stand each on a row of their own, like the marks at the right of each question of a worksheet, are paragraphs in the order of the page and not a column."""
+        bands = self.h_bands(items)
+        if len(bands) < 2:
+            return False
+        home = {id(i): k for k, c in enumerate(cols) for i in c[2]}
+        alone = [all(len({home[id(i)] for i in its}) == 1 for _, _, its in bands if any(home[id(i)] == k for i in its)) for k in range(len(cols))]
+        return any(alone)
 
     def h_bands(self, items):
         items = sorted(items, key=lambda i: (i.y0, i.x0))

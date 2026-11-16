@@ -72,8 +72,8 @@ class FontMeter:
     def width(self, s, text, size):
         """Natural width in the font Word will use, or None when it cannot be measured."""
         family = self.family(s)
-        theirs = norm(family) == norm(word_family(s["font"]) or "Arial") or not installed()
-        f = self.font(s["font"]) if theirs else installed_font(family, is_bold(s), is_italic(s))
+        # the installed family is what Word draws, and the widths of an embedded subset can be wrong (a subset of Arial Narrow that measures as wide as Arial)
+        f = installed_font(family, is_bold(s), is_italic(s)) or (self.font(s["font"]) if norm(family) == norm(word_family(s["font"]) or "Arial") or not installed() else None)
         if f is None:
             return None
         try:

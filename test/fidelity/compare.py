@@ -241,6 +241,31 @@ def grey_pages(da, db, dpi=36):
         yield [b"".join(p.samples[y * p.width:y * p.width + w] for y in range(h)) for p in (pa, pb)]
 
 
+def running_words(doc, edge=0.08):
+    """The words of the lines in the top or bottom 8 % of a page that come back on two or more pages (the digits left out, so a page number does not matter): a running title or a footer. An editable Word file keeps them in its header and footer parts, which Word prints before the text of the page, where the source draws them wherever it likes."""
+    lines, pages = [], {}
+    for pno, page in enumerate(doc):
+        for block in page.get_text("dict")["blocks"]:
+            for line in block.get("lines", []):
+                if line["bbox"][3] <= edge * page.rect.height or line["bbox"][1] >= (1 - edge) * page.rect.height:
+                    text = "".join(sp["text"] for sp in line["spans"])
+                    key = re.sub(r"[\W\d_]+", "", unshaped(text).lower())
+                    if key:
+                        lines.append((key, text))
+                        pages.setdefault(key, set()).add(pno)
+    return Counter(t for key, text in lines if len(pages[key]) >= 2 for t in (re.sub(r"\W+", "", unshaped(w).lower()) for w in text.split()) if t)
+
+
+def without(words, drop):
+    drop, out = Counter(drop), []
+    for w in words:
+        if drop[w] > 0:
+            drop[w] -= 1
+        else:
+            out.append(w)
+    return out
+
+
 def check_metrics(da, db, hidden=()):
     wa, wb = plain_words(da), plain_words(db)
     for word in hidden:
@@ -249,8 +274,9 @@ def check_metrics(da, db, hidden=()):
     recall = order = None
     if wa:
         recall = round(sum((Counter(wa) & Counter(wb)).values()) / len(wa), 3)
-        # the cap keeps the quadratic matcher fast on long documents
-        order = round(difflib.SequenceMatcher(None, wa[:3000], wb[:3000], autojunk=False).ratio(), 3) if wb else 0.0
+        # the cap keeps the quadratic matcher fast on long documents; running titles and footers count for recall, not for order
+        oa, ob = without(wa, running_words(da)), without(wb, running_words(db))
+        order = round(difflib.SequenceMatcher(None, oa[:3000], ob[:3000], autojunk=False).ratio(), 3) if wb else 0.0
     sims = [1 - sum(abs(x - y) for x, y in zip(a, b)) / (255 * max(1, len(a))) for a, b in grey_pages(da, db)]
     pairs = list(zip(da, db))
     return {
@@ -401,4 +427,5 @@ def main():
     print(json.dumps(res))
 
 
-main()
+if __name__ == "__main__":
+    main()

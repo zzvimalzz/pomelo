@@ -644,6 +644,93 @@ if kind == "rtl":                                   # an Arabic paragraph of two
     page.insert_htmlbox(pymupdf.Rect(300, 120, 540, 260), '<p dir="rtl">%s</p>' % arabic, css=css, archive=fonts)
     page.insert_htmlbox(pymupdf.Rect(300, 280, 540, 460), '<p dir="rtl">%s</p>' % hebrew, css=css, archive=fonts)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "fields":                                # two rows of check boxes with labels, a text area and a list box with borders, all form widgets (with an extra argument: Letter paper, larger boxes, labels at the left, nothing ticked, empty bordered fields)
+    other = len(sys.argv) > 3
+    page = doc.new_page(width=612 if other else 595, height=792 if other else 842)
+    size = 14 if other else 10
+    def widget(ftype, rect, name, value=None, **kw):
+        w = pymupdf.Widget()
+        w.field_type, w.field_name, w.rect = ftype, name, pymupdf.Rect(rect)
+        w.border_color, w.border_width, w.fill_color = (0, 0, 0), 0.8, (0.8, 0.84, 1)
+        for k, v in kw.items():
+            setattr(w, k, v)
+        page.add_widget(w)
+        if value:
+            for added in page.widgets():
+                if added.field_name == name:
+                    added.field_value = value if isinstance(value, str) else added.on_state()
+                    added.update()
+    page.insert_text((72, 90), "Tick every box that applies to the applicant.", fontname="helv", fontsize=11)
+    for i, label in enumerate(("Employed", "Retired", "Student")):
+        x = 72 + i * 130
+        if other:
+            page.insert_text((x, 124), label, fontname="helv", fontsize=11)
+            widget(pymupdf.PDF_WIDGET_TYPE_CHECKBOX, (x + 70, 112, x + 70 + size, 112 + size), "box%d" % i, False)
+        else:
+            widget(pymupdf.PDF_WIDGET_TYPE_CHECKBOX, (x, 112, x + size, 112 + size), "box%d" % i, i == 1)
+            page.insert_text((x + size + 6, 121), label, fontname="helv", fontsize=11)
+    for i, label in enumerate(("Single", "Married")):
+        x = 72 + i * 130
+        widget(pymupdf.PDF_WIDGET_TYPE_CHECKBOX, (x, 152, x + size, 152 + size), "status%d" % i, bool(i == 1 and not other))
+        page.insert_text((x + size + 6, 161), label, fontname="helv", fontsize=11)
+    if other:
+        for i, label in enumerate(("Surname", "Forename")):
+            page.insert_text((72, 218 + i * 30), label, fontname="helv", fontsize=11)
+            widget(pymupdf.PDF_WIDGET_TYPE_TEXT, (150, 205 + i * 30, 380, 223 + i * 30), "name%d" % i, "", fill_color=None)
+    else:
+        page.insert_text((72, 218), "Comments", fontname="helv", fontsize=11)
+        widget(pymupdf.PDF_WIDGET_TYPE_TEXT, (72, 226, 400, 286), "notes", "Free text of the applicant.", field_flags=pymupdf.PDF_TX_FIELD_IS_MULTILINE)
+        page.insert_text((72, 316), "Days", fontname="helv", fontsize=11)
+        widget(pymupdf.PDF_WIDGET_TYPE_LISTBOX, (150, 304, 280, 364), "days", "Monday", choice_values=["Monday", "Tuesday", "Wednesday"])
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "drawnboxes":                            # three answers, each after a small square drawn as a stroke (with an extra argument: larger squares, thicker strokes and text)
+    other = len(sys.argv) > 3
+    page = doc.new_page(width=595, height=842)
+    side, size = (12, 12) if other else (9, 10)
+    for i, label in enumerate(("Employment", "Study", "Family reunion")):
+        y = 120 + i * 30
+        page.draw_rect(pymupdf.Rect(72, y - side + 2, 72 + side, y + 2), color=(0, 0, 0), width=1.2 if other else 0.7)
+        page.insert_text((72 + side + 8, y), label, fontname="helv", fontsize=size)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "narrow":                                # a line in a narrow family whose embedded subset carries the wide family's metrics, so that measuring the embedded font would squeeze it (with an extra argument: another size and line)
+    other = len(sys.argv) > 3
+    page = doc.new_page(width=595, height=842)
+    page.insert_font(fontname="nr", fontfile="C:/Windows/Fonts/arialn.ttf", set_simple=True)
+    page.insert_text((72, 100), "A fictional form for software testing." if other else "A line of narrow text for the foot of the page.", fontname="nr", fontsize=9 if other else 6.5)
+    page.insert_text((72, 140), "Ordinary text in Helvetica beside it.", fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); doc.close()
+    doc = pymupdf.open(sys.argv[1])
+    font = [f for f in doc[0].get_fonts() if f[4] == "nr"][0][0]
+    descriptor = int(doc.xref_get_key(font, "FontDescriptor")[1].split()[0])
+    doc.update_stream(int(doc.xref_get_key(descriptor, "FontFile2")[1].split()[0]), open("C:/Windows/Fonts/arial.ttf", "rb").read())
+    doc.xref_set_key(font, "BaseFont", "/AAAAAA+ArialNarrow")
+    doc.xref_set_key(descriptor, "FontName", "/AAAAAA+ArialNarrow")
+    doc.save(sys.argv[1] + ".tmp"); doc.close(); os.replace(sys.argv[1] + ".tmp", sys.argv[1]); sys.exit()
+if kind == "worksheet":                             # questions with a row of answer choices under each and the marks at the right edge on a line of their own (with an extra argument: Letter paper, three choices, the marks further out and smaller)
+    other = len(sys.argv) > 3
+    page = doc.new_page(width=612 if other else 595, height=792 if other else 842)
+    for n in range(5):
+        y = 70 + n * 78
+        page.insert_text((57, y), "%d   Which of the choices below is the right answer to question %d?" % (n + 1, n + 1), fontname="helv", fontsize=10.5)
+        choices = (91, 185, 278) if other else ((108, 278) if n % 2 == 0 else (91, 185, 278, 372))
+        for k, x in enumerate(choices):
+            page.insert_text((x, y + 25), "%s  %d" % ("ABCD"[k], n * 7 + k), fontname="helv", fontsize=13)
+        page.insert_text((480 if other else 452, y + 48), "[%d mark%s]" % (n + 1, "" if n == 0 else "s"), fontname="helv", fontsize=8 if other else 9)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "running":                               # three pages of words with a running title and a page number at the foot; the title and the number are drawn after the words; with an extra argument they are drawn before them, as Word prints a header and a footer
+    top = len(sys.argv) > 3
+    for p in range(3):
+        page = doc.new_page(width=595, height=842)
+        def furniture():
+            page.insert_text((72, 60 if top else 800), "Quarterly review of the estuary survey", fontname="helv", fontsize=9)
+            page.insert_text((500, 800), "Page %d of 3" % (p + 1), fontname="helv", fontsize=9)
+        if top:
+            furniture()
+        for i in range(8):
+            page.insert_text((72, 120 + i * 20), "alpha%d bravo%d charlie%d delta%d echo%d" % (p * 8 + i, p * 8 + i, p * 8 + i, p * 8 + i, p * 8 + i), fontname="helv", fontsize=11)
+        if not top:
+            furniture()
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "poster":                                # text set freely on a coloured page, as on a slide or a flyer
     page = doc.new_page(width=595, height=842)
     page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
@@ -1528,6 +1615,53 @@ const read = async (docx) => {
     expect(`${name}: the words are in reading order, the letters are the base letters (Word shapes them), the runs are marked right to left`, inOrder(arabic, ['مرحبا', 'بالعالم', 'سطر', 'للاختبار']) && !/[\ufb50-\ufdff\ufe70-\ufeff]/.test(arabic) && /<w:rtl\/>/.test(arabic), arabic.replace(/<[^>]+>/g, '').slice(0, 120));
     expect(`${name}: so are the words of the Hebrew paragraph${extra ? ', with a Latin word and a number inside the line and a Hebrew word after them' : ''}`, inOrder(hebrew, extra ? ['שלום', 'לבדיקה', 'PDF', '123', 'בסוף'] : ['שלום', 'פסקה', 'לבדיקה']), hebrew.replace(/<[^>]+>/g, '').slice(0, 120));
     fs.rmSync(docx);
+  }
+
+  console.log('form fields');
+  const outlined = (xml) => (xml.match(/prst="rect"><a:avLst\/><\/a:prstGeom><a:noFill\/><a:ln w=/g) || []).length;
+  for (const [name, extra, ticked, outlines, words] of [['fields', '', 2, 2, ['Employed', 'Retired', 'Student', 'Single', 'Married', 'Free text of the applicant.', 'Wednesday']], ['fields-other', 'other', 0, 2, ['Employed', 'Retired', 'Student', 'Single', 'Married', 'Surname', 'Forename']]]) {
+    [docx] = await convert.convertFile(draw(name, 'fields', extra), 'docx');
+    d = await read(docx);
+    const count = (c) => d.text.split(c).length - 1;
+    expect(`${name}: the five check boxes are characters, ${ticked} of them ticked, and no tick is left as a text of its own`, count('☐') === 5 - ticked && count('☒') === ticked && !missingFrom(d.text, words).length && !/✓|✔|Wingdings|ZapfDingbats/.test(d.text), d.text.slice(-120));
+    expect(`${name}: the text area and the list box, or the two empty fields, keep their outline as a shape behind the text`, outlined(d.xml) === outlines, `${outlined(d.xml)} outlines`);
+    fs.rmSync(docx);
+  }
+
+  console.log('check boxes drawn as squares');
+  for (const [name, extra] of [['drawnboxes', ''], ['drawnboxes-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'drawnboxes', extra), 'docx');
+    d = await read(docx);
+    const numbering = await d.zip.file('word/numbering.xml').async('string');
+    const glyphs = [...numbering.matchAll(/w:lvlText w:val="([^"]*)"/g)].map((m) => m[1]);
+    expect(`${name}: each answer starts with an empty-box character from Segoe UI Symbol, not a round bullet`, (d.xml.match(/<w:numPr>/g) || []).length === 3 && glyphs.includes('☐') && !glyphs.includes('o') && /Segoe UI Symbol/.test(numbering) && !missingFrom(d.text, ['Employment', 'Study', 'Family reunion']).length, glyphs.join(' '));
+    fs.rmSync(docx);
+  }
+
+  console.log('a narrow family whose embedded subset has the wide family metrics');
+  for (const [name, extra, line] of [['narrow', '', 'A line of narrow text for the foot of the page.'], ['narrow-other', 'other', 'A fictional form for software testing.']]) {
+    [docx] = await convert.convertFile(draw(name, 'narrow', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: the line is set at the width the PDF has, with no letter spacing squeezed into it`, !missingFrom(d.text, [line]).length && !/<w:spacing w:val="-\d+"\/>/.test(d.xml), (d.xml.match(/<w:spacing w:val="-?\d+"\/>/g) || []).join(' '));
+    fs.rmSync(docx);
+  }
+
+  console.log('answer choices and marks at the right edge');
+  for (const [name, extra] of [['worksheet', ''], ['worksheet-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'worksheet', extra), 'docx');
+    d = await read(docx);
+    const where = ['1   Which', 'A  0', '[1 mark]', '2   Which', '[2 marks]', '3   Which', '[3 marks]', '4   Which', '[4 marks]', '5   Which', '[5 marks]'].map((t) => squash(d.text).indexOf(squash(t)));
+    expect(`${name}: each mark comes after its question and its choices and before the next question, not all after the last one`, where.every((i, k) => i >= 0 && (!k || i > where[k - 1])), where.join(' '));
+    fs.rmSync(docx);
+  }
+
+  console.log('the order check leaves a running title out');
+  {
+    const check = (a, b) => JSON.parse(execFileSync(engines.pdf, ['-I', '-W', 'ignore', path.join(__dirname, '../../fidelity/compare.py'), draw(a[0], 'running', a[1]), draw(b[0], 'running', b[1])], { encoding: 'utf8', windowsHide: true, maxBuffer: 1 << 26 })).check;
+    const same = check(['running-src', ''], ['running-top', 'top']);
+    expect('a title that the source draws at the foot and the printout at the top is not a difference of order, and recall still counts it', same.order >= 0.99 && same.recall === 1, JSON.stringify(same));
+    const swapped = check(['running-top2', 'top'], ['running-src2', '']);
+    expect('nor is the other way round', swapped.order >= 0.99 && swapped.recall === 1, JSON.stringify(swapped));
   }
 
   console.log('a sheet stored sideways');

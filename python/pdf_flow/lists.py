@@ -44,7 +44,7 @@ class Lists:
             glyph = {"o": "o", "": "•", "": "▪", "": "➢", "": "❖", "": "■", "": "✓", "": "□", "": "o"}.get(token, token)
             key = ("b", glyph, sz, color, round(hang))
             if key not in self.made:
-                font_bullet = "Courier New" if glyph == "o" else "Arial"
+                font_bullet = "Courier New" if glyph == "o" else "Segoe UI Symbol" if glyph in "☐☒" else "Arial"
                 self.made[key] = self.define(f'<w:numFmt w:val="bullet"/><w:suff w:val="tab"/><w:lvlText w:val="{esc(glyph)}"/>', f'<w:rFonts w:ascii="{font_bullet}" w:hAnsi="{font_bullet}" w:cs="{font_bullet}" w:hint="default"/><w:color w:val="{color}"/><w:sz w:val="{sz}"/>', 1)
             return self.made[key]
         digits = re.sub(r"[^0-9a-z]", "", token)
