@@ -12,7 +12,7 @@ from pdf_fonts import latin
 from pdf_spans import hexcolor
 
 from .common import TW, cluster, inside, tw
-from .lines import end_figures, is_bold, is_letter
+from .lines import end_figures, is_bold, is_letter, mostly_rtl
 from .page import Para, runs_xml, tracking
 from .shapes import Box, SIDES, Tbl, rule_key, table_look
 
@@ -257,6 +257,8 @@ class Builder:
             pitch = (cur.lines[-1].base - cur.lines[0].base) / (len(cur.lines) - 1)
             if abs(dy - pitch) > 0.3 * pitch:
                 return False
+        if abs(l.x1 - prev.x1) <= 2 + 0.3 * s and mostly_rtl([prev, l]):
+            return True                                              # a right-to-left paragraph is flush at its right edge and its last line is short
         cx_prev, cx = (prev.x0 + prev.x1) / 2, (l.x0 + l.x1) / 2
         wide, narrow = max(prev.x1 - prev.x0, l.x1 - l.x0), min(prev.x1 - prev.x0, l.x1 - l.x0)
         if abs(cx - cx_prev) <= 2.5 and abs(l.x0 - prev.x0) > 3 and not (wide >= 0.92 * width and narrow <= 0.8 * width):
@@ -352,6 +354,11 @@ class Builder:
             ind_right = max(0.0, x1 - right_to)
         ind_left = max(0.0, ind_left)
         ind_right = max(0.0, ind_right)
+        rtl = not marker and mostly_rtl(lines)
+        jc_word = jc
+        if rtl:
+            jc_word = {"left": "right", "right": "left"}.get(jc, jc)          # in a right-to-left paragraph Word's left is the start of the line, which is the right
+            ind_left, ind_right, first_line = ind_right, ind_left, 0.0
         if ind_right > 0 or jc != "left" or reflow:
             ind_right += self.room(x1)
         gap = x1 - right_edge if self.depth else None                 # a line that fills its cell wraps on any rounding in Word, and a cell clips what overhangs it, so it is set 1 twip a character narrower
@@ -410,7 +417,7 @@ class Builder:
             style = "Heading3"
         if style.startswith("Heading") and not self.heading_ok(first, text):
             style = ""
-        ppr = f'<w:pPr>{f'<w:pStyle w:val="{style}"/>' if style else ""}{num_pr}{borders}{tabs}{spacing}{ind_attr}<w:jc w:val="{jc}"/>{heading}</w:pPr>'
+        ppr = f'<w:pPr>{f'<w:pStyle w:val="{style}"/>' if style else ""}{num_pr}{borders}{tabs}{"<w:bidi/>" if rtl else ""}{spacing}{ind_attr}<w:jc w:val="{jc_word}"/>{heading}</w:pPr>'
         # runs
         justified = jc == "both"
         body = ""
