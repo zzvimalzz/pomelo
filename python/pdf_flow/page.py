@@ -3,6 +3,7 @@
 
 import math
 import re
+import unicodedata
 from collections import Counter
 
 from docx.opc.constants import RELATIONSHIP_TYPE
@@ -14,6 +15,8 @@ from pdf_spans import RTL, dedupe, hexcolor
 from .common import HI_DPI, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
 from .lines import attach_markers, hangs, is_bold, is_italic, merge_rows, read_lines, split_leader, split_marker
 from .shapes import Box, Tbl, corner_radius, polygon_area, rect_shapes, segments_of
+
+SHAPED = re.compile(r"[\ufb50-\ufdff\ufe70-\ufeff]+")
 
 
 class Page:
@@ -814,7 +817,7 @@ def span_run(page, s, justified, meter, gap=None, last=False):
         rpr += "<w:vanish/>"
     if not by_color:
         rpr += f'<w:color w:val="{hexcolor(s["color"])}"/>'
-    text = s["text"]
+    text = SHAPED.sub(lambda m: unicodedata.normalize("NFKC", m.group()), s["text"])      # the PDF stores shaped forms of Arabic letters; Word shapes them again from the letters
     if text == "	":
         return f'<w:r><w:rPr>{rpr}</w:rPr><w:tab/></w:r>'
     spacing = 0

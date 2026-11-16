@@ -5,7 +5,7 @@ import re
 
 import pymupdf
 
-from pdf_fonts import installed, installed_font, installed_name, latin, line_height, norm, stand_in, word_family
+from pdf_fonts import installed, installed_font, installed_name, latin, line_height, math_font, norm, stand_in, word_family
 
 from .lines import is_bold, is_italic
 
@@ -45,6 +45,8 @@ class FontMeter:
 
     def family(self, s):
         """The family Word draws the span in. Text outside the Latin scripts keeps the font's own name."""
+        if math_font(s["font"], s["text"]):
+            return "Cambria Math"
         if not installed() or not latin(s["text"]):
             own = word_family(s["font"]) or "Arial"
             return installed_name(own) or own

@@ -20,6 +20,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 import warnings
 import xml.etree.ElementTree as ET
 import zipfile
@@ -49,6 +50,14 @@ def norm(word):
             .replace("–", "-").replace("—", "-").replace("•", "*").replace("", "*").replace("●", "*").replace("−", "-"))
 
 
+SHAPED = re.compile(r"[\ufb50-\ufdff\ufe70-\ufeff]+")
+
+
+def unshaped(text):
+    """The letters behind Arabic presentation forms: a PDF stores the shaped forms, Word prints from the letters, and a word is the same word either way."""
+    return SHAPED.sub(lambda m: unicodedata.normalize("NFKC", m.group()), text)
+
+
 def words_of(doc):
     out = []
     for pno, page in enumerate(doc):
@@ -59,7 +68,7 @@ def words_of(doc):
                     # box around the glyphs it does not depend on the font's declared ascent
                     cur, box = "", None
                     for ch in span["chars"]:
-                        c = ch["c"]
+                        c = unshaped(ch["c"])
                         if c.isspace():
                             if cur:
                                 out.append((cur, box, span, pno))
@@ -217,7 +226,7 @@ def plain_words(doc):
     out = []
     for page in doc:
         for w in page.get_text("words"):
-            t = re.sub(r"\W+", "", w[4].lower())
+            t = re.sub(r"\W+", "", unshaped(w[4]).lower())
             if t:
                 out.append(t)
     return out
@@ -346,7 +355,7 @@ def docx_hidden(path):
         elif tag in (w + "p", w + "r"):
             item = stack.pop()
             if item["para"]:
-                out += [t for t in (re.sub(r"\W+", "", x.lower()) for x in "".join(item["text"]).split()) if t]
+                out += [t for t in (re.sub(r"\W+", "", unshaped(x).lower()) for x in "".join(item["text"]).split()) if t]
             elif item["hidden"]:
                 next(p for p in reversed(stack) if p["para"])["text"].append("".join(item["text"]))
     return out
@@ -354,7 +363,7 @@ def docx_hidden(path):
 
 def docx_words(pdf, docx):
     src = plain_words(pymupdf.open(pdf))
-    have = [t for t in (re.sub(r"\W+", "", x.lower()) for x in docx_text(docx).split()) if t]
+    have = [t for t in (re.sub(r"\W+", "", unshaped(x).lower()) for x in docx_text(docx).split()) if t]
     lost = Counter(src) - Counter(have)
     hidden = docx_hidden(docx)
     return {"words": len(src), "recall": round(1 - sum(lost.values()) / len(src), 3) if src else None, "missing": sorted(lost)[:10],

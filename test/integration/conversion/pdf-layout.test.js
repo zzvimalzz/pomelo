@@ -598,6 +598,52 @@ if kind == "layer":                                 # a scan that carries a text
     if how != "under":
         text()
     doc.save(sys.argv[1]); sys.exit()
+if kind == "mathfonts":                             # a line in a font named CMMI10 (the italic letters of a TeX paper) and one in XYZABC+CMSY10 (its symbols), among running text (with an extra argument: LMMathItalic10 and MSAM10, another size)
+    other = len(sys.argv) > 3
+    page = doc.new_page(width=595, height=842)
+    size = 16 if other else 11
+    page.insert_text((72, 90), "A sentence of running text before the equation.", fontname="cour", fontsize=size)
+    for name, file in (("mm", "times.ttf"), ("ms", "arial.ttf")):
+        page.insert_font(fontname=name, fontfile="C:/Windows/Fonts/" + file, set_simple=True)
+    page.insert_text((72, 130), "x + y = z", fontname="mm", fontsize=size)
+    page.insert_text((72, 170), "( a = b )", fontname="ms", fontsize=size)
+    page.insert_text((72, 210), "A sentence of running text after the equation.", fontname="cour", fontsize=size)
+    doc.save(sys.argv[1]); doc.close()
+    names = {"TimesNewRomanPSMT": "LMMathItalic10-Regular" if other else "CMMI10", "ArialMT": "QWERTY+MSAM10" if other else "XYZABC+CMSY10"}
+    doc = pymupdf.open(sys.argv[1])
+    for f in doc[0].get_fonts():
+        if f[3] in names:
+            doc.xref_set_key(f[0], "BaseFont", "/" + names[f[3]])
+    doc.save(sys.argv[1] + ".tmp"); doc.close(); os.replace(sys.argv[1] + ".tmp", sys.argv[1]); sys.exit()
+if kind == "mathletters":                           # letters of the mathematical alphabets (U+1D44E and its neighbours) drawn from a font that has them, among running text (with an extra argument: other letters and another size)
+    other = len(sys.argv) > 3
+    page = doc.new_page(width=595, height=842)
+    size = 16 if other else 11
+    page.insert_text((72, 90), "A sentence of running text before the equation.", fontname="helv", fontsize=size)
+    text = "\u{1D6FC} + \u{1D6FD} = \u{1D7D8}" if other else "\u{1D44E} + \u{1D44F} = \u{1D450}"
+    font = pymupdf.Font(fontfile="C:/Windows/Fonts/seguisym.ttf")
+    tw = pymupdf.TextWriter(page.rect)
+    tw.append((72, 130), text, font=font, fontsize=size)
+    tw.write_text(page)
+    page.insert_text((72, 170), "A sentence of running text after the equation.", fontname="helv", fontsize=size)
+    xref = [f for f in page.get_fonts() if f[3].startswith("Segoe")][0][0]
+    cmap = "/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /Test def /CMapType 2 def 1 begincodespacerange <0000> <FFFF> endcodespacerange %d beginbfchar %s endbfchar endcmap CMapName currentdict /CMap defineresource pop end end"
+    rows = ["<%04x> <%s>" % (font.has_glyph(ord(c)), c.encode("utf-16-be").hex()) for c in sorted(set(text))]
+    doc.update_stream(int(doc.xref_get_key(xref, "ToUnicode")[1].split()[0]), (cmap % (len(rows), " ".join(rows))).encode())
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "rtl":                                   # an Arabic paragraph of two lines and a Hebrew one, set right to left and shaped by the PDF writer (with an extra argument: a Latin word and a number in the Hebrew line, another size)
+    other = len(sys.argv) > 3
+    page = doc.new_page(width=595, height=842)
+    css = "@font-face{font-family:AR;src:url(arial.ttf)} body{font-family:AR;font-size:%dpt}" % (16 if other else 13)
+    fonts = pymupdf.Archive("C:/Windows/Fonts")
+    arabic = "\u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645 \u0647\u0630\u0627 \u0646\u0635 \u0639\u0631\u0628\u064a \u0637\u0648\u064a\u0644 \u064a\u0644\u0641 \u0639\u0644\u0649 \u0623\u0643\u062b\u0631 \u0645\u0646 \u0633\u0637\u0631 \u0648\u0627\u062d\u062f \u0641\u064a \u0627\u0644\u0635\u0641\u062d\u0629 \u0644\u0644\u0627\u062e\u062a\u0628\u0627\u0631"
+    hebrew = "\u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd \u05d6\u05d4\u05d5 \u05e4\u05e1\u05e7\u05d4 \u05d1\u05e2\u05d1\u05e8\u05d9\u05ea \u05d0\u05e8\u05d5\u05db\u05d4 \u05e9\u05e2\u05d5\u05d8\u05e4\u05ea \u05d1\u05de\u05e1\u05e4\u05e8 \u05e9\u05d5\u05e8\u05d5\u05ea \u05d1\u05d3\u05e3 \u05d4\u05d6\u05d4 \u05dc\u05d1\u05d3\u05d9\u05e7\u05d4"
+    if other:
+        hebrew += " PDF 123 \u05d1\u05e1\u05d5\u05e3"
+    page.insert_text((72, 90), "A sentence of running text above the right-to-left paragraphs.", fontname="helv", fontsize=11)
+    page.insert_htmlbox(pymupdf.Rect(300, 120, 540, 260), '<p dir="rtl">%s</p>' % arabic, css=css, archive=fonts)
+    page.insert_htmlbox(pymupdf.Rect(300, 280, 540, 460), '<p dir="rtl">%s</p>' % hebrew, css=css, archive=fonts)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "poster":                                # text set freely on a coloured page, as on a slide or a flyer
     page = doc.new_page(width=595, height=842)
     page.draw_rect(pymupdf.Rect(0, 0, 595, 842), color=None, fill=(0.1, 0.2, 0.45))
@@ -1448,6 +1494,39 @@ const read = async (docx) => {
     d = await read(docx);
     const entry = (new RegExp('<w:p>(?:(?!</w:p>).)*Entry 24 of column 2(?:(?!</w:p>).)*</w:p>', 's').exec(d.xml) || [''])[0];
     expect(`${name}: a name and its number are one line with a tab to the number's edge, not two lines`, !/<w:br\/>/.test(d.xml) && /<w:tab w:val="right" w:leader="none"/.test(entry) && /<w:t[^>]*>\d+<\/w:t>/.test(entry) && !missingFrom(d.text, ['Entry 1 of column 1', extra ? 'Entry 24 of column 2' : 'Entry 24 of column 3']).length, entry.slice(0, 300));
+    fs.rmSync(docx);
+  }
+
+  console.log('mathematics: the letters of a TeX paper and the characters of its symbol fonts');
+  const runOf = (xml, text) => (xml.match(/<w:r>.*?<\/w:r>/gs) || []).find((r) => r.replace(/<[^>]+>/g, '').replace(/\s/g, '').includes(squash(text))) || '';
+  for (const [name, extra, letters, symbols] of [['mathfonts', '', 'CMMI10', 'XYZABC+CMSY10'], ['mathfonts-other', 'other', 'LMMathItalic10', 'QWERTY+MSAM10']]) {
+    [docx] = await convert.convertFile(draw(name, 'mathfonts', extra), 'docx');
+    d = await read(docx);
+    const italic = runOf(d.xml, 'x+y=z');
+    const symbol = runOf(d.xml, '(a=b)');
+    expect(`${name}: plain letters in ${letters} are italic text in a text family, since Cambria Math would set them upright`, /<w:i\/>/.test(italic) && !/Cambria Math/.test(italic) && /w:rFonts w:ascii="[^"]+"/.test(italic), italic);
+    expect(`${name}: a span in ${symbols} is written in Cambria Math, and running text beside it is not`, /w:rFonts w:ascii="Cambria Math"/.test(symbol) && !/Cambria Math/.test(runOf(d.xml, 'before the equation')), symbol);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['mathletters', ''], ['mathletters-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'mathletters', extra), 'docx');
+    d = await read(docx);
+    const letters = runOf(d.xml, extra ? '\u{1D6FC}' : '\u{1D44E}');
+    expect(`${name}: mathematical letters (U+1D400 to U+1D7FF) are written in Cambria Math`, /w:rFonts w:ascii="Cambria Math"/.test(letters) && letters.includes(extra ? '\u{1D6FD}' : '\u{1D44F}'), letters);
+    fs.rmSync(docx);
+  }
+
+  console.log('right-to-left text');
+  for (const [name, extra] of [['rtl', ''], ['rtl-other', 'other']]) {
+    [docx] = await convert.convertFile(draw(name, 'rtl', extra), 'docx');
+    d = await read(docx);
+    const paras = d.xml.match(/<w:p[ >].*?<\/w:p>/gs) || [];
+    const arabic = paras.find((p) => p.includes('مرحبا')) || '';
+    const hebrew = paras.find((p) => p.includes('שלום')) || '';
+    const inOrder = (p, words) => { const at = words.map((w) => squash(p.replace(/<[^>]+>/g, '')).indexOf(squash(w))); return at.every((i, k) => i >= 0 && (!k || i > at[k - 1])); };
+    expect(`${name}: each paragraph is one right-to-left paragraph, aligned to its start, not a paragraph for each line`, /<w:bidi\/>/.test(arabic) && /<w:bidi\/>/.test(hebrew) && !/<w:jc w:val="right"/.test(arabic + hebrew) && paras.filter((p) => /<w:bidi\/>/.test(p)).length === 2, `${paras.length} paragraphs`);
+    expect(`${name}: the words are in reading order, the letters are the base letters (Word shapes them), the runs are marked right to left`, inOrder(arabic, ['مرحبا', 'بالعالم', 'سطر', 'للاختبار']) && !/[\ufb50-\ufdff\ufe70-\ufeff]/.test(arabic) && /<w:rtl\/>/.test(arabic), arabic.replace(/<[^>]+>/g, '').slice(0, 120));
+    expect(`${name}: so are the words of the Hebrew paragraph${extra ? ', with a Latin word and a number inside the line and a Hebrew word after them' : ''}`, inOrder(hebrew, extra ? ['שלום', 'לבדיקה', 'PDF', '123', 'בסוף'] : ['שלום', 'פסקה', 'לבדיקה']), hebrew.replace(/<[^>]+>/g, '').slice(0, 120));
     fs.rmSync(docx);
   }
 

@@ -3,7 +3,8 @@
 
 import re
 
-from pdf_spans import TEXT_FLAGS, has_unmapped_symbols
+from pdf_fonts import MATH_ITALIC
+from pdf_spans import RTL, TEXT_FLAGS, has_unmapped_symbols
 
 from .common import BULLETS, NUMBER
 
@@ -49,7 +50,7 @@ def is_bold(s):
 
 def is_italic(s):
     n = s["font"].lower()
-    return bool(s["flags"] & 2) or "italic" in n or "oblique" in n
+    return bool(s["flags"] & 2) or "italic" in n or "oblique" in n or bool(MATH_ITALIC.match(re.sub(r"^[a-z]{6}\+", "", n)))
 
 
 def span_ok(s, hidden_ok=False):
@@ -150,12 +151,18 @@ def stretched_row(r, shapes=()):
     return max(gaps) - min(gaps) <= 1.0 and max(gaps) < 3 * min(l.size for l in r) and r[-1].x1 >= r[-1].block_x1 - 2.5
 
 
+def mostly_rtl(lines):
+    letters = [c for l in lines for c in l.text if c.isalpha()]
+    return sum(bool(RTL.match(c)) for c in letters) * 2 > len(letters)
+
+
 def join_pieces(cur, nxt):
-    gap = nxt.x0 - cur.x1
+    behind = nxt.x1 <= cur.x0            # right-to-left pieces are joined from the right, so nxt lies to the left of cur
+    gap = cur.x0 - nxt.x1 if behind else nxt.x0 - cur.x1
     spans = cur.spans
     if gap > 0.12 * cur.size and not cur.text.endswith(" ") and not nxt.text.startswith(" "):
-        spans = spans + [dict(cur.spans[-1], text=" ", bbox=(cur.x1, cur.y0, nxt.x0, cur.y1))]
-    merged = Line(spans + nxt.spans, (cur.x0, min(cur.y0, nxt.y0), nxt.x1, max(cur.y1, nxt.y1)), cur.base, max(cur.size, nxt.size))
+        spans = spans + [dict(cur.spans[-1], text=" ", bbox=(nxt.x1 if behind else cur.x1, cur.y0, cur.x0 if behind else nxt.x0, cur.y1))]
+    merged = Line(spans + nxt.spans, (min(cur.x0, nxt.x0), min(cur.y0, nxt.y0), max(cur.x1, nxt.x1), max(cur.y1, nxt.y1)), cur.base, max(cur.size, nxt.size))
     merged.block, merged.block_x1 = cur.block, cur.block_x1
     merged.seq = min(cur.seq, nxt.seq)
     return merged
@@ -207,14 +214,19 @@ def merge_rows(lines, shapes=()):
     out = []
     for r in rows:
         r = join_stretched(sorted(r, key=lambda l: l.x0), shapes)
-        cur = r[0]
+        runs = [[r[0]]]
         for nxt in r[1:]:
+            cur = runs[-1][-1]
             if (nxt.x0 - cur.x1 < 0.8 * min(cur.size, nxt.size) or LEADER_PIECE.match(nxt.text)) and not is_drop_cap(cur, nxt):
-                cur = join_pieces(cur, nxt)
+                runs[-1].append(nxt)
             else:
-                out.append(cur)
-                cur = nxt
-        out.append(cur)
+                runs.append([nxt])
+        for pieces in runs:
+            pieces = pieces[::-1] if mostly_rtl(pieces) else pieces       # the PDF draws right-to-left text from its right end; the words are read in that order
+            cur = pieces[0]
+            for nxt in pieces[1:]:
+                cur = join_pieces(cur, nxt)
+            out.append(cur)
     return out
 
 

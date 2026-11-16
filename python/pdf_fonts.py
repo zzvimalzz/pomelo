@@ -37,6 +37,21 @@ def latin(text):
     return all(ord(c) < 0x250 for c in text)
 
 
+MATH_ITALIC = re.compile(r"(?:CMMI|LMMathItalic|[tp]xmi)", re.I)
+MATH_SYMBOLS = re.compile(r"CMSY|CMEX|MSAM|MSBM|rsfs|Math", re.I)
+
+
+def math_font(font, text):
+    """True when Word sets the span in Cambria Math: mathematical letters, or the symbols of a mathematics font. Plain letters in an italic mathematics font are not
+    (Cambria Math sets ASCII letters upright outside an equation), they are italic text in the serif stand-in."""
+    if any(0x1D400 <= ord(c) <= 0x1D7FF for c in text):
+        return True
+    name = re.sub(r"^[A-Z]{6}\+", "", font)
+    if MATH_ITALIC.match(name):
+        return not text.isascii()
+    return bool(MATH_SYMBOLS.search(name))
+
+
 def kind_of(font, flags):
     """Serif, sans or mono: from the name when it says, else from the font's own flags, which some producers set wrongly."""
     return next((k for k, rx in KINDS if rx.search(font)), "mono" if flags & 8 else "serif" if flags & 4 else "sans")
