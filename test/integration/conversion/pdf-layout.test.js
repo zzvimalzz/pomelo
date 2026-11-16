@@ -692,19 +692,19 @@ if kind == "drawnboxes":                            # three answers, each after 
         page.draw_rect(pymupdf.Rect(72, y - side + 2, 72 + side, y + 2), color=(0, 0, 0), width=1.2 if other else 0.7)
         page.insert_text((72 + side + 8, y), label, fontname="helv", fontsize=size)
     doc.save(sys.argv[1]); sys.exit()
-if kind == "narrow":                                # a line in a narrow family whose embedded subset carries the wide family's metrics, so that measuring the embedded font would squeeze it (with an extra argument: another size and line)
+if kind == "narrow":                                # a line in Arial whose embedded subset carries the metrics of Courier New, so that measuring the embedded font would squeeze it (with an extra argument: another size and line)
     other = len(sys.argv) > 3
     page = doc.new_page(width=595, height=842)
-    page.insert_font(fontname="nr", fontfile="C:/Windows/Fonts/arialn.ttf", set_simple=True)
+    page.insert_font(fontname="nr", fontfile="C:/Windows/Fonts/arial.ttf", set_simple=True)
     page.insert_text((72, 100), "A fictional form for software testing." if other else "A line of narrow text for the foot of the page.", fontname="nr", fontsize=9 if other else 6.5)
     page.insert_text((72, 140), "Ordinary text in Helvetica beside it.", fontname="helv", fontsize=11)
     doc.save(sys.argv[1]); doc.close()
     doc = pymupdf.open(sys.argv[1])
     font = [f for f in doc[0].get_fonts() if f[4] == "nr"][0][0]
     descriptor = int(doc.xref_get_key(font, "FontDescriptor")[1].split()[0])
-    doc.update_stream(int(doc.xref_get_key(descriptor, "FontFile2")[1].split()[0]), open("C:/Windows/Fonts/arial.ttf", "rb").read())
-    doc.xref_set_key(font, "BaseFont", "/AAAAAA+ArialNarrow")
-    doc.xref_set_key(descriptor, "FontName", "/AAAAAA+ArialNarrow")
+    doc.update_stream(int(doc.xref_get_key(descriptor, "FontFile2")[1].split()[0]), open("C:/Windows/Fonts/cour.ttf", "rb").read())
+    doc.xref_set_key(font, "BaseFont", "/AAAAAA+ArialMT")
+    doc.xref_set_key(descriptor, "FontName", "/AAAAAA+ArialMT")
     doc.save(sys.argv[1] + ".tmp"); doc.close(); os.replace(sys.argv[1] + ".tmp", sys.argv[1]); sys.exit()
 if kind == "worksheet":                             # questions with a row of answer choices under each and the marks at the right edge on a line of their own (with an extra argument: Letter paper, three choices, the marks further out and smaller)
     other = len(sys.argv) > 3
@@ -1638,7 +1638,7 @@ const read = async (docx) => {
     fs.rmSync(docx);
   }
 
-  console.log('a narrow family whose embedded subset has the wide family metrics');
+  console.log('a font whose embedded subset has the metrics of another font');
   for (const [name, extra, line] of [['narrow', '', 'A line of narrow text for the foot of the page.'], ['narrow-other', 'other', 'A fictional form for software testing.']]) {
     [docx] = await convert.convertFile(draw(name, 'narrow', extra), 'docx');
     d = await read(docx);
