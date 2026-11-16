@@ -219,9 +219,9 @@ def rect_shapes(drawings, faint=None):
 
 
 def field_borders(page):
-    """The outlines of the form fields that draw one (a text area, a list box): the border lives in the field's appearance, which the page's drawings do not hold. Check boxes and radio buttons are characters, see `field_marks`."""
+    """The outlines of the form fields that draw one (a text area, a list box): the border lives in the field's appearance, which the page's drawings may not hold. Check boxes and radio buttons are characters, see `field_marks`."""
     out = []
-    for w in page.widgets() or []:
+    for w in [] if page.rotation else page.widgets() or []:
         if w.field_type_string not in ("CheckBox", "RadioButton", "Button") and w.border_color and w.rect.width >= 14 and w.rect.height >= 8:
             fill = w.fill_color and not is_white(w.fill_color, 0.012) and rgb_hex(w.fill_color) or None
             out.append((pymupdf.Rect(w.rect), fill, (w.border_width or 1.0, rgb_hex(w.border_color)), False))

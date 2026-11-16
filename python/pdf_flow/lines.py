@@ -129,9 +129,9 @@ def read_lines(page, clip=None, hidden_ok=False):
 
 
 def field_marks(page):
-    """The check boxes and radio buttons of a form as one character each in Segoe UI Symbol, the way Word draws its own: they are widgets, which neither the text nor the drawings of the page hold."""
+    """The check boxes and radio buttons of a form as one character each in Segoe UI Symbol, the way Word draws its own: they are widgets, which the text of the page does not hold and its drawings may not."""
     out = []
-    for w in page.widgets() or []:
+    for w in [] if page.rotation else page.widgets() or []:
         radio = w.field_type_string == "RadioButton"
         if radio or w.field_type_string == "CheckBox":
             on = str(w.field_value) not in ("Off", "False", "", "None")
