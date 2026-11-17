@@ -963,6 +963,91 @@ if kind == "cards":                                 # white cards on a pale page
         page.insert_text((x + 20, 150), "Card %d" % (i + 1), fontname="helv", fontsize=14)
         page.insert_text((x + 20, 175), "A figure for the card", fontname="helv", fontsize=9)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "zwlist":                                # bullets written as a glyph and a zero-width character; extra: "font:hex of the character", more: the size
+    face, zw = sys.argv[3].split(":")
+    size = float(sys.argv[4])
+    page = doc.new_page(width=595, height=842)
+    page.insert_font(fontname="zf", fontfile="C:/Windows/Fonts/" + face + ".ttf")
+    for i, t in enumerate(("First item of the plan", "Second item of the plan", "Third item that runs a little longer than the others")):
+        page.insert_text((72, 100 + i * 24), "\\u25cf" + chr(int(zw, 16)), fontname="zf", fontsize=size)
+        page.insert_text((96, 100 + i * 24), t, fontname="zf", fontsize=size)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "clauses":                               # numbered clauses whose numbers stand left of their text, beside a column of notes; extra: the labels, more: "number x:text x"
+    labels = sys.argv[3].split(",")
+    x_num, x_text = (float(v) for v in sys.argv[4].split(":"))
+    page = doc.new_page(width=595, height=842)
+    body = "Each party keeps the other's information confidential and uses it only for the purpose of this Agreement, and returns it when the Agreement ends."
+    for i, label in enumerate(labels):
+        y = 100 + i * 58
+        page.insert_text((x_num, y), label, fontname="helv", fontsize=10)
+        page.insert_textbox(pymupdf.Rect(x_text, y - 9, 380, y + 40), body, fontname="helv", fontsize=10)
+        page.insert_text((410, y), "Note %d on this clause" % (i + 1), fontname="helv", fontsize=9)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "boxlist":                               # numbered paragraphs over a picture, so each is a text box; extra: the labels
+    page = doc.new_page(width=595, height=842)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 84), False)
+    for yy in range(84):
+        for xx in range(60):
+            pix.set_pixel(xx, yy, (170 + xx, 180 + yy // 2, 200))
+    page.insert_image(pymupdf.Rect(0, 0, 595, 600), pixmap=pix)
+    for i, label in enumerate(sys.argv[3].split(",")):
+        y = 100 + i * 70
+        page.insert_text((60, y), label, fontname="helv", fontsize=12)
+        page.insert_text((90, y), "Each party keeps the other's information confidential and returns it", fontname="helv", fontsize=12)
+        page.insert_text((90, y + 15), "when this Agreement ends, whichever comes first.", fontname="helv", fontsize=12)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "contents":                              # a contents page of two levels and the headed pages after it; extra: how the leader is drawn (text, apart, stroke), more: "none" to leave one entry without a heading
+    rows = (("1", "Executive summary", 0, 3), ("1.1", "Key figures at a glance", 1, 3), ("2", "Service performance", 0, 4))
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((70, 80), "Contents", fontname="hebo", fontsize=16)
+    right = 535
+    for i, (num, title, level, pg) in enumerate(rows):
+        y = 110 + i * 18
+        x_num, x_title = 70 + 11 * level, 94 + 24 * level
+        if sys.argv[3] == "stroke":
+            x_title, title = x_num, num + " " + title
+        else:
+            page.insert_text((x_num, y), num, fontname="helv", fontsize=10.5)
+        end = pymupdf.get_text_length(str(pg), fontname="helv", fontsize=10.5)
+        dot = pymupdf.get_text_length(".", fontname="helv", fontsize=10.5)
+        used = pymupdf.get_text_length(title + " ", fontname="helv", fontsize=10.5)
+        dots = int((right - x_title - used - end) / dot)
+        if sys.argv[3] == "text":
+            page.insert_text((x_title, y), title + " " + "." * dots + str(pg), fontname="helv", fontsize=10.5)
+        else:
+            page.insert_text((x_title, y), title, fontname="helv", fontsize=10.5)
+            if sys.argv[3] == "apart":
+                page.insert_text((x_title + used, y), "." * dots, fontname="helv", fontsize=10.5)
+            else:
+                page.draw_line((x_title + used, y), (right - end - 2, y), color=(0, 0, 0), width=0.8, dashes="[1 3] 0")
+            page.insert_text((right - end, y), str(pg), fontname="helv", fontsize=10.5)
+    for n, (num, title, level, pg) in enumerate(rows):
+        page = doc.new_page(width=595, height=842)
+        if len(sys.argv) > 4 and n == 2:
+            title = "A different title"
+        page.insert_text((60, 90), num, fontname="hebo", fontsize=14)
+        page.insert_text((60 + pymupdf.get_text_length(num, fontname="hebo", fontsize=14) + 18, 90), title, fontname="hebo", fontsize=14)
+        for k in range(6):
+            page.insert_text((60, 130 + k * 14), "Ordinary body text of the section, line %d, set in the usual size." % (k + 1), fontname="helv", fontsize=10.5)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "outline":                               # headings with an outline and no contents page
+    for n, title in enumerate(("Alpha plan", "Beta plan")):
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((60, 90), title, fontname="hebo", fontsize=18)
+        for k in range(6):
+            page.insert_text((60, 130 + k * 14), "Ordinary body text of the section, line %d, set in the usual size." % (k + 1), fontname="helv", fontsize=10.5)
+    doc.set_toc([[1, "Alpha plan", 1], [1, "Beta plan", 2]])
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "numhead":                               # a heading of a section number and its title with a gap between them; extra: the size
+    size = float(sys.argv[3])
+    page = doc.new_page(width=595, height=842)
+    for k in range(5):
+        page.insert_text((60, 70 + k * 14), "Ordinary body text before the heading, line %d, set in the usual size." % (k + 1), fontname="helv", fontsize=10.5)
+    page.insert_text((60, 170), "2.3", fontname="hebo", fontsize=size)
+    page.insert_text((60 + pymupdf.get_text_length("2.3", fontname="hebo", fontsize=size) + 1.3 * size, 170), "Interruptions and outages", fontname="hebo", fontsize=size)
+    for k in range(5):
+        page.insert_text((60, 200 + k * 14), "Ordinary body text after the heading, line %d, set in the usual size." % (k + 1), fontname="helv", fontsize=10.5)
+    doc.save(sys.argv[1]); sys.exit()
 page = doc.new_page(width=595, height=842)
 if kind == "banner":
     page.draw_rect(pymupdf.Rect(40, 40, 555, 140), color=None, fill=(0.1, 0.2, 0.45))           # a coloured banner
@@ -1818,6 +1903,76 @@ const read = async (docx) => {
     };
     expect('the lines that are text are painted out of the picture, the large heading on plain paper with them', mean(55, 185, 330, 262) > 250 && mean(55, 70, 300, 105) > 250,
       `text ${mean(55, 185, 330, 262).toFixed(0)}, heading ${mean(55, 70, 300, 105).toFixed(0)}`);
+    fs.rmSync(docx);
+  }
+
+  console.log('bullets written with a zero-width character after them');
+  for (const [face, zw, size] of [['arial', '200b', '11'], ['segoeui', 'feff', '14'], ['arial', '200b', '9']]) {
+    [docx] = await convert.convertFile(draw(`zwlist-${face}-${size}`, 'zwlist', `${face}:${zw}`, size), 'docx');
+    d = await read(docx);
+    const items = ['First item of the plan', 'Second item of the plan', 'Third item that runs a little longer than the others'];
+    expect(`each of the three items is a list item (${face}, U+${zw.toUpperCase()}, ${size} pt)`, (d.xml.match(/<w:numPr>/g) || []).length === 3 && !missingFrom(d.text, items).length, `${(d.xml.match(/<w:numPr>/g) || []).length} list items`);
+    expect('no zero-width character reaches the document', !/[\u200b\ufeff\u2060]/.test(d.xml));
+    fs.rmSync(docx);
+  }
+
+  console.log('numbered clauses whose numbers stand left of their text');
+  for (const [labels, at] of [['1.,2.,3.', '60:74'], ['(a),(b),(c)', '90:112']]) {
+    [docx] = await convert.convertFile(draw(`clauses-${at.replace(':', '-')}`, 'clauses', labels, at), 'docx');
+    d = await read(docx);
+    const [nx, tx] = at.split(':').map(Number);
+    const inds = [...d.xml.matchAll(/<w:numPr>.*?<w:ind w:left="(\d+)" w:hanging="(\d+)"/g)].map((m) => [Number(m[1]), Number(m[2])]);
+    expect(`the three clauses are numbered paragraphs whose number stands ${tx - nx} pt left of the text, at the margin (${labels})`,
+      inds.length === 3 && inds.every(([left, hanging]) => Math.abs(left - (tx - nx) * 20) <= 20 && Math.abs(hanging - (tx - nx) * 20) <= 20), JSON.stringify(inds));
+    fs.rmSync(docx);
+  }
+
+  console.log('numbered paragraphs in text boxes over a picture');
+  for (const [labels, starts] of [['6.,7.,8.', [6, 7, 8]], ['(c),(d),(e)', [3, 4, 5]]]) {
+    [docx] = await convert.convertFile(draw(`boxlist-${starts[0]}`, 'boxlist', labels), 'docx');
+    d = await read(docx);
+    const numbering = await d.zip.file('word/numbering.xml').async('string');
+    const startOf = (id) => {
+      const abstract = numbering.split(`<w:num w:numId="${id}"`)[1].match(/w:abstractNumId w:val="(\d+)"/)[1];
+      return Number(numbering.split(`w:abstractNumId="${abstract}"`)[1].match(/<w:start w:val="(\d+)"/)[1]);
+    };
+    const got = [...d.xml.matchAll(/<w:numId w:val="(\d+)"\/>/g)].map((m) => startOf(m[1]));
+    expect(`each item counts from its own number, because a text box does not continue the list before it (${labels})`, JSON.stringify(got) === JSON.stringify(starts), JSON.stringify(got));
+    fs.rmSync(docx);
+  }
+
+  console.log('contents pages: dot leaders, page numbers at the right edge, a table of contents field');
+  for (const style of ['text', 'apart', 'stroke']) {
+    [docx] = await convert.convertFile(draw(`contents-${style}`, 'contents', style), 'docx');
+    d = await read(docx);
+    const entries = d.xml.match(/<w:p>(?:(?!<\/w:p>).)*?(?:Executive summary|Key figures at a glance|Service performance)(?:(?!<\/w:p>).)*?<\/w:p>/gs) || [];
+    const contents = entries.filter((p) => /<w:tab\/>/.test(p) && /<w:t[^>]*>\s*[34]\s*<\/w:t>/.test(p));
+    expect(`each contents entry has a right tab with a dot leader to the page number (leader drawn as ${style})`,
+      contents.length === 3 && contents.every((p) => /<w:tab w:val="right" w:leader="dot" w:pos="\d+"\/>/.test(p)), `${contents.length} entries`);
+    expect('no contents title is squeezed with negative letter spacing', !contents.some((p) => /<w:spacing w:val="-\d+"\/>/.test(p)));
+    const styles = await d.zip.file('word/styles.xml').async('string');
+    expect('the entries are a Word table of contents that links to the headings it lists',
+      / TOC \\o "1-3" \\h \\z \\u /.test(d.xml) && (d.xml.match(/w:anchor="_Toc\d+"/g) || []).length === 3 && (d.xml.match(/<w:bookmarkStart [^>]*w:name="_Toc\d+"/g) || []).length === 3
+      && /w:styleId="TOC1"/.test(styles) && /w:styleId="TOC2"/.test(styles) && /<w:pStyle w:val="TOC2"\/>/.test(d.xml));
+    fs.rmSync(docx);
+  }
+  [docx] = await convert.convertFile(draw('contents-missing', 'contents', 'text', 'none'), 'docx');
+  d = await read(docx);
+  expect('a contents list with an entry that no heading matches stays plain paragraphs', !/ TOC \\o /.test(d.xml) && !/w:anchor="_Toc/.test(d.xml) && /w:leader="dot"/.test(d.xml));
+  fs.rmSync(docx);
+
+  console.log('a PDF outline with no contents page');
+  [docx] = await convert.convertFile(draw('outline', 'outline'), 'docx');
+  d = await read(docx);
+  expect('each outline entry bookmarks its heading, and no table of contents is made', (d.xml.match(/<w:bookmarkStart [^>]*w:name="section_\d+"/g) || []).length === 2 && !/ TOC \\o /.test(d.xml));
+  fs.rmSync(docx);
+
+  console.log('a heading of a section number and a title');
+  for (const size of ['14', '18']) {
+    [docx] = await convert.convertFile(draw(`numhead-${size}`, 'numhead', size), 'docx');
+    d = await read(docx);
+    const head = (d.xml.match(/<w:p>(?:(?!<\/w:p>).)*?Interruptions and outages(?:(?!<\/w:p>).)*?<\/w:p>/s) || [''])[0];
+    expect(`the number and the title are one paragraph with a tab stop at the title (${size} pt)`, />2\.3\s*<\/w:t>/.test(head) && /<w:tab\/>/.test(head) && /<w:tab w:val="left" w:pos="\d+"\/>/.test(head), head.slice(0, 300));
     fs.rmSync(docx);
   }
 

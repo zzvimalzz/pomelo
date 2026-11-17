@@ -100,7 +100,7 @@ def table_look(t):
     count = Counter(rule_key(c["borders"].get(s)) for c in cells for s in SIDES)
     top = [(k, n) for k, n in count.most_common() if k]
     rule = top[0][0] if top and top[0][1] >= 0.6 * 4 * len(cells) else None
-    gaps = [min(i.x0 for i in lines) - c["bbox"][0] for c in cells for lines in [[i for i in c["items"] if i.kind == "line"]] if lines]
+    gaps = [min(i.left for i in lines) - c["bbox"][0] for c in cells for lines in [[i for i in c["items"] if i.kind == "line"]] if lines]
     pad = tw(round(min(14.0, max(0.0, min(gaps))) * 2) / 2) if gaps else 0
     head = region([c for c in cells if c["r0"] == 0], [c for c in cells if c["r0"] > 0]) if nrow >= 2 else None
     body = [c for c in cells if c["r0"] >= (1 if head else 0)]

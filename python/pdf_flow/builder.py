@@ -331,9 +331,9 @@ class Builder:
             elif spaced and left_flush and any(l.justified for l in lines[:-1]) and all(abs(x - right_edge) <= tol for x in xs1[:-1]):
                 jc = "both"
         else:
-            if abs(cxs[0] - (L + w / 2)) <= max(2.5, 0.012 * w) and (lines[0].x0 - L) > 0.08 * w and (x1 - lines[0].x1) > 0.08 * w:
+            if abs(cxs[0] - (L + w / 2)) <= max(2.5, 0.012 * w) and (lines[0].left - L) > 0.08 * w and (x1 - lines[0].x1) > 0.08 * w:
                 jc = "center"
-            elif x1 - lines[0].x1 <= max(2.5, 0.012 * w) and (lines[0].x0 - L) > 0.12 * w:
+            elif x1 - lines[0].x1 <= max(2.5, 0.012 * w) and (lines[0].left - L) > 0.12 * w:
                 jc = "right"
         if first.leader and n == 1:
             jc = "left"
@@ -376,7 +376,7 @@ class Builder:
         # first line / hanging indent, or a list
         num_pr = ""
         if marker:
-            num_id = self.lists.item(self.doc, marker, lines[0])
+            num_id = self.lists.item(self.doc, marker, lines[0], self.placed)         # each text box is a story of its own, whose numbering does not continue from the box before
             hang = max(0.0, marker[3] - marker[2])
             ind_attr = f'<w:ind w:left="{tw(ind_left)}" w:hanging="{tw(hang)}"' + (f' w:right="{tw(ind_right)}"' if ind_right else "") + "/>"
             num_pr = f'<w:numPr><w:ilvl w:val="0"/><w:numId w:val="{num_id}"/></w:numPr>'
@@ -409,7 +409,10 @@ class Builder:
             B += bw + sp
         borders = f"<w:pBdr>{bt}{bb}</w:pBdr>" if (bt or bb) else ""
         # tabs for rows of cells joined into one paragraph
-        tabs = f'<w:tabs><w:tab w:val="right" w:leader="{first.leader[0]}" w:pos="{tw(min(first.leader[1], x1) - x0)}"/></w:tabs>' if first.leader else ""
+        stops = [f'<w:tab w:val="left" w:pos="{tw(s["bbox"][2] - x0)}"/>' for l in lines for s in l.spans if s["text"] == "\t"]
+        if first.leader:
+            stops[-1:] = [f'<w:tab w:val="right" w:leader="{first.leader[0]}" w:pos="{tw(min(first.leader[1], x1) - x0)}"/>']
+        tabs = f'<w:tabs>{"".join(stops)}</w:tabs>' if stops else ""
         spacing = f'<w:spacing w:before="{tw(before)}" w:after="0" w:line="{line}" w:lineRule="{rule}"/>'
         style = heading = ""
         text = " ".join(l.text for l in lines).strip()
@@ -688,11 +691,13 @@ class Builder:
         for i, l in enumerate(lines):
             if i:
                 leader = f' w:leader="{l.lead_in}"' if l.lead_in else ""
-                if l.x1 >= x1 - 3 and (l.x0 > first.x1 + 20 or NUMBERED.fullmatch(l.text.strip())):
+                if l.x1 >= x1 - 3 and not l.leader and (l.x0 > first.x1 + 20 or NUMBERED.fullmatch(l.text.strip())):
                     stops += f'<w:tab w:val="right"{leader} w:pos="{tw(l.x1 - x0)}"/>'
                 else:
                     stops += f'<w:tab w:val="left"{leader} w:pos="{tw(l.x0 - x0)}"/>'
                 body += "<w:r><w:tab/></w:r>"
+            if l.leader:
+                stops += f'<w:tab w:val="right" w:leader="{l.leader[0]}" w:pos="{tw(min(l.leader[1], x1) - x0)}"/>'
             body += runs_xml(P, l.spans, False, self.doc.part, self.meter)
         rule, line = self.line_rule(lines, pitch, size)
         ppr = (f'<w:pPr><w:tabs>{stops}</w:tabs><w:spacing w:before="{tw(before)}" w:after="0" w:line="{line}" w:lineRule="{rule}"/>'
@@ -1081,6 +1086,13 @@ class Builder:
             for l in [i for i in c["items"] if i.kind == "line"] if give else ():
                 for s in l.spans:
                     s["by_style"] = (give[1] is not None and hexcolor(s["color"]) == give[1], bool(give[2]) and is_bold(s))
+        for c in t.cells:
+            reach = max((i.x1 for i in c["items"] if i.kind == "line" and i.left >= xs[c["c0"]] - 0.5), default=0.0)
+            while c["c1"] < ncol and reach > xs[c["c1"]] + 0.5 and all(grid[r][c["c1"]] is None for r in range(c["r0"], c["r1"])):
+                for r in range(c["r0"], c["r1"]):                      # a cell narrower than the line in it would wrap the line in Word, so it takes the empty cell beside it
+                    grid[r][c["c1"]] = c
+                c["c1"] += 1
+                c["bbox"] = (c["bbox"][0], c["bbox"][1], xs[c["c1"]], c["bbox"][3])
         edge = [0.0] * (nrow + 1)                                     # the width of the rule on each edge between rows: Word adds half of it to each row beside it
         for c in t.cells:
             for side, k in (("top", c["r0"]), ("bottom", c["r1"])):

@@ -33,7 +33,7 @@ class Lists:
         self.next_n = (max(ids_n) + 1) if ids_n else 1
         self.part = part
 
-    def item(self, doc, marker, line):
+    def item(self, doc, marker, line, own=False):
         kind, token, mx0, tx0 = marker
         span = next((s for s in line.spans if s["text"].strip()), line.spans[0])
         font = esc(word_family(span["font"]) or "Arial")
@@ -56,7 +56,7 @@ class Lists:
             fmt, start = "lowerLetter", ord(digits[0]) - 96 if digits else 1
         key = ("n", fmt, suffix, paren, sz, color, round(hang))
         last = self.last.get(key)
-        if last and last[0] + 1 == start:
+        if last and last[0] + 1 == start and not own:
             self.last[key] = (start, last[1])
             return last[1]
         text = ("(" if paren else "") + "%1" + suffix
