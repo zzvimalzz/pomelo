@@ -300,7 +300,7 @@ class Builder:
     def para_xml(self, p, x0, x1, cursor, before_extra=0.0, border_top=None, border_bottom=None, right_to=None):
         """-> (xml, T, B): the paragraph's XML, where its first line box starts and where its last ends."""
         lines = p.lines
-        self.emitted.update(id(l) for l in lines)
+        self.emitted.update(id(p) for l in lines for p in (l, *l.parts))
         n = len(lines)
         first = lines[0]
         size = max(l.size for l in lines)
@@ -676,7 +676,7 @@ class Builder:
         """Several single pieces on one row, as one paragraph with tab stops."""
         P = self.P
         lines = sorted(lines, key=lambda l: l.x0)
-        self.emitted.update(id(l) for l in lines)
+        self.emitted.update(id(p) for l in lines for p in (l, *l.parts))
         first = lines[0]
         size = max(l.size for l in lines)
         nat = (first.asc - first.desc) * first.size
@@ -944,6 +944,10 @@ class Builder:
             return self.row(cols, x0, x1, cursor)
         return self.leaf(items, x0, x1, cursor)
 
+    def above_foot(self, y):
+        """The paragraphs Word must put after a table, and the section break in the last of them, go to a new sheet when the table reaches the foot of this one."""
+        return min(y, self.P.h - 4.0)
+
     def row(self, cols, x0, x1, cursor):
         cells = [(c[0], c[1], c[2]) for c in cols]
         # one line per cell, all on one baseline: a paragraph with tab stops
@@ -975,7 +979,7 @@ class Builder:
         xml = self.spacer(before)
         xml += (f'<w:tbl><w:tblPr><w:tblW w:w="{tw(x1 - x0)}" w:type="dxa"/><w:tblInd w:w="0" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
                 f'<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>'
-                f'<w:tblGrid>{grid}</w:tblGrid><w:tr><w:trPr><w:trHeight w:val="{tw(bottom - top)}" w:hRule="atLeast"/></w:trPr>{tcs}</w:tr></w:tbl>')
+                f'<w:tblGrid>{grid}</w:tblGrid><w:tr><w:trPr><w:trHeight w:val="{tw(self.above_foot(bottom) - top)}" w:hRule="atLeast"/></w:trPr>{tcs}</w:tr></w:tbl>')
         xml += self.spacer(1)
         return xml, bottom + 1
 
@@ -1060,9 +1064,10 @@ class Builder:
                                    min(50000, round(bx.radius / min(w, h) * 100000)), flow=True)
             xml = f'<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="{tw(lead)}" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr>{shape}</w:p>'
             sides, shd = {}, ""
+        height = max(0.0, self.above_foot(bx.y1) - bx.y0)
         xml += (f'<w:tbl><w:tblPr><w:tblW w:w="{tw(bx.x1 - bx.x0)}" w:type="dxa"/><w:tblInd w:w="{tw(max(0.0, bx.x0 - x0))}" w:type="dxa"/><w:tblLayout w:type="fixed"/>'
                 f'<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar></w:tblPr>'
-                f'<w:tblGrid><w:gridCol w:w="{tw(bx.x1 - bx.x0)}"/></w:tblGrid><w:tr><w:trPr>{self.keep(bx.y1 - bx.y0)}<w:trHeight w:val="{tw(bx.y1 - bx.y0)}" w:hRule="atLeast"/></w:trPr>'
+                f'<w:tblGrid><w:gridCol w:w="{tw(bx.x1 - bx.x0)}"/></w:tblGrid><w:tr><w:trPr>{self.keep(height)}<w:trHeight w:val="{tw(height)}" w:hRule="atLeast"/></w:trPr>'
                 f'<w:tc><w:tcPr><w:tcW w:w="{tw(bx.x1 - bx.x0)}" w:type="dxa"/>{self.border_xml(sides, bx.dashed)}{shd}</w:tcPr>{inner}</w:tc></w:tr></w:tbl>')
         xml += self.spacer(1)
         return xml, bx.y1 + 1
@@ -1133,7 +1138,8 @@ class Builder:
                 tcs += (f'<w:tc><w:tcPr><w:tcW w:w="{tw(width)}" w:type="dxa"/>' + (f'<w:gridSpan w:val="{span}"/>' if span > 1 else "") + vm
                         + self.border_xml(c["borders"], styled=True, rule=rule) + shd + f'</w:tcPr>{inner}</w:tc>')
                 k += span
-            rows += (f'<w:tr><w:trPr>{self.keep(ys[r + 1] - ys[r])}<w:trHeight w:val="{tw(max(0.0, ys[r + 1] - ys[r] - (edge[r] + edge[r + 1]) / 2))}" w:hRule="atLeast"/>'
+            foot = ys[r + 1] if placed else self.above_foot(ys[r + 1])
+            rows += (f'<w:tr><w:trPr>{self.keep(ys[r + 1] - ys[r])}<w:trHeight w:val="{tw(max(0.0, foot - ys[r] - (edge[r] + edge[r + 1]) / 2))}" w:hRule="atLeast"/>'
                      + ("<w:tblHeader/>" if head and r == 0 else "") + f'</w:trPr>{tcs}</w:tr>')
         self.cap = None
         tgrid = "".join(f'<w:gridCol w:w="{tw(xs[k + 1] - xs[k])}"/>' for k in range(ncol))

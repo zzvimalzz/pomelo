@@ -515,6 +515,11 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         # a line set lower than 30 pt from the foot also counts: Word may keep the printer's least margin there, and would move it to a new sheet
         if low and (not above or min(l.y0 for l in low) - max(above) >= 24 or any(l.y1 > P.h - 30 for l in low)):
             framed += low
+        else:
+            # Word sets a full page a few percent taller than the PDF did, and the last line is the one that goes to a new sheet; a line that
+            # goes on from the line above stays with its paragraph, which would otherwise be printed over it
+            runs_on = lambda l: any(m is not l and 0 < l.base - m.base <= 1.8 * l.size and abs(m.x0 - l.x0) <= 2 and abs(m.size - l.size) <= 0.1 * l.size for m in text_lines)
+            framed += [l for l in low if l.y1 > 0.95 * P.h and not runs_on(l)]
     text_lines = [l for l in text_lines if l not in framed]
     pool = text_lines + elements + rules
     for it in pool:
@@ -567,11 +572,9 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         x0, x1 = 0.0, P.w
     B.page_x0, B.page_x1 = x0, x1
     B.slack = max(0.0, min(10.0, P.w - x1 - 0.5))
+    # Word puts a frame on the sheet where its paragraph falls, so frames written after a flow that fills the sheet land on the next one
+    lead = (B.frames(framed) if framed else "") + (B.frames(P.field_lines) if P.field_lines else "")
     xml, cursor = B.emit(flow, x0, x1, None)
-    if framed:
-        xml += B.frames(framed)
-    if P.field_lines:
-        xml += B.frames(P.field_lines)
     xml += B.hidden(P.hidden_lines)
     furn = tuple("".join(ONE_POINT % B.picture_xml(Img(r, b"", "png", floating=True), floating=True, name="Logo", rid=f"\x02{xref}", pid=furniture.pictures[xref][1]) for band, r, xref in logos if band == k)
                  + "".join(B.frames([l], 1.2 * l.size if any(sp.get("field") for sp in l.spans) else 0.0) for l in taken[k]) for k in ("header", "footer"))
@@ -610,7 +613,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     else:
         sheet_w, sheet_h = P.w, P.h
     props = page_props(sheet_w, sheet_h, margins)
-    xml, count = end_sections(xml, props)
+    xml, count = end_sections(lead + xml, props)
     closing, sect = close_page(props, floats, pno, n_pages, count)
     return xml + closing, sect, [furn] * (count + 1)
 

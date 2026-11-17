@@ -28,6 +28,7 @@ class Line:
         self.cap = None               # the drop capital that stands beside this line, when it starts the paragraph the capital opens
         self.leader = None            # (Word's name for the leader, where the end piece ends) when a tab with a leader leads to the end of the line
         self.lead_in = None           # Word's name for the leader of the tab that leads to this line, when a dotted stroke runs to it on its row
+        self.parts = ()               # the lines this one was joined from, so that the check for text never written counts them
 
     @property
     def text(self):
@@ -59,7 +60,7 @@ def is_italic(s):
 
 def span_ok(s, hidden_ok=False):
     t = s["text"]
-    if s["size"] < 2.5:
+    if s["size"] < 1.0:
         return False
     if s.get("alpha", 255) == 0 and not hidden_ok:
         return False
@@ -328,6 +329,7 @@ def end_figures(items):
         line = Line(text.spans + [tab] + fig.spans, (text.x0, min(text.y0, fig.y0), fig.x1, max(text.y1, fig.y1)), text.base, max(text.size, fig.size))
         line.block, line.block_x1, line.seq = text.block, text.block_x1, min(text.seq, fig.seq)
         line.leader = ("none", fig.x1)
+        line.parts = (text, fig)
         joined[id(text)] = line
         gone.add(id(fig))
     return [joined.get(id(i), i) for i in items if id(i) not in gone]

@@ -377,6 +377,56 @@ if kind == "footrow":                               # a title at the left and a 
     page.insert_text((60, height - 8), "Annual report", fontname="helv", fontsize=8)
     page.insert_text((480, height - 8), "Page 7", fontname="helv", fontsize=8)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "fieldfoot":                             # a page of text that fills the sheet, check boxes in it, and a title and a number at the foot (with an extra argument: Letter paper and a text field as well)
+    other = len(sys.argv) > 3
+    height = 792 if other else 842
+    page = doc.new_page(width=612 if other else 595, height=height)
+    for i in range(41 if other else 46):
+        page.insert_text((60, 60 + i * 16), "Running line of the form, number %d, which fills the page from top to bottom." % i, fontname="helv", fontsize=11)
+    for i in range(2):
+        w = pymupdf.Widget()
+        w.field_type, w.field_name, w.rect = pymupdf.PDF_WIDGET_TYPE_CHECKBOX, "box%d" % i, pymupdf.Rect(480 + i * 40, 100, 492 + i * 40, 112)
+        w.border_color, w.border_width = (0, 0, 0), 0.8
+        page.add_widget(w)
+    if other:
+        w = pymupdf.Widget()
+        w.field_type, w.field_name, w.rect, w.field_value = pymupdf.PDF_WIDGET_TYPE_TEXT, "name", pymupdf.Rect(420, 200, 560, 216), "Typed in"
+        w.border_color, w.border_width = (0, 0, 0), 0.8
+        page.add_widget(w)
+    page.insert_text((60, height - 8), "Annual report", fontname="helv", fontsize=8)
+    page.insert_text((480, height - 8), "Page 7", fontname="helv", fontsize=8)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "microtext":                             # the same label, set very small on a coloured bar, three times at three heights (with an extra argument: smaller, dark on yellow)
+    other = len(sys.argv) > 3
+    page = doc.new_page(width=595, height=842)
+    for i in range(3):
+        page.insert_text((60, 100 + i * 14), "Ordinary line of running text number %d." % i, fontname="helv", fontsize=11)
+    for y in (300, 450, 600):
+        page.draw_rect(pymupdf.Rect(50, y - 8, 90, y + 10), color=None, fill=(1, 0.9, 0.3) if other else (0.1, 0.3, 0.7))
+        page.insert_text((53, y), "Gate in: seal and", fontname="helv", fontsize=1.5 if other else 2, color=(0, 0, 0) if other else (1, 1, 1))
+        page.insert_text((53, y + 3), "damage check", fontname="helv", fontsize=1.5 if other else 2, color=(0, 0, 0) if other else (1, 1, 1))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "fullbar":                               # text at the left and a coloured bar the full height of the sheet at the right, with a number at its foot (with an extra argument: a landscape slide)
+    other = len(sys.argv) > 3
+    w, h = (960, 540) if other else (595, 842)
+    page = doc.new_page(width=w, height=h)
+    page.draw_rect(pymupdf.Rect(w - 70, 0, w, h), color=None, fill=(0.0, 0.13, 0.38))
+    page.insert_text((60, 70), "Agenda", fontname="helv", fontsize=28)
+    for i in range(5):
+        page.insert_text((60, 130 + i * 30), "Item number %d of the agenda" % (i + 1), fontname="helv", fontsize=16)
+    page.insert_text((w - 40, h - 14), "2", fontname="helv", fontsize=8, color=(0.7, 0.7, 0.7))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "footnear":                              # body text down to the last tenth of the sheet and a small line 36 pt from the foot (with an extra argument: "a4", A4 and 40 pt, or "runon", body text that goes on to the foot and no small line)
+    mode = sys.argv[3] if len(sys.argv) > 3 else ""
+    other = mode == "a4"
+    w, h = (595, 842) if other else (612, 792)
+    page = doc.new_page(width=w, height=h)
+    for i in range(50 if mode == "runon" else int((h - 120) / 14) + 1):
+        page.insert_text((60, (67 if mode == "runon" else 60) + i * 14), "Running line of the form, number %d, which fills the page." % i, fontname="helv", fontsize=10)
+    if mode != "runon":
+        page.insert_text((60, h - (38 if other else 34)), "Cat. No. 10231X", fontname="helv", fontsize=7)
+        page.insert_text((w - 160, h - (38 if other else 34)), "Form W-9 (Rev. 3-2024)", fontname="helv", fontsize=7)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "footrule":                              # text and a long rule below all of it (with an extra argument: the rule as a thin bar, nearer the text)
     page = doc.new_page(width=595, height=842)
     bar = len(sys.argv) > 3
@@ -1088,6 +1138,8 @@ const read = async (docx) => {
   return { zip, xml, rels, text: [...xml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('') };
 };
 
+const isFramed = (d, word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>).)*${word}`, 's').exec(d.xml) || [''])[0].match(/<w:p>(?:(?!<w:p>).)*$/s)?.[0] || '');
+
 (async () => {
   const engines = convert.detectEngines();
   if (!engines.pdf) { console.log('PDF engine not installed: skipped'); return; }
@@ -1566,11 +1618,53 @@ const read = async (docx) => {
   for (const [name, extra] of [['footrow', ''], ['footrow-letter', 'letter']]) {
     [docx] = await convert.convertFile(draw(name, 'footrow', extra), 'docx');
     d = await read(docx);
-    const placed = (word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>).)*${word}`, 's').exec(d.xml) || [''])[0].match(/<w:p>(?:(?!<w:p>).)*$/s)?.[0] || '');
     expect(`${name}: a title and a number in the last 30 pt of the sheet are placed on it, not set after the text, where Word's own foot margin would push them to a new sheet`,
-      placed('Annual report') && placed('Page 7') && !missingFrom(d.text, ['Annual report', 'Page 7']).length, 'not placed');
+      isFramed(d, 'Annual report') && isFramed(d, 'Page 7') && !missingFrom(d.text, ['Annual report', 'Page 7']).length, 'not placed');
     fs.rmSync(docx);
   }
+
+  console.log('placed text is written before the text that flows');
+  for (const [name, extra] of [['fieldfoot', ''], ['fieldfoot-letter', 'letter']]) {
+    [docx] = await convert.convertFile(draw(name, 'fieldfoot', extra), 'docx');
+    d = await read(docx);
+    const paras = d.xml.match(/<w:p>(?:(?!<\/w:p>).)*<\/w:p>/gs) || [];
+    const framed = paras.map((p, i) => (/<w:framePr /.test(p) ? i : -1)).filter((i) => i >= 0);
+    const flow = paras.findIndex((p) => !/<w:framePr /.test(p));
+    expect(`${name}: the frames of a page are before its running text, so a page the text fills does not push them to the next sheet`,
+      framed.length >= 4 && Math.max(...framed) < flow && !missingFrom(d.text, ['Annual report', 'Page 7', 'number 0', 'number 40']).length, `${framed.length} frames, flow from ${flow}, last frame ${Math.max(...framed)}`);
+    expect(`${name}: the page is one section`, (d.xml.match(/<w:sectPr/g) || []).length === 1);
+    fs.rmSync(docx);
+  }
+
+  console.log('very small text on a coloured bar');
+  for (const [name, extra] of [['microtext', ''], ['microtext-small', 'small']]) {
+    [docx] = await convert.convertFile(draw(name, 'microtext', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: the label is in the document each time it is drawn`, (d.text.match(/Gate in: seal and/g) || []).length === 3 && (d.text.match(/damage check/g) || []).length === 3, d.text.slice(0, 200));
+    fs.rmSync(docx);
+  }
+
+  console.log('a box or a row that reaches the foot of the sheet');
+  for (const [name, extra, limit] of [['fullbar', '', 842], ['fullbar-slide', 'slide', 540]]) {
+    [docx] = await convert.convertFile(draw(name, 'fullbar', extra), 'docx');
+    d = await read(docx);
+    const heights = [...d.xml.matchAll(/<w:trHeight w:val="(\d+)"/g)].map((m) => Number(m[1]));
+    expect(`${name}: no row is as tall as the sheet, so the paragraph after it does not start a new sheet`, heights.length > 0 && heights.every((h) => h <= (limit - 4) * 20), heights.join());
+    expect(`${name}: the number on the bar is kept`, !missingFrom(d.text, ['Agenda', 'Item number 5', '2']).length);
+    fs.rmSync(docx);
+  }
+
+  console.log('a line near the foot of a full page');
+  for (const [name, extra] of [['footnear', ''], ['footnear-a4', 'a4']]) {
+    [docx] = await convert.convertFile(draw(name, 'footnear', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: a line in the last 5 % of the sheet is placed on it, and the text above stays in the flow`, isFramed(d, 'Cat. No.') && isFramed(d, 'Rev. 3-2024') && !isFramed(d, 'number 5,'), 'not placed');
+    fs.rmSync(docx);
+  }
+  [docx] = await convert.convertFile(draw('footnear-runon', 'footnear', 'runon'), 'docx');
+  d = await read(docx);
+  expect('body text that goes on to the foot of the sheet stays in its paragraph', !/<w:framePr /.test(d.xml) && !missingFrom(d.text, ['number 0,', 'number 48,']).length, (d.xml.match(/<w:framePr /g) || []).length + ' frames');
+  fs.rmSync(docx);
 
   console.log('a rule below all the text');
   for (const [name, extra] of [['footrule', ''], ['footrule-bar', 'bar']]) {
@@ -1977,13 +2071,15 @@ const read = async (docx) => {
   }
 
   console.log('light text has something darker under it in every PDF drawn above');
-  const bare = [];
+  const bare = [], lost = [];
   for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.pdf') && fs.statSync(path.join(dir, n)).size < 150000)) {
     const r = spawnSync(engines.pdf, ['-W', 'ignore', path.join(__dirname, '..', '..', '..', 'python', 'pdf_to_docx.py'), path.join(dir, f), path.join(dir, 'ground.docx')],
       { encoding: 'utf8', env: { ...process.env, POMELO_DEBUG: '1' }, windowsHide: true });
     bare.push(...(String(r.stderr).match(/light text with no ground under it: .*/g) || []).map((m) => `${f}: ${m}`));
+    lost.push(...(String(r.stderr).match(/\d+ lines never written: .*/g) || []).map((m) => `${f}: ${m}`));
   }
   expect('no light run is written on bare paper', !bare.length, bare.join(' | '));
+  expect('every line that was read is written', !lost.length, lost.join(' | '));
 
   console.log(failed() ? `\n${failed()} failed` : '\nall good');
   finish();
