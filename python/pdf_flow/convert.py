@@ -434,7 +434,10 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         data = placed.get(id(info)) or P.encode_image(info, r)
         if not data:
             continue
-        elements.append(Img(r, data[0], data[1], floating=sits_on(r) or ends_page(r) or in_margin(r), crop=info.get("crop"), ellipse=info.get("ellipse"), order=info.get("number") or 0))
+        # a bar on the same row as a figure in a cell (a data bar) is not a picture of its own: set in the cell it would add a line to the row, so it stays behind the table
+        under = any(inside(r, c["bbox"], 1.0) and any(inside(l.bbox, c["bbox"], 1.0) and min(l.y1, r[3]) - max(l.y0, r[1]) >= 0.5 * (r[3] - r[1]) for l in text_lines) for t in tbls for c in t.cells)
+        elements.append(Img(r, data[0], data[1], floating=under or sits_on(r) or ends_page(r) or in_margin(r), crop=info.get("crop"), ellipse=info.get("ellipse"), order=info.get("number") or 0))
+        elements[-1].under_table = under
     for f in P.figs:
         data = P.render_clip(f)
         if not data:

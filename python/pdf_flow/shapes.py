@@ -174,6 +174,22 @@ def polygon_area(items):
     return abs(a) / 2
 
 
+def piece_areas(items):
+    """The areas of the separate closed pieces a path of lines and rectangles draws: each rectangle, and each run of lines that comes back to where it began."""
+    out, run = [], []
+    for it in items:
+        if it[0] == "re":
+            out.append(it[1].get_area())
+        elif it[0] == "l":
+            if run and (abs(run[-1][2].x - it[1].x) > 0.5 or abs(run[-1][2].y - it[1].y) > 0.5):
+                out.append(polygon_area(run))
+                run = []
+            run.append(it)
+    if run:
+        out.append(polygon_area(run))
+    return out
+
+
 def corner_radius(items):
     """The corner radius of a rounded rectangle path in points, 0 for anything else: four curves, one at each corner, each a quarter of a circle."""
     curves = [it for it in items if it[0] == "c"]
@@ -200,6 +216,9 @@ def rect_shapes(drawings, faint=None):
             continue
         if "c" in ops and polygon_area(items) < 0.86 * r.width * r.height:
             continue                                                  # a circle or a blob, not a (rounded) rectangle
+        pieces = piece_areas(items)
+        if "c" not in ops and len(pieces) > 1 and sum(pieces) < 0.86 * r.width * r.height:
+            continue                                                  # the bars of a chart drawn as one path are bars, not one box
         fill = d.get("fill")
         color = d.get("color")
         fill = None if (fill is None or is_white(fill, 0.012)) else rgb_hex(fill)

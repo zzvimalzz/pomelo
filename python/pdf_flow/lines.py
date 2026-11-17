@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Reading the text of a page as lines: spans joined into lines, pieces on one row merged, bullets and numbers split off as list markers."""
 
+import copy
 import re
+
+import pymupdf
 
 from pdf_fonts import MATH_ITALIC
 from pdf_spans import RTL, TEXT_FLAGS, has_unmapped_symbols
@@ -93,9 +96,31 @@ def repair_tracked(blocks):
                 s["text"] = "".join(c["c"] for c in kept)
 
 
+def clipped_runs(spans, seen, upright):
+    """The spans with the letters that the page's clip paths cut away (a long title in a cell that is narrower than it) split off as hidden runs: the PDF does not show them."""
+    out = []
+    for s in spans:
+        org, text = s["org"], s["text"]
+        shown = [(round(x, 2), round(y, 2)) in seen for x, y in org]
+        if all(shown) or s["raw"] != text or len(org) != len(text) or not upright:
+            out.append(s)
+            continue
+        cuts = [0] + [k for k in range(1, len(text)) if shown[k] != shown[k - 1]] + [len(text)]
+        for a, b in zip(cuts, cuts[1:]):
+            x0 = org[a][0]
+            x1 = org[b][0] if b < len(text) else s["bbox"][2]
+            out.append(dict(s, text=text[a:b], raw=text[a:b], org=org[a:b], bbox=(x0, s["bbox"][1], x1, s["bbox"][3]), origin=org[a], hidden=not shown[a]))
+    return out
+
+
 def read_lines(page, clip=None, hidden_ok=False):
     out = []
     blocks = page.get_text("rawdict", flags=TEXT_FLAGS, clip=clip)["blocks"]
+    r = page.rect
+    off = lambda c: c["bbox"][0] < r.x0 or c["bbox"][1] < r.y0 or c["bbox"][2] > r.x1 or c["bbox"][3] > r.y1
+    chars = lambda bs, keep: {(round(c["origin"][0], 2), round(c["origin"][1], 2)) for b in bs for ln in b.get("lines", ()) for s in ln["spans"] for c in s["chars"] if keep(c)}
+    # the sheet's own edge cuts letters too, and those are left as they are
+    seen = chars(page.get_text("rawdict", flags=TEXT_FLAGS | pymupdf.TEXT_CLIP, clip=clip)["blocks"], lambda c: True) | chars(blocks, off)
     for block in blocks:
         for ln in block.get("lines", ()):
             for s in ln["spans"]:
@@ -115,6 +140,7 @@ def read_lines(page, clip=None, hidden_ok=False):
             continue
         for ln in block["lines"]:
             spans = [s for s in ln["spans"] if s["text"] != ""]
+            spans = clipped_runs(spans, seen, abs(ln["dir"][1]) <= 0.02 and ln["dir"][0] >= 0.98)
             if not any(s["text"].strip() for s in spans):
                 continue
             dx, dy = ln["dir"]
@@ -273,6 +299,53 @@ def letter_x(s, i):
     if k < 0:
         return x0 + (x1 - x0) * i / max(1, len(t))
     return org[k + i][0] if i < len(t) else x1
+
+
+def cut_at_cells(line, cells):
+    """A line that runs from one table cell into the next, because the PDF sets the two on one baseline, is cut where the next cell starts when that falls on a space or between two
+    letters, so that each cell holds its own text and none is as wide as the line."""
+    cy = (line.y0 + line.y1) / 2
+    edges = sorted(c["bbox"][0] for c in cells if c["bbox"][1] <= cy <= c["bbox"][3] and line.x0 < c["bbox"][0] < line.x1)
+    if not edges or any(not (s.get("raw") and s.get("org") and s["raw"].find(s["text"]) >= 0) for s in line.spans):
+        return [line]
+    flat = [(si, i, letter_x(s, i)) for si, s in enumerate(line.spans) for i in range(len(s["text"]))]
+    starts, dropped = [], set()
+    for x in edges:
+        j = max((k for k, (_, _, left) in enumerate(flat) if left <= x + 0.5), default=None)
+        if j is None:
+            continue
+        si, i, left = flat[j]
+        if line.spans[si]["text"][i].isspace():
+            starts.append(j + 1)
+            dropped.add(j)
+        elif left >= x - 0.5 and j > 0:
+            starts.append(j)
+        elif j + 1 < len(flat) and flat[j + 1][2] - left > line.size and x >= left + 0.7 * line.size:
+            starts.append(j + 1)
+    if not starts:
+        return [line]
+    group = lambda k: sum(1 for p in starts if p <= k)
+    runs = {}
+    for k, (si, i, _) in enumerate(flat):
+        if k not in dropped:
+            runs.setdefault((group(k), si), []).append(i)
+    pieces = {}
+    for (g, si), idx in sorted(runs.items()):
+        s = line.spans[si]
+        k0, a, b = s["raw"].find(s["text"]), idx[0], idx[-1] + 1
+        pieces.setdefault(g, []).append(dict(s, text=s["text"][a:b], raw=s["raw"][k0 + a:k0 + b], org=s["org"][k0 + a:k0 + b], origin=s["org"][k0 + a],
+                                             bbox=(letter_x(s, a), s["bbox"][1], letter_x(s, b), s["bbox"][3])))
+    out = []
+    for g in sorted(pieces):
+        spans = pieces[g]
+        if not any(s["text"].strip() for s in spans):
+            continue
+        piece = copy.copy(line)
+        piece.spans, piece.x0, piece.x1 = spans, spans[0]["bbox"][0], spans[-1]["bbox"][2]
+        if out:
+            piece.marker = piece.marker_box = piece.cap = None
+        out.append(piece)
+    return out
 
 
 def split_leader(line):

@@ -427,6 +427,118 @@ if kind == "footnear":                              # body text down to the last
         page.insert_text((60, h - (38 if other else 34)), "Cat. No. 10231X", fontname="helv", fontsize=7)
         page.insert_text((w - 160, h - (38 if other else 34)), "Form W-9 (Rev. 3-2024)", fontname="helv", fontsize=7)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "sheetgrid":                            # a spreadsheet page: a ruled grid of 30 rows and 5 columns, a header band that runs on past the grid and off the sheet, every third row shaded (extra argument: the grid as thin filled rectangles, on Letter paper)
+    other = len(sys.argv) > 3
+    page = doc.new_page(width=612 if other else 595, height=792 if other else 842)
+    xs, top, row = [50, 140, 230, 320, 410, 500], 60, 14
+    page.draw_rect(pymupdf.Rect(50, top, 900, top + row), color=None, fill=(0.0, 0.13, 0.38))
+    for r in range(1, 30):
+        if r % 3 == 0:
+            page.draw_rect(pymupdf.Rect(50, top + r * row, 500, top + (r + 1) * row), color=None, fill=(0.85, 0.9, 0.95))
+    for r in range(30):
+        for c in range(5):
+            text = ("Cost centre", "Region", "Budget", "Actual", "Variance")[c] if r == 0 else ("CC-%d" % (4100 + r), "Region %d" % (r % 4), "%d,%03d" % (r * 7, r * 13), "%d,%03d" % (r * 6, r * 11), "%d" % (r * 3))[c]
+            page.insert_text((xs[c] + 3, top + r * row + 10), text, fontname="helv", fontsize=8, color=(1, 1, 1) if r == 0 else (0, 0, 0))
+    for r in range(31):
+        y = top + r * row
+        if other:
+            page.draw_rect(pymupdf.Rect(50, y - 0.25, 500, y + 0.25), color=None, fill=(0.6, 0.6, 0.6))
+        else:
+            page.draw_line((50, y), (500, y), color=(0.6, 0.6, 0.6), width=0.5)
+    for x in xs:
+        if other:
+            page.draw_rect(pymupdf.Rect(x - 0.25, top, x + 0.25, top + 30 * row), color=None, fill=(0.6, 0.6, 0.6))
+        else:
+            page.draw_line((x, top), (x, top + 30 * row), color=(0.6, 0.6, 0.6), width=0.5)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "shadedrows":                            # a ledger of narrow columns whose texts nearly touch, every second row shaded by one rectangle across the first three columns (extra argument: wider columns and a larger size)
+    other = len(sys.argv) > 3
+    page = doc.new_page(width=595, height=842)
+    size, xs, top, row = (10, [50, 96, 176, 256, 336], 60, 16) if other else (8, [50, 86, 150, 210, 290], 60, 13)
+    for r in range(16):
+        y = top + r * row
+        if r % 2 == 1:
+            page.draw_rect(pymupdf.Rect(xs[0], y, xs[3], y + row), color=None, fill=(0.95, 0.95, 0.95))
+        page.draw_rect(pymupdf.Rect(xs[3], y, xs[4], y + row), color=None, fill=(0.9, 0.95, 0.6 + r / 60))
+        bar = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 10, 4), False)
+        bar.clear_with(120)
+        page.insert_image(pymupdf.Rect(xs[3] + 1, y + 2, xs[3] + 1 + 3 + 2 * r, y + row - 2), pixmap=bar)
+        page.draw_line((xs[0], y), (xs[4], y), color=(0.6, 0.6, 0.6), width=0.5)
+        if other:
+            page.draw_rect(pymupdf.Rect(xs[0], y - 0.25, xs[4], y + 0.25), color=None, fill=(0.6, 0.6, 0.6))
+        cells =("CC-%d" % (4100 + r), ("Northern", "Sabah", "East Coast", "Sarawak")[r % 4], "L. Wong", "%d,%03d" % (r * 7, r * 13))
+        for c in range(4):
+            page.insert_text((xs[c] + 1, y + row - 3.5), cells[c], fontname="helv", fontsize=size)
+    for x in xs:
+        page.draw_line((x, top), (x, top + 16 * row), color=(0.6, 0.6, 0.6), width=0.5)
+    page.draw_line((xs[0], top + 16 * row), (xs[4], top + 16 * row), color=(0.6, 0.6, 0.6), width=0.5)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "chevrons":                              # three filled chevrons down the left, white labels on them, white outlined rounded boxes beside them, only two holding text, all inside a hairline frame (extra argument: other colours and sizes)
+    other = len(sys.argv) > 3
+    page = doc.new_page(width=720 if other else 960, height=405 if other else 540)
+    fill = (0.8, 0.4, 0.1) if other else (0.27, 0.45, 0.77)
+    page.insert_text((40, 60), "How a container moves", fontname="helv", fontsize=24)
+    k = 0.75 if other else 1.0
+    page.draw_rect(pymupdf.Rect(37.3 * k, 156.7 * k, 920.5 * k, 380.6 * k), color=(0, 0, 0), width=0.14)
+    for i in range(3):
+        y = (160 + i * 68) * k
+        page.draw_polyline([(40 * k, y), (69.4 * k, y + 12 * k), (98.8 * k, y), (98.8 * k, y + 72 * k), (69.4 * k, y + 84 * k), (40 * k, y + 72 * k)], fill=fill, color=fill, closePath=True)
+        page.insert_text((46 * k, y + 44 * k), ("Gate in", "Vessel out", "Yard stack")[i], fontname="helv", fontsize=6 * k, color=(1, 1, 1))
+        page.draw_rect(pymupdf.Rect(98.8 * k, y, 920 * k, y + 54.6 * k), color=fill, fill=(1, 1, 1), radius=0.2)
+    page.insert_text((110 * k, 190 * k), "Quay: crane moves 28 per hour", fontname="helv", fontsize=14 * k)
+    page.insert_text((110 * k, 258 * k), "Gate out: release by customs", fontname="helv", fontsize=14 * k)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "panel":                                 # running text and a small outlined panel of figures at the foot of the right column, as a climate chart is (extra argument: A4 paper and a larger panel)
+    other = len(sys.argv) > 3
+    w, h = (595, 842) if other else (612, 792)
+    page = doc.new_page(width=w, height=h)
+    for i in range(34):
+        page.insert_text((50, 60 + i * 14), "Ordinary line of running text number %d which fills the left of the page." % i, fontname="helv", fontsize=10)
+    x0, y0, side = (w - 200, h - 330, 150) if other else (w - 190, h - 290, 140)
+    page.draw_rect(pymupdf.Rect(x0 - 8, y0 - 8, x0 + side + 40, y0 + 190), color=(0.8, 0.8, 0.8), width=0.8)
+    for c in range(12):
+        x = x0 + c * (side + 20) / 12
+        page.insert_text((x, y0 + 10), "JFMAMJJASOND"[c], fontname="helv", fontsize=6)
+        for r in range(3):
+            page.insert_text((x, y0 + 30 + r * 40), "%d" % (20 + c + r * 5), fontname="helv", fontsize=6)
+        page.draw_rect(pymupdf.Rect(x, y0 + 60 - c, x + 5, y0 + 80), color=None, fill=(0.3, 0.5, 0.8))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "bars":                                  # a column chart on a page of text: three bars of one colour drawn as one path, a second series, gridlines and labels above the bars (extra argument: each bar as a closed run of lines, other colours)
+    other = len(sys.argv) > 3
+    page = doc.new_page(width=595, height=842)
+    for i in range(3):
+        page.insert_text((60, 80 + i * 14), "Ordinary line of running text number %d above the chart." % i, fontname="helv", fontsize=10)
+    for y in (200, 240, 280, 320):
+        page.draw_line((70, y), (400, y), color=(0.85, 0.85, 0.85), width=0.5)
+    series = ((0.9, 0.5, 0.2) if not other else (0.2, 0.6, 0.3), (0.27, 0.45, 0.77))
+    shape = page.new_shape()
+    for i, top in enumerate((230, 215, 250)):
+        x = 100 + i * 100
+        if other:
+            shape.draw_polyline([(x + 30, top), (x + 60, top), (x + 60, 340), (x + 30, 340)])
+            shape.draw_line((x + 30, 340), (x + 30, top))
+        else:
+            shape.draw_rect(pymupdf.Rect(x + 30, top, x + 60, 340))
+    shape.finish(fill=series[0], color=None, closePath=other)
+    shape.commit()
+    for i, top in enumerate((250, 240, 260)):
+        page.draw_rect(pymupdf.Rect(100 + i * 100, top, 130 + i * 100, 340), color=None, fill=series[1])
+        page.insert_text((105 + i * 100, top - 6), "%d" % (45800 + i * 3100), fontname="helv", fontsize=7)
+    page.insert_text((60, 420), "A line of running text below the chart.", fontname="helv", fontsize=10)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "clipped":                               # a long title in a cell that is narrower than it: the page's clip path cuts the title off (extra argument: another size, place and width, or "edge": no clip path, the title runs over the foot of the sheet)
+    edge = len(sys.argv) > 3 and sys.argv[3] == "edge"
+    other = len(sys.argv) > 3 and not edge
+    page = doc.new_page(width=595, height=842)
+    size, x, y, wide = (9, 80, 300, 60) if other else (12, 60, 841 if edge else 100, 100)
+    page.insert_text((x, y), "Harbourline Logistics Berhad: cost centre ledger", fontname="helv", fontsize=size)
+    if not edge:
+        page.clean_contents()
+        xref = page.get_contents()[0]
+        clip = b"q %d %d %d %d re W n\\n" % (x, 842 - y - size, wide, size * 1.5)
+        doc.update_stream(xref, clip + doc.xref_stream(xref) + b"\\nQ\\n")
+    page.insert_text((60, 500), "An ordinary line below the title.", fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "footrule":                              # text and a long rule below all of it (with an extra argument: the rule as a thin bar, nearer the text)
     page = doc.new_page(width=595, height=842)
     bar = len(sys.argv) > 3
@@ -1665,6 +1777,50 @@ const isFramed = (d, word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>)
   d = await read(docx);
   expect('body text that goes on to the foot of the sheet stays in its paragraph', !/<w:framePr /.test(d.xml) && !missingFrom(d.text, ['number 0,', 'number 48,']).length, (d.xml.match(/<w:framePr /g) || []).length + ' frames');
   fs.rmSync(docx);
+
+  console.log('page class and tables');
+  for (const [name, extra] of [['sheetgrid', ''], ['sheetgrid-rects', 'rects']]) {
+    [docx] = await convert.convertFile(draw(name, 'sheetgrid', extra), 'docx');
+    d = await read(docx);
+    const rows = (d.xml.match(/<w:tr[ >]/g) || []).length;
+    expect(`${name}: a ruled grid whose header band runs past it is a Word table of its rows, not a text box for each cell`, rows >= 30 && !/<wps:txbx>/.test(d.xml) && !missingFrom(d.text, ['CC-4129', 'Variance']).length, `${rows} rows`);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['shadedrows', ''], ['shadedrows-wide', 'wide']]) {
+    [docx] = await convert.convertFile(draw(name, 'shadedrows', extra), 'docx');
+    d = await read(docx);
+    const cells = (d.xml.match(/<w:tc>.*?<\/w:tc>/gs) || []).map((c) => c.replace(/<[^>]+>/g, ''));
+    const joined = cells.filter((c) => /CC-41\d\d/.test(c) && /[A-Za-z]{4}/.test(c.replace(/CC-41\d\d/g, '')));
+    const inline = (d.xml.match(/<w:tc>(?:(?!<\/w:tc>).)*<wp:inline/gs) || []).length;
+    expect(`${name}: a text that runs on from one cell into the next, and a shaded row that runs across columns, give a cell for each column, and neither a bar on the row of a figure nor a rule drawn twice adds a line to it`, cells.length >= 16 * 4 && !joined.length && !inline && !/<w:pBdr>/.test(d.xml) && !missingFrom(d.text, ['CC-4115', 'East Coast']).length, `${cells.length} cells, joined: ${joined.slice(0, 2).join(' | ')}`);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['chevrons', ''], ['chevrons-small', 'small']]) {
+    [docx] = await convert.convertFile(draw(name, 'chevrons', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: filled shapes that are not rectangles stay in the file as a picture, with their white labels as text`, /<a:blip /.test(d.xml) && !missingFrom(d.text, ['Gate in', 'Vessel out', 'Yard stack', 'Quay: crane']).length);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['panel', ''], ['panel-a4', 'a4']]) {
+    [docx] = await convert.convertFile(draw(name, 'panel', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: figures in a small outlined panel do not make a page of running text a designed page`, !/<wps:txbx>/.test(d.xml) && !missingFrom(d.text, ['number 0 ', 'number 33']).length, 'text boxes');
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['bars', ''], ['bars-lines', 'lines']]) {
+    [docx] = await convert.convertFile(draw(name, 'bars', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: the bars of a chart are not one shaded box`, !/w:fill="(E58033|33994D)"/i.test(d.xml) && /<a:blip /.test(d.xml) && !missingFrom(d.text, ['45800', 'below the chart']).length);
+    fs.rmSync(docx);
+  }
+  for (const [name, extra] of [['clipped', ''], ['clipped-other', 'other'], ['clipped-edge', 'edge']]) {
+    [docx] = await convert.convertFile(draw(name, 'clipped', extra), 'docx');
+    d = await read(docx);
+    const run = (word) => (new RegExp(`<w:r>(?:(?!</w:r>).)*${word}(?:(?!</w:r>).)*</w:r>`, 's').exec(d.xml) || [''])[0];
+    const cut = extra !== 'edge';
+    expect(`${name}: ${cut ? 'the part of a title that a clip path cuts off is hidden text, and all of it is still in the file' : 'letters cut by the edge of the sheet are not hidden'}`, cut === /<w:vanish\/>/.test(run('Berhad')) &&!/<w:vanish\/>/.test(run('Harbourline')) && !missingFrom(d.text, ['Harbourline Logistics Berhad: cost centre ledger']).length, run('Berhad').slice(0, 200));
+    fs.rmSync(docx);
+  }
 
   console.log('a rule below all the text');
   for (const [name, extra] of [['footrule', ''], ['footrule-bar', 'bar']]) {

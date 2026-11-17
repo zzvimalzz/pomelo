@@ -13,7 +13,7 @@ from pdf_fonts import latin
 from pdf_spans import RTL, dedupe, hexcolor
 
 from .common import HI_DPI, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
-from .lines import attach_markers, field_marks, hangs, is_bold, is_italic, merge_rows, read_lines, split_leader, split_marker
+from .lines import attach_markers, cut_at_cells, field_marks, hangs, is_bold, is_italic, merge_rows, read_lines, split_leader, split_marker
 from .shapes import Box, Tbl, corner_radius, field_borders, polygon_area, rect_shapes, segments_of
 
 SHAPED = re.compile(r"[\ufb50-\ufdff\ufe70-\ufeff]+")
@@ -244,9 +244,11 @@ class Page:
             cells_ok = [g for g in grid if g["c1"] > g["c0"] and g["r1"] > g["r0"]]
             span = lambda g: (g["c0"], g["c1"], g["r0"], g["r1"])
             cells_ok = [g for g in cells_ok if not any(span(o) != span(g) and g["c0"] <= o["c0"] and o["c1"] <= g["c1"] and g["r0"] <= o["r0"] and o["r1"] <= g["r1"] for o in cells_ok)]    # a cell drawn twice, as one tall cell and as the shorter cells inside it, is the shorter ones
-            # the finder sometimes reads a part of a grid: believe it only if no drawn box sticks out of it and every line of
+            # the finder sometimes reads a part of a grid: believe it only if no drawn box sticks out of it (the shading of one of its rows or columns may run on) and every line of
             # text inside it belongs to one of its cells
-            sticks = any(overlap(tuple(r), bbox) > 0 and (r.x0 < bbox[0] - 4 or r.x1 > bbox[2] + 4 or r.y0 < bbox[1] - 4 or r.y1 > bbox[3] + 4) and area(tuple(r)) < 0.5 * self.w * self.h
+            on = lambda edges, a, b: any(abs(a - e) <= 3 for e in edges) and any(abs(b - e) <= 3 for e in edges)
+            band = lambda r: (on(ys, r.y0, r.y1) and r.x0 <= bbox[0] + 4 and r.x1 >= bbox[2] - 4) or (on(xs, r.x0, r.x1) and r.y0 <= bbox[1] + 4 and r.y1 >= bbox[3] - 4)
+            sticks = any(overlap(tuple(r), bbox) > 0 and (r.x0 < bbox[0] - 4 or r.x1 > bbox[2] + 4 or r.y0 < bbox[1] - 4 or r.y1 > bbox[3] + 4) and area(tuple(r)) < 0.5 * self.w * self.h and not band(r)
                          for r, fill, border, dashed in self.shapes)
             inside_lines = [l for l in self.upright if inside(l.bbox, bbox, 0.5)]
             stray = [l for l in inside_lines if not any(inside(l.bbox, g["bbox"], 1.0) for g in cells_ok)]
@@ -259,6 +261,9 @@ class Page:
             if not any(overlap(t.bbox, k.bbox) > 0.5 * area(t.bbox) for k in keep):
                 keep.append(t)
         self.tbls = keep
+        for t in self.tbls:
+            t.cells = self.split_cells(t)
+            self.upright = [p for l in self.upright for p in (cut_at_cells(l, t.cells) if inside(l.bbox, t.bbox, 1.0) else [l])]
         for t in self.tbls:
             in_table = lambda r: r[0] >= t.x0 - 2 and r[1] >= t.y0 - 2 and r[2] <= t.x1 + 2 and r[3] <= t.y1 + 2
             for c in t.cells:
@@ -279,9 +284,26 @@ class Page:
                     for i, (so, spos, a, bb2, width, color, d) in enumerate(self.segments):
                         if so == o and abs(spos - pos) <= 1.8 and min(bb2, hi) - max(a, lo) >= 0.6 * (hi - lo):
                             c["borders"][side] = (width, color)
-                            self.used_segments.add(i)
+                            # a border drawn twice, as a stroke and as a thin rectangle, is one border: the copy left over would be a rule inside the cell
+                            self.used_segments.update(j for j, (o2, p2, a2, b2, *_) in enumerate(self.segments) if o2 == so and abs(p2 - pos) <= 1.8 and min(b2, hi) - max(a2, lo) >= 0.6 * (hi - lo))
                             break
             self.shapes = [sh for sh in self.shapes if not (overlap(tuple(sh[0]), t.bbox) >= 0.6 * area(tuple(sh[0])))]
+
+    def split_cells(self, t):
+        """A cell that spans several columns only because one fill ran across them, as the shading of a row does, is a cell for each column when its text stands in two or more of them
+        and none of it crosses a column edge."""
+        out = []
+        for c in t.cells:
+            cols = range(c["c0"], c["c1"])
+            if len(cols) > 1 and c["r1"] - c["r0"] == 1:
+                pieces = [p for l in self.upright if inside(l.bbox, c["bbox"], 1.0)
+                          for p in cut_at_cells(l, [dict(bbox=(t.xs[k], c["bbox"][1], t.xs[k + 1], c["bbox"][3])) for k in cols])]
+                home = [{k for k in cols if t.xs[k] - 0.5 <= p.x0 and p.x1 <= t.xs[k + 1] + 2} for p in pieces]
+                if all(home) and len(set().union(*home)) >= 2:
+                    out += [dict(c, c0=k, c1=k + 1, bbox=(t.xs[k], c["bbox"][1], t.xs[k + 1], c["bbox"][3]), raw=(t.xs[k], c["raw"][1], t.xs[k + 1], c["raw"][3]), items=[], borders={}) for k in cols]
+                    continue
+            out.append(c)
+        return out
 
     def rule_edges(self, edges, o, box):
         """Cell edges moved onto the rules drawn within 8 pt of them. Word draws a shaded cell as a fill the size of the cell and another inset by the cell's padding, so the
@@ -640,8 +662,8 @@ class Page:
                 continue
             if min(fw, fh) <= 4.2 and max(fw, fh) >= 10:
                 continue                                              # a hairline: a rule or a border, already carried over
-            if any(all(abs(f[i] - o[i]) <= 4.5 for i in range(4)) for o in outlines):
-                continue                                              # the soft edge of a box that is a cell here
+            if f[5] <= 4.5 * 2 * (fw + fh) and any(all(abs(f[i] - o[i]) <= 4.5 for i in range(4)) for o in outlines):
+                continue                                              # the soft edge of a box that is a cell here: a ring no thicker than the 4.5 pt the box may be off by, not shapes inside it
             kept.append(f)
         found = []
         for f in kept:
@@ -746,7 +768,8 @@ def page_kind(P):
     short = [l for l in loose if len(l.text.strip()) <= 25 and not l.leader and id(l) not in runs]     # a leader line reaches across the page, whatever is left of its text
     words = lambda ls: sum(len(l.text.split()) for l in ls)
     art = P.imgs or sum(P.fig_ink.get(f, area(f)) for f in P.figs) >= 0.01 * P.w * P.h or [b for b in P.box_items if id(b) not in shaded]       # shaded rows and ruled lines are a table, not art
-    bits = [l for l in loose if not LETTERS.search(l.text)]       # pieces of mathematics and labels that are no word, placed at points: only a text box keeps them where they are
+    panel = lambda l: any(inside(l.bbox, b.bbox, 1.0) and area(b.bbox) <= 0.15 * P.w * P.h for b in P.box_items if b.border)
+    bits = [l for l in loose if not LETTERS.search(l.text) and not panel(l)]       # pieces of mathematics and labels that are no word, placed at points: only a text box keeps them where they are; those in a small outlined panel (a chart, an infobox) are the panel's
     drawn = P.imgs or P.figs or P.box_items                         # fraction bars and roots are rules too
     if drawn and not P.tbls and len(loose) >= 15 and len(cluster([l.x0 for l in loose], 6)) >= 6:
         if art and words(short) > 0.5 * words(loose):
