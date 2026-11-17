@@ -1210,6 +1210,98 @@ if kind == "numhead":                               # a heading of a section num
     for k in range(5):
         page.insert_text((60, 200 + k * 14), "Ordinary body text after the heading, line %d, set in the usual size." % (k + 1), fontname="helv", fontsize=10.5)
     doc.save(sys.argv[1]); sys.exit()
+RUNNING = "Pressure management works best when the zone is small and the meters are read often. Crews close the valves at night, record the flow at each inlet and compare it with what customers are billed, so that a loss shows up in days and not in months. "
+def fill_lines(text, widths, size=10):
+    words, out, k = text.split(), [], 0
+    while words:
+        line = words.pop(0)
+        while words and pymupdf.get_text_length(line + " " + words[0], fontname="helv", fontsize=size) <= widths(k):
+            line += " " + words.pop(0)
+        out.append(line)
+        k += 1
+    return out
+def small_picture():
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 60, 40), False)
+    for yy in range(40):
+        for xx in range(60):
+            pix.set_pixel(xx, yy, (30 + xx * 3, 80 + yy * 3, 140))
+    return pix
+def run_round(page, area, text, pitch=12, top=120, count=18, gap=12):
+    # lines whose middle lies beside the area (x0, y0, x1, y1 at the left or right edge of the column 60 to 535) are as short as the area leaves it
+    beside = lambda k: area[1] <= top + k * pitch - 3.5 <= area[3]
+    left = area[0] <= 62
+    width = lambda k: 475 - (area[2] - area[0] + gap) if beside(k) else 475
+    lines = fill_lines(text * 8, width)[:count]
+    for k, line in enumerate(lines):
+        page.insert_text((area[2] + gap if left and beside(k) else 60, top + k * pitch), line, fontname="helv", fontsize=10)
+    return lines
+if kind == "wrap":                                  # a paragraph that runs round a picture at one edge of the column (extra: left or right; more: a caption under the picture)
+    page = doc.new_page(width=595, height=842)
+    pic = pymupdf.Rect(60, 150, 210, 230) if sys.argv[3] == "left" else pymupdf.Rect(385, 150, 535, 230)
+    page.insert_image(pic, pixmap=small_picture(), keep_proportion=False)
+    area = list(pic)
+    if len(sys.argv) > 4:
+        for k, t in enumerate(("Figure 2. The second intake on the", "river, seen from upstream")):
+            page.insert_text((pic.x0, pic.y1 + 10 + k * 9), t, fontname="heit", fontsize=7.5)
+        area[3] = pic.y1 + 21
+    run_round(page, area, RUNNING)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "quote":                                 # a paragraph that runs round an outlined box at one edge of the column (extra: left or right)
+    page = doc.new_page(width=595, height=842)
+    box = pymupdf.Rect(60, 150, 190, 235) if sys.argv[3] == "left" else pymupdf.Rect(405, 150, 535, 235)
+    page.draw_rect(box, color=(0.2, 0.3, 0.4), fill=None if sys.argv[3] == "left" else (0.9, 0.93, 0.97), width=1)
+    for k, t in enumerate(("We used to get water", "only at night. Now the", "valves are set and the", "pressure is steady.")):
+        page.insert_text((box.x0 + 8, box.y0 + 16 + k * 12), t, fontname="heit", fontsize=9)
+    run_round(page, list(box), RUNNING)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "marked":                                # a phrase highlighted inside a line (extra: anything for one that runs over a line break)
+    page = doc.new_page(width=595, height=842)
+    lines = ["The annual figures were checked twice by the finance team before the report", "was sent to the board, and the highlighted phrase here needs a second reading", "because the number it quotes may change once the auditors have finished."]
+    cut = lambda t, a, b: (60 + pymupdf.get_text_length(t[:a], fontname="helv", fontsize=11), 60 + pymupdf.get_text_length(t[:b], fontname="helv", fontsize=11))
+    if len(sys.argv) > 3:
+        x0, x1 = cut(lines[0], lines[0].index("before"), len(lines[0]))
+        y0, y1 = cut(lines[1], 0, lines[1].index("and"))
+        page.draw_rect(pymupdf.Rect(x0, 120 - 9, x1, 120 + 3), color=None, fill=(1, 1, 0))
+        page.draw_rect(pymupdf.Rect(y0, 134 - 9, y1, 134 + 3), color=None, fill=(1, 1, 0))
+    else:
+        x0, x1 = cut(lines[1], lines[1].index("highlighted"), lines[1].index("here") + 4)
+        page.draw_rect(pymupdf.Rect(x0, 134 - 9, x1, 134 + 3), color=None, fill=(1, 1, 0))
+    for k, t in enumerate(lines):
+        page.insert_text((60, 120 + k * 14), t, fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "lastcap":                               # a large letter that opens a paragraph, drawn after (or, with a second extra, before) the lines beside it; extra: its size
+    size = float(sys.argv[3])
+    page = doc.new_page(width=595, height=842)
+    def cap():
+        page.insert_text((60, 88.6 + 0.905 * size), "T", fontname="helv", fontsize=size)
+    if len(sys.argv) > 4:
+        cap()
+    lines = fill_lines(RUNNING * 3, lambda k: 475 - 0.55 * size if k < 3 else 475)[:6]
+    for k, t in enumerate(lines):
+        page.insert_text((60 + 0.55 * size if k < 3 else 60, 100 + k * 14), t[1:] if k == 0 else t, fontname="helv", fontsize=10.5)
+    if len(sys.argv) <= 4:
+        cap()
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "hyphen":                                # lines that end at a hyphen: in left-aligned text, and in text justified to both edges (a broken word, a number); extra: the size
+    size = float(sys.argv[3])
+    page = doc.new_page(width=595, height=842)
+    first, words = "The invoice must be paid in full by the customer within a three-", "month period of receipt, and the supplier may add interest to late payments after that date.".split()
+    second = words[0]
+    for w in words[1:]:
+        if pymupdf.get_text_length(second + " " + w, fontname="helv", fontsize=size) <= pymupdf.get_text_length(first, fontname="helv", fontsize=size) + 2.4 * size:
+            second += " " + w
+    for k, t in enumerate((first, second)):
+        page.insert_text((60, 100 + k * 14), t, fontname="helv", fontsize=size)
+    for top, rows in ((200, ["Every request is read by two people at the depart-", "ment before the panel decides whether a meeting is"]), (260, ["Every request is answered within forty-", "five days unless the panel asks for more time to read"])):
+        for k, row in enumerate(rows):
+            words = row.split()
+            gap = (400 - sum(pymupdf.get_text_length(w, fontname="helv", fontsize=size) for w in words)) / (len(words) - 1)
+            x = 60
+            for w in words:
+                page.insert_text((x, top + k * 14), w, fontname="helv", fontsize=size)
+                x += pymupdf.get_text_length(w, fontname="helv", fontsize=size) + gap
+        page.insert_text((60, top + 28), "needed, and the applicant hears back within a week.", fontname="helv", fontsize=size)
+    doc.save(sys.argv[1]); sys.exit()
 page = doc.new_page(width=595, height=842)
 if kind == "banner":
     page.draw_rect(pymupdf.Rect(40, 40, 555, 140), color=None, fill=(0.1, 0.2, 0.45))           # a coloured banner
@@ -2223,6 +2315,55 @@ const isFramed = (d, word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>)
     d = await read(docx);
     const head = (d.xml.match(/<w:p>(?:(?!<\/w:p>).)*?Interruptions and outages(?:(?!<\/w:p>).)*?<\/w:p>/s) || [''])[0];
     expect(`the number and the title are one paragraph with a tab stop at the title (${size} pt)`, />2\.3\s*<\/w:t>/.test(head) && /<w:tab\/>/.test(head) && /<w:tab w:val="left" w:pos="\d+"\/>/.test(head), head.slice(0, 300));
+    fs.rmSync(docx);
+  }
+
+  console.log('a paragraph that runs round a picture or a box at the edge of the column');
+  const outer = (xml) => xml.replace(/<w:txbxContent>.*?<\/w:txbxContent>/gs, '');
+  const textOf = (xml) => [...xml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join('');
+  const paraWith = (xml, word) => (outer(xml).match(new RegExp(`<w:p[ >](?:(?!</w:p>).)*${word}(?:(?!</w:p>).)*</w:p>`, 's')) || [''])[0];
+  for (const [name, kind, extra, more] of [['right', 'wrap', 'right', ''], ['left with a caption', 'wrap', 'left', 'caption'], ['box on the left', 'quote', 'left', ''], ['filled box on the right', 'quote', 'right', '']]) {
+    [docx] = await convert.convertFile(draw(`${kind}-${extra}-${more}`, kind, extra, more), 'docx');
+    d = await read(docx);
+    const para = paraWith(d.xml, 'Pressure management');
+    expect(`the text beside the ${name} is one paragraph with no line breaks`, textOf(para).length >= 1200 && (para.match(/<w:br\/>/g) || []).length <= 1, `${textOf(para).length} characters`);
+    expect(`the ${name} is anchored in it, to the column and the paragraph, with square wrapping`,
+      /<wp:wrapSquare wrapText="bothSides"\/>/.test(para) && /relativeFrom="column"/.test(para) && /relativeFrom="paragraph"/.test(para));
+    expect(`the ${name} sets no layout table beside the text`, !/<w:tbl>/.test(outer(d.xml)));
+    if (more) expect('the caption goes with the picture, in a box that wraps the same way', /<w:txbxContent>(?:(?!<\/w:txbxContent>).)*Figure 2/s.test(d.xml));
+    if (kind === 'quote') expect('the words of the box are in the box', /<w:txbxContent>(?:(?!<\/w:txbxContent>).)*We used to get water/s.test(d.xml));
+    fs.rmSync(docx);
+  }
+
+  console.log('a highlighted phrase');
+  for (const across of ['', 'across']) {
+    [docx] = await convert.convertFile(draw(`marked-${across}`, 'marked', across), 'docx');
+    d = await read(docx);
+    const shaded = textOf((d.xml.match(/<w:r>(?:(?!<\/w:r>).)*?w:fill="FFFF00"(?:(?!<\/w:r>).)*?<\/w:r>/gs) || []).join(''));
+    expect(across ? 'a highlight over the end of a line and the start of the next is shading on those words' : 'a highlight over part of a line is shading on those words',
+      across ? /before the report/.test(shaded) && /was sent to the board,/.test(shaded) : /highlighted phrase here/.test(shaded) && !/second reading/.test(shaded), shaded);
+    expect('the highlight is no shape behind the text', !/<w:drawing>/.test(d.xml));
+    fs.rmSync(docx);
+  }
+
+  console.log('a drop capital drawn after, or before, the lines beside it');
+  for (const [size, before] of [['48', ''], ['36', 'first']]) {
+    [docx] = await convert.convertFile(draw(`lastcap-${size}`, 'lastcap', size, before), 'docx');
+    d = await read(docx);
+    expect(`the large letter is a Word drop capital over the three lines it stands beside (${size} pt)`,
+      /<w:framePr w:dropCap="drop" w:lines="3"[^>]*\/>(?:(?!<\/w:p>).)*<w:t[^>]*>T<\/w:t>/s.test(d.xml));
+    expect('the lines beside it and the lines under it are one paragraph', textOf(paraWith(d.xml, 'ressure management')).length >= 300);
+    fs.rmSync(docx);
+  }
+
+  console.log('a hyphen at the end of a line');
+  for (const size of ['10', '12']) {
+    [docx] = await convert.convertFile(draw(`hyphen-${size}`, 'hyphen', size), 'docx');
+    d = await read(docx);
+    const flat = squash(d.text);
+    expect(`a line that stops short of the right edge keeps its hyphen (${size} pt)`, /three-month/.test(flat), d.text);
+    expect('a line justified to both edges loses the hyphen it was broken at', /department/.test(flat) && !/depart-/.test(flat), d.text);
+    expect('a number from twenty-one to ninety-nine keeps its hyphen in justified text', /forty-five/.test(flat), d.text);
     fs.rmSync(docx);
   }
 

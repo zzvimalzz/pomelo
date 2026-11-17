@@ -16,10 +16,13 @@ from .lines import end_figures, is_bold, is_letter, mostly_rtl
 from .page import Para, runs_xml, tracking
 from .shapes import Box, SIDES, Tbl, rule_key, table_look
 
+TENS = {"twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"}
+UNITS = {"one", "two", "three", "four", "five", "six", "seven", "eight", "nine"}
 QUOTES = "“”\"‘’«»"
 CLOSINGS = {"yours sincerely", "yours faithfully", "sincerely", "regards", "best regards", "kind regards", "warm regards"}
 CAPTION = re.compile(r"(?:Figure|Fig\.?|Table|Chart|Exhibit|Diagram)\s+[A-Z]?\d+(?:\.\d+)*[a-z]?\s*[.:–—-]\s*\S")
 NUMBERED = re.compile(r"\(\d{1,3}\)")
+WRAP_SQUARE = '<wp:wrapSquare wrapText="bothSides"/>'
 BREAK = '<w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr>'
 
 
@@ -343,7 +346,7 @@ class Builder:
         for a_, b_ in zip(lines, lines[1:]):
             width_next = (b_.x1 - b_.x0) * len(word(b_)) / max(1, len(b_.text.strip()))
             room = right_edge - a_.x1
-            natural = jc == "both" or ((right_edge - ref) >= 0.8 * w and room < width_next + 0.25 * b_.size)
+            natural = jc == "both" or a_.wrapped or ((right_edge - ref) >= 0.8 * w and room < width_next + 0.25 * b_.size)
             breaks.append(not natural)
         if self.placed and jc != "both":
             breaks = [True] * len(breaks)
@@ -443,7 +446,7 @@ class Builder:
                 t = last["text"]
                 nxt = lines[i + 1].text.lstrip()
                 if t.rstrip().endswith("-") and len(t.rstrip()) > 2 and t.rstrip()[-2].isalpha() and nxt[:1].islower():
-                    last["text"] = t.rstrip() if self.compound(t, nxt) else t.rstrip()[:-1]
+                    last["text"] = t.rstrip() if self.compound(t, nxt) or right_edge - l.x1 > 0.35 * l.size else t.rstrip()[:-1]
                 elif not t.endswith(" "):
                     last["text"] = t + " "
             for s_ in spans:
@@ -451,7 +454,8 @@ class Builder:
             body += runs_xml(self.P, spans, justified, self.doc.part, self.meter, gap)
             if not last_line and breaks[i]:
                 body += "<w:r><w:br/></w:r>"
-        return f"{self.drop_cap(p, pitch) if p.cap else ''}<w:p>{ppr}{body}</w:p>", T, B
+        drawings = "".join(self.float_xml(g, T - before) for l in lines for g in l.floats)
+        return f"{self.drop_cap(p, pitch) if p.cap else ''}<w:p>{ppr}{drawings}{body}</w:p>", T, B
 
     def capped(self, items):
         """A large single letter standing at the left of the first two to four lines of a paragraph is that paragraph's drop capital: it leaves the lines, and the lines it
@@ -460,12 +464,13 @@ class Builder:
         for d in lines:
             if not is_letter(d) or d.size < 2 * self.P.body:
                 continue
-            beside = sorted((l for l in lines if l is not d and not l.marker and l.size < d.size / 2 and d.x1 - 2 <= l.x0 <= d.x1 + 0.4 * d.size
+            beside = sorted((l for l in lines if l is not d and not l.marker and l.size < d.size / 2 and min(d.x1 - 2, d.x0 + 0.5 * d.size) <= l.x0 <= d.x1 + 0.4 * d.size
                              and d.y0 - 2 <= (l.y0 + l.y1) / 2 <= d.y1 + 2), key=lambda l: l.base)
             if 2 <= len(beside) <= 4:
                 for l in beside:
                     l.x0 = d.x0
                 beside[0].cap = d
+                d.rows = len(beside)
                 items = [i for i in items if i is not d]
         return items
 
@@ -473,10 +478,82 @@ class Builder:
         d = p.cap
         self.emitted.add(id(d))
         spans = [dict(s, bsize=d.size) for s in d.spans]
-        lines = min(4, max(2, round((d.y1 - d.y0) / pitch)))
+        lines = d.rows
         return (f'<w:p><w:pPr><w:framePr w:dropCap="drop" w:lines="{lines}" w:wrap="around" w:vAnchor="text" w:hAnchor="text"/>'
                 f'<w:spacing w:before="0" w:after="0" w:line="{tw(lines * pitch)}" w:lineRule="exact"/><w:textAlignment w:val="baseline"/></w:pPr>'
                 f'{runs_xml(self.P, spans, False, self.doc.part, self.meter)}</w:p>')
+
+    def wrapped(self, items, x0, x1):
+        """A picture or a box at the left or right edge of the column, with its caption under it, that the lines of a paragraph run beside and that the same paragraph carries on
+        past above or below it, is a drawing that Word wraps the paragraph round. The lines beside it are written at the full width of the column and Word breaks them where
+        the drawing and its own font need; the drawing is anchored in the paragraph with square wrapping, and the text keeps the distance from it that the PDF has."""
+        if self.depth or self.placed or self.turn:
+            return items
+        lines = [i for i in items if i.kind == "line" and not (i.marker or i.leader or i.rot)]
+        groups = []
+        for f in sorted((i for i in items if (i.kind == "img" and not i.floating) or i.kind == "box"), key=lambda i: i.x0):
+            caps, y = [], f.y1
+            for l in sorted((l for l in lines if f.x0 - 3 <= l.x0 and l.x1 <= f.x1 + 3 and l.y0 >= f.y1 - 1), key=lambda l: l.y0):
+                if l.y0 - y > 0.6 * l.size or not (caps or l.size < 0.95 * self.P.body or CAPTION.match(l.text)):
+                    break
+                caps.append(l)
+                y = l.y1
+            g = SimpleNamespace(x0=f.x0, y0=f.y0, x1=f.x1, y1=max([f.y1] + [c.y1 for c in caps]), members=[f], caps=caps)
+            prev = groups[-1] if groups else None
+            if prev and 0 <= g.x0 - prev.x1 <= 2 * self.P.body and min(g.y1, prev.y1) - max(g.y0, prev.y0) >= 0.5 * min(g.y1 - g.y0, prev.y1 - prev.y0):
+                prev.x1, prev.y0, prev.y1 = g.x1, min(prev.y0, g.y0), max(prev.y1, g.y1)
+                prev.members, prev.caps = prev.members + g.members, prev.caps + g.caps
+            else:
+                groups.append(g)
+        taken = {id(c) for g in groups for c in g.caps}
+        found = []
+        for g in groups:
+            g.left = g.x0 <= x0 + 4
+            if not (g.left or g.x1 >= x1 - 4) or g.x1 - g.x0 > 0.6 * (x1 - x0) or g.y1 - g.y0 < 2 * self.P.body:
+                continue
+            fits = lambda l: l.x0 >= g.x1 - 0.5 if g.left else l.x1 <= g.x0 + 0.5
+            side = sorted((l for l in lines if id(l) not in taken and min(l.y1, g.y1) - max(l.y0, g.y0) >= 0.2 * (l.y1 - l.y0) and fits(l)), key=lambda l: l.y0)
+            if len(side) < 2 or any(b.base - a.base <= 0.3 * a.size for a, b in zip(side, side[1:])):
+                continue
+            starts = sorted(l.x0 for l in side)
+            if sum(abs(x - starts[len(starts) // 2]) <= 3 for x in starts) < 0.7 * len(side):
+                continue
+            edge = min(l.x0 for l in side) if g.left else max(l.x1 for l in side)
+            for l in sorted((l for l in lines if id(l) not in taken and l not in side and l.y0 > side[-1].y0 and fits(l)), key=lambda l: l.y0):
+                if -2 <= l.y0 - side[-1].y1 <= 0.6 * l.size and (abs(l.x0 - edge) <= 2.5 if g.left else l.x1 >= edge - 0.1 * (x1 - x0)):
+                    side.append(l)
+            size, top, bottom = side[0].size, side[0].y0, side[-1].y1
+            reaches = (lambda l: l.x1 > edge) if g.left else (lambda l: l.x0 < edge)
+            carries_on = any(id(l) not in taken and l not in side and abs(l.size - size) <= 1.6 and not fits(l) and reaches(l) and (-2 <= l.y0 - bottom <= 1.2 * size or -2 <= top - l.y1 <= 1.2 * size) for l in lines)
+            g.gap = max(0.0, edge - g.x1 if g.left else g.x0 - edge)
+            g.below = max(0.0, bottom - g.y1)
+            found.append((g, side, carries_on))
+        beside = {id(l) for _, side, on in found if on for l in side}
+        found = [(g, side) for g, side, on in found if on or (len(side) >= 5 and g.members[0].kind == "box" and sum(len(l.text.split()) for l in side) >= 6 * len(side)) or 2 * sum(id(l) in beside for l in side) >= len(side)]
+        beside = {id(l) for _, side in found for l in side}
+        for g, side in found:
+            rest = [l for l in lines if id(l) not in taken and id(l) not in beside and abs(l.size - side[0].size) <= 1.6]
+            reach = min([m.x0 for m in rest if m.x0 < g.x1] or [x0]) if g.left else max([m.x1 for m in rest if m.x1 > g.x0] or [x1])
+            for l in side:
+                if g.left:
+                    l.x0 = reach
+                else:
+                    l.x1 = reach
+                l.wrapped = True
+            side[0].floats += (g,)
+        gone = {id(m) for g, _ in found for m in g.members + g.caps}
+        return [i for i in items if id(i) not in gone]
+
+    def float_xml(self, g, T):
+        """The drawing of a wrapped group: a picture alone, else a text box that holds the pictures, boxes and captions as they stand. x counts from the column and y from the top of the paragraph, where Word starts counting above the space before it."""
+        x, y = g.x0 - self.page_x0, g.y0 - T
+        wrap = (x, y, (0.0, g.gap) if g.left else (g.gap, 0.0), g.below)
+        if len(g.members) == 1 and g.members[0].kind == "img" and not g.caps:
+            return self.picture_xml(g.members[0], wrap=wrap)
+        inner, _ = self.in_cell(g.members + g.caps, g.x0, g.x1, g.y0)
+        if not inner.rstrip().endswith("</w:p>"):
+            inner += self.spacer(1)
+        return self.text_box_xml(inner, x, y, g.x1 - g.x0, g.y1 - g.y0, wraps=True, wrap=wrap)
 
     def line_rule(self, lines, pitch, size):
         """(rule, line) for a paragraph. Lines are "at least" the PDF's pitch where the font's own height in Word is no taller, so they grow with the text when it is edited
@@ -521,9 +598,9 @@ class Builder:
         return bool(below) and not any(m.bold_all for m in below)
 
     def compound(self, t, nxt):
-        """A line that ends at the hyphen of a word the text spells with a hyphen elsewhere (three-year) keeps it; a word the typesetter broke is joined."""
+        """A line that ends at the hyphen of a word the text spells with a hyphen elsewhere (three-year), or of a number from twenty-one to ninety-nine, keeps it; a word the typesetter broke is joined."""
         a, b = re.search(r"([^\W\d_]+)-$", t.rstrip()), re.match(r"[^\W\d_]+", nxt)
-        return bool(a and b and f"{a.group(1)}-{b.group()}".lower() in self.meter.hyphenated)
+        return bool(a and b and (f"{a.group(1)}-{b.group()}".lower() in self.meter.hyphenated or (a.group(1).lower() in TENS and b.group().lower() in UNITS)))
 
     def frames(self, lines, extra=0.0):
         """Text that sits on a picture: positioned paragraphs (frames), each one still real text that reflows inside its frame."""
@@ -634,21 +711,31 @@ class Builder:
             cx, cy, angle = *self.turned_centre(cx, cy), (angle + self.turn) % 360
         return self.text_box_xml(content, cx - (long + 3.0) / 2, cy - (thick + 2.0) / 2, long + 3.0, thick, wraps=False, turn=angle)
 
-    def text_box_xml(self, content, x, y, w, h, wraps, turn=0):
+    def text_box_xml(self, content, x, y, w, h, wraps, turn=0, wrap=None):
         """A text box without fill or line and with no inset, anchored to the sheet. A left-aligned paragraph is not allowed to wrap, so a substitute font that is a little wider cannot break a line; Word places centred and right-aligned text inside a box that does not wrap as if the box were empty, so those keep a box as wide as the text."""
         pid = self.next_id()
         cx, cy = int(w * 12700), int((h + 2.0) * 12700)
-        return (f'<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="{pid}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">'
-                f'<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{int(x * 12700)}</wp:posOffset></wp:positionH>'
-                f'<wp:positionV relativeFrom="page"><wp:posOffset>{int(y * 12700)}</wp:posOffset></wp:positionV>'
-                f'<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>'
+        return (f'<w:r><w:drawing>{self.anchor(pid, x, y, wrap)}'
+                f'<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>{WRAP_SQUARE if wrap else "<wp:wrapNone/>"}'
                 f'<wp:docPr id="{pid}" name="Text {pid}"/><wp:cNvGraphicFramePr/>'
                 f'<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">'
                 f'<wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:cNvSpPr txBox="1"/>'
                 f'<wps:spPr><a:xfrm{f' rot="{round(turn * 60000)}"' if turn else ''}><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr>'
                 f'<wps:txbx><w:txbxContent>{content}</w:txbxContent></wps:txbx>'
-                f'<wps:bodyPr wrap="{"square" if wraps else "none"}" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"><a:noAutofit/></wps:bodyPr></wps:wsp>'
+                f'<wps:bodyPr wrap="{"square" if wraps else "none"}" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"><a:{"spAutoFit" if wrap else "noAutofit"}/></wps:bodyPr></wps:wsp>'
                 f'</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>')
+
+    def anchor(self, pid, x, y, wrap):
+        """The start of a drawing anchored to the sheet at x, y; with `wrap` (x from the column, y from the paragraph, the distance text keeps at the left and right, and
+        below) it moves with its paragraph and text wraps round it."""
+        if not wrap:
+            return (f'<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="{pid}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">'
+                    f'<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="page"><wp:posOffset>{int(x * 12700)}</wp:posOffset></wp:positionH>'
+                    f'<wp:positionV relativeFrom="page"><wp:posOffset>{int(y * 12700)}</wp:posOffset></wp:positionV>')
+        x, y, (left, right), below = wrap
+        return (f'<wp:anchor distT="0" distB="{int(below * 12700)}" distL="{int(left * 12700)}" distR="{int(right * 12700)}" simplePos="0" relativeHeight="{pid}" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="0">'
+                f'<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>{int(x * 12700)}</wp:posOffset></wp:positionH>'
+                f'<wp:positionV relativeFrom="paragraph"><wp:posOffset>{int(y * 12700)}</wp:posOffset></wp:positionV>')
 
     def shape_xml(self, x, y, w, h, prst, fill=None, line=None, adj=None, flow=None):
         """A shape without text behind the text: a rule (`line`, as wide or as tall as it is long) or a rounded box (`roundRect`, `adj` the corner radius as a share of the
@@ -691,7 +778,7 @@ class Builder:
         for i, l in enumerate(lines):
             if i:
                 leader = f' w:leader="{l.lead_in}"' if l.lead_in else ""
-                if l.x1 >= x1 - 3 and not l.leader and (l.x0 > first.x1 + 20 or NUMBERED.fullmatch(l.text.strip())):
+                if l.x1 >= x1 - 3 and not l.leader and (l.x0 > first.x1 + 1.5 * l.size or NUMBERED.fullmatch(l.text.strip())):
                     stops += f'<w:tab w:val="right"{leader} w:pos="{tw(l.x1 - x0)}"/>'
                 else:
                     stops += f'<w:tab w:val="left"{leader} w:pos="{tw(l.x0 - x0)}"/>'
@@ -718,7 +805,7 @@ class Builder:
     def next_id(self):
         return next(self.lists.drawing_ids)
 
-    def picture_xml(self, it, floating=False, name="Picture", rid=None, pid=None):
+    def picture_xml(self, it, floating=False, name="Picture", rid=None, pid=None, wrap=None):
         rid = rid or self.doc.part.get_or_add_image(io.BytesIO(it.data))[0]
         cx, cy = int((it.x1 - it.x0) * 12700), int((it.y1 - it.y0) * 12700)
         pid = pid or self.next_id()
@@ -731,6 +818,9 @@ class Builder:
         pic = (f'<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="{pid}" name="{name} {pid}"/>'
                f'<pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="{rid}"/>{src}<a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
                f'<pic:spPr><a:xfrm{turn}><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="{"ellipse" if getattr(it, "ellipse", False) else "rect"}"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>')
+        if wrap:
+            return (f'<w:r><w:drawing>{self.anchor(pid, 0, 0, wrap)}<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>{WRAP_SQUARE}'
+                    f'<wp:docPr id="{pid}" name="{name} {pid}"/><wp:cNvGraphicFramePr/>{pic}</wp:anchor></w:drawing></w:r>')
         if not floating:
             return (f'<w:r><w:rPr><w:sz w:val="2"/></w:rPr><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>'
                     f'<wp:docPr id="{pid}" name="{name} {pid}"/><wp:cNvGraphicFramePr/>{pic}</wp:inline></w:drawing></w:r>')
@@ -896,7 +986,7 @@ class Builder:
         items = [i for i in items if i is not None]
         if not items:
             return "", cursor
-        items = end_figures(self.stripes(self.capped(items)))
+        items = end_figures(self.stripes(self.capped(self.wrapped(items, x0, x1))))
         if self.columns_ok and not self.depth:
             bands = self.h_bands(items)
             runs = self.column_runs(bands, x0, x1)

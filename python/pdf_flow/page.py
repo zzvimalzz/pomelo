@@ -13,7 +13,7 @@ from pdf_fonts import latin
 from pdf_spans import RTL, dedupe, hexcolor
 
 from .common import HI_DPI, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
-from .lines import attach_markers, cut_at_cells, field_marks, hangs, is_bold, is_italic, merge_rows, read_lines, split_leader, split_marker
+from .lines import attach_markers, cut_at_cells, cut_at_rects, field_marks, hangs, is_bold, is_italic, merge_rows, read_lines, split_leader, split_marker
 from .shapes import Box, Tbl, corner_radius, field_borders, polygon_area, rect_shapes, segments_of
 
 SHAPED = re.compile(r"[\ufb50-\ufdff\ufe70-\ufeff]+")
@@ -173,6 +173,8 @@ class Page:
     def decorate(self):
         used_shapes = set()
         for l in self.upright:
+            marks = [r for r, fill, border, _ in self.shapes if fill and not border and r.height <= 1.9 * l.size and overlap(l.bbox, tuple(r)) >= 0.5 * area(tuple(r)) and r.width < 0.9 * (l.x1 - l.x0)]
+            l.spans = cut_at_rects(l.spans, marks)
             for s in l.spans:
                 bb = s["bbox"]
                 size = s["size"]
