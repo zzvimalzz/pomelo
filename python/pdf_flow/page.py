@@ -224,6 +224,9 @@ class Page:
             ys = cluster([c[1] for c in cells] + [c[3] for c in cells])
             if len(xs) >= 2 and len(ys) >= 2:
                 xs, ys = self.rule_edges(xs, "v", (xs[0], ys[0], xs[-1], ys[-1])), self.rule_edges(ys, "h", (xs[0], ys[0], xs[-1], ys[-1]))
+            if len(xs) >= 2 and len(ys) >= 2 and not any(o == "v" and abs(pos - xs[0]) <= 1.8 for o, pos, *_ in self.segments):
+                # with no rule at its left edge, the table starts where the text of its first column does, numbers and indents included
+                xs[0] = min([xs[0]] + [m.left for m in self.upright if not m.rot and ys[0] <= m.y0 and m.y1 <= ys[-1] and m.x1 > xs[0]])
             if len(xs) < 3 and len(ys) < 3 or len(xs) < 2 or len(ys) < 2:
                 continue
             if len(xs) == 2 and len(ys) == 2:

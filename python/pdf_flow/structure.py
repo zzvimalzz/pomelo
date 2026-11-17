@@ -1,20 +1,22 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What makes the DOCX a Word document and not only a drawing of the PDF: the styles, and the headers and footers that repeat on the pages."""
+"""What makes the DOCX a Word document and not only a drawing of the PDF: the styles, the table of contents, and the headers and footers that repeat on the pages."""
 
+import copy
 import io
 import itertools
 import re
+from bisect import bisect_left
 from collections import Counter
 
 from docx.enum.section import WD_HEADER_FOOTER
 from docx.opc.constants import RELATIONSHIP_TYPE
 from docx.oxml import parse_xml
-from docx.oxml.ns import qn
+from docx.oxml.ns import nsdecls, qn
 import pymupdf
 
 from pdf_fonts import latin
 
-from .common import NS, esc
+from .common import NS, cluster, esc, nearest
 from .lines import merge_rows, read_lines
 
 NUMBER = re.compile(r"\d+")
@@ -76,6 +78,141 @@ def set_styles(out, font, half, looks=()):
         root.append(parse_xml(xml.replace("<w:style ", f"<w:style {NS} ", 1)))
     for n, look in enumerate(looks, 1):
         root.append(parse_xml(table_style(look, n).replace("<w:style ", f"<w:style {NS} ", 1)))
+
+
+W = nsdecls("w")
+LEADERS = ("dot", "hyphen", "underscore", "middleDot")
+FLOW = (qn("w:body"), qn("w:tc"))
+
+
+def squash(text):
+    return re.sub(r"\s+", "", text).lower()
+
+
+def text_of(p):
+    """A paragraph's text with each tab as a tab character."""
+    return "".join("\t" if el.tag == qn("w:tab") and el.getparent().tag == qn("w:r") else el.text or "" for el in p.iter(qn("w:t"), qn("w:tab")))
+
+
+def entry_of(p):
+    """(text before the page number, indent in twips) when the paragraph is a contents entry: a tab with a leader in its stops, and a page number after its last tab."""
+    ppr = p.find(qn("w:pPr"))
+    tabs = ppr.find(qn("w:tabs")) if ppr is not None else None
+    pieces = text_of(p).split("\t")
+    if tabs is None or not any(t.get(qn("w:leader")) in LEADERS for t in tabs) or p.find(qn("w:hyperlink")) is not None:
+        return None
+    if len(pieces) < 2 or not re.fullmatch(r"\d{1,4}|[ivxlc]{1,6}", pieces[-1].strip(), re.I):
+        return None
+    ind = ppr.find(qn("w:ind"))
+    return "".join(pieces[:-1]), int(ind.get(qn("w:left")) or 0) if ind is not None else 0
+
+
+def bookmark(p, ids, name):
+    n = str(next(ids))
+    start = parse_xml(f'<w:bookmarkStart {W} w:id="{n}" w:name="{name}"/>')
+    ppr = p.find(qn("w:pPr"))
+    p.insert(0 if ppr is None else 1, start)
+    p.append(parse_xml(f'<w:bookmarkEnd {W} w:id="{n}"/>'))
+
+
+def heading_style(p, level):
+    ppr = p.find(qn("w:pPr"))
+    if ppr is None:
+        ppr = parse_xml(f"<w:pPr {W}/>")
+        p.insert(0, ppr)
+    style = ppr.find(qn("w:pStyle"))
+    if style is None:
+        style = parse_xml(f'<w:pStyle {W} w:val="Heading{level}"/>')
+        ppr.insert(0, style)
+    style.set(qn("w:val"), f"Heading{level}")
+
+
+def contents(out, outline):
+    """Word's own table of contents, and the bookmarks that its links and the Navigation pane use. A block of three or more contents entries whose titles are, in order, the
+    text of paragraphs further on becomes a TOC field (the entries as the PDF shows them, each a link to its heading, which gets the heading style of its level); a block
+    where one entry has no such paragraph stays as it is. The PDF's own outline then bookmarks the paragraphs whose text is the title of an outline entry."""
+    body = out.element.body
+    paras = [p for p in body.iter(qn("w:p")) if p.getparent().tag in FLOW]
+    at = {id(p): i for i, p in enumerate(paras)}
+    texts = [squash(text_of(p)) for p in paras]
+    where = {}
+    for k, t in enumerate(texts):
+        where.setdefault(t, []).append(k)
+    after = lambda key, pos, ok: next((k for k in where.get(key, ())[bisect_left(where.get(key, ()), pos):] if ok(k)), None)
+    ids = itertools.count(1 + max([int(b.get(qn("w:id"))) for b in body.iter(qn("w:bookmarkStart"))] or [0]))
+    marked, entries = set(), {}
+    for p in paras:
+        entry = entry_of(p)
+        if entry:
+            entries[id(p)] = entry
+    blocks, run, gap = [], [], 0
+    for el in body:
+        if id(el) in entries:
+            run.append(el)
+            gap = 0
+        elif run and gap < 4 and el.tag == qn("w:p") and len(text_of(el)) <= 80 and el.find(".//" + qn("w:drawing")) is None:
+            gap += 1                                          # a rule, a page break or a running foot between two pages of one contents list
+        else:
+            blocks += [run] if len(run) >= 3 else []
+            run, gap = [], 0
+    styles, titled = {}, False
+    for block in blocks:
+        levels = cluster([entries[id(p)][1] for p in block], 20)
+        pos, found = 0, []
+        for p in block:
+            key = squash(entries[id(p)][0])
+            j = after(key, pos, lambda k: k not in marked and heading_free(paras[k]))
+            if j is None:
+                break
+            found.append(j)
+            pos = j + 1
+        if len(levels) > 3 or len(found) < len(block):
+            continue
+        marked.update(found)
+        k = at[id(block[0])]
+        while k and not texts[k - 1]:
+            k -= 1
+        style = paras[k - 1].find(qn("w:pPr") + "/" + qn("w:pStyle")) if k else None
+        if style is not None and texts[k - 1] in ("contents", "tableofcontents") and style.get(qn("w:val")).startswith("Heading"):
+            style.set(qn("w:val"), "TOCHeading")                  # the contents' own title is not an entry of the table it heads
+            titled = True
+        names = [f"_Toc{100000 + next(ids)}" for _ in block]
+        for p, j, name in zip(block, found, names):
+            level = nearest(levels, entries[id(p)][1]) + 1
+            heading_style(paras[j], level)
+            bookmark(paras[j], ids, name)
+            ppr = p.find(qn("w:pPr"))
+            ppr.insert(0, parse_xml(f'<w:pStyle {W} w:val="TOC{level}"/>'))
+            styles.setdefault(level, ppr)
+            link = parse_xml(f'<w:hyperlink {W} w:anchor="{name}" w:history="1"/>')
+            for run_ in [c for c in p if c.tag != qn("w:pPr") and c.find(".//" + qn("w:drawing")) is None]:
+                link.append(run_)
+            p.append(link)
+        fld = lambda kind: parse_xml(f'<w:r {W}><w:fldChar w:fldCharType="{kind}"/></w:r>')
+        first, last = block[0], block[-1]
+        first.find(qn("w:hyperlink")).addprevious(fld("begin"))
+        first.find(qn("w:hyperlink")).addprevious(parse_xml(f'<w:r {W}><w:instrText xml:space="preserve"> TOC \\o "1-3" \\h \\z \\u </w:instrText></w:r>'))
+        first.find(qn("w:hyperlink")).addprevious(fld("separate"))
+        last.append(fld("end"))
+    root = out.styles.element
+    for level, ppr in styles.items():
+        style = parse_xml(f'<w:style {W} w:type="paragraph" w:styleId="TOC{level}"><w:name w:val="toc {level}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:pPr/></w:style>')
+        style.find(qn("w:pPr")).extend(copy.deepcopy(ppr.find(qn(f"w:{tag}"))) for tag in ("tabs", "ind") if ppr.find(qn(f"w:{tag}")) is not None)
+        root.append(style)
+    if titled:
+        root.append(parse_xml(f'<w:style {W} w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/></w:style>'))
+    pos = 0
+    for _, title, *_ in outline:
+        j = after(squash(title), pos, lambda k: k not in marked)
+        if j is not None:
+            bookmark(paras[j], ids, f"section_{next(ids)}")
+            pos = j + 1
+
+
+def heading_free(p):
+    """True for a paragraph that may become a heading: one that has no style of its own (a list or a caption keeps it) or has a heading style already."""
+    style = p.find(qn("w:pPr") + "/" + qn("w:pStyle"))
+    return style is None or style.get(qn("w:val")) in ("Heading1", "Heading2", "Heading3")
 
 
 def readings(text, pno, n):

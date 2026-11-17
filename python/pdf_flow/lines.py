@@ -6,7 +6,7 @@ import re
 from pdf_fonts import MATH_ITALIC
 from pdf_spans import RTL, TEXT_FLAGS, has_unmapped_symbols
 
-from .common import BULLETS, NUMBER
+from .common import BULLETS, NUMBER, ZERO_WIDTH
 
 
 class Line:
@@ -36,6 +36,10 @@ class Line:
     @property
     def bbox(self):
         return (self.x0, self.y0, self.x1, self.y1)
+
+    @property
+    def left(self):
+        return self.marker[2] if self.marker else self.x0
 
     @property
     def bold_all(self):
@@ -94,6 +98,7 @@ def read_lines(page, clip=None, hidden_ok=False):
     for block in blocks:
         for ln in block.get("lines", ()):
             for s in ln["spans"]:
+                s["chars"] = [c for c in s["chars"] if c["c"] not in ZERO_WIDTH]
                 s["text"] = "".join(c["c"] for c in s["chars"])
     try:
         repair_tracked(blocks)
@@ -170,11 +175,16 @@ def mostly_rtl(lines):
     return sum(bool(RTL.match(c)) for c in letters) * 2 > len(letters)
 
 
-def join_pieces(cur, nxt):
+def join_pieces(cur, nxt, tab=False):
     behind = nxt.x1 <= cur.x0            # right-to-left pieces are joined from the right, so nxt lies to the left of cur
     gap = cur.x0 - nxt.x1 if behind else nxt.x0 - cur.x1
     spans = cur.spans
-    if gap > 0.12 * cur.size and not cur.text.endswith(" ") and not nxt.text.startswith(" "):
+    if tab:
+        spans = [s for s in spans if s["text"].strip()]
+        last = dict(spans[-1], text=spans[-1]["text"].rstrip())
+        stop = {k: v for k, v in last.items() if k not in ("ul", "st", "hl", "link", "field")}
+        spans = spans[:-1] + [last, dict(stop, text="\t", bbox=(cur.x1, cur.y0, nxt.x0, cur.y1))]
+    elif gap > 0.12 * cur.size and not cur.text.endswith(" ") and not nxt.text.startswith(" "):
         spans = spans + [dict(cur.spans[-1], text=" ", bbox=(nxt.x1 if behind else cur.x1, cur.y0, cur.x0 if behind else nxt.x0, cur.y1))]
     merged = Line(spans + nxt.spans, (min(cur.x0, nxt.x0), min(cur.y0, nxt.y0), max(cur.x1, nxt.x1), max(cur.y1, nxt.y1)), cur.base, max(cur.size, nxt.size))
     merged.block, merged.block_x1 = cur.block, cur.block_x1
@@ -212,6 +222,12 @@ def is_drop_cap(a, b):
 
 
 LEADER_PIECE = re.compile(r"\s*(?:[.·…_\-]\s*){4,}\S{1,12}\s*$")
+SECTION = re.compile(r"\d{1,2}(?:\.\d{1,2})*\.?")
+
+
+def heading_number(a, b):
+    """A bold section number and the bold title after it in the same size, up to one and a half sizes apart: a heading Word sets with a tab after its number. Years and table figures are not section numbers."""
+    return bool(SECTION.fullmatch(a.text.strip())) and a.bold_all and b.bold_all and abs(a.size - b.size) <= 0.5 and 0 <= b.x0 - a.x1 < 1.5 * a.size and bool(re.search(r"[^\W\d_]", b.text))
 
 
 def merge_rows(lines, shapes=()):
@@ -231,7 +247,7 @@ def merge_rows(lines, shapes=()):
         runs = [[r[0]]]
         for nxt in r[1:]:
             cur = runs[-1][-1]
-            if (nxt.x0 - cur.x1 < 0.8 * min(cur.size, nxt.size) or LEADER_PIECE.match(nxt.text)) and not is_drop_cap(cur, nxt):
+            if (nxt.x0 - cur.x1 < 0.8 * min(cur.size, nxt.size) or LEADER_PIECE.match(nxt.text) or heading_number(cur, nxt)) and not is_drop_cap(cur, nxt):
                 runs[-1].append(nxt)
             else:
                 runs.append([nxt])
@@ -239,13 +255,23 @@ def merge_rows(lines, shapes=()):
             pieces = pieces[::-1] if mostly_rtl(pieces) else pieces       # the PDF draws right-to-left text from its right end; the words are read in that order
             cur = pieces[0]
             for nxt in pieces[1:]:
-                cur = join_pieces(cur, nxt)
+                cur = join_pieces(cur, nxt, heading_number(cur, nxt) and nxt.x0 - cur.x1 >= 0.8 * min(cur.size, nxt.size))
             out.append(cur)
     return out
 
 
 LEADER = re.compile(r"(?P<run>\s*(?:[.·…_\-]\s*){4,})(?P<tail>[^\s.·…_\-]\S{0,11}(?:\s\S{1,5})?)\s*$")
 LEADERS = {".": "dot", "·": "dot", "…": "dot", "_": "underscore", "-": "hyphen"}
+
+
+def letter_x(s, i):
+    """Where the i-th letter of the span's text starts (the span's right edge for the end). A dot is far narrower than a letter, so a piece's share of the span's width cannot be read from how many characters it holds."""
+    t, raw, org = s["text"], s.get("raw"), s.get("org")
+    k = raw.find(t) if raw and org else -1
+    x0, x1 = s["bbox"][0], s["bbox"][2]
+    if k < 0:
+        return x0 + (x1 - x0) * i / max(1, len(t))
+    return org[k + i][0] if i < len(t) else x1
 
 
 def split_leader(line):
@@ -260,8 +286,7 @@ def split_leader(line):
     for s in line.spans:
         t = s["text"]
         lo, hi, pos = pos, pos + len(t), pos + len(t)
-        x0, x1 = s["bbox"][0], s["bbox"][2]
-        cut = lambda i, j: dict(s, text=t[i:j], bbox=(x0 + (x1 - x0) * i / len(t), s["bbox"][1], x0 + (x1 - x0) * j / len(t), s["bbox"][3]))
+        cut = lambda i, j: dict(s, text=t[i:j], bbox=(letter_x(s, i), s["bbox"][1], letter_x(s, j), s["bbox"][3]))
         if lo < a:
             head.append(cut(0, min(len(t), a - lo)))
         if hi > b:

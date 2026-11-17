@@ -19,6 +19,9 @@ NS = nsdecls("w", "wp", "a", "pic", "r", "w14")
 BULLETS = set("•●▪◦·‣⁃■○✓✔❖➢–—-*►▸➤□◆◇▫") | {"", "", "", "", "", "", "", "", "o"}
 
 
+ZERO_WIDTH = frozenset("\u200b\u2060\ufeff")      # not U+200C and U+200D, which shape Persian, Indic and emoji text
+
+
 NUMBER = re.compile(r"^(\(?\d{1,3}[.)]|\(?[a-z][.)]|\([ivx]{1,4}\))$")
 
 

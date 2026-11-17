@@ -21,7 +21,7 @@ from .lines import read_lines
 from .lists import Lists
 from .page import Page, flat_colour, page_kind
 from .shapes import Fig, Img, Rule
-from .structure import ONE_POINT, Furniture, attach, body_font, set_styles
+from .structure import ONE_POINT, Furniture, attach, body_font, contents, set_styles
 
 
 def body_size(all_lines):
@@ -112,6 +112,7 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None, original=None
             final = body.find(qn("w:sectPr"))
             body.replace(final, parse_xml(sect))
     set_styles(out, font, half, lists.looks)
+    contents(out, doc.get_toc())
     attach(out, states, log, furniture and furniture.pictures)
     meta = doc.metadata or {}
     props = out.core_properties
@@ -560,7 +561,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     B = Builder(out, P, meter, lists)
     B.columns_ok = not (safe or scan or turn)
     if flow:
-        x0 = max(0.0, min(i.x0 for i in flow))
+        x0 = max(0.0, min(getattr(i, "left", i.x0) for i in flow))
         x1 = max(i.x1 for i in flow)
     else:
         x0, x1 = 0.0, P.w
