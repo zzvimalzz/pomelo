@@ -289,7 +289,7 @@ def check_metrics(da, db, hidden=()):
 
 
 def docx_text(path):
-    """Text of the body, headers and footers. A tab or a line break separates words like a space does; the runs of
+    """Text of the body, its footnotes and endnotes, headers and footers. A tab or a line break separates words like a space does; the runs of
     one paragraph are joined as they are, because Word splits a word into runs wherever the formatting changes. A header
     or footer counts once for every page that shows it, a section that starts on a new sheet: a section without a reference of its own shows the one before, and a
     continuous section is on the sheet of the one before."""
@@ -316,7 +316,7 @@ def docx_text(path):
             if '<w:type w:val="continuous"/>' not in sect:
                 shown.update(t for t in current.values() if t)
         parts = [n for n in z.namelist() if re.fullmatch(r"word/(header|footer)\d*\.xml", n)]
-        texts = [text_of(body)]
+        texts = [text_of(body)] + [text_of(z.read(n)) for n in z.namelist() if re.fullmatch(r"word/(footnotes|endnotes)\.xml", n)]
         for n in parts:
             texts += [text_of(z.read(n))] * (shown[n] or 1)
     return "".join(texts)

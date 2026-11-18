@@ -778,7 +778,7 @@ class Builder:
         for i, l in enumerate(lines):
             if i:
                 leader = f' w:leader="{l.lead_in}"' if l.lead_in else ""
-                if l.x1 >= x1 - 3 and not l.leader and (l.x0 > first.x1 + 1.5 * l.size or NUMBERED.fullmatch(l.text.strip())):
+                if l.x1 >= x1 - max(3.0, 0.6 * l.size) and not l.leader and (l.x0 > first.x1 + 0.8 * l.size or NUMBERED.fullmatch(l.text.strip())):
                     stops += f'<w:tab w:val="right"{leader} w:pos="{tw(l.x1 - x0)}"/>'
                 else:
                     stops += f'<w:tab w:val="left"{leader} w:pos="{tw(l.x0 - x0)}"/>'

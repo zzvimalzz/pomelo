@@ -1302,6 +1302,44 @@ if kind == "hyphen":                                # lines that end at a hyphen
                 x += pymupdf.get_text_length(w, fontname="helv", fontsize=size) + gap
         page.insert_text((60, top + 28), "needed, and the applicant hears back within a week.", fontname="helv", fontsize=size)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "notes":                                # a page of text with raised marks and the notes they answer at its foot; extra: numbers (a short rule above them), symbols (no rule) or orphan (a note whose mark is not in the text)
+    mode = sys.argv[3]
+    page = doc.new_page(width=595, height=842)
+    body = ["The water board reports its figures once a year to the members of the board", "and the figures for the year are checked by the finance team before they go out.", "Non-revenue water fell for the third year in a row across all six districts of the", "supply area, which the board puts down to pressure management and meter renewal.", "Customers who ask for a copy of the figures are sent one within a week of asking."]
+    marks = {"numbers": ["1", "2"], "symbols": ["*", "\u00a7"], "orphan": ["1"]}[mode]
+    for k, t in enumerate(body):
+        page.insert_text((60, 100 + k * 14), t, fontname="helv", fontsize=10.5)
+    for k, m in enumerate(marks):
+        page.insert_text((60 + pymupdf.get_text_length(body[k * 2], fontname="helv", fontsize=10.5) + 1, 96.5 + k * 28), m, fontname="helv", fontsize=7)
+    texts = {"numbers": ["1", "2"], "symbols": ["*", "\u00a7"], "orphan": ["1", "3"]}[mode]
+    if mode != "symbols":
+        page.draw_line((60, 690), (204, 690), width=0.5)
+    for k, m in enumerate(texts):
+        y = 706 + k * 24
+        page.insert_text((60, y - 3), m, fontname="helv", fontsize=6.5)
+        page.insert_text((66, y), "Note %s: the method is set out in the annual report." % ("one" if k == 0 else "two"), fontname="helv", fontsize=9)
+        page.insert_text((66, y + 10), "It runs on to a second line here.", fontname="helv", fontsize=9)
+    page.insert_text((280, 800), "Page 1", fontname="helv", fontsize=8)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "notecols":                             # two columns of text with a raised mark and its note at the foot; extra: letter paper
+    w, h = (612, 792) if len(sys.argv) > 3 else (595, 842)
+    page = doc.new_page(width=w, height=h)
+    page.insert_text((60, 80), "A paper with two columns of text", fontname="hebo", fontsize=16)
+    words = ("The water board reports its figures once a year to the members of the board and the figures for the year are checked by the finance team before they go out. " * 40).split()
+    lines, line = [], ""
+    for word in words:
+        if pymupdf.get_text_length(line + " " + word, fontname="helv", fontsize=10) > 215:
+            lines.append(line.strip()); line = ""
+        line += " " + word
+    for k in range(44):
+        page.insert_text((60, 120 + k * 12.5), lines[k], fontname="helv", fontsize=10)
+        page.insert_text((310, 120 + k * 12.5), lines[k + 44], fontname="helv", fontsize=10)
+    page.insert_text((60 + pymupdf.get_text_length(lines[2], fontname="helv", fontsize=10) + 1, 120 + 2 * 12.5 - 3.5), "1", fontname="helv", fontsize=7)
+    page.draw_line((60, h - 97), (204, h - 97), width=0.5)
+    page.insert_text((60, h - 85), "1", fontname="helv", fontsize=6)
+    page.insert_text((66, h - 82), "Note one: the method is set out in the annual report.", fontname="helv", fontsize=9)
+    page.insert_text((280, h - 30), "Page 1", fontname="helv", fontsize=8)
+    doc.save(sys.argv[1]); sys.exit()
 page = doc.new_page(width=595, height=842)
 if kind == "banner":
     page.draw_rect(pymupdf.Rect(40, 40, 555, 140), color=None, fill=(0.1, 0.2, 0.45))           # a coloured banner
@@ -2308,6 +2346,29 @@ const isFramed = (d, word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>)
   d = await read(docx);
   expect('each outline entry bookmarks its heading, and no table of contents is made', (d.xml.match(/<w:bookmarkStart [^>]*w:name="section_\d+"/g) || []).length === 2 && !/ TOC \\o /.test(d.xml));
   fs.rmSync(docx);
+
+  console.log('footnotes');
+  for (const [name, mode] of [['numbers', 'numbers'], ['symbols', 'symbols'], ['orphan', 'orphan']]) {
+    [docx] = await convert.convertFile(draw(`notes-${mode}`, 'notes', mode), 'docx');
+    d = await read(docx);
+    const notes = d.zip.file('word/footnotes.xml') ? await d.zip.file('word/footnotes.xml').async('string') : '';
+    const wanted = mode === 'orphan' ? 1 : 2;
+    expect(`${name}: each note with a raised mark in the text is a Word footnote, and the text holds a reference to it`,
+      (notes.match(/<w:footnote w:id="\d+"/g) || []).length === wanted && (d.xml.match(/<w:footnoteReference /g) || []).length === wanted && /Note one: the method is set out/.test(notes), `${(notes.match(/<w:footnote w:id/g) || []).length} notes`);
+    expect(`${name}: the notes are no longer paragraphs of the page`, !/Note one: the method/.test(d.text) && (mode === 'orphan' ? /Note two: the method/.test(d.text) : !/Note two: the method/.test(d.text)), d.text.slice(-200));
+    if (mode === 'symbols') expect('a symbol is kept as the note\'s own mark', (d.xml.match(/w:customMarkFollows="1"/g) || []).length === 2 && /<w:t>\*<\/w:t>/.test(d.xml));
+    else expect('a mark that is the number Word would give is Word\'s own', /<w:footnoteRef\/>/.test(notes) && !/customMarkFollows/.test(d.xml));
+    fs.rmSync(docx);
+  }
+
+  console.log('a footnote under two columns');
+  for (const [name, extra] of [['A4', ''], ['Letter', 'letter']]) {
+    [docx] = await convert.convertFile(draw(`notecols-${name}`, 'notecols', extra), 'docx');
+    d = await read(docx);
+    expect(`${name}: the page keeps its Word columns and its note stays a paragraph, because Word lays footnotes out badly under columns`,
+      /<w:cols w:num="2"/.test(d.xml) && !d.zip.file('word/footnotes.xml') && /Note one: the method is set out/.test(d.text));
+    fs.rmSync(docx);
+  }
 
   console.log('a heading of a section number and a title');
   for (const size of ['14', '18']) {

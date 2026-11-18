@@ -24,6 +24,7 @@ class Lists:
         self.next_n = 1
         self.last = {}                 # (indent key) -> (last number, numId)
         self.looks = {}                # the look of each kind of table -> the id of its table style
+        self.notes = []                # the XML of each footnote of the document, in order; a note's id is its place in the list, counted from 1
 
     def setup(self, doc):
         part = doc.part.numbering_part.element

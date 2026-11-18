@@ -9,7 +9,9 @@ from bisect import bisect_left
 from collections import Counter
 
 from docx.enum.section import WD_HEADER_FOOTER
-from docx.opc.constants import RELATIONSHIP_TYPE
+from docx.opc.constants import CONTENT_TYPE, RELATIONSHIP_TYPE
+from docx.opc.packuri import PackURI
+from docx.opc.part import Part
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
 import pymupdf
@@ -67,6 +69,8 @@ def set_styles(out, font, half, looks=()):
                    f'<w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr>{base}</w:rPr></w:style>'),
         ('Title', '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="10"/><w:qFormat/></w:style>'),
         ('ListParagraph', '<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="34"/><w:qFormat/></w:style>'),
+        ('FootnoteText', '<w:style w:type="paragraph" w:styleId="FootnoteText"><w:name w:val="footnote text"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="99"/></w:style>'),
+        ('FootnoteReference', '<w:style w:type="character" w:styleId="FootnoteReference"><w:name w:val="footnote reference"/><w:uiPriority w:val="99"/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>'),
         ('Caption', '<w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="caption"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="35"/><w:qFormat/></w:style>'),
     ] + [(f'Heading{n}', f'<w:style w:type="paragraph" w:styleId="Heading{n}"><w:name w:val="heading {n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="9"/><w:qFormat/>'
                          f'<w:pPr><w:outlineLvl w:val="{n - 1}"/></w:pPr></w:style>') for n in (1, 2, 3)]
@@ -78,6 +82,19 @@ def set_styles(out, font, half, looks=()):
         root.append(parse_xml(xml.replace("<w:style ", f"<w:style {NS} ", 1)))
     for n, look in enumerate(looks, 1):
         root.append(parse_xml(table_style(look, n).replace("<w:style ", f"<w:style {NS} ", 1)))
+
+
+def add_notes(out, notes):
+    """The footnotes part, from the XML of each note, with the two separators Word expects, and the entry in the settings that names them."""
+    if not notes:
+        return
+    para = lambda kind: f'<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:{kind}/></w:r></w:p>'
+    xml = (f'<w:footnotes {NS}><w:footnote w:type="separator" w:id="-1">{para("separator")}</w:footnote>'
+           f'<w:footnote w:type="continuationSeparator" w:id="0">{para("continuationSeparator")}</w:footnote>{"".join(notes)}</w:footnotes>')
+    part = Part(PackURI("/word/footnotes.xml"), CONTENT_TYPE.WML_FOOTNOTES, xml.encode("utf8"), out.part.package)
+    out.part.relate_to(part, RELATIONSHIP_TYPE.FOOTNOTES)
+    settings = out.settings.element
+    settings.insert(list(settings).index(settings.find(qn("w:compat"))), parse_xml(f'<w:footnotePr {W}><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>'))
 
 
 W = nsdecls("w")

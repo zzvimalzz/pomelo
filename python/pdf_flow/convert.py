@@ -21,7 +21,7 @@ from .lines import read_lines
 from .lists import Lists
 from .page import Page, flat_colour, page_kind
 from .shapes import Fig, Img, Rule
-from .structure import ONE_POINT, Furniture, attach, body_font, contents, set_styles
+from .structure import ONE_POINT, Furniture, add_notes, attach, body_font, contents, set_styles
 
 
 def body_size(all_lines):
@@ -112,6 +112,7 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None, original=None
             final = body.find(qn("w:sectPr"))
             body.replace(final, parse_xml(sect))
     set_styles(out, font, half, lists.looks)
+    add_notes(out, lists.notes)
     contents(out, doc.get_toc())
     attach(out, states, log, furniture and furniture.pictures)
     meta = doc.metadata or {}
@@ -295,17 +296,20 @@ def scan_page(P, source):
     return fig
 
 
-def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n_pages, log, furniture, safe=False, turn=0, source=None):
+def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n_pages, log, furniture, safe=False, turn=0, source=None, notes_ok=True):
     """-> (the page's XML, its section's properties, the XML of the header and of the footer of each of its sections).
     safe: only the text, as paragraphs (what a page falls back to when something exotic in it cannot be rebuilt).
     turn: the /Rotate of the page; it is built upright and shown turned, in a text box the size of the sheet.
     source: the page of the original PDF whose picture is the scan this page's text was read from."""
     P = Page(doc, work_all[pno], work_keep[pno], page, pno, meter, body_pt)
+    given = source
     P.read()
     P.tbls = []
     if not safe:
         P.tables()
     P.decorate()
+    notes = P.find_notes() if notes_ok and not (safe or turn) else []
+    first_note = len(lists.notes)
     # a page that is one big picture with a text layer is a scan, and so is a page whose text was read from a picture (source)
     scan = source is not None or P.layer
     source = source or page
@@ -366,6 +370,8 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
                 sys.stderr.write("page %d: figure inside a table at %s\n" % (pno + 1, tuple(round(v) for v in f)))
     if kind == "design" and not (safe or scan):
         return (*design_page(P, out, meter, lists, pno, n_pages, turn), [("", "")])
+    if notes and not scan:
+        P.apply_notes(notes, lists, out.part)
     logos = []
     if furniture and not (safe or scan or turn):
         for r, info in list(P.imgs):
@@ -579,6 +585,9 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     # Word puts a frame on the sheet where its paragraph falls, so frames written after a flow that fills the sheet land on the next one
     lead = (B.frames(framed) if framed else "") + (B.frames(P.field_lines) if P.field_lines else "")
     xml, cursor = B.emit(flow, x0, x1, None)
+    if notes and not scan and "<w:cols" in xml:
+        del lists.notes[first_note:]                                   # Word lays a footnote out badly under columns: the page is written again with its notes as text
+        return convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt, n_pages, log, furniture, safe, turn, given, notes_ok=False)
     xml += B.hidden(P.hidden_lines)
     furn = tuple("".join(ONE_POINT % B.picture_xml(Img(r, b"", "png", floating=True), floating=True, name="Logo", rid=f"\x02{xref}", pid=furniture.pictures[xref][1]) for band, r, xref in logos if band == k)
                  + "".join(B.frames([l], 1.2 * l.size if any(sp.get("field") for sp in l.spans) else 0.0) for l in taken[k]) for k in ("header", "footer"))
@@ -589,6 +598,9 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     top_margin = max(0.0, B.first_top if B.first_top is not None else 0.0)
     room = P.h - (cursor if cursor is not None else top_margin)
     bottom_margin = 0.0 if room < 70 else min(room - 14, 30.0)
+    feet = [l.y0 for l in framed + taken["footer"] if l.y0 > 0.8 * P.h]
+    if notes and not scan and feet:
+        bottom_margin = max(bottom_margin, P.h - min(feet) + 2)       # Word stands a footnote at the foot of the text area, which must end above the page's own footer
     turned = bool(turn) and not framed
     B.turn = turn if turned else 0
     floats = ""
