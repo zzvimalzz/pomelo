@@ -17,6 +17,8 @@ from .lines import attach_markers, cut_at_cells, cut_at_rects, field_marks, hang
 from .shapes import Box, Tbl, corner_radius, field_borders, polygon_area, rect_shapes, segments_of
 
 SHAPED = re.compile(r"[\ufb50-\ufdff\ufe70-\ufeff]+")
+NOTE_MARK = re.compile(r"\d{1,2}|[*\u2020\u2021\u00a7\u00b6]|[a-z]|[ivx]{2,4}")
+NOTE_LEAD = re.compile(r"(\d{1,2}|[*\u2020\u2021\u00a7\u00b6])\s+(?=\S)")
 
 
 class Page:
@@ -205,6 +207,83 @@ class Page:
                         break
         self.highlight_shapes = [sh for i, sh in enumerate(self.shapes) if i in used_shapes]
         self.shapes = [sh for i, sh in enumerate(self.shapes) if i not in used_shapes]
+
+    def find_notes(self):
+        """The footnotes of a page of running text: a block of lines below a short rule (or a gap of more than a line), smaller than the body, each note opening with a number or a
+        symbol that also stands raised in the text above. -> [(mark, the note's lines, its text as spans, the line and the span of its mark in the body)] in the order the marks
+        stand. The rule is not drawn again, since Word draws its own."""
+        lines = [l for l in self.upright if not l.rot]
+        small = sorted((l for l in lines if l.size <= 0.97 * self.body and l.y0 > 0.45 * self.h), key=lambda l: l.y0)
+        rules = [(s[1], i) for i, s in enumerate(self.segments) if s[0] == "h" and s[1] > 0.5 * self.h and 0 < s[3] - s[2] <= 0.4 * self.w and any(0 <= l.y0 - s[1] <= 2 * self.body for l in small)]
+        starts = [(max(rules)[0], max(rules)[1])] if rules else [(l.y0 - 0.1, None) for l in small
+                                                                 if l.y0 - max([m.y1 for m in lines if m is not l and m.y1 <= l.y0 + 1] or [0.0]) >= 1.4 * l.size]
+        for top, rule in starts:
+            run = []
+            for l in (l for l in small if l.y0 >= top):
+                if run and l.y0 - run[-1].y1 > 0.8 * l.size:
+                    break
+                run.append(l)
+            notes = self.note_marks(run, [l for l in lines if l.y1 <= top + 1])
+            if notes:
+                if rule is not None:
+                    self.used_segments.add(rule)
+                return notes
+        return []
+
+    def note_marks(self, run, above):
+        """The notes of a block of lines, each matched to the raised mark it answers in the lines above; one that has no such mark stays a paragraph."""
+        notes = []
+        for l in run:
+            first = next((i for i, s in enumerate(l.spans) if s["text"].strip()), None)
+            if first is None:
+                continue
+            head, mark, text = l.spans[first], None, l.spans
+            if l.marker:
+                mark = l.marker[1].strip(".)")
+            elif len(l.spans) > first + 1 and head["size"] <= 0.85 * l.size and NOTE_MARK.fullmatch(head["text"].strip()):
+                mark, text = head["text"].strip(), l.spans[first + 1:]
+            elif m := NOTE_LEAD.match(head["text"].lstrip()):
+                mark, text = m.group(1), [dict(head, text=head["text"].lstrip()[m.end():])] + l.spans[first + 1:]
+            if mark and NOTE_MARK.fullmatch(mark) and sum(len(s["text"].strip()) for s in text) >= 2:
+                notes.append([mark, [l], text])
+            elif notes:
+                notes[-1][1].append(l)
+                kept, last = notes[-1][2][:-1], notes[-1][2][-1]
+                joined = last["text"].rstrip().endswith("-") and last["text"].rstrip()[-2:-1].isalpha() and head["text"].lstrip()[:1].islower()
+                notes[-1][2] = kept + [dict(last, text=last["text"].rstrip()[:-1] if joined else last["text"])] + [dict(head, text=head["text"].lstrip() if joined else " " + head["text"].lstrip())] + l.spans[first + 1:]
+        raised = []
+        for l in sorted(above, key=lambda l: (l.y0, l.x0)):
+            base, ref = max(s["origin"][1] for s in l.spans), max(l.size, self.body)
+            raised += [(l, s) for s in l.spans if s["size"] <= 0.8 * ref and (s["origin"][1] < base - 0.15 * ref or l.size <= 0.8 * self.body) and s["text"].strip()]
+        found, at = [], 0
+        for l, s in raised:
+            for first in range(at, len(notes)):
+                rest, k = s["text"].strip(), first
+                while k < len(notes) and rest.startswith(notes[k][0]):         # two marks that stand together are one raised span
+                    rest, k = rest[len(notes[k][0]):], k + 1
+                if k > first and not rest:
+                    found += [(*notes[j], l, s) for j in range(first, k)]
+                    at = k
+                    break
+        return found
+
+    def apply_notes(self, notes, lists, doc_part):
+        """Writes the notes of the page into the document's list and puts a footnote reference where each mark stands; the lines of the notes leave the page's text. Word numbers
+        the notes itself, so a mark that is not the number Word would give it is kept as a custom mark."""
+        for mark, nlines, text, bl, bs in notes:
+            nid = len(lists.notes) + 1
+            custom = mark != str(nid)
+            bs["note"] = bs.get("note", []) + [(nid, mark if custom else None)]
+            style = '<w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>'
+            ref = f'<w:r>{style}<w:t>{esc(mark)}</w:t></w:r>' if custom else f'<w:r>{style}<w:footnoteRef/></w:r>'
+            spans = [dict(s, bsize=nlines[0].size) for s in text]
+            spans[0]["text"] = spans[0]["text"].lstrip()
+            for s in spans:
+                s.pop("link", None)
+            lists.notes.append(f'<w:footnote w:id="{nid}"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr>{ref}<w:r><w:t xml:space="preserve"> </w:t></w:r>'
+                               f'{runs_xml(self, spans, False, doc_part, self.meter)}</w:p></w:footnote>')
+        gone = {id(l) for n in notes for l in n[1]}
+        self.upright = [l for l in self.upright if id(l) not in gone]
 
     # -- tables
     def tables(self):
@@ -843,6 +922,9 @@ def tracking(whole, justified, meter):
 
 def span_run(page, s, justified, meter, gap=None, last=False):
     """One <w:r>, or two when the line ends here against the cell's edge and the last letter must leave the letter spacing. `gap`: room between the line and the right edge of its cell, None outside a cell."""
+    if s.get("note"):
+        style = '<w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>'
+        return "".join(f'<w:r>{style}<w:footnoteReference w:id="{nid}"' + (f' w:customMarkFollows="1"/></w:r><w:r>{style}<w:t>{esc(custom)}</w:t></w:r>' if custom else "/></w:r>") for nid, custom in s["note"])
     font = esc(meter.family(s))
     size = s["size"]
     half = max(2, round(size * 2))
