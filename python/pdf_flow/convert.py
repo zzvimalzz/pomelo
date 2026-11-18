@@ -444,7 +444,8 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
             continue
         # art inside a table (a bar across days, an icon) cannot sit in a cell: it stays behind the table at its place on the sheet
         under = any(inside(f, t.bbox, 0) for t in tbls)
-        elements.append(Fig(f, data[0], data[1], floating=under or in_margin(f) or (sits_on(f) and area(f) > 600)))
+        drawn_on = any(overlap(l.bbox, f) >= 0.5 * area(f) for l in text_lines)       # a mark drawn over a line of text (an underline) is not a block of its own between two lines
+        elements.append(Fig(f, data[0], data[1], floating=under or in_margin(f) or drawn_on or (sits_on(f) and area(f) > 600)))
         elements[-1].under_table = under
     pics = [e for e in elements if e.kind == "img"]
     for a in pics:

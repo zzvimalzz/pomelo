@@ -32,6 +32,8 @@ class Line:
         self.leader = None            # (Word's name for the leader, where the end piece ends) when a tab with a leader leads to the end of the line
         self.lead_in = None           # Word's name for the leader of the tab that leads to this line, when a dotted stroke runs to it on its row
         self.parts = ()               # the lines this one was joined from, so that the check for text never written counts them
+        self.wrapped = False          # a picture or box beside the line shortens it, and Word wraps the paragraph round that drawing
+        self.floats = ()              # the drawings anchored in the paragraph this line belongs to
 
     @property
     def text(self):
@@ -185,16 +187,17 @@ def in_separate_boxes(r, shapes):
     return len(homes) > 1
 
 
-def stretched_row(r, shapes=()):
-    """The words of a justified line, which the PDF holds one by one: three or more of them from one text block, with
-    the same wide gap between each pair, the last one at the block's right edge. A row of numbers, a menu bar or the
-    cells of a table fail one of these tests and stay apart."""
+def stretched_row(r, shapes=(), others=()):
+    """The words of a justified line, which the PDF holds one by one: three or more of them from one text block, with the same wide gap between each pair, the last one
+    at the block's right edge or at an edge that other lines of the block end on, as in a column that text wraps round. A row of numbers, a menu bar or the cells of a
+    table fail one of these tests and stay apart."""
     if len(r) < 3 or r[0].block is None or any(l.block != r[0].block for l in r) or in_separate_boxes(r, shapes):
         return False
     if sum(bool(re.search(r"[^\W\d_]", l.text)) for l in r) < 2 * len(r) / 3:
         return False
     gaps = [b.x0 - a.x1 for a, b in zip(r, r[1:])]
-    return max(gaps) - min(gaps) <= 1.0 and max(gaps) < 3 * min(l.size for l in r) and r[-1].x1 >= r[-1].block_x1 - 2.5
+    flush = r[-1].x1 >= r[-1].block_x1 - 2.5 or any(m.block == r[0].block and abs(m.base - r[0].base) > 0.3 * r[0].size and abs(m.x1 - r[-1].x1) <= 1.5 for m in others)
+    return max(gaps) - min(gaps) <= 1.0 and max(gaps) < 3 * min(l.size for l in r) and flush
 
 
 def mostly_rtl(lines):
@@ -219,14 +222,14 @@ def join_pieces(cur, nxt, tab=False):
     return merged
 
 
-def join_stretched(r, shapes):
+def join_stretched(r, shapes, others):
     """The words of each justified line in a row become one line. Two columns share a row, so each text block is judged on its own."""
     blocks = {}
     for l in r:
         blocks.setdefault(l.block, []).append(l)
     out = []
     for group in blocks.values():
-        if not stretched_row(group, shapes):
+        if not stretched_row(group, shapes, others):
             out += group
             continue
         cur = group[0]
@@ -270,7 +273,7 @@ def merge_rows(lines, shapes=()):
             rows.append([l])
     out = []
     for r in rows:
-        r = join_stretched(sorted(r, key=lambda l: l.x0), shapes)
+        r = join_stretched(sorted(r, key=lambda l: l.x0), shapes, lines)
         runs = [[r[0]]]
         for nxt in r[1:]:
             cur = runs[-1][-1]
@@ -299,6 +302,27 @@ def letter_x(s, i):
     if k < 0:
         return x0 + (x1 - x0) * i / max(1, len(t))
     return org[k + i][0] if i < len(t) else x1
+
+
+def cut_span(s, a, b):
+    k0 = s["raw"].find(s["text"])
+    return dict(s, text=s["text"][a:b], raw=s["raw"][k0 + a:k0 + b], org=s["org"][k0 + a:k0 + b], origin=s["org"][k0 + a],
+                bbox=(letter_x(s, a), s["bbox"][1], letter_x(s, b), s["bbox"][3]))
+
+
+def cut_at_rects(spans, rects):
+    """The spans with the letters inside each rectangle (the drawn highlight of a few words) split off as spans of their own."""
+    for r in rects:
+        out = []
+        for s in spans:
+            if not (s.get("raw") and s.get("org") and s["raw"].find(s["text"]) >= 0):
+                out.append(s)
+                continue
+            inside = [r.x0 - 0.5 <= (letter_x(s, i) + letter_x(s, i + 1)) / 2 <= r.x1 + 0.5 for i in range(len(s["text"]))]
+            cuts = [0] + [i for i in range(1, len(inside)) if inside[i] != inside[i - 1]] + [len(inside)]
+            out += [cut_span(s, a, b) for a, b in zip(cuts, cuts[1:])] if len(cuts) > 2 and any(inside) else [s]
+        spans = out
+    return spans
 
 
 def cut_at_cells(line, cells):
@@ -331,10 +355,7 @@ def cut_at_cells(line, cells):
             runs.setdefault((group(k), si), []).append(i)
     pieces = {}
     for (g, si), idx in sorted(runs.items()):
-        s = line.spans[si]
-        k0, a, b = s["raw"].find(s["text"]), idx[0], idx[-1] + 1
-        pieces.setdefault(g, []).append(dict(s, text=s["text"][a:b], raw=s["raw"][k0 + a:k0 + b], org=s["org"][k0 + a:k0 + b], origin=s["org"][k0 + a],
-                                             bbox=(letter_x(s, a), s["bbox"][1], letter_x(s, b), s["bbox"][3])))
+        pieces.setdefault(g, []).append(cut_span(line.spans[si], idx[0], idx[-1] + 1))
     out = []
     for g in sorted(pieces):
         spans = pieces[g]
