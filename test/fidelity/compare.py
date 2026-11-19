@@ -223,11 +223,32 @@ def visual_metrics(da, db, png=None):
     return {"similarity": round(sum(scores) / len(scores), 4) if scores else 0.0, "tiles_off": round(sum(tile_bad) / len(tile_bad), 4) if tile_bad else 1.0}
 
 
+def broken_joined(words):
+    """The words of a list with each one that ends in a hyphen joined to the lowercase word after it."""
+    out, head = [], ""
+    for k, w in enumerate(words):
+        if k + 1 < len(words) and re.search(r"[^\W\d_][-\u00ad]$", w) and words[k + 1][:1].islower():
+            head += w[:-1]
+        else:
+            out.append(head + w)
+            head = ""
+    return out
+
+
 def plain_words(doc):
+    """The words of a document in reading order. A word broken at the end of a line with a hyphen is one word: Word breaks lines in other places than the source, so the halves would not match."""
     out = []
     for page in doc:
-        for w in page.get_text("words"):
-            t = re.sub(r"\W+", "", unshaped(w[4]).lower())
+        words = page.get_text("words")
+        head = ""
+        for k, w in enumerate(words):
+            raw = unshaped(w[4])
+            nxt = words[k + 1] if k + 1 < len(words) else None
+            if nxt and (nxt[5], nxt[6]) != (w[5], w[6]) and re.search(r"[^\W\d_][-\u00ad]$", raw) and unshaped(nxt[4])[:1].islower():
+                head += raw[:-1]
+                continue
+            t = re.sub(r"\W+", "", (head + raw).lower())
+            head = ""
             if t:
                 out.append(t)
     return out
@@ -407,7 +428,7 @@ def docx_pictured(path):
 
 def docx_words(pdf, docx):
     src = plain_words(pymupdf.open(pdf))
-    have = [t for t in (re.sub(r"\W+", "", unshaped(x).lower()) for x in docx_text(docx).split()) if t]
+    have = [t for t in (re.sub(r"\W+", "", unshaped(x).lower()) for x in broken_joined(docx_text(docx).split())) if t]
     lost = Counter(src) - Counter(have)
     hidden = docx_hidden(docx)
     return {"words": len(src), "recall": round(1 - sum(lost.values()) / len(src), 3) if src else None, "missing": sorted(lost)[:10],

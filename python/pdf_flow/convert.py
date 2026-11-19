@@ -86,6 +86,8 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None, original=None
         sample += [l for l in read_lines(page) if not l.rot]
     body_pt = body_size(sample)
     meter.hyphenated = {w.lower() for l in sample for w in re.findall(r"[^\W\d_]+-[^\W\d_]+", l.text)}
+    breaks = sum(1 for a, b in zip(sample, sample[1:]) if re.search(r"[^\W\d_]-$", a.text.rstrip()) and b.text.lstrip()[:1].islower())
+    meter.hyphenating = breaks >= 10 and breaks >= 0.015 * len(sample)         # Word, which breaks lines greedily, sets such text over more lines unless it hyphenates too
     font = body_font(sample, body_pt, meter)
     half = max(2, round(body_pt * 2))
     meter.base = (font, half)
@@ -112,7 +114,7 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None, original=None
         if pno == n - 1:
             final = body.find(qn("w:sectPr"))
             body.replace(final, parse_xml(sect))
-    set_styles(out, font, half, lists.looks)
+    set_styles(out, font, half, lists.looks, meter.hyphenating)
     add_notes(out, lists.notes)
     contents(out, doc.get_toc())
     attach(out, states, log, furniture and furniture.pictures)
@@ -404,8 +406,12 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         if any(inside(f, t.bbox, 0) for t in P.tbls):
             continue
         inside_lines = [l for l in P.upright if inside(l.bbox, f, 1.0)]
-        if len(inside_lines) >= 5 and sum(len(l.text) for l in inside_lines) / len(inside_lines) <= 16 and 8000 < area(f) <= 0.35 * P.w * P.h and not any(len(l.text.split()) > 5 for l in inside_lines):
-            chart.update(id(l) for l in inside_lines)
+        labelled = len(inside_lines) >= 5 and sum(len(l.text) for l in inside_lines) / len(inside_lines) <= 16 and 8000 < area(f) <= 0.35 * P.w * P.h and not any(len(l.text.split()) > 5 for l in inside_lines)
+        zone = (f[0] - 30, f[1] - 12, f[2] + 8, f[3] + 30)
+        ticks = [l for l in P.upright if l not in inside_lines and inside(l.bbox, zone, 0) and len(l.text) <= 16 and len(l.text.split()) <= 3]
+        stacked = any(sum(1 for m in ticks if abs(m.x0 - n.x0) <= 2 or abs(m.x1 - n.x1) <= 2) >= 3 for n in ticks)
+        if labelled or (inside_lines and stacked and 8000 < area(zone) <= 0.35 * P.w * P.h):
+            chart.update(id(l) for l in inside_lines + (ticks if stacked else []))
     for l in all_lines:
         for bb in boxes_of(l):
             r = pymupdf.Rect(bb)
@@ -457,9 +463,12 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         elements.append(Fig(f, data[0], data[1], floating=under or in_margin(f) or drawn_on or (sits_on(f) and area(f) > 600)))
         elements[-1].under_table = under
     pics = [e for e in elements if e.kind == "img"]
+    layered = [a for a in pics if any(b is not a and overlap(a.bbox, b.bbox) >= 0.5 * min(area(a.bbox), area(b.bbox)) for b in pics)]
+    for a in layered:
+        a.floating = True                                           # a picture on a picture keeps its place on the page
     for a in pics:
-        if any(b is not a and overlap(a.bbox, b.bbox) >= 0.5 * min(area(a.bbox), area(b.bbox)) for b in pics):
-            a.floating = True                                       # a picture on a picture keeps its place on the page
+        if any(b is not a and overlap((a.x0 - 3, a.y0 - 3, a.x1 + 3, a.y1 + 3), b.bbox) > 0 for b in layered):
+            a.floating = True                                       # so does a strip against it (the colour scale of a figure), which set in the line would stand under the figure's room
     elements += background
     for b in P.rot_boxes:                                           # what surrounds turned text (a stamp's frame and colour) stays a picture
         data = P.render_clip(pymupdf.Rect(b) + (-2, -2, 2, 2))
@@ -632,8 +641,9 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     else:
         sheet_w, sheet_h = P.w, P.h
     props = page_props(sheet_w, sheet_h, margins)
+    columns_end = bool(re.search("\x01SECT:[^\x01]*\x01</w:pPr></w:p>$", lead + xml))
     xml, count = end_sections(lead + xml, props)
-    closing, sect = close_page(props, floats, pno, n_pages, count)
+    closing, sect = close_page(props, floats, pno, n_pages, count, columns_end)
     return xml + closing, sect, [furn] * (count + 1)
 
 
@@ -653,13 +663,15 @@ def end_sections(xml, props):
     return re.sub("\x01SECT:(.*?)\x01", section, xml), count
 
 
-def close_page(props, floats, pno, n_pages, count):
+def close_page(props, floats, pno, n_pages, count, columns_end=False):
     """The closing paragraph of a page, which carries its pictures and ends its last section, and the section's properties."""
     mark = '<w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/></w:rPr>'
     inner = f'<w:type w:val="{"continuous" if count else "nextPage"}"/>{props}'
     sect = f'<w:sectPr {nsdecls("w")}>{inner}</w:sectPr>'
     if pno < n_pages - 1:
         return f'<w:p><w:pPr>{mark}<w:sectPr>{inner}</w:sectPr></w:pPr>{floats}</w:p>', sect
+    if columns_end:
+        return f'<w:p><w:pPr>{mark}</w:pPr>{floats}</w:p>', sect          # after columns that fill the sheet, a line of body height would be a sheet of its own
     return f'<w:p>{floats}</w:p>', sect
 
 

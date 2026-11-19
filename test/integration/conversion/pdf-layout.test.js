@@ -1340,6 +1340,112 @@ if kind == "notecols":                             # two columns of text with a 
     page.insert_text((66, h - 82), "Note one: the method is set out in the annual report.", fontname="helv", fontsize=9)
     page.insert_text((280, h - 30), "Page 1", fontname="helv", fontsize=8)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "scale":                                # two picture panels with a grid picture on one, a narrow colour scale against them, a caption under; extra: side of the scale
+    page = doc.new_page(width=595, height=842)
+    for i in range(3):
+        page.insert_text((60, 100 + i * 14), "Text above the figure, line %d of the page" % (i + 1), fontname="helv", fontsize=10)
+    def panel(rect, shade):
+        pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 20), False)
+        for yy in range(20):
+            for xx in range(40):
+                pix.set_pixel(xx, yy, (min(255, shade + xx * 3), 60 + yy * 4, 120))
+        page.insert_image(rect, pixmap=pix)
+    left = sys.argv[3] == "left"
+    x0 = 120 if left else 100
+    panel(pymupdf.Rect(x0, 200, x0 + 200, 300), 20)
+    panel(pymupdf.Rect(x0 + 202, 200, x0 + 402, 300), 60)
+    panel(pymupdf.Rect(x0, 200, x0 + 200, 300), 90)
+    panel(pymupdf.Rect(x0 + 202, 200, x0 + 402, 300), 90)
+    panel(pymupdf.Rect(x0 - 13, 200, x0 - 2, 300) if left else pymupdf.Rect(x0 + 404, 200, x0 + 415, 300), 140)
+    page.insert_text((60, 330), "Figure 1. Two panels with a colour scale at the side.", fontname="helv", fontsize=9)
+    for i in range(3):
+        page.insert_text((60, 360 + i * 14), "Text under the figure, line %d of the page" % (i + 1), fontname="helv", fontsize=10)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "hyphens":                              # justified lines that end in a split word, or in the whole word; extra: size, extra2: yes or no, with -letter for Letter paper
+    size = float(sys.argv[3]); split = sys.argv[4].startswith("yes")
+    page = doc.new_page(width=612, height=792) if sys.argv[4].endswith("letter") else doc.new_page(width=595, height=842)
+    page.insert_text((60, 70), "Report on the new building", fontname="hebo", fontsize=18)
+    pairs = [("impor", "tant"), ("build", "ing"), ("govern", "ment"), ("depart", "ment"), ("require", "ments"), ("infra", "structure"), ("commit", "tee"), ("sched", "ule"), ("work", "shop"), ("agree", "ment"), ("proj", "ect"), ("account", "ing")]
+    pool = "the council reviewed each proposal and decided that the funding for the new building could go ahead as soon as the committee had signed the schedule for the work".split()
+    width = lambda ws: sum(pymupdf.get_text_length(w, fontname="helv", fontsize=size) for w in ws) + pymupdf.get_text_length(" ", fontname="helv", fontsize=size) * (len(ws) - 1)
+    lines, k = [], 0
+    for a, b in pairs:
+        for head, tail in ((([], a + "-" if split else a + b)), (([b] if split else []), None)):
+            words = list(head)
+            while width(words + [pool[k % len(pool)]] + ([tail] if tail else [])) < 0.95 * 440:
+                words.append(pool[k % len(pool)])
+                k += 1
+            lines.append(words + ([tail] if tail else []))
+    lines.append("ends here.".split())
+    y = 110
+    for i, words in enumerate(lines):
+        widths = [pymupdf.get_text_length(w, fontname="helv", fontsize=size) for w in words]
+        gap = (440 - sum(widths)) / (len(words) - 1) if i < len(lines) - 1 else pymupdf.get_text_length(" ", fontname="helv", fontsize=size)
+        x = 60
+        for w, wd in zip(words, widths):
+            page.insert_text((x, y), w, fontname="helv", fontsize=size)
+            x += wd + gap
+        y += size * 1.3
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "axes":                                  # a plot drawn as curves, a legend inside it, tick labels one under another at its left and a row of them under it; extra: scale
+    k = float(sys.argv[3])
+    page = doc.new_page(width=595, height=842)
+    for i in range(8):
+        page.insert_text((60, 100 + i * 14), "Text above the plot, line %d of the page, set in a plain paragraph of the report." % (i + 1), fontname="helv", fontsize=10)
+    x0, y0, w, h = 150, 240, 200 * k, 120 * k
+    page.draw_polyline([(x0, y0), (x0 + w * 0.3, y0 + h * 0.5), (x0 + w * 0.6, y0 + h * 0.6), (x0 + w, y0 + h)], color=(0.9, 0.1, 0.1), width=1.2)
+    page.draw_polyline([(x0, y0 + h * 0.9), (x0 + w * 0.4, y0 + h * 0.7), (x0 + w, y0 + h * 0.4)], color=(0.1, 0.6, 0.9), width=1.2)
+    page.insert_text((x0 + w * 0.5, y0 + h * 0.3), "red", fontname="helv", fontsize=7)
+    page.insert_text((x0 + w * 0.5, y0 + h * 0.8), "blue", fontname="helv", fontsize=7)
+    for i, t in enumerate(["20", "10", "0"]):
+        page.insert_text((x0 - 18, y0 + 4 + i * h / 2), t, fontname="helv", fontsize=7)
+    for i in range(5):
+        page.insert_text((x0 + i * w / 4 - 2, y0 + h + 14), str(i), fontname="helv", fontsize=7)
+    page.insert_text((x0 + w / 2 - 15, y0 + h + 26), "iter. (1e4)", fontname="helv", fontsize=7)
+    page.insert_text((60, y0 + h + 60), "Figure 1. Error against iterations for two runs.", fontname="helv", fontsize=9)
+    for i in range(8):
+        page.insert_text((60, y0 + h + 90 + i * 14), "Text under the plot, line %d of the page, set in a plain paragraph of the report." % (i + 1), fontname="helv", fontsize=10)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "labelcol":                             # a table set l|cc: rules over and under all three columns, vertical rules only right of the first; extra: scale
+    k = float(sys.argv[3])
+    page = doc.new_page(width=595, height=842)
+    for i in range(8):
+        page.insert_text((60, 100 + i * 14), "Text above the table, line %d of the page, set in a plain paragraph of the report." % (i + 1), fontname="helv", fontsize=10)
+    xs = [150, 150 + 100 * k, 150 + 200 * k, 150 + 300 * k]
+    rows = [("training data", "07+12", "07++12"), ("VGG-16", "73.2", "70.4"), ("ResNet-101", "76.4", "73.8"), ("Faster R-CNN", "75.0", "71.1")]
+    for i in range(5):
+        page.draw_line((xs[0], 200 + i * 18), (xs[3], 200 + i * 18), color=(0, 0, 0), width=0.5)
+    for x in xs[1:]:
+        page.draw_line((x, 200), (x, 272), color=(0, 0, 0), width=0.5)
+    for i, row in enumerate(rows):
+        for c, t in enumerate(row):
+            page.insert_text((xs[c] + 8, 213 + i * 18), t, fontname="helv", fontsize=10)
+    page.insert_text((60, 300), "Table 1. Error rates of two models.", fontname="helv", fontsize=9)
+    for i in range(8):
+        page.insert_text((60, 330 + i * 14), "Text under the table, line %d of the page, set in a plain paragraph of the report." % (i + 1), fontname="helv", fontsize=10)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "plotframe":                            # a plot: frame and gridlines in a grid, two long curves, tick labels; extra: scale
+    k = float(sys.argv[3])
+    page = doc.new_page(width=595, height=842)
+    for i in range(8):
+        page.insert_text((60, 100 + i * 14), "Text above the plot, line %d of the page, set in a plain paragraph of the report." % (i + 1), fontname="helv", fontsize=10)
+    x0, y0, w, h = 150, 240, 240 * k, 120 * k
+    for i in range(4):
+        page.draw_line((x0, y0 + i * h / 3), (x0 + w, y0 + i * h / 3), color=(0.6, 0.6, 0.6), width=0.5)
+        page.draw_line((x0 + i * w / 3, y0), (x0 + i * w / 3, y0 + h), color=(0.6, 0.6, 0.6), width=0.5)
+    n = 24
+    page.draw_polyline([(x0 + w * j / n, y0 + h * (0.2 + 0.5 * ((j * 7) % 11) / 11)) for j in range(n + 1)], color=(0.9, 0.1, 0.1), width=1)
+    page.draw_polyline([(x0 + w * j / n, y0 + h * (0.9 - 0.6 * j / n + 0.05 * ((j * 5) % 7) / 7)) for j in range(n + 1)], color=(0.1, 0.5, 0.9), width=1)
+    page.insert_text((x0 + w * 0.5, y0 + h * 0.15), "red", fontname="helv", fontsize=7)
+    page.insert_text((x0 + w * 0.5, y0 + h * 0.95), "blue", fontname="helv", fontsize=7)
+    for i, t in enumerate(["30", "20", "10", "0"]):
+        page.insert_text((x0 - 14, y0 + 3 + i * h / 3), t, fontname="helv", fontsize=7)
+    for i in range(4):
+        page.insert_text((x0 + i * w / 3 - 2, y0 + h + 12), str(i), fontname="helv", fontsize=7)
+    page.insert_text((60, y0 + h + 40), "Figure 1. Error against iterations for two runs.", fontname="helv", fontsize=9)
+    for i in range(8):
+        page.insert_text((60, y0 + h + 70 + i * 14), "Text under the plot, line %d of the page, set in a plain paragraph of the report." % (i + 1), fontname="helv", fontsize=10)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "builtup":                              # a fraction or a sum between paragraphs, numbered at the right, or a fraction inside a line of text; extra: size, extra2: fraction, sum or inline
     size, mode = float(sys.argv[3]), sys.argv[4]
     page = doc.new_page(width=595, height=842)
@@ -2491,6 +2597,66 @@ const isFramed = (d, word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>)
     expect(`a fraction inside a line of text stays in that paragraph, as an inline picture (${size} pt)`,
       /The leak rate is/.test(textOf(shown(para))) && /input volume, as measured on site/.test(textOf(shown(para))) && (d.xml.match(/<wp:inline /g) || []).length === 1 && !/<w:br\/>/.test(para));
     expect(`its numerator and denominator are not paragraphs of their own (${size} pt)`, !/a\+b/.test(textOf(shown(d.xml))) && /a\+b/.test(textOf(hiddenRuns(para).join(''))));
+    fs.rmSync(docx);
+  }
+
+  console.log('a colour scale against the panels of a figure');
+  for (const side of ['right', 'left']) {
+    [docx] = await convert.convertFile(draw(`scale-${side}`, 'scale', side), 'docx');
+    d = await read(docx);
+    expect(`the scale on the ${side} keeps its place on the sheet with the panels, so the caption stays under them`, !/<wp:inline /.test(d.xml) && /Figure 1\./.test(d.text), `${(d.xml.match(/<wp:inline /g) || []).length} in-line pictures`);
+    fs.rmSync(docx);
+  }
+
+  console.log('a table whose first column has no rule at its side');
+  for (const [name, scale] of [['a table set l|cc', '1'], ['a wider one', '1.2']]) {
+    [docx] = await convert.convertFile(draw(`labelcol-${scale}`, 'labelcol', scale), 'docx');
+    d = await read(docx);
+    const cell = (word) => new RegExp(`<w:tc>(?:(?!</w:tc>).)*${word}`, 's').test(d.xml);
+    expect(`${name}: the column of labels is a column of the table`, /<w:tblGrid>(?:<w:gridCol [^>]*\/>){3}<\/w:tblGrid>/.test(d.xml) && cell('VGG-16') && cell('Faster R-CNN') && cell('73.2'), (d.xml.match(/<w:tblGrid>.*?<\/w:tblGrid>/s) || [''])[0]);
+    fs.rmSync(docx);
+  }
+
+  console.log('the frame and gridlines of a plot');
+  for (const [name, scale] of [['a plot', '1'], ['a larger plot', '1.4']]) {
+    [docx] = await convert.convertFile(draw(`plotframe-${scale}`, 'plotframe', scale), 'docx');
+    d = await read(docx);
+    expect(`${name}: its gridlines are not read as a table`, !/<w:tbl>/.test(d.xml) && /Text under the plot, line 1/.test(d.text), `${(d.xml.match(/<w:tbl>/g) || []).length} tables`);
+    fs.rmSync(docx);
+  }
+
+  console.log('the closing paragraph of the last page');
+  for (const [name, kind, small] of [['a page in two columns', 'flow', true], ['a page of text', 'text', false]]) {
+    [docx] = await convert.convertFile(draw(`ending-${kind}`, kind, kind === 'text' ? '1' : ''), 'docx');
+    d = await read(docx);
+    const last = (d.xml.slice(0, d.xml.lastIndexOf('<w:sectPr')).match(/<w:p\/>$|<w:p>(?:(?!<w:p>).)*$/s) || [''])[0];
+    expect(small ? `${name}: the paragraph that ends the document is one point high, so a full last column does not add a sheet` : `${name}: the paragraph that ends the document is an ordinary one, so text typed there has the body size`,
+      /w:line="20" w:lineRule="exact"/.test(last) === small, last.slice(0, 200));
+    fs.rmSync(docx);
+  }
+
+  console.log('justified lines that break words with a hyphen');
+  for (const [name, size, mode] of [['A4 at 10 pt', '10', 'yes'], ['Letter at 11 pt', '11', 'yes-letter'], ['whole words at line ends', '10', 'no']]) {
+    [docx] = await convert.convertFile(draw(`hyphens-${size}-${mode}`, 'hyphens', size, mode), 'docx');
+    d = await read(docx);
+    const settings = await d.zip.file('word/settings.xml').async('string');
+    const body = paraWith(d.xml, 'council');
+    const head = paraWith(d.xml, 'Report on');
+    if (mode === 'no') expect(`${name}: Word is not asked to hyphenate`, !/<w:autoHyphenation/.test(settings) && !/suppressAutoHyphens/.test(d.xml));
+    else {
+      expect(`${name}: Word hyphenates, so its lines break where the original's did`, /<w:autoHyphenation\/>/.test(settings));
+      expect(`${name}: the justified paragraph may hyphenate and the heading may not`, /<w:suppressAutoHyphens w:val="0"\/>/.test(body) && !/<w:suppressAutoHyphens w:val="0"\/>/.test(head), body.slice(0, 200));
+      expect(`${name}: the broken words are whole in the text`, /important/.test(squash(d.text)) && /government/.test(squash(d.text)));
+    }
+    fs.rmSync(docx);
+  }
+
+  console.log('the labels around a plot drawn as curves');
+  for (const [name, scale] of [['a small plot', '1'], ['a larger plot', '1.5']]) {
+    [docx] = await convert.convertFile(draw(`axes-${scale}`, 'axes', scale), 'docx');
+    d = await read(docx);
+    expect(`${name}: the tick labels at its left and under it stand at their places, none is a paragraph of the text`,
+      ['20', '10', 'iter.'].every((w) => isFramed(d, `>${w}`)) && /Text under the plot, line 1/.test(d.text), d.text.slice(0, 200));
     fs.rmSync(docx);
   }
 
