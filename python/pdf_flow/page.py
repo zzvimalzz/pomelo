@@ -15,7 +15,7 @@ from pdf_spans import RTL, dedupe, hexcolor
 from .common import HI_DPI, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
 from .lines import attach_markers, cut_at_cells, cut_at_rects, field_marks, hangs, is_bold, is_italic, merge_rows, read_lines, split_leader, split_marker
 from .maths import inline_run
-from .shapes import Box, Tbl, corner_radius, field_borders, polygon_area, rect_shapes, segments_of
+from .shapes import Box, Tbl, bent, corner_radius, field_borders, polygon_area, rect_shapes, segments_of
 
 SHAPED = re.compile(r"[\ufb50-\ufdff\ufe70-\ufeff]+")
 NOTE_MARK = re.compile(r"\d{1,2}|[*\u2020\u2021\u00a7\u00b6]|[a-z]|[ivx]{2,4}")
@@ -307,7 +307,10 @@ class Page:
             ys = cluster([c[1] for c in cells] + [c[3] for c in cells])
             if len(xs) >= 2 and len(ys) >= 2:
                 xs, ys = self.rule_edges(xs, "v", (xs[0], ys[0], xs[-1], ys[-1])), self.rule_edges(ys, "h", (xs[0], ys[0], xs[-1], ys[-1]))
-            if len(xs) >= 2 and len(ys) >= 2 and not any(o == "v" and abs(pos - xs[0]) <= 1.8 for o, pos, *_ in self.segments):
+            lead = self.label_column(xs, ys) if len(xs) >= 2 and len(ys) >= 2 else None
+            if lead is not None:
+                xs = [lead] + xs
+            if len(xs) >= 2 and len(ys) >= 2 and lead is None and not any(o == "v" and abs(pos - xs[0]) <= 1.8 for o, pos, *_ in self.segments):
                 # with no rule at its left edge, the table starts where the text of its first column does, numbers and indents included
                 xs[0] = min([xs[0]] + [m.left for m in self.upright if not m.rot and ys[0] <= m.y0 and m.y1 <= ys[-1] and m.x1 > xs[0]])
             if len(xs) < 3 and len(ys) < 3 or len(xs) < 2 or len(ys) < 2:
@@ -321,6 +324,8 @@ class Page:
             for c in cells:
                 c0, c1, r0, r1 = nearest(xs, c[0]), nearest(xs, c[2]), nearest(ys, c[1]), nearest(ys, c[3])
                 grid.append(dict(c0=c0, c1=c1, r0=r0, r1=r1, bbox=(xs[c0], ys[r0], xs[c1], ys[r1]), raw=tuple(c), items=[], fill=None, borders={}))
+            if lead is not None:
+                grid += [dict(c0=0, c1=1, r0=r, r1=r + 1, bbox=(xs[0], ys[r], xs[1], ys[r + 1]), raw=(xs[0], ys[r], xs[1], ys[r + 1]), items=[], fill=None, borders={}) for r in range(len(ys) - 1)]
             bbox = (min(xs), min(ys), max(xs), max(ys))
             if area(bbox) > 0.92 * self.w * self.h:
                 continue
@@ -335,8 +340,8 @@ class Page:
                          for r, fill, border, dashed in self.shapes)
             inside_lines = [l for l in self.upright if inside(l.bbox, bbox, 0.5)]
             stray = [l for l in inside_lines if not any(inside(l.bbox, g["bbox"], 1.0) for g in cells_ok)]
-            if sticks or stray:
-                continue
+            if sticks or stray or any(bent(d["items"]) >= 10 and overlap(bbox, tuple(d["rect"])) >= 0.2 * area(bbox) for d in self.drawings):
+                continue                                   # the frame and gridlines of a plot, read as a grid
             self.tbls.append(Tbl(bbox, xs, ys, cells_ok))
         # nested or overlapping finds: keep the larger
         keep = []
@@ -371,6 +376,16 @@ class Page:
                             self.used_segments.update(j for j, (o2, p2, a2, b2, *_) in enumerate(self.segments) if o2 == so and abs(p2 - pos) <= 1.8 and min(b2, hi) - max(a2, lo) >= 0.6 * (hi - lo))
                             break
             self.shapes = [sh for sh in self.shapes if not (overlap(tuple(sh[0]), t.bbox) >= 0.6 * area(tuple(sh[0])))]
+
+    def label_column(self, xs, ys):
+        """Where the rules above and below a table begin when they run past its first vertical rule with text beside them: a column of labels that has no rule at its side, as in a
+        LaTeX table set l|cc."""
+        reach = [a for o, pos, a, b, w, color, d in self.segments if o == "h" and (abs(pos - ys[0]) <= 2 or abs(pos - ys[-1]) <= 2) and a < xs[0] - 8 and b >= xs[0]]
+        if len(reach) < 2:
+            return None
+        left = min(reach)
+        labels = [l for l in self.upright if not l.rot and ys[0] <= l.y0 and l.y1 <= ys[-1] and left - 2 <= l.x0 and l.x1 <= xs[0] + 2]
+        return left if len(labels) >= 2 else None
 
     def split_cells(self, t):
         """A cell that spans several columns only because one fill ran across them, as the shading of a row does, is a cell for each column when its text stands in two or more of them

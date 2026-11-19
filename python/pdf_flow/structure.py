@@ -60,13 +60,14 @@ def table_style(look, n):
             f'<w:tblPr>{band}{borders}<w:tblCellMar>{margins}</w:tblCellMar></w:tblPr>{parts}</w:style>')
 
 
-def set_styles(out, font, half, looks=()):
+def set_styles(out, font, half, looks=(), hyphenate=False):
     """The styles the paragraphs refer to. They carry no look of their own beyond the body font: every run states its own, so a style changes nothing on the page and
-    only gives Word the structure (the Navigation pane, a list, a caption). Heading styles do not keep a heading with the next paragraph, which would move it to another sheet."""
+    only gives Word the structure (the Navigation pane, a list, a caption). Heading styles do not keep a heading with the next paragraph, which would move it to another sheet.
+    With `hyphenate`, Word hyphenates, but only the paragraphs that ask for it: justified text that the PDF hyphenates (a title or a cell must not break a word)."""
     base = (f'<w:rFonts w:ascii="{esc(font)}" w:hAnsi="{esc(font)}" w:eastAsia="{esc(font)}" w:cs="{esc(font)}"/>' if font else "") + f'<w:sz w:val="{half}"/><w:szCs w:val="{half}"/>'
     styles = [
         ('Normal', f'<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/>'
-                   f'<w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr>{base}</w:rPr></w:style>'),
+                   f'<w:pPr>{"<w:suppressAutoHyphens/>" if hyphenate else ""}<w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr>{base}</w:rPr></w:style>'),
         ('Title', '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="10"/><w:qFormat/></w:style>'),
         ('ListParagraph', '<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="34"/><w:qFormat/></w:style>'),
         ('FootnoteText', '<w:style w:type="paragraph" w:styleId="FootnoteText"><w:name w:val="footnote text"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="99"/></w:style>'),
@@ -82,6 +83,9 @@ def set_styles(out, font, half, looks=()):
         root.append(parse_xml(xml.replace("<w:style ", f"<w:style {NS} ", 1)))
     for n, look in enumerate(looks, 1):
         root.append(parse_xml(table_style(look, n).replace("<w:style ", f"<w:style {NS} ", 1)))
+    if hyphenate:
+        settings = out.settings.element
+        settings.insert(list(settings).index(settings.find(qn("w:defaultTabStop"))) + 1, parse_xml(f'<w:autoHyphenation {W}/>'))
 
 
 def add_notes(out, notes):

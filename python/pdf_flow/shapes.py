@@ -198,6 +198,11 @@ def corner_radius(items):
     return min(max(abs(c[4].x - c[1].x), abs(c[4].y - c[1].y)) for c in curves)
 
 
+def bent(items):
+    """How many segments of a path are curves or run neither across nor up: the line of a plot, where the rules of a table and its rounded corners have few."""
+    return sum(1 for it in items if it[0] == "c" or (it[0] == "l" and abs(it[1].x - it[2].x) > 1 and abs(it[1].y - it[2].y) > 1))
+
+
 def rect_shapes(drawings, faint=None):
     """Filled or outlined rectangle-like shapes: (rect, fill hex or None, border (width, hex) or None, dashed). A fill that is not opaque is left out of the shape; with `faint`,
     a list, (the shape's index, the fill, its opacity) is added to it for the caller to blend."""

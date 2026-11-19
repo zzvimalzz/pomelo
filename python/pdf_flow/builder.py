@@ -437,7 +437,8 @@ class Builder:
             style = "Heading3"
         if style.startswith("Heading") and not self.heading_ok(first, text):
             style = ""
-        ppr = f'<w:pPr>{f'<w:pStyle w:val="{style}"/>' if style else ""}{num_pr}{borders}{tabs}{"<w:bidi/>" if rtl else ""}{spacing}{ind_attr}<w:jc w:val="{jc_word}"/>{heading}</w:pPr>'
+        hyphens = '<w:suppressAutoHyphens w:val="0"/>' if jc == "both" and self.meter.hyphenating else ""
+        ppr = f'<w:pPr>{f'<w:pStyle w:val="{style}"/>' if style else ""}{num_pr}{borders}{tabs}{hyphens}{"<w:bidi/>" if rtl else ""}{spacing}{ind_attr}<w:jc w:val="{jc_word}"/>{heading}</w:pPr>'
         # runs
         justified = jc == "both"
         body = ""
