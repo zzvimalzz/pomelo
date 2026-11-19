@@ -298,7 +298,10 @@ class Builder:
             if self.cap:
                 pitch = max(size, min(pitch, self.cap))
         T = first.base - pitch + (-first.desc * first.size)
-        return pitch, T, T + len(lines) * pitch
+        tall = [l for l in lines if any(s.get("pic") for s in l.spans)]
+        if len(lines) == 1 and tall:
+            return first.y1 - first.y0, first.y0, first.y1                  # Word sets the line as tall as the equation's picture, lowered part included
+        return pitch, T, T + len(lines) * pitch + sum(max(0.0, l.y1 - l.y0 - pitch) for l in tall)
 
     def para_xml(self, p, x0, x1, cursor, before_extra=0.0, border_top=None, border_bottom=None, right_to=None):
         """-> (xml, T, B): the paragraph's XML, where its first line box starts and where its last ends."""
@@ -338,7 +341,7 @@ class Builder:
                 jc = "center"
             elif x1 - lines[0].x1 <= max(2.5, 0.012 * w) and (lines[0].left - L) > 0.12 * w:
                 jc = "right"
-        if first.leader and n == 1:
+        if (first.leader or any(s.get("pic") for s in first.spans) and any(s["text"] == "\t" for s in first.spans)) and n == 1:
             jc = "left"
         # which line ends are the text wrapping (it may reflow) and which are the author's own line breaks
         word = lambda l: (l.text.split() or [""])[0]
@@ -421,7 +424,7 @@ class Builder:
         text = " ".join(l.text for l in lines).strip()
         if marker:
             style = "ListParagraph"
-        elif size >= self.P.body * 1.25 and n <= 3 and len(text) <= 140:
+        elif text and size >= self.P.body * 1.25 and n <= 3 and len(text) <= 140:
             lvl = 0 if size >= self.P.body * 1.7 else 1 if size >= self.P.body * 1.4 else 2
             style = f"Heading{lvl + 1}"
             if lvl == 0 and not self.titled and self.P.pno == 0 and size >= 2 * self.P.body and size >= max(l.size for l in self.P.upright):
@@ -560,7 +563,7 @@ class Builder:
         and Word still sets them at the PDF's pitch; they are exact where the PDF sets them tighter than the font (a title, a drop cap), where sizes are mixed, where the font
         is not known and where the text is not Latin, which Word sets in a fallback font of its own height. Those exact lines are a multiple of Word's own line height
         instead when the paragraph is not placed (a text box, a row of a placed table), so they follow a change of font size."""
-        if pitch >= 1.32 * size:
+        if pitch >= 1.32 * size or any(s.get("pic") for l in lines for s in l.spans):
             return "atLeast", tw(pitch)
         spans = [s for l in lines for s in l.spans if s["text"].strip()]
         heights = [self.meter.height(s) for s in spans]

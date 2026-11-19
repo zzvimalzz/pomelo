@@ -19,6 +19,7 @@ from .common import HI_DPI, NS, area, inside, overlap, tw
 from .fonts import FontMeter
 from .lines import read_lines
 from .lists import Lists
+from .maths import equations
 from .page import Page, flat_colour, page_kind
 from .shapes import Fig, Img, Rule
 from .structure import ONE_POINT, Furniture, add_notes, attach, body_font, contents, set_styles
@@ -308,6 +309,8 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     if not safe:
         P.tables()
     P.decorate()
+    if not (safe or turn):
+        equations(P, out.part, lists.drawing_ids)
     notes = P.find_notes() if notes_ok and not (safe or turn) else []
     first_note = len(lists.notes)
     # a page that is one big picture with a text layer is a scan, and so is a page whose text was read from a picture (source)

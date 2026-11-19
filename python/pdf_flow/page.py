@@ -14,6 +14,7 @@ from pdf_spans import RTL, dedupe, hexcolor
 
 from .common import HI_DPI, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
 from .lines import attach_markers, cut_at_cells, cut_at_rects, field_marks, hangs, is_bold, is_italic, merge_rows, read_lines, split_leader, split_marker
+from .maths import inline_run
 from .shapes import Box, Tbl, corner_radius, field_borders, polygon_area, rect_shapes, segments_of
 
 SHAPED = re.compile(r"[\ufb50-\ufdff\ufe70-\ufeff]+")
@@ -33,6 +34,7 @@ class Page:
         self.ground_pix = None
         self.layer = False
         self.fig_ink = {}
+        self.maths = []                   # boxes of the built-up equations, which are pictures
 
     # -- reading
     def read(self):
@@ -677,7 +679,7 @@ class Page:
                 blank((bx.x1 - bw, bx.y0, bx.x1, bx.y1), 1.5)
         for r, fill, border, dashed in self.highlight_shapes:
             blank(tuple(r), 1.0)
-        for r in self.bar_rects:
+        for r in self.bar_rects + self.maths:
             blank(r, 1.0)
         for (r, info) in self.imgs:
             blank(r, 1.0)
@@ -922,6 +924,8 @@ def tracking(whole, justified, meter):
 
 def span_run(page, s, justified, meter, gap=None, last=False):
     """One <w:r>, or two when the line ends here against the cell's edge and the last letter must leave the letter spacing. `gap`: room between the line and the right edge of its cell, None outside a cell."""
+    if s.get("pic"):
+        return inline_run(s["pic"]) + "".join(span_run(page, a, False, meter) for a in s["pic"][5])
     if s.get("note"):
         style = '<w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>'
         return "".join(f'<w:r>{style}<w:footnoteReference w:id="{nid}"' + (f' w:customMarkFollows="1"/></w:r><w:r>{style}<w:t>{esc(custom)}</w:t></w:r>' if custom else "/></w:r>") for nid, custom in s["note"])
