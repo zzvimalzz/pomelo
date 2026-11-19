@@ -15,6 +15,7 @@ when the DOCX is printed: pages, how many printed words come from the source (re
 same order, and how alike the pages look.
 """
 import difflib
+import html
 import io
 import json
 import os
@@ -266,11 +267,16 @@ def without(words, drop):
     return out
 
 
-def check_metrics(da, db, hidden=()):
+def check_metrics(da, db, hidden=(), pictured=""):
     wa, wb = plain_words(da), plain_words(db)
     for word in hidden:
         if word in wa:
             wa.remove(word)
+    # an equation is a picture with its text hidden after it, written span by span: a source word of three letters or more that the hidden text holds, whole or glued from its spans, is covered
+    for word, n in (Counter(wa) - Counter(wb)).items():
+        if len(word) >= 3 and word in pictured:
+            for _ in range(n):
+                wa.remove(word)
     recall = order = None
     if wa:
         recall = round(sum((Counter(wa) & Counter(wb)).values()) / len(wa), 3)
@@ -387,6 +393,18 @@ def docx_hidden(path):
     return out
 
 
+def docx_pictured(path):
+    """The hidden text of the paragraphs that hold an equation picture, normalised and joined without spaces."""
+    with zipfile.ZipFile(path) as z:
+        body = z.read("word/document.xml").decode("utf8")
+    out = []
+    for para in re.findall(r"<w:p[ >].*?</w:p>", body, re.S):
+        if 'name="Equation' in para:
+            for run in re.findall(r"<w:r>(?:(?!</w:r>).)*<w:vanish/>(?:(?!</w:r>).)*</w:r>", para, re.S):
+                out += re.findall(r"<w:t[^>]*>([^<]*)</w:t>", run)
+    return re.sub(r"\W+", "", unshaped(html.unescape("".join(out))).lower())
+
+
 def docx_words(pdf, docx):
     src = plain_words(pymupdf.open(pdf))
     have = [t for t in (re.sub(r"\W+", "", unshaped(x).lower()) for x in docx_text(docx).split()) if t]
@@ -410,7 +428,7 @@ def main():
         "links": link_metrics(da, db),
         "drawings": drawing_metrics(da, db),
         "visual": visual_metrics(da, db),
-        "check": check_metrics(da, db, docx_hidden(sys.argv[5]) if len(sys.argv) > 5 else ()),
+        "check": check_metrics(da, db, docx_hidden(sys.argv[5]) if len(sys.argv) > 5 else (), docx_pictured(sys.argv[5]) if len(sys.argv) > 5 else ""),
     }
     if len(sys.argv) > 4:
         os.makedirs(sys.argv[3], exist_ok=True)

@@ -1340,6 +1340,48 @@ if kind == "notecols":                             # two columns of text with a 
     page.insert_text((66, h - 82), "Note one: the method is set out in the annual report.", fontname="helv", fontsize=9)
     page.insert_text((280, h - 30), "Page 1", fontname="helv", fontsize=8)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "builtup":                              # a fraction or a sum between paragraphs, numbered at the right, or a fraction inside a line of text; extra: size, extra2: fraction, sum or inline
+    size, mode = float(sys.argv[3]), sys.argv[4]
+    page = doc.new_page(width=595, height=842)
+    page.insert_font(fontname="mm", fontfile="C:/Windows/Fonts/times.ttf", set_simple=True)
+    times = pymupdf.Font(fontfile="C:/Windows/Fonts/times.ttf")
+    text = lambda x, y, t, s=size, f="mm": page.insert_text((x, y), t, fontname=f, fontsize=s)
+    width = lambda t, s=size: times.text_length(t, fontsize=s)
+    for k in range(3):
+        text(60, 100 + k * 14, "The paragraph above the equation runs on over line %d of the page." % (k + 1), 11, "helv")
+    if mode == "inline":
+        lead, small = "The leak rate is", 0.73 * size
+        text(60, 200, lead, size, "helv")
+        x = 60 + pymupdf.get_text_length(lead, fontname="helv", fontsize=size) + 5
+        text(x + width("a+b", small) + 5, 200, "of the input volume, as measured on site.", size, "helv")
+        text(x + 1, 200 - 0.59 * size, "a+b", small)
+        page.draw_line((x - 1, 200 - 0.23 * size), (x + width("a+b", small) + 3, 200 - 0.23 * size), width=0.6)
+        text(x + 1, 200 + 0.64 * size, "c+d", small)
+    else:
+        y = 300
+        x = 180 + width("R=") + 2
+        if mode == "fraction":
+            text(x + 2, y - 0.9 * size, "a+b", size * 0.8)
+            page.draw_line((x, y - 0.55 * size), (x + width("a+b", size * 0.8) + 4, y - 0.55 * size), width=0.7)
+            text(x + 2, y + 0.75 * size, "c+d", size * 0.8)
+            text(180, y, "R=")
+            text(x + width("a+b", size * 0.8) + 8, y, "\u00d7100")
+        else:
+            text(x, y + 3, "S", size * 1.8)
+            text(x + 3, y - 1.1 * size, "n", size * 0.7)
+            text(x + 1, y + 1.05 * size, "i=1", size * 0.7)
+            text(180, y, "R=")
+            text(x + size * 1.5, y, "x")
+            text(x + size * 2.4, y - 0.4 * size, "2", size * 0.7)
+        text(520, y, "(1)", size, "helv")
+    for k in range(3):
+        text(60, 360 + k * 14, "The paragraph below the equation carries on from line %d of the page." % (k + 1), 11, "helv")
+    doc.save(sys.argv[1]); doc.close()
+    doc = pymupdf.open(sys.argv[1])
+    for f in doc[0].get_fonts():
+        if f[3] == "TimesNewRomanPSMT":
+            doc.xref_set_key(f[0], "BaseFont", "/CMMI10")
+    doc.save(sys.argv[1] + ".tmp"); doc.close(); os.replace(sys.argv[1] + ".tmp", sys.argv[1]); sys.exit()
 page = doc.new_page(width=595, height=842)
 if kind == "banner":
     page.draw_rect(pymupdf.Rect(40, 40, 555, 140), color=None, fill=(0.1, 0.2, 0.45))           # a coloured banner
@@ -2425,6 +2467,30 @@ const isFramed = (d, word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>)
     expect(`a line that stops short of the right edge keeps its hyphen (${size} pt)`, /three-month/.test(flat), d.text);
     expect('a line justified to both edges loses the hyphen it was broken at', /department/.test(flat) && !/depart-/.test(flat), d.text);
     expect('a number from twenty-one to ninety-nine keeps its hyphen in justified text', /forty-five/.test(flat), d.text);
+    fs.rmSync(docx);
+  }
+
+  console.log('a built-up equation');
+  const hiddenRuns = (xml) => xml.match(/<w:r>(?:(?!<\/w:r>).)*<w:vanish\/>(?:(?!<\/w:r>).)*<\/w:r>/gs) || [];
+  const shown = (xml) => xml.replace(/<w:r>(?:(?!<\/w:r>).)*<w:vanish\/>(?:(?!<\/w:r>).)*<\/w:r>/gs, '');
+  for (const [name, size, mode, words] of [['a fraction', '11', 'fraction', ['a+b', 'c+d']], ['a fraction at 16 pt', '16', 'fraction', ['a+b', 'c+d']], ['a sum with limits', '12', 'sum', ['i=1', 'n']], ['a sum at 18 pt', '18', 'sum', ['i=1', 'n']]]) {
+    [docx] = await convert.convertFile(draw(`builtup-${mode}-${size}`, 'builtup', size, mode), 'docx');
+    d = await read(docx);
+    const para = paraWith(d.xml, 'name="Equation');
+    expect(`${name} is one inline picture in a paragraph of its own`, (d.xml.match(/<wp:inline /g) || []).length === 1 && para !== '' && !/<w:framePr /.test(para) && (d.xml.match(/<w:pgSz /g) || []).length === 1);
+    expect(`${name}: the text of its parts follows the picture as hidden text and none of it shows`,
+      words.every((w) => squash(textOf(hiddenRuns(para).join(''))).includes(w)) && !words.some((w) => w.length > 1 && squash(textOf(shown(d.xml))).includes(w)), textOf(hiddenRuns(para).join('')));
+    expect(`${name}: its number is text in the same paragraph, after a tab`, /\(1\)/.test(textOf(shown(para))) && /<w:tab\/>/.test(para));
+    expect(`${name}: the paragraphs round it stay text`, /above the equation runs on over line 1/.test(textOf(shown(d.xml))) && /below the equation carries on from line 3/.test(textOf(shown(d.xml))));
+    fs.rmSync(docx);
+  }
+  for (const size of ['11', '14']) {
+    [docx] = await convert.convertFile(draw(`builtup-inline-${size}`, 'builtup', size, 'inline'), 'docx');
+    d = await read(docx);
+    const para = paraWith(d.xml, 'name="Equation');
+    expect(`a fraction inside a line of text stays in that paragraph, as an inline picture (${size} pt)`,
+      /The leak rate is/.test(textOf(shown(para))) && /input volume, as measured on site/.test(textOf(shown(para))) && (d.xml.match(/<wp:inline /g) || []).length === 1 && !/<w:br\/>/.test(para));
+    expect(`its numerator and denominator are not paragraphs of their own (${size} pt)`, !/a\+b/.test(textOf(shown(d.xml))) && /a\+b/.test(textOf(hiddenRuns(para).join(''))));
     fs.rmSync(docx);
   }
 
