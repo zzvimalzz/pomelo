@@ -162,6 +162,22 @@ def read_lines(page, clip=None, hidden_ok=False):
     return out
 
 
+def even_sizes(lines):
+    """A scanner's text layer sets every word at the height of its own box, so one line holds many sizes: each line is set in the size most of its letters have, and a line
+    within a fifth of the page's usual size in that size."""
+    own = {}
+    for l in lines:
+        sizes = sorted(s["size"] for s in l.spans for c in s["text"] if c.strip())
+        if sizes:
+            own[id(l)] = sizes[len(sizes) // 2]
+    usual = sorted(own.values())[len(own) // 2] if own else 0.0
+    for l in lines:
+        if id(l) in own:
+            l.size = usual if 0.85 * usual <= own[id(l)] <= 1.18 * usual else own[id(l)]
+            for s in l.spans:
+                s["size"] = l.size
+
+
 def field_marks(page):
     """The check boxes and radio buttons of a form as one character each in Segoe UI Symbol, the way Word draws its own: they are widgets, which the text of the page does not hold and its drawings may not."""
     out = []

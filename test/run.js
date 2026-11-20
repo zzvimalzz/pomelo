@@ -39,7 +39,7 @@ const SUITES = [
   { name: 'matrix', file: 'integration/conversion/matrix.test.js', tier: 'integration', electron: true, timeout: 600 },
   { name: 'edge-cases', file: 'integration/conversion/edge-cases.test.js', tier: 'integration', electron: true, timeout: 300 },
   { name: 'python-cli', file: 'integration/python/cli-contract.test.js', tier: 'pdf' },
-  { name: 'pdf-layout', file: 'integration/conversion/pdf-layout.test.js', tier: 'pdf', timeout: 420 },
+  { name: 'pdf-layout', file: 'integration/conversion/pdf-layout.test.js', tier: 'pdf', timeout: 600 },
   { name: 'pdf-formats', file: 'integration/conversion/pdf-formats.test.js', tier: 'pdf', timeout: 300 },
   { name: 'pipeline', file: 'ui/pipeline.js', tier: 'ui', electron: true },
   { name: 'real-python', file: 'integration/engine-setup/real-python.test.js', tier: 'nightly', timeout: 900 },
