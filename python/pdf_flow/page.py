@@ -19,6 +19,7 @@ from .shapes import Box, Tbl, bent, corner_radius, field_borders, polygon_area, 
 
 SHAPED = re.compile(r"[\ufb50-\ufdff\ufe70-\ufeff]+")
 NOTE_MARK = re.compile(r"\d{1,2}|[*\u2020\u2021\u00a7\u00b6]|[a-z]|[ivx]{2,4}")
+STAMP = pymupdf.PDF_ANNOT_STAMP
 NOTE_LEAD = re.compile(r"(\d{1,2}|[*\u2020\u2021\u00a7\u00b6])\s+(?=\S)")
 
 
@@ -122,9 +123,24 @@ class Page:
             self.ground_pix = self.page.get_pixmap(dpi=72, alpha=False)
         return self.ground_pix
 
+    def page_span_starts(self):
+        """Where each span of the page's text starts and ends without its stamps, or None when the page has none. A stamp is a picture, and redaction cannot take
+        its text out of the page picture, so a span that starts anywhere else is already in the picture."""
+        if not any(a.type[0] == STAMP for a in self.page.annots()):
+            return None
+        bare = pymupdf.open()
+        bare.insert_pdf(self.doc, from_page=self.pno, to_page=self.pno)
+        page = bare[0]
+        for a in [a for a in page.annots() if a.type[0] == STAMP]:
+            page.delete_annot(a)
+        starts = [(*s["origin"], s["bbox"][2]) for b in page.get_text("dict")["blocks"] for l in b.get("lines", []) for s in l["spans"]]
+        bare.close()
+        return starts
+
     def hide(self, lines):
         """Marks `hidden` on the spans the PDF does not show, which Word then keeps as hidden text: drawn in the invisible render mode, under an opaque rectangle drawn
         after them, or in the colour of the flat ground under them."""
+        page_starts = self.page_span_starts()
         try:
             trace = self.page.get_texttrace()
         except Exception:
@@ -138,7 +154,7 @@ class Page:
         for d in self.drawings:
             f, r = d.get("fill"), d["rect"]
             opacity = d.get("fill_opacity") if d.get("fill_opacity") is not None else 1
-            if f and "f" in d["type"] and opacity >= 0.85 and "seqno" in d and r.width * r.height >= 16 and {it[0] for it in d["items"]} <= {"re", "qu"}:
+            if f and "f" in d["type"] and opacity >= 0.85 and "seqno" in d and r.width * r.height >= 16 and ({it[0] for it in d["items"]} <= {"re", "qu"} or corner_radius(d["items"])):
                 for cy in range(int(r.y0 // 32), int(r.y1 // 32) + 1):
                     for cx in range(int(r.x0 // 32), int(r.x1 // 32) + 1):
                         covers.setdefault((cx, cy), []).append((d["seqno"], tuple(r)))
@@ -147,6 +163,11 @@ class Page:
             for s in l.spans:
                 if not s["text"].strip():
                     continue
+                if page_starts is not None:
+                    ox, oy = s["origin"]
+                    if not any(abs(oy - y) <= 1.5 and x - 1.5 <= ox <= x1 + 1.5 for x, y, x1 in page_starts):
+                        s["hidden"] = True
+                        continue
                 oy = round(s["origin"][1])
                 near = [e for k in (oy - 1, oy, oy + 1) for e in starts.get(k, ()) if s["bbox"][0] - 1 <= e[0] <= s["bbox"][2] + 1]
                 box = pymupdf.Rect(s["bbox"])
@@ -353,7 +374,7 @@ class Page:
         self.tbls = keep
         for t in self.tbls:
             t.cells = self.split_cells(t)
-            self.upright = [p for l in self.upright for p in (cut_at_cells(l, t.cells) if inside(l.bbox, t.bbox, 1.0) else [l])]
+            self.upright = [p for l in self.upright for p in (cut_at_cells(l, t.cells) if inside(l.bbox, t.bbox, 0) else [l])]
         for t in self.tbls:
             in_table = lambda r: r[0] >= t.x0 - 2 and r[1] >= t.y0 - 2 and r[2] <= t.x1 + 2 and r[3] <= t.y1 + 2
             for c in t.cells:
@@ -617,7 +638,8 @@ class Page:
 
     def encode_image(self, info, r, dpi_cap=300):
         xref = info.get("xref")
-        if xref and not info.get("overdrawn"):
+        tf = info.get("transform") or (1, 0, 0, 1)
+        if xref and not info.get("overdrawn") and tf[0] > 0 and tf[3] > 0:      # the file's copy is not mirrored or turned over as the page shows it
             try:
                 raw = self.doc.extract_image(xref)
                 if raw and raw.get("ext") in ("jpeg", "jpg") and not raw.get("smask") and raw.get("colorspace", 3) in (1, 3) and raw.get("cs-name", "") != "DeviceCMYK":

@@ -102,7 +102,8 @@ class Builder:
         items = sorted(items, key=lambda i: (i.y0, i.x0))
         bands = []
         for it in items:
-            if bands and it.y0 < bands[-1][1] - 0.5:
+            touches = bands and it.kind == "box" and all(i.kind == "img" for i in bands[-1][2]) and bands[-1][1] - it.y0 < 0.03 * (it.y1 - it.y0)      # a row of boxes that only touches the connectors above it is a band of its own
+            if bands and it.y0 < bands[-1][1] - 0.5 and not touches:
                 bands[-1][1] = max(bands[-1][1], it.y1)
                 bands[-1][2].append(it)
             else:
@@ -349,7 +350,7 @@ class Builder:
         for a_, b_ in zip(lines, lines[1:]):
             width_next = (b_.x1 - b_.x0) * len(word(b_)) / max(1, len(b_.text.strip()))
             room = right_edge - a_.x1
-            natural = jc == "both" or a_.wrapped or ((right_edge - ref) >= 0.8 * w and room < width_next + 0.25 * b_.size)
+            natural = (jc == "both" or a_.wrapped or ((right_edge - ref) >= 0.8 * w and room < width_next + 0.25 * b_.size)) and not b_.text.startswith("  ")      # wrapped text never starts with blanks: an indented line of code is the author's own
             breaks.append(not natural)
         if self.placed and jc != "both":
             breaks = [True] * len(breaks)
@@ -361,16 +362,17 @@ class Builder:
             ind_right = x1 - right_edge
         elif jc == "center":
             slack = 0.04 * (right_edge - min(xs0)) + 3.0                 # a wider substitute font must not wrap the line
-            ind_left = max(0.0, min(xs0) - L - slack)
-            ind_right = max(0.0, x1 - right_edge - slack)
+            ind_left = min(xs0) - L - slack
+            ind_right = x1 - right_edge - slack
         else:
             ind_left = ((marker[3] if marker else ref) if n == 1 else ref) - L
             if reflow or jc == "both":
                 ind_right = max(0.0, x1 - right_edge - (2.5 + 0.01 * (right_edge - ref)) if jc != "both" else x1 - right_edge)
         if right_to is not None and n == 1:
             ind_right = max(0.0, x1 - right_to)
-        ind_left = max(0.0, ind_left)
-        ind_right = max(0.0, ind_right)
+        if jc != "center" or self.depth or self.placed:       # a centred paragraph in the flow may reach past the margins by its slack on both sides, which keeps its centre
+            ind_left = max(0.0, ind_left)
+            ind_right = max(0.0, ind_right)
         rtl = not marker and mostly_rtl(lines)
         jc_word = jc
         if rtl:
@@ -1096,16 +1098,26 @@ class Builder:
             blocks.append(it)
         if run:
             blocks += self.group(run, x0, x1)
+        last_rule = (None, 0.0, 0)
         for bi, blk in enumerate(blocks):
+            if blk.kind != "rule":
+                last_rule = (None, 0.0, 0)
             if blk.kind == "rule":
                 cy = (blk.y0 + blk.y1) / 2
                 bw = max(0.5, blk.width)
+                left, right = tw(max(0.0, blk.x0 - x0)), tw(max(0.0, x1 - blk.x1) + self.room(x1))
+                key = (bw, blk.color, left, right)
+                if key == last_rule[0] and abs(cy - last_rule[1]) < 1.5:
+                    continue                                                    # the same rule drawn twice
+                bump = 1 - last_rule[2] if key == last_rule[0] else 0
+                right += bump                                                   # Word draws paragraphs with the same border and indents as one block, which has a bottom border only once
+                last_rule = (key, cy, bump)
                 before = 0.0 if cursor is None else max(0.0, cy - bw / 2 - 1.0 - cursor)
                 if cursor is None and self.first_top is None:
                     self.first_top = cy - bw / 2 - 1.0
                 xml += (f'<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="{max(2, int(round(bw * 8)))}" w:space="0" w:color="{blk.color}"/></w:pBdr>'
                         f'<w:spacing w:before="{tw(before)}" w:after="0" w:line="20" w:lineRule="exact"/>'
-                        f'<w:ind w:left="{tw(max(0.0, blk.x0 - x0))}" w:right="{tw(max(0.0, x1 - blk.x1) + self.room(x1))}"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>')
+                        f'<w:ind w:left="{left}" w:right="{right}"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>')
                 cursor = cy + bw / 2
             elif blk.kind == "para":
                 part, T, B = self.para_xml(blk, x0, x1, cursor)

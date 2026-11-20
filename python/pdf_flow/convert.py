@@ -22,7 +22,7 @@ from .lists import Lists
 from .maths import equations
 from .page import Page, flat_colour, page_kind
 from .shapes import Fig, Img, Rule
-from .structure import ONE_POINT, Furniture, add_notes, attach, body_font, contents, set_styles
+from .structure import ONE_POINT, Furniture, add_notes, attach, body_font, captions, contents, set_styles
 
 
 def body_size(all_lines):
@@ -117,6 +117,7 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None, original=None
     set_styles(out, font, half, lists.looks, meter.hyphenating)
     add_notes(out, lists.notes)
     contents(out, doc.get_toc())
+    captions(out)
     attach(out, states, log, furniture and furniture.pictures)
     meta = doc.metadata or {}
     props = out.core_properties
@@ -565,7 +566,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
         for c in containers:
             if c.kind == "tbl":
                 for cell in c.cells:
-                    if inside(bb, cell["bbox"], 1.0):
+                    if inside(bb, cell["bbox"], 0):
                         return ("cell", c, cell)
             elif inside(bb, c.bbox, 1.0) and (best is None or area(c.bbox) < area(best[1].bbox)):
                 best = ("box", c, None)
@@ -575,6 +576,9 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     framed = [l for l in text_lines if id(l) in chart or any(overlap(l.bbox, b) >= 0.5 * area(l.bbox) for b in behind)]
     feet = [e.bbox for e in elements if e.kind == "img" and e.floating and ends_page(e.bbox) and not getattr(e, "under_table", False)]
     framed += [l for l in text_lines if l not in framed and any(0 <= l.y0 - b[3] <= 30 and l.x0 >= b[0] - 2 and l.x1 <= b[2] + 2 for b in feet)]
+    # a spreadsheet lets a long text run on past its cell into the empty ones: after the table it would be a paragraph of its own and make the sheet longer
+    spills = lambda l: any(c["bbox"][0] <= l.x0 + 1 <= c["bbox"][2] and c["bbox"][1] <= (l.y0 + l.y1) / 2 <= c["bbox"][3] for t in tbls for c in t.cells)
+    spilled = [l for l in text_lines if l not in framed and owner(l.bbox) is None and spills(l)]
     taken = {"header": [], "footer": []}
     if furniture and not (safe or scan or turn):
         for l in text_lines:
@@ -594,7 +598,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
             # goes on from the line above stays with its paragraph, which would otherwise be printed over it
             runs_on = lambda l: any(m is not l and 0 < l.base - m.base <= 1.8 * l.size and abs(m.x0 - l.x0) <= 2 and abs(m.size - l.size) <= 0.1 * l.size for m in text_lines)
             framed += [l for l in low if l.y1 > 0.95 * P.h and not runs_on(l)]
-    text_lines = [l for l in text_lines if l not in framed]
+    text_lines = [l for l in text_lines if l not in framed and l not in spilled]
     pool = text_lines + elements + rules
     for it in pool:
         o = None if getattr(it, "under_table", False) else owner(it.bbox)
@@ -647,7 +651,7 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     B.page_x0, B.page_x1 = x0, x1
     B.slack = max(0.0, min(10.0, P.w - x1 - 0.5))
     # Word puts a frame on the sheet where its paragraph falls, so frames written after a flow that fills the sheet land on the next one
-    lead = (B.frames(framed) if framed else "") + (B.frames(P.field_lines) if P.field_lines else "")
+    lead = (B.frames(framed) if framed else "") + "".join(B.frames([l]) for l in spilled) + (B.frames(P.field_lines) if P.field_lines else "")
     xml, cursor = B.emit(flow, x0, x1, None)
     if notes and not scan and "<w:cols" in xml:
         del lists.notes[first_note:]                                   # Word lays a footnote out badly under columns: the page is written again with its notes as text

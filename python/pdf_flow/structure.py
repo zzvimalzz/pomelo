@@ -230,6 +230,36 @@ def contents(out, outline):
             pos = j + 1
 
 
+def captions(out):
+    """The number in the caption of a figure or a table is a SEQ field, so a figure added later renumbers. Only when the numbers of a label run 1, 2, 3 in order:
+    otherwise a field would change them."""
+    found = []
+    for p in out.element.body.iter(qn("w:p")):
+        style = p.find(qn("w:pPr") + "/" + qn("w:pStyle"))
+        run = p.find(qn("w:r"))
+        text = run.find(qn("w:t")) if run is not None and style is not None and style.get(qn("w:val")) == "Caption" else None
+        m = re.match(r"(Figure|Fig\.|Table)(\s+)(\d+)(?=[.:\s])", text.text or "") if text is not None else None
+        if m and [c.tag for c in run if c.tag != qn("w:rPr")] == [qn("w:t")]:
+            found.append((run, text, m, "Table" if m.group(1) == "Table" else "Figure"))
+    for label in ("Figure", "Table"):
+        mine = [f for f in found if f[3] == label]
+        if not mine or [int(f[2].group(3)) for f in mine] != list(range(1, len(mine) + 1)):
+            continue
+        for run, text, m, _ in mine:
+            rpr = run.find(qn("w:rPr"))
+            def piece(inner):
+                r = parse_xml(f"<w:r {W}>{inner}</w:r>")
+                if rpr is not None:
+                    r.insert(0, copy.deepcopy(rpr))
+                return r
+            fld = lambda kind: piece(f'<w:fldChar w:fldCharType="{kind}"/>')
+            new = [piece(f'<w:t xml:space="preserve">{esc(text.text[:m.start(3)])}</w:t>'), fld("begin"), piece(f'<w:instrText xml:space="preserve"> SEQ {label} \\* ARABIC</w:instrText>'),
+                   fld("separate"), piece(f"<w:t>{m.group(3)}</w:t>"), fld("end"), piece(f'<w:t xml:space="preserve">{esc(text.text[m.end(3):])}</w:t>')]
+            for r in new:
+                run.addprevious(r)
+            run.getparent().remove(run)
+
+
 def heading_free(p):
     """True for a paragraph that may become a heading: one that has no style of its own (a list or a caption keeps it) or has a heading style already."""
     style = p.find(qn("w:pPr") + "/" + qn("w:pStyle"))
