@@ -1581,6 +1581,103 @@ if kind == "builtup":                              # a fraction or a sum between
         if f[3] == "TimesNewRomanPSMT":
             doc.xref_set_key(f[0], "BaseFont", "/CMMI10")
     doc.save(sys.argv[1] + ".tmp"); doc.close(); os.replace(sys.argv[1] + ".tmp", sys.argv[1]); sys.exit()
+if kind == "flipped":                               # a picture drawn turned over (its file has red above blue); extra: width, extra2: "stored" for a sheet stored with /Rotate 180
+    page = doc.new_page(width=595, height=842)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 40), False)
+    for yy in range(40):
+        for xx in range(40):
+            pix.set_pixel(xx, yy, (220, 30, 30) if yy < 20 else (30, 30, 220))
+    side = float(sys.argv[3])
+    page.insert_text((60, 100), "A picture drawn upside down", fontname="helv", fontsize=12)
+    page.insert_image(pymupdf.Rect(60, 140, 60 + side, 140 + side * 0.6), stream=pix.tobytes("jpeg"), rotate=180)
+    if len(sys.argv) > 4:
+        page.set_rotation(180)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "title":                                 # a centred title of three lines on a sheet with nothing else; extra: size, extra2: sheet width
+    size, width = float(sys.argv[3]), float(sys.argv[4])
+    page = doc.new_page(width=width, height=842)
+    for i, t in enumerate(("HARBOURMASTER", "WATCHMAN'S", "RECORD")):
+        page.insert_text(((width - pymupdf.get_text_length(t, fontname="tiro", fontsize=size)) / 2, 150 + i * size * 1.3), t, fontname="tiro", fontsize=size)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "annots":                                # four lines of text and one annotation; extra: size, extra2: stamp, free (a note) or lit (a highlight over the text)
+    page = doc.new_page(width=595, height=842)
+    for i in range(4):
+        page.insert_text((60, 100 + i * 16), "Body line %d of the page text" % (i + 1), fontname="helv", fontsize=11)
+    if sys.argv[4] == "free":
+        page.add_freetext_annot(pymupdf.Rect(300, 300, 500, 340), "Reviewer note here", fontsize=float(sys.argv[3]))
+    elif sys.argv[4] == "stamp":
+        page.add_stamp_annot(pymupdf.Rect(300, 400, 300 + 12 * float(sys.argv[3]), 450), stamp=pymupdf.STAMP_Draft)
+    else:
+        page.add_highlight_annot(pymupdf.Rect(60, 88, 200, 102))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "code":                                  # an indented block of fixed-pitch lines, the second to last reaching the right edge; extra: size, extra2: indent in blanks
+    size, step = float(sys.argv[3]), int(sys.argv[4])
+    page = doc.new_page(width=595, height=842)
+    char = pymupdf.get_text_length("m", fontname="cour", fontsize=size)
+    rows = ["[", " " * step + "{", " " * 2 * step + '"a": "short",', " " * 2 * step + '"file_path": "' + "p" * int((395 / char) - 24) + '",',
+            " " * 2 * step + '"file_url": "' + "u" * int((460 / char) - 20) + '",', " " * 2 * step + '"id": "8",', " " * step + "}", "]"]
+    for i, row in enumerate(rows):
+        page.insert_text((60, 100 + i * size * 1.2), row, fontname="cour", fontsize=size)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "overflow":                              # a ruled sheet whose last column holds a note that runs on past the grid; extra: rows, extra2: columns
+    rows, cols = int(sys.argv[3]), int(sys.argv[4])
+    page = doc.new_page(width=842, height=595)
+    for r in range(rows + 1):
+        page.draw_line((60, 80 + r * 24), (60 + cols * 90, 80 + r * 24), color=(0.6, 0.6, 0.6), width=0.8)
+    for c in range(cols + 1):
+        page.draw_line((60 + c * 90, 80), (60 + c * 90, 80 + rows * 24), color=(0.6, 0.6, 0.6), width=0.8)
+    for r in range(rows):
+        for c in range(cols):
+            page.insert_text((66 + c * 90, 96 + r * 24), "Note that goes on past the last rule of its row and then on for a good while after it" if c == cols - 1 and r > 0 else "cell %d %d" % (r, c), fontname="helv", fontsize=8)
+    page.insert_text((60, 80 + rows * 24 + 30), "A closing paragraph below the table", fontname="helv", fontsize=10)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "noterules":                             # six ruled lines one under another for notes; extra: stroke or rect, extra2: pitch
+    page = doc.new_page(width=595, height=842)
+    pitch = float(sys.argv[4])
+    page.insert_text((60, 100), "Notes", fontname="helv", fontsize=12)
+    for i in range(6):
+        y = 130 + i * pitch
+        if sys.argv[3] == "stroke":
+            page.draw_line((60, y), (535, y), color=(0, 0, 0), width=0.96)
+        else:
+            page.draw_rect(pymupdf.Rect(60, y - 0.5, 535, y + 0.5), color=None, fill=(0, 0, 0))
+    page.insert_text((60, 130 + 6 * pitch + 20), "Text under the lines", fontname="helv", fontsize=12)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "orgrow":                                # a box over three boxes in a row, the connectors between the two rows touching the lower boxes by a point; extra: box width, extra2: gap
+    w, gap = float(sys.argv[3]), float(sys.argv[4])
+    page = doc.new_page(width=842, height=595)
+    page.insert_text((60, 70), "Who does what", fontname="helv", fontsize=24)
+    mid = 60 + (3 * w + 2 * gap) / 2
+    page.draw_rect(pymupdf.Rect(mid - w / 2, 110, mid + w / 2, 180), color=None, fill=(0.05, 0.12, 0.35))
+    page.insert_text((mid - 40, 150), "General Manager", fontname="helv", fontsize=11, color=(1, 1, 1))
+    for k, name in enumerate(("Operations", "Engineering", "Commercial")):
+        x = 60 + k * (w + gap)
+        page.draw_rect(pymupdf.Rect(x, 260, x + w, 330), color=None, fill=(0.05, 0.12, 0.35))
+        page.insert_text((x + 20, 300), name, fontname="helv", fontsize=11, color=(1, 1, 1))
+    page.draw_polyline([(mid, 180), (mid, 220), (60 + w / 2, 220), (60 + w / 2, 261)], color=(0.4, 0.4, 0.4), width=1)
+    page.draw_polyline([(60 + 1.5 * w + gap, 220), (60 + 1.5 * w + gap, 261)], color=(0.4, 0.4, 0.4), width=1)
+    page.draw_polyline([(mid, 220), (60 + 2.5 * w + 2 * gap, 220), (60 + 2.5 * w + 2 * gap, 261)], color=(0.4, 0.4, 0.4), width=1)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "numbered":                              # running text with numbered captions between; extra: the numbers, extra2: the word before each
+    page = doc.new_page(width=595, height=842)
+    for i, n in enumerate(sys.argv[3].split(",")):
+        page.insert_text((60, 100 + i * 90), "Some running text between the captions of the page.", fontname="helv", fontsize=11)
+        page.insert_text((60, 140 + i * 90), "%s %s. Water use in year %d" % (sys.argv[4], n, i + 1), fontname="heit", fontsize=9)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "undertable":                            # a ruled grid and, half a point below its last rule by the middle of its line, a line of notes across its columns; extra: size, extra2: left edge
+    size, left = float(sys.argv[3]), float(sys.argv[4])
+    page = doc.new_page(width=595, height=842)
+    for r in range(4):
+        page.draw_line((left, 100 + r * 24), (left + 300, 100 + r * 24), color=(0.6, 0.6, 0.6), width=0.8)
+    for c in range(4):
+        page.draw_line((left + c * 100, 100), (left + c * 100, 172), color=(0.6, 0.6, 0.6), width=0.8)
+    for r in range(3):
+        for c in range(3):
+            page.insert_text((left + 6 + c * 100, 116 + r * 24), "cell %d %d" % (r, c), fontname="helv", fontsize=9)
+    page.insert_text((left, 400), "Sources", fontname="helv", fontsize=size)
+    box = page.get_text("dict")["blocks"][-1]["lines"][0]["bbox"]
+    page.insert_text((left, 400 + 172.5 - (box[1] + box[3]) / 2), "Notes: the figures above are rounded to the nearest whole number for every row", fontname="helv", fontsize=size)
+    doc.save(sys.argv[1]); sys.exit()
 page = doc.new_page(width=595, height=842)
 if kind == "banner":
     page.draw_rect(pymupdf.Rect(40, 40, 555, 140), color=None, fill=(0.1, 0.2, 0.45))           # a coloured banner
@@ -1744,7 +1841,7 @@ const isFramed = (d, word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>)
   expect('the running title is a header part, set once', header.includes('Quarterly Review') && !(await part('word/header2.xml')));
   expect('neither is also written in the body', !/Quarterly Review|Ref\. QR|Page \d? ?of/.test(d.text) && !/<w:t[^>]*>of<\/w:t>/.test(d.xml), d.text.slice(0, 300));
   expect('page 1, which has no running title, has no header, and the others carry on with the first', (d.xml.match(/<w:headerReference /g) || []).length === 1 && d.xml.indexOf('<w:footerReference ') < d.xml.indexOf('</w:sectPr>') && (d.xml.match(/<w:footerReference /g) || []).length === 1 && sections.length === 4);
-  expect('the title, the headings, the list item and the caption have their styles', /<w:pStyle w:val="Title"\/>(?:(?!<\/w:p>).)*Annual Statement/s.test(d.xml) && /<w:pStyle w:val="Heading2"\/>(?:(?!<\/w:p>).)*Section 2/s.test(d.xml) && /<w:pStyle w:val="ListParagraph"\/>(?:(?!<\/w:p>).)*A list item/s.test(d.xml) && /<w:pStyle w:val="Caption"\/>(?:(?!<\/w:p>).)*Figure 1/s.test(d.xml));
+  expect('the title, the headings, the list item and the caption have their styles', /<w:pStyle w:val="Title"\/>(?:(?!<\/w:p>).)*Annual Statement/s.test(d.xml) && /<w:pStyle w:val="Heading2"\/>(?:(?!<\/w:p>).)*Section 2/s.test(d.xml) && /<w:pStyle w:val="ListParagraph"\/>(?:(?!<\/w:p>).)*A list item/s.test(d.xml) && /<w:pStyle w:val="Caption"\/>(?:(?!<\/w:p>).)*Figure (?:(?!<\/w:p>).)*\. The plan/s.test(d.xml));
   const styles = await part('word/styles.xml');
   const heading1 = (styles.match(/<w:style [^>]*w:styleId="Heading1".*?<\/w:style>/s) || [''])[0];
   expect('the styles are there, and a heading style adds no look and no keep-with-next of its own', ['Normal', 'Title', 'Heading1', 'Heading2', 'Heading3', 'ListParagraph', 'Caption'].every((id) => styles.includes(`w:styleId="${id}"`)) && !/<w:rPr>|<w:keepNext/.test(heading1), heading1);
@@ -2841,6 +2938,103 @@ const isFramed = (d, word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>)
     const sizes = new Set(rows.flatMap((p) => [...p.matchAll(/<w:sz w:val="(\d+)"/g)].map((m) => m[1])));
     expect(`${name}: the last words of a line are in its paragraph, not on a row of their own`, ['closed the account', 'bank in full', 'will follow soon'].every((t, i) => squash(textOf(rows[i])).includes(squash(t))), rows.map((p) => textOf(p).length).join(' '));
     expect(`${name}: and its words are all in one size`, sizes.size <= 1, [...sizes].join(' '));
+    fs.rmSync(docx);
+  }
+
+  console.log('a picture drawn turned over');
+  for (const [name, side, stored] of [['on an upright sheet', '300', ''], ['smaller, on a sheet stored turned by 180 degrees', '180', 'stored']]) {
+    [docx] = await convert.convertFile(draw(`flipped-${side}${stored}`, 'flipped', side, stored), 'docx');
+    d = await read(docx);
+    const media = Object.keys(d.zip.files).find((n) => n.startsWith('word/media/'));
+    const { data, info } = await require('sharp')(await d.zip.file(media).async('nodebuffer')).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const at = (fy) => { const i = (Math.floor(info.height * fy) * info.width + Math.floor(info.width / 2)) * 3; return [data[i], data[i + 2]]; };
+    expect(`${name}: the picture is cut as the page shows it, blue above red`, at(0.25)[1] > at(0.25)[0] + 100 && at(0.75)[0] > at(0.75)[1] + 100, JSON.stringify([at(0.25), at(0.75)]));
+    fs.rmSync(docx);
+  }
+
+  console.log('an indented block of code with a long line');
+  for (const [name, size, step] of [['10 pt with 2 blanks of indent', '10', '2'], ['9 pt with 4 blanks of indent', '9', '4']]) {
+    [docx] = await convert.convertFile(draw(`code-${size}-${step}`, 'code', size, step), 'docx');
+    d = await read(docx);
+    const block = paraWith(d.xml, 'file_path');
+    expect(`${name}: every line of the block ends where it did, so none loses its indent to the wrap`, (block.match(/<w:br\/>/g) || []).length === 7 && block.includes('"id"'), `${(block.match(/<w:br\/>/g) || []).length} breaks`);
+    fs.rmSync(docx);
+  }
+
+  console.log('a line just under a table');
+  for (const [name, size, left] of [['8 pt', '8', '60'], ['10 pt, further right', '10', '120']]) {
+    [docx] = await convert.convertFile(draw(`undertable-${size}`, 'undertable', size, left), 'docx');
+    d = await read(docx);
+    expect(`${name}: the line of notes is a paragraph after the table, not text in a cell of its last row`, /<w:tbl>/.test(d.xml) && d.xml.indexOf('Notes: the figures') > d.xml.lastIndexOf('</w:tbl>'), (d.xml.match(/<w:tblGrid>.*?<\/w:tblGrid>/s) || [''])[0]);
+    fs.rmSync(docx);
+  }
+
+  console.log('boxes in a row under connectors');
+  for (const [name, w, gap] of [['190 pt boxes 20 apart', '190', '20'], ['130 pt boxes 40 apart', '130', '40']]) {
+    [docx] = await convert.convertFile(draw(`orgrow-${w}`, 'orgrow', w, gap), 'docx');
+    d = await read(docx);
+    expect(`${name}: the three boxes are the cells of one row, not one under another`, /<w:tblGrid>(?:<w:gridCol [^>]*\/>){3}<\/w:tblGrid><w:tr>.*?Operations.*?Engineering.*?Commercial/s.test(d.xml), (d.xml.match(/<w:tblGrid>.*?<\/w:tblGrid>/gs) || []).join(' '));
+    fs.rmSync(docx);
+  }
+
+  console.log('the number of a caption');
+  for (const [name, numbers, word, label] of [['figures 1, 2, 3', '1,2,3', 'Figure', 'Figure'], ['tables 1, 2 with the short word', '1,2', 'Table', 'Table'], ['figures 1 and 2 in the short form', '1,2', 'Fig.', 'Figure']]) {
+    [docx] = await convert.convertFile(draw(`captions-${word.replace('.', '')}-${numbers.replace(/,/g, '')}`, 'numbered', numbers, word), 'docx');
+    d = await read(docx);
+    const fields = [...d.xml.matchAll(/ SEQ (\w+) \\\* ARABIC\s*</g)].map((m) => m[1]);
+    expect(`${name}: each number is a SEQ field, so a caption added later renumbers`, fields.length === numbers.split(',').length && fields.every((f) => f === label)
+      && d.text.includes(`${word} 1. Water use in year 1`), `${fields.join(' ')} | ${d.text.slice(0, 120)}`);
+    fs.rmSync(docx);
+  }
+  [docx] = await convert.convertFile(draw('captions-gap', 'numbered', '1,3', 'Figure'), 'docx');
+  d = await read(docx);
+  expect('numbers that do not run 1, 2, 3 stay text, because a field would renumber them', !/ SEQ /.test(d.xml) && /Figure 3\. Water use in year 2/.test(d.text), d.text.slice(0, 120));
+  fs.rmSync(docx);
+
+  console.log('ruled lines one under another');
+  for (const [name, mode, pitch] of [['strokes 20 pt apart', 'stroke', '20'], ['thin rectangles 26 pt apart', 'rect', '26']]) {
+    [docx] = await convert.convertFile(draw(`noterules-${mode}`, 'noterules', mode, pitch), 'docx');
+    d = await read(docx);
+    const rules = d.xml.match(/<w:p><w:pPr><w:pBdr>.*?<\/w:p>/gs) || [];
+    const inds = rules.map((p) => (p.match(/<w:ind [^>]*>/) || [''])[0]);
+    expect(`${name}: no two ruled lines in a row are alike, because Word draws such paragraphs as one block with one rule`, rules.length >= 6 && inds.every((v, i) => !i || v !== inds[i - 1]), inds.join(' '));
+    fs.rmSync(docx);
+  }
+
+  console.log('a note that runs on past the last column of a ruled sheet');
+  for (const [name, rows, cols] of [['five rows, three columns', '5', '3'], ['eight rows, four columns', '8', '4']]) {
+    [docx] = await convert.convertFile(draw(`overflow-${rows}`, 'overflow', rows, cols), 'docx');
+    d = await read(docx);
+    expect(`${name}: the notes beyond the grid are each placed on the sheet at their row, not paragraphs after the table`, isFramed(d, 'Note that goes on') && (d.xml.match(/<w:framePr /g) || []).length === Number(rows) - 1 && /<w:tbl>/.test(d.xml) && d.xml.indexOf('closing paragraph') > d.xml.lastIndexOf('</w:tbl>'), (d.xml.match(/<w:framePr /g) || []).length + ' frames');
+    fs.rmSync(docx);
+  }
+
+  console.log('a centred title that sets the margins of its sheet');
+  for (const [name, size, width] of [['26 pt on a small sheet', '26', '396'], ['18 pt on A4', '18', '595']]) {
+    const pdf = draw(`title-${size}`, 'title', size, width);
+    [docx] = await convert.convertFile(pdf, 'docx');
+    d = await read(docx);
+    const widest = Number(execFileSync(engines.pdf, ['-W', 'ignore', '-c', 'import sys, pymupdf; p = pymupdf.open(sys.argv[1])[0]; print(max(l["bbox"][2] - l["bbox"][0] for b in p.get_text("dict")["blocks"] for l in b["lines"]))', pdf], { encoding: 'utf8', windowsHide: true }));
+    const mar = (k) => Number(d.xml.match(new RegExp(`<w:pgMar [^>]*w:${k}="(\\d+)"`))[1]);
+    const ind = (k) => Number((paraWith(d.xml, 'HARBOURMASTER').match(new RegExp(`<w:ind [^>]*w:${k}="(-?\\d+)"`)) || [0, 0])[1]);
+    const room = (Number(d.xml.match(/<w:pgSz w:w="(\d+)"/)[1]) - mar('left') - mar('right') - ind('left') - ind('right')) / 20;
+    expect(`${name}: the paragraph is wider than its widest line, so a wider font does not break a word`, room >= widest + 4, `${room} against ${widest}`);
+    fs.rmSync(docx);
+  }
+
+  console.log('the text of a stamp annotation');
+  for (const [name, size] of [['a stamp', '14'], ['a larger stamp', '20']]) {
+    [docx] = await convert.convertFile(draw(`annots-stamp${size}`, 'annots', size, 'stamp'), 'docx');
+    d = await read(docx);
+    expect(`${name}: its word is hidden text, because the picture of the page already shows it, and the page's own text is text`,
+      hiddenOf(d.xml).includes('DRAFT') && !/DRAFT/.test(textOf(shown(d.xml))) && /Body line 4 of the page text/.test(textOf(shown(d.xml))), `${hiddenOf(d.xml)} | ${textOf(shown(d.xml)).slice(0, 80)}`);
+    fs.rmSync(docx);
+  }
+  for (const [name, kind] of [['a note drawn as free text', 'free'], ['a highlight', 'lit']]) {
+    [docx] = await convert.convertFile(draw(`annots-${kind}`, 'annots', '12', kind), 'docx');
+    d = await read(docx);
+    expect(`${name} is not a stamp: the page text and the note stay text`, /Body line 1 of the page text/.test(textOf(shown(d.xml))) && !hiddenRuns(d.xml).length
+      && (kind !== 'free' || /Reviewer note here/.test(textOf(shown(d.xml)))), hiddenOf(d.xml));
     fs.rmSync(docx);
   }
 
