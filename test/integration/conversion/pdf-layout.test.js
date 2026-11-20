@@ -1227,6 +1227,15 @@ if kind == "zwlist":                                # bullets written as a glyph
         page.insert_text((72, 100 + i * 24), "\\u25cf" + chr(int(zw, 16)), fontname="zf", fontsize=size)
         page.insert_text((96, 100 + i * 24), t, fontname="zf", fontsize=size)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "badmap":                                # a font whose text map gives half of a surrogate pair for "A"; extra: the hex it maps to, more: the size
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((72, 100), "A line of plain words after the letter", fontname="helv", fontsize=float(sys.argv[4]))
+    cmap = "/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /X def 1 begincodespacerange <00> <FF> endcodespacerange 1 beginbfchar <41> <%s> endbfchar endcmap CMapName currentdict /CMap defineresource pop end end" % sys.argv[3]
+    x = doc.get_new_xref()
+    doc.update_object(x, "<<>>")
+    doc.update_stream(x, cmap.encode(), new=True)
+    doc.xref_set_key(doc.get_page_fonts(0)[0][0], "ToUnicode", "%d 0 R" % x)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "clauses":                               # numbered clauses whose numbers stand left of their text, beside a column of notes; extra: the labels, more: "number x:text x"
     labels = sys.argv[3].split(",")
     x_num, x_text = (float(v) for v in sys.argv[4].split(":"))
@@ -2631,6 +2640,14 @@ const isFramed = (d, word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>)
     const items = ['First item of the plan', 'Second item of the plan', 'Third item that runs a little longer than the others'];
     expect(`each of the three items is a list item (${face}, U+${zw.toUpperCase()}, ${size} pt)`, (d.xml.match(/<w:numPr>/g) || []).length === 3 && !missingFrom(d.text, items).length, `${(d.xml.match(/<w:numPr>/g) || []).length} list items`);
     expect('no zero-width character reaches the document', !/[\u200b\ufeff\u2060]/.test(d.xml));
+    fs.rmSync(docx);
+  }
+
+  console.log('a text map that gives half of a surrogate pair');
+  for (const [hex, size] of [['D835', '12'], ['DC450041', '16']]) {
+    [docx] = await convert.convertFile(draw(`badmap-${hex}`, 'badmap', hex, size), 'docx');
+    d = await read(docx);
+    expect(`the page converts and keeps its words (U+${hex.slice(0, 4)}, ${size} pt)`, !missingFrom(d.text, ['line of plain words after the letter']).length && !/[\ud800-\udfff]/.test(d.xml), d.text.slice(0, 80));
     fs.rmSync(docx);
   }
 
