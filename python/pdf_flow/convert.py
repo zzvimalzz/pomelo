@@ -11,13 +11,13 @@ from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
 import pymupdf
 
-from pdf_ocr import page_needs_ocr
+from pdf_ocr import lean, page_needs_ocr
 from pdf_spans import dominant_size, hexcolor
 
 from .builder import Builder
 from .common import HI_DPI, NS, area, inside, overlap, tw
 from .fonts import FontMeter
-from .lines import read_lines
+from .lines import attach_markers, even_sizes, merge_rows, read_lines
 from .lists import Lists
 from .maths import equations
 from .page import Page, flat_colour, page_kind
@@ -241,6 +241,42 @@ def ink_colour(pix, box):
     return r << 16 | g << 8 | b
 
 
+def inked_in_colour(pix, box):
+    """True when a tenth or more of the ink in a box is a clear colour: a stamp across a line, which cannot be painted out without taking the stamp, or a pen's writing, which
+    is not print and is not to be typed."""
+    ground = paper(pix, box)
+    step = max(2, int(math.sqrt((box[2] - box[0]) * (box[3] - box[1]) / 10000)))
+    ink = colour = 0
+    for y in range(max(0, box[1]), min(pix.height, box[3]), step):
+        for x in range(max(0, box[0]), min(pix.width, box[2]), step):
+            c = pix.pixel(x, y)
+            if sum(ground) - sum(c) > 150:
+                ink += 1
+                colour += max(c) - min(c) > 30
+    return ink >= 8 and colour >= 0.1 * ink
+
+
+def uneven(pix):
+    """True when the paper's brightness differs by more than a tenth between the inner parts of the sheet (a grid of six by six, the outer ring left out): a photograph, not a scan (a scanner's lid shades its pages by a few percent)."""
+    gray = pymupdf.Pixmap(pymupdf.csGRAY, pix)
+    grey = gray.samples                                     # a property that copies the whole picture each time it is read
+    cells = []
+    for cy in range(1, 5):
+        for cx in range(1, 5):
+            x0, x1, y0, y1 = cx * gray.width // 6, (cx + 1) * gray.width // 6, cy * gray.height // 6, (cy + 1) * gray.height // 6
+            seen = sorted(grey[y * gray.width + x] for y in range(y0, y1, max(1, (y1 - y0) // 50)) for x in range(x0, x1, max(1, (x1 - x0) // 50)))
+            cells.append(seen[int(len(seen) * 0.85)])
+    return max(cells) - min(cells) > 0.1 * max(cells)
+
+
+def keep_in_picture(P, lines):
+    """Lines of a scan that stay pixels in its picture: their words are kept as hidden text, so that search still finds them."""
+    for l in lines:
+        for s in l.spans:
+            s["hidden"] = True
+    P.hidden_lines += lines
+
+
 def paint_quad(pix, corners, colour):
     """Fills the quadrilateral of a line, pixel row by pixel row."""
     ys = [c[1] for c in corners]
@@ -258,24 +294,24 @@ def paint_quad(pix, corners, colour):
 def scan_page(P, source):
     """The picture of a scanned sheet, to lie behind its text, with the lines that become text painted out in the paper's colour around each. A line much larger
     than the body text (a logo, a signature, a stamp) stays in the picture unless it is a title on plain paper (`plain_title`); so does a line at another angle than
-    the rest. When the lines of a skewed scan share one angle under 2 degrees they are written level (`straighten`) and painted out along their own slant. A mark of
-    one or two characters that is not a word, alone at the top or left edge, is noise and stays in the picture. P keeps only the lines that are text."""
+    the rest, and a line with colour in its ink (a stamp, a pen). When the lines of a skewed scan share one angle under 2 degrees they are written level (`straighten`) and
+    painted out along their own slant. A photograph (`lean`, `uneven`) is left whole. A mark of one or two characters that is not a word, alone at the top or left
+    edge, is noise and stays in the picture. P keeps only the lines that are text; the words of the others are hidden text."""
     dpi = min(HI_DPI, int(72 * math.sqrt(25e6 / (P.w * P.h))))
     pix = source.get_pixmap(dpi=dpi, alpha=False)
     k = dpi / 72
     angle = lambda l: math.degrees(math.atan2(l.dir[1], l.dir[0]))
     lines = [l for l in P.upright + P.rotated
              if not (len(l.text.strip()) <= 2 and not re.search(r"[^\W\d_]", l.text) and (l.y1 <= 0.1 * P.h or l.x1 <= 0.1 * P.w) and not any(m is not l and abs(m.base - l.base) <= 0.5 * l.size for m in P.upright))]
-    mid = sorted(angle(l) for l in lines)[len(lines) // 2] if lines else 0.0
-    tilt = mid if abs(mid) < 2 else 0.0                                  # a slant of a few degrees is straightened; a photograph turned further keeps its lines in the picture
-    text = []
-    for l in lines:
-        if abs(angle(l) - tilt) > 1.5:
-            continue
-        if l.size > 1.6 * P.body and not plain_title(l, pix, k):
-            continue
+    tilt, photo = lean([angle(l) for l in lines if l.x1 - l.x0 >= 4 * (l.y1 - l.y0)])
+    photo = photo or uneven(pix)
+    text, shelved = [], list(lines) if photo else []
+    for l in [] if photo else lines:
         slant = angle(l)
         shape = (int((l.x0 - 1) * k), int((l.y0 - 1) * k), int((l.x1 + 1) * k), int((l.y1 + 1) * k))
+        if abs(slant - tilt) > 1.5 or (l.size > 1.6 * P.body and not plain_title(l, pix, k)) or inked_in_colour(pix, shape):
+            shelved.append(l)
+            continue
         ink = ink_colour(pix, shape)
         if ink is not None:
             for sp in l.spans:
@@ -290,10 +326,23 @@ def scan_page(P, source):
             rise = min(0.4 * l.size, 0.015 * (l.x1 - l.x0))                # OCR text sits at the foot of the box found for a line, which on a skewed line is taller than the text by the skew over its width
             box = (int((l.x0 - 1) * k), int((l.y0 - rise) * k), int((l.x1 + 1) * k), int((l.y1 + 1) * k))
             pix.set_rect(pymupdf.IRect(box), paper(pix, box))
+        if P.layer:
+            ox, oy = l.spans[0]["origin"]
+            mid = oy + ((l.x0 + l.x1) / 2 - ox) * math.tan(math.radians(slant)) - l.asc * l.size + 0.5 * (l.asc - l.desc) * l.size       # the middle of the line from its baseline: the box of a layer line is as tall as its tallest word
+            l.y0, l.y1 = l.y0 + mid - (l.y0 + l.y1) / 2, l.y1 + mid - (l.y0 + l.y1) / 2
         if tilt or slant:
             straighten(l, tilt, (P.w / 2, P.h / 2))
         text.append(l)
-    P.upright, P.rotated = text, []
+    keep_in_picture(P, shelved)
+    if P.layer:
+        for b in sorted(text, key=lambda l: l.x0):
+            mates = [m for m in text if m is not b and -0.5 * b.size < b.x0 - m.x1 < 0.8 * b.size and abs(m.base - b.base) <= 1.3 * b.size]
+            if mates:                                                  # a recogniser that splits a line gives its pieces baselines of their own: a piece that starts within a word space of another stands on that one's row
+                a = max(mates, key=lambda m: m.x1)
+                b.y0, b.y1, b.base = b.y0 + a.base - b.base, b.y1 + a.base - b.base, a.base
+    P.upright, P.rotated = attach_markers(merge_rows(text, P.shapes)), []
+    if P.layer:
+        even_sizes(P.upright)
     fig = Fig((0.0, 0.0, P.w, P.h), pix.tobytes("jpeg", jpg_quality=85), "jpg", floating=True)
     fig.overlay = True
     return fig
@@ -307,6 +356,9 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     P = Page(doc, work_all[pno], work_keep[pno], page, pno, meter, body_pt)
     given = source
     P.read()
+    if turn and P.layer:
+        keep_in_picture(P, P.upright + P.rotated)
+        P.upright, P.rotated = [], []
     P.tbls = []
     if not safe:
         P.tables()

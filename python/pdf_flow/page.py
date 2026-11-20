@@ -13,7 +13,7 @@ from pdf_fonts import latin
 from pdf_spans import RTL, dedupe, hexcolor
 
 from .common import HI_DPI, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
-from .lines import attach_markers, cut_at_cells, cut_at_rects, field_marks, hangs, is_bold, is_italic, merge_rows, read_lines, split_leader, split_marker
+from .lines import attach_markers, cut_at_cells, cut_at_rects, even_sizes, field_marks, hangs, is_bold, is_italic, merge_rows, read_lines, split_leader, split_marker
 from .maths import inline_run
 from .shapes import Box, Tbl, bent, corner_radius, field_borders, polygon_area, rect_shapes, segments_of
 
@@ -59,6 +59,8 @@ class Page:
         self.layer = self.text_layer(page)
         scan = self.layer or any(area(tuple(i["bbox"])) > 0.85 * self.w * self.h for i in page.get_image_info())     # the invisible text layer of a scan is not hidden text
         lines = read_lines(page, hidden_ok=not scan or self.layer)
+        if self.layer:
+            even_sizes(lines)
         if not scan:
             self.hide(lines)
             lines = [l for l in lines if any(s["text"].strip() for s in l.spans)]

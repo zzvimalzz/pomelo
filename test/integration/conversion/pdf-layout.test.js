@@ -739,6 +739,99 @@ if kind == "sideways":                              # a landscape sheet stored t
             page.insert_text((60, 90 + i * 16), "Running paragraph line %d of text set on a sheet stored sideways, long enough to span the sheet." % (i + 1), fontname="helv", fontsize=11)
     page.set_rotation(angle)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "scan-sideways":                         # a landscape page stored with /Rotate 270, its picture and its invisible text layer turned with it; argument: the size of the text
+    size = float(sys.argv[3])
+    words = ["Cost summary for the harbour depot", "The first line of the report runs across the page.", "A second line follows it on the same sheet."]
+    src = pymupdf.open(); sp = src.new_page(width=842, height=595)
+    for i, t in enumerate(words):
+        sp.insert_text((60, 100 + i * 30), t, fontname="helv", fontsize=size + (6 if i == 0 else 0))
+    page = doc.new_page(width=595, height=842)
+    page.insert_image(page.rect, pixmap=sp.get_pixmap(dpi=100), rotate=270)
+    for i, t in enumerate(words):
+        page.insert_text((495 - i * 30, 60), t, fontname="helv", fontsize=size + (6 if i == 0 else 0), rotate=270, render_mode=3)
+    page.set_rotation(270)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "scan-faint":                            # one dark line and the show-through of the other side of the sheet; argument: grey of the ghost : mirror or plain : size
+    grey, how, size = sys.argv[3].split(":")
+    src = pymupdf.open(); sp = src.new_page(width=595, height=842)
+    sp.draw_rect(sp.rect, color=None, fill=(0.97, 0.97, 0.97))
+    sp.insert_text((60, 120), "Delivery note for the harbour depot", fontname="helv", fontsize=float(size) + 4, color=(0.1, 0.1, 0.1))
+    for i, t in enumerate(("Back of the sheet printed in another ink that shows through", "A second line of the same ghost text on the back page", "And a third line that nobody can read in daylight")):
+        kw = dict(morph=(pymupdf.Point(297, 421), pymupdf.Matrix(-1, 0, 0, 1, 0, 0))) if how == "mirror" else {}
+        sp.insert_text((60, 300 + i * 30), t, fontname="helv", fontsize=float(size), color=(float(grey),) * 3, **kw)
+    page = doc.new_page(width=595, height=842)
+    page.insert_image(page.rect, pixmap=sp.get_pixmap(dpi=150))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "scan-photo":                            # a picture of a page with an invisible text layer; argument: how much of the light is left at the far side of the sheet : the angle each line differs from the one above
+    shade, bend = (float(v) for v in sys.argv[3].split(":"))
+    lines = ["Water supply review for the northern districts", "The first line of the note is set across the page.", "A second line follows it on the same sheet.", "And a third line closes the paragraph.", "Contact the office on the number printed above."]
+    src = pymupdf.open(); sp = src.new_page(width=595, height=842)
+    for i in range(40):
+        g = 1 - (1 - shade) * i / 39
+        sp.draw_rect(pymupdf.Rect(i * 595 / 40, 0, (i + 1) * 595 / 40 + 1, 842), color=None, fill=(0.96 * g,) * 3)
+    page = doc.new_page(width=595, height=842)
+    def put(p, mode):
+        for i, t in enumerate(lines):
+            p.insert_text((60, 150 + i * 40), t, fontname="helv", fontsize=12, color=(0.1,) * 3, render_mode=mode, morph=(pymupdf.Point(60, 150 + i * 40), pymupdf.Matrix((i - 2) * bend)))
+    put(sp, 0)
+    page.insert_image(page.rect, pixmap=sp.get_pixmap(dpi=100))
+    put(page, 3)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "scan-stamp":                            # a scan with a red stamp; argument: over (the stamp lies across two lines, the page carries a text layer) or tilt (a stamp turned by an angle below the text, no layer) : the angle : the size of the text
+    how, tilt, size = sys.argv[3].split(":")
+    tilt, size = float(tilt), float(size)
+    lines = ["Delivery note for the harbour depot at Pasir Gudang", "The goods listed below were received in good order on the date shown.", "Any damage must be reported to the office within seven days of this date.",
+             "A second copy of this note is kept with the shipping documents.", "Questions about this delivery should be sent to the records office."]
+    src = pymupdf.open(); sp = src.new_page(width=595, height=842)
+    sp.draw_rect(sp.rect, color=None, fill=(0.96, 0.96, 0.96))
+    for i, t in enumerate(lines):
+        sp.insert_text((60, 150 + i * 28), t, fontname="helv", fontsize=size, color=(0.1,) * 3)
+    red = (0.8, 0.1, 0.15)
+    if how == "over":
+        sp.insert_text((330, 230), "RECEIVED", fontname="hebo", fontsize=size * 2.2, color=red)
+        sp.draw_rect(pymupdf.Rect(320, 195, 480, 245), color=red, width=2)
+    else:
+        pivot = pymupdf.Point(250, 420)
+        sp.insert_text(pivot, "RECEIVED 09 NOV 2026", fontname="hebo", fontsize=size * 2, color=red, morph=(pivot, pymupdf.Matrix(tilt)))
+    page = doc.new_page(width=595, height=842)
+    page.insert_image(page.rect, pixmap=sp.get_pixmap(dpi=150))
+    if how == "over":
+        for i, t in enumerate(lines):
+            page.insert_text((60, 150 + i * 28), t, fontname="helv", fontsize=size, render_mode=3)
+        page.insert_text((330, 230), "RECEIVED", fontname="hebo", fontsize=size * 2.2, render_mode=3)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "scan-pen":                              # a scan of black print with two lines written over it by hand in a coloured pen, all with a text layer; argument: blue or green : the size of the text
+    pen, size = sys.argv[3].split(":")
+    size = float(size)
+    ink = {"blue": (0.1, 0.2, 0.75), "green": (0.05, 0.5, 0.2)}[pen]
+    lines = ["Delivery note for the harbour depot at Pasir Gudang", "The goods listed below were received in good order on the date shown.", "Checked against the order and signed for by the night supervisor.",
+             "Two crates were damaged and are to be returned to the supplier.", "Questions about this delivery should be sent to the records office."]
+    src = pymupdf.open(); sp = src.new_page(width=595, height=842)
+    sp.draw_rect(sp.rect, color=None, fill=(0.96, 0.96, 0.96))
+    page = doc.new_page(width=595, height=842)
+    for i, t in enumerate(lines):
+        by_hand = i in (2, 3)
+        sp.insert_text((60, 150 + i * 28), t, fontname="heit" if by_hand else "helv", fontsize=size, color=ink if by_hand else (0.1,) * 3)
+    page.insert_image(page.rect, pixmap=sp.get_pixmap(dpi=150))
+    for i, t in enumerate(lines):
+        page.insert_text((60, 150 + i * 28), t, fontname="heit" if i in (2, 3) else "helv", fontsize=size, render_mode=3)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "scan-mixed":                            # a scan slanted by an angle whose text layer sets each word at the height of its own box and puts the last three words of a row on a baseline of their own; argument: the angle : the size of the text : how far those words stand off the row
+    tilt, size, drift = (float(v) for v in sys.argv[3].split(":"))
+    rows = ["Thank you for your letter of 2 November. As you asked, we have closed the account.", "The closing balance has been transferred to your account at the bank in full.", "Interest was added on the day of closure and a final statement will follow soon."]
+    jit = [1.0, 0.9, 1.1, 0.95, 1.15, 0.9, 1.05, 0.95]
+    src = pymupdf.open(); sp = src.new_page(width=595, height=842)
+    page = doc.new_page(width=595, height=842)
+    def put(p, x, y, t, s, mode):
+        p.insert_text((x, y), t, fontname="helv", fontsize=s, render_mode=mode, morph=(pymupdf.Point(60, 150), pymupdf.Matrix(tilt)))
+    for i, row in enumerate(rows):
+        x = 60.0
+        for k, w in enumerate(row.split()):
+            put(sp, x, 150 + i * 24, w, size, 0)
+            put(page, x, 150 + i * 24 + (drift if k >= len(row.split()) - 3 else 0), w, size * jit[(k + i) % len(jit)], 3)
+            x += pymupdf.get_text_length(w + " ", fontname="helv", fontsize=size)
+    page.insert_image(page.rect, pixmap=sp.get_pixmap(dpi=100), overlay=False)
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "layer":                                 # a scan that carries a text layer: the picture of a page with a title, three lines and a signature, and the text of them drawn invisibly over it
     # (with an extra argument "under": the text drawn first and the picture over it; "skew": the lines of the layer slanted by 1.5 degrees)
     how = sys.argv[3] if len(sys.argv) > 3 else ""
@@ -2297,9 +2390,9 @@ const isFramed = (d, word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>)
     const { data: grey, info: gi } = await require('sharp')(await d.zip.file(media).async('nodebuffer')).greyscale().raw().toBuffer({ resolveWithObject: true });
     const mean = (x0, y0, x1, y1) => { const k = gi.width / 595; let sum = 0, n = 0; for (let y = Math.floor(y0 * k); y < y1 * k; y++) for (let x = Math.floor(x0 * k); x < x1 * k; x++) { sum += grey[y * gi.width + x]; n++; } return sum / n; };
     expect(`${name}: the layer is the text, as paragraphs, without the OCR component, and the picture stays behind it the size of the sheet`,
-      !missingFrom(d.text, ['Quarterly Report of the Harbour', 'The first line of the letter', 'second line follows', 'third line closes']).length && !/w:vanish/.test(d.xml) && Math.abs(sheetPic[1] / 12700 - 595) < 1 && Math.abs(sheetPic[2] / 12700 - 842) < 1, `${d.text.slice(0, 120)} | ${sheetPic[1]}`);
-    expect(`${name}: the lines that are text are painted out of the picture, a title on plain paper included, and a signature stays in it`,
-      mean(55, 200, 330, 262) > 245 && mean(55, 70, 400, 108) > 245 && mean(55, 340, 250, 380) < 235 && !d.text.includes('Okafor'), `lines ${mean(55, 200, 330, 262).toFixed(0)}, title ${mean(55, 70, 400, 108).toFixed(0)}, signature ${mean(55, 340, 250, 380).toFixed(0)}`);
+      !missingFrom(d.text, ['Quarterly Report of the Harbour', 'The first line of the letter', 'second line follows', 'third line closes']).length && Math.abs(sheetPic[1] / 12700 - 595) < 1 && Math.abs(sheetPic[2] / 12700 - 842) < 1, `${d.text.slice(0, 120)} | ${sheetPic[1]}`);
+    expect(`${name}: the lines that are text are painted out of the picture, a title on plain paper included, and a signature stays in it, its word hidden text`,
+      mean(55, 200, 330, 262) > 245 && mean(55, 70, 400, 108) > 245 && mean(55, 340, 250, 380) < 235 && !d.xml.replace(/<w:p[ >](?:(?!<\/w:p>).)*<w:vanish\/>(?:(?!<\/w:p>).)*<\/w:p>/gs, '').includes('Okafor') && d.xml.includes('Okafor'), `lines ${mean(55, 200, 330, 262).toFixed(0)}, title ${mean(55, 70, 400, 108).toFixed(0)}, signature ${mean(55, 340, 250, 380).toFixed(0)}`);
     if (name === 'layer-skew') expect('a slanted layer is written level, not as turned boxes', !/<wps:txbx>/.test(d.xml) && !/ rot="/.test(d.xml));
     fs.rmSync(docx);
   }
@@ -2657,6 +2750,97 @@ const isFramed = (d, word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>)
     d = await read(docx);
     expect(`${name}: the tick labels at its left and under it stand at their places, none is a paragraph of the text`,
       ['20', '10', 'iter.'].every((w) => isFramed(d, `>${w}`)) && /Text under the plot, line 1/.test(d.text), d.text.slice(0, 200));
+    fs.rmSync(docx);
+  }
+
+  console.log('a scan stored sideways with a text layer');
+  const hiddenOf = (xml) => squash(textOf(hiddenRuns(xml).join('')));
+  const pixelsIn = async (d, [x0, y0, x1, y1]) => {
+    const media = Object.keys(d.zip.files).find((n) => n.startsWith('word/media/'));
+    const { data, info } = await require('sharp')(await d.zip.file(media).async('nodebuffer')).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const k = info.width / 595;
+    let n = 0, low = 255, coloured = 0;
+    for (let y = Math.floor(y0 * k); y < y1 * k; y++) for (let x = Math.floor(x0 * k); x < x1 * k; x++) {
+      const i = (y * info.width + x) * 3;
+      n += data[i] > 150 && data[i + 1] < 90 && data[i + 2] < 100 ? 1 : 0;
+      low = Math.min(low, data[i], data[i + 1], data[i + 2]);
+      coloured += Math.max(data[i], data[i + 1], data[i + 2]) - Math.min(data[i], data[i + 1], data[i + 2]) > 60 ? 1 : 0;
+    }
+    return { red: n, low, coloured };
+  };
+  for (const size of ['11', '14']) {
+    [docx] = await convert.convertFile(draw(`scan-sideways-${size}`, 'scan-sideways', size), 'docx');
+    d = await read(docx);
+    const said = ['Cost summary for the harbour depot', 'The first line of the report', 'A second line follows it'];
+    expect(`the layer of a sideways scan is written once, as hidden text, and does not print over the text of the picture (${size} pt)`,
+      said.every((t) => hiddenOf(d.xml).includes(squash(t)) && !squash(textOf(shown(d.xml))).includes(squash(t))), `${hiddenOf(d.xml).slice(0, 80)} | ${textOf(shown(d.xml)).slice(0, 80)}`);
+    fs.rmSync(docx);
+  }
+
+  console.log('a scan that carries the show-through of its other side');
+  if (!engines.ocr) console.log('  OCR component not installed: skipped');
+  else {
+    for (const [name, spec] of [['mirrored text at 14 pt', '0.9:mirror:14'], ['plain text at 11 pt', '0.9:plain:11']]) {
+      [docx] = await convert.convertFile(draw(`scan-faint-${spec.replace(/[:.]/g, '')}`, 'scan-faint', spec), 'docx');
+      d = await read(docx);
+      expect(`${name}: the dark line is text, the faint ghost of the other side is not written at all`,
+        /Delivery/.test(textOf(shown(d.xml))) && squash(textOf(shown(d.xml))).length < 60 && !hiddenRuns(d.xml).length && !/Back|ghost|daylight/i.test(d.text), d.text.slice(0, 160));
+      fs.rmSync(docx);
+    }
+  }
+
+  console.log('a stamp on a scan');
+  const LETTER = ['The goods listed below', 'Questions about this delivery'];
+  [docx] = await convert.convertFile(draw('scan-stamp-over', 'scan-stamp', 'over:0:11'), 'docx');
+  d = await read(docx);
+  expect('lines under a stamp stay in the picture with their words hidden, the others are text', !missingFrom(textOf(shown(d.xml)), LETTER).length && !/Any damage|A second copy|RECEIVED/.test(textOf(shown(d.xml)))
+    && ['Anydamage', 'Asecondcopy', 'RECEIVED'].every((t) => hiddenOf(d.xml).includes(t)), textOf(shown(d.xml)).slice(0, 200));
+  expect('and the stamp keeps its pixels', (await pixelsIn(d, [320, 195, 480, 245])).red > 400, JSON.stringify(await pixelsIn(d, [320, 195, 480, 245])));
+  fs.rmSync(docx);
+  if (engines.ocr) {
+    for (const [name, spec] of [['a stamp turned by 8 degrees', 'tilt:8:11'], ['a stamp turned the other way', 'tilt:-6:13']]) {
+      [docx] = await convert.convertFile(draw(`scan-stamp-${spec.replace(/[:-]/g, '')}`, 'scan-stamp', spec), 'docx');
+      d = await read(docx);
+      expect(`${name}: the lines of the letter are text, the words of the stamp are hidden text`,
+        !missingFrom(textOf(shown(d.xml)), LETTER).length && !/RECEIVED/.test(textOf(shown(d.xml))) && hiddenOf(d.xml).includes('RECEIVED'), textOf(shown(d.xml)).slice(0, 200));
+      expect(`${name}: it keeps its pixels, not cut by a line of text`, (await pixelsIn(d, [200, 380, 460, 450])).red > 500, JSON.stringify(await pixelsIn(d, [200, 380, 460, 450])));
+      fs.rmSync(docx);
+    }
+  }
+
+  console.log('writing by hand in a coloured pen on a scan');
+  for (const [name, spec] of [['blue pen at 11 pt', 'blue:11'], ['green pen at 14 pt', 'green:14']]) {
+    [docx] = await convert.convertFile(draw(`scan-pen-${spec.replace(':', '')}`, 'scan-pen', spec), 'docx');
+    d = await read(docx);
+    expect(`${name}: the printed lines are text, the lines in pen are not typed`,
+      /The goods listed below/.test(textOf(shown(d.xml))) && /Questions about this delivery/.test(textOf(shown(d.xml))) && !/signed for|crates were damaged/.test(textOf(shown(d.xml))), textOf(shown(d.xml)).slice(0, 200));
+    expect(`${name}: the pen keeps its pixels and its words are hidden text`, (await pixelsIn(d, [55, 195, 480, 240])).coloured > 300
+      && ['signedforbythenightsupervisor', 'Twocrateswere'].every((t) => hiddenOf(d.xml).includes(t)), `${JSON.stringify(await pixelsIn(d, [55, 195, 480, 240]))} ${hiddenOf(d.xml).slice(0, 80)}`);
+    fs.rmSync(docx);
+  }
+
+  console.log('a photographed page');
+  for (const [name, spec] of [['unevenly lit', '0.6:0'], ['with curved lines', '1:1.2']]) {
+    [docx] = await convert.convertFile(draw(`scan-photo-${spec.replace(/[:.]/g, '')}`, 'scan-photo', spec), 'docx');
+    d = await read(docx);
+    expect(`${name}: the photo is kept whole, no line of it is written over it`,
+      !/Water supply|first line of the note|Contact the office/.test(textOf(shown(d.xml))) && (await pixelsIn(d, [55, 175, 330, 200])).low < 90, JSON.stringify(await pixelsIn(d, [55, 175, 330, 200])));
+    expect(`${name}: all of its text layer is there as hidden text`, ['Watersupplyreview', 'Thefirstlineofthenote', 'Asecondlinefollows', 'Contacttheoffice'].every((t) => hiddenOf(d.xml).includes(t)), hiddenOf(d.xml).slice(0, 120));
+    fs.rmSync(docx);
+  }
+  [docx] = await convert.convertFile(draw('scan-photo-flat', 'scan-photo', '0.97:0'), 'docx');
+  d = await read(docx);
+  expect('a flat scan whose light and lines are even stays text over its picture, the lines painted out of it', /The first line of the note/.test(textOf(shown(d.xml))) && (await pixelsIn(d, [55, 175, 330, 200])).low > 150, JSON.stringify(await pixelsIn(d, [55, 175, 330, 200])));
+  fs.rmSync(docx);
+
+  console.log('a slanted scan whose layer sets every word at its own height');
+  for (const [name, spec] of [['slanted by 1.1 degrees, the last words 9 points high', '1.1:11:-9'], ['slanted by 0.6 degrees at 12 pt, the last words 8 points low', '0.6:12:8']]) {
+    [docx] = await convert.convertFile(draw(`scan-mixed-${spec.replace(/[:.-]/g, '')}`, 'scan-mixed', spec), 'docx');
+    d = await read(docx);
+    const rows = ['Thank', 'closing', 'Interest'].map((w) => paraWith(d.xml, w));
+    const sizes = new Set(rows.flatMap((p) => [...p.matchAll(/<w:sz w:val="(\d+)"/g)].map((m) => m[1])));
+    expect(`${name}: the last words of a line are in its paragraph, not on a row of their own`, ['closed the account', 'bank in full', 'will follow soon'].every((t, i) => squash(textOf(rows[i])).includes(squash(t))), rows.map((p) => textOf(p).length).join(' '));
+    expect(`${name}: and its words are all in one size`, sizes.size <= 1, [...sizes].join(' '));
     fs.rmSync(docx);
   }
 
