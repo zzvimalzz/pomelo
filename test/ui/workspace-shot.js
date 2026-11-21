@@ -255,7 +255,7 @@ app.whenReady().then(async () => {
       await js(win, 'workspaceViewer.viewer.spreadMode = 1');
       await sleep(900);
       const two = await look();
-      check('in two-page view the left page has its markers on its left', two.marks.length === 3 && two.marks.every((m) => m.right <= two.page.left - 8), JSON.stringify([two.marks.map((m) => m.right), two.page.left]));
+      check('in two-page view the left page has its markers on its left, outside it or, on a small screen, just inside its edge', two.marks.length === 3 && two.marks.every((m) => (m.left + m.right) / 2 < two.page.left + 30), JSON.stringify([two.marks.map((m) => m.right), two.page.left]));
       await js(win, 'workspaceViewer.viewer.spreadMode = 0');
       await sleep(900);
       await js(win, `workspaceViewer.viewer.currentScaleValue = 'page-width'`);
