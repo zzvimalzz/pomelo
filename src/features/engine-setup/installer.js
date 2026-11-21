@@ -2,7 +2,7 @@
 // One-click install of the optional engines, and removal of exactly what Pomelo installed.
 //
 //   PDF engine + OCR + HEIC     a private Python environment (python-env.js). Python itself is added with winget only if the
-//                               PC has none. The OCR models are fetched while it is built.
+//                               PC has none. The OCR models come with the OCR package.
 //   LibreOffice                 its official MSI, fetched with winget and unpacked into Pomelo's own folder (libreoffice.js)
 //   Pandoc                      installed with winget
 //

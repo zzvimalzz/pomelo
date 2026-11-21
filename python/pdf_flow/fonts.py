@@ -20,6 +20,7 @@ class FontMeter:
         self.families = {}
         self.hyphenated = set()           # the words the text spells with a hyphen, as "three-year"
         self.hyphenating = False          # the PDF breaks words at the end of its justified lines
+        self.headed = False               # the PDF tags its headings
         self.base = (None, 0)             # the family and size (half points) of the Normal style, which a run does not repeat
 
     def register(self, page):

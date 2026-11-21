@@ -8,7 +8,7 @@ Installs and removes the optional engines: the PDF, OCR and HEIC components, Lib
 
 `installer.js` (`createInstaller`) installs a pack and records what it added in `manifest.json` (`manifest.js`), so uninstalling removes exactly that and never anything the user installed themselves. It does one install at a time.
 
-- **python** (`python-env.js`): finds a Python 3.9 to 3.13, or adds Python 3.12 for this user with winget; builds `pyenv` in the engines folder; installs `python/requirements.txt` with pip; checks the packages import; fetches the OCR models.
+- **python** (`python-env.js`): finds a Python 3.9 to 3.13, or adds Python 3.12 for this user with winget; builds `pyenv` in the engines folder; installs `python/requirements.txt` with pip; checks the packages import. The OCR models come with the RapidOCR package, so nothing more is downloaded.
 - **soffice** (`libreoffice.js`): `winget download` of the official MSI (hash-checked), unpacked with `msiexec /a` into `libreoffice`, then pruned. Nothing is installed, so no administrator rights.
 - **pandoc**: `winget install` (`winget.js`).
 

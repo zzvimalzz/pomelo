@@ -11,8 +11,8 @@ from types import SimpleNamespace
 from pdf_fonts import latin
 from pdf_spans import hexcolor
 
-from .common import TW, cluster, inside, tw
-from .lines import end_figures, is_bold, is_letter, mostly_rtl
+from .common import NUMBER, TW, cluster, inside, tw
+from .lines import HEADINGS, end_figures, is_bold, is_letter, mostly_rtl, para_tag
 from .page import Para, runs_xml, tracking
 from .shapes import Box, SIDES, Tbl, rule_key, table_look
 
@@ -258,6 +258,12 @@ class Builder:
         prev = cur.lines[-1]
         if l.marker or l.leader or prev.leader:
             return False
+        a, b = para_tag(prev), para_tag(l)
+        if a and b:
+            return a == b and 0 < l.base - prev.base <= 3 * max(prev.size, l.size) and min(l.x1, prev.x1) > max(l.x0, prev.x0)     # a browser tags boxes set side by side as one element
+        lead = lambda m: NUMBER.match((m.text.split(None, 1) or [""])[0])
+        if lead(l) and any(lead(m) or m.marker and m.marker[0] == "number" for m in cur.lines):
+            return False                                             # the next item of a list whose lines wrap back under the number
         s = max(prev.size, l.size)
         dy = l.base - prev.base
         if abs(l.size - prev.size) > 1.6 or (prev.bold_all != l.bold_all and (prev.bold_all or l.bold_all)):
@@ -424,8 +430,14 @@ class Builder:
         spacing = f'<w:spacing w:before="{tw(before)}" w:after="0" w:line="{line}" w:lineRule="{rule}"/>'
         style = heading = ""
         text = " ".join(l.text for l in lines).strip()
-        if marker:
+        tag = para_tag(first)
+        if tag and tag[1] in HEADINGS and text and not marker:
+            lvl = HEADINGS[tag[1]]
+            style, heading = ("Title", '<w:outlineLvl w:val="0"/>') if lvl == 0 else (f"Heading{lvl}", "")
+        elif marker:
             style = "ListParagraph"
+        elif tag and self.meter.headed:
+            style = "Caption" if tag[1] == "Caption" else ""
         elif text and size >= self.P.body * 1.25 and n <= 3 and len(text) <= 140:
             lvl = 0 if size >= self.P.body * 1.7 else 1 if size >= self.P.body * 1.4 else 2
             style = f"Heading{lvl + 1}"
@@ -437,7 +449,7 @@ class Builder:
             style = "Caption"
         elif n == 1 and not self.placed and self.labels(lines[0], text):
             style = "Heading3"
-        if style.startswith("Heading") and not self.heading_ok(first, text):
+        if style.startswith("Heading") and not tag and not self.heading_ok(first, text):
             style = ""
         hyphens = '<w:suppressAutoHyphens w:val="0"/>' if jc == "both" and self.meter.hyphenating else ""
         ppr = f'<w:pPr>{f'<w:pStyle w:val="{style}"/>' if style else ""}{num_pr}{borders}{tabs}{hyphens}{"<w:bidi/>" if rtl else ""}{spacing}{ind_attr}<w:jc w:val="{jc_word}"/>{heading}</w:pPr>'
