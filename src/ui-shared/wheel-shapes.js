@@ -24,5 +24,11 @@
     return `M${x0} ${y0} A${ro} ${ro} 0 ${large} 1 ${x1} ${y1} L${x2} ${y2} A${ri} ${ri} 0 ${large} 0 ${x3} ${y3}Z`;
   }
 
-  window.pomeloWheelShapes = { CX, CY, R_OUT, R_IN, svg, pt, segmentPath };
+  // One target that fills the whole ring: two circles, drawn with the even-odd rule so the middle is empty.
+  function ringPath() {
+    const ro = R_OUT - PAD, ri = R_IN + PAD;
+    return `M${CX} ${CY - ro}A${ro} ${ro} 0 1 1 ${CX - 0.01} ${CY - ro}Z M${CX} ${CY - ri}A${ri} ${ri} 0 1 0 ${CX + 0.01} ${CY - ri}Z`;
+  }
+
+  window.pomeloWheelShapes = { CX, CY, R_OUT, R_IN, svg, pt, segmentPath, ringPath };
 })();

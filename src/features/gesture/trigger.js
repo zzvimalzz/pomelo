@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Gesture detector. Hold the left mouse button on a file, drag, then press Ctrl.
-//   idle -> pressed (left down) -> dragging (moved past threshold, files probed) -> wheel (Ctrl pressed)
+// Gesture detector. Hold the left mouse button on a file, drag, then press Ctrl (the conversion wheel) or Shift (the Open wheel).
+//   idle -> pressed (left down) -> dragging (moved past threshold, files probed) -> wheel (a key pressed)
+// While a wheel shows, the other key turns it into the other wheel.
 // Input events come from the native input helper (see native/pomelo-input.cs).
 const { EventEmitter } = require('events');
 const log = require('#shared/node/log');
 
 const DRAG_THRESHOLD_PX = 8;
+const KEY_WHEELS = { ctrl: 'convert', shift: 'open' };       // the keys the helper reports, and the wheel each one shows
 
 class Trigger extends EventEmitter {
   constructor(helper) {
@@ -15,6 +17,8 @@ class Trigger extends EventEmitter {
     this.state = 'idle';
     this.origin = null;
     this.files = null;        // Promise<string[]> once the drag starts
+    this.wheel = null;        // 'convert' or 'open': the wheel the last key asked for
+    this.shown = false;       // a wheel has been offered for the selection
   }
 
   setEnabled(on) { this.enabled = on; if (!on) this.reset(); }
@@ -37,12 +41,19 @@ class Trigger extends EventEmitter {
     } else if (type === 'kd' && this.enabled) {
       if (a === 'esc' && this.state === 'wheel') { this.reset(); this.emit('cancel'); return; }
       log('key down', a, 'state=' + this.state);
-      if (a !== 'ctrl' || this.state !== 'dragging') return;
+      const wheel = KEY_WHEELS[a];
+      if (!wheel) return;
+      if (this.state === 'wheel') {                   // the key of the wheel already showing does nothing
+        if (wheel !== this.wheel) { this.wheel = wheel; if (this.shown) this.emit('switch', wheel); }
+        return;
+      }
+      if (this.state !== 'dragging') return;
       this.state = 'wheel';
+      this.wheel = wheel;
       this.files.then(({ files, explorer }) => {
         log('selection:', files, 'explorer=' + explorer);
         if (this.state !== 'wheel') return;           // released while we were looking
-        if (files.length) this.emit('open', files);
+        if (files.length) { this.shown = true; this.emit('open', files, { wheel: this.wheel }); }
         else if (explorer) this.emit('unsupported');   // e.g. a folder: tell the user instead of staying silent
         else this.state = 'dragging';                  // not an Explorer drag; stay quiet
       });
@@ -54,7 +65,7 @@ class Trigger extends EventEmitter {
     }
   }
 
-  reset() { this.state = 'idle'; this.files = null; this.origin = null; }
+  reset() { this.state = 'idle'; this.files = null; this.origin = null; this.wheel = null; this.shown = false; }
 }
 
-module.exports = { Trigger };
+module.exports = { Trigger, KEY_WHEELS };

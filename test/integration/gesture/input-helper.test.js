@@ -18,7 +18,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const ask = async (id) => { proc.stdin.write(`files ${id}\n`); const l = await waitFor((x) => x.startsWith('{"id":' + id + ',')); return l && JSON.parse(l); };
 
   console.log('native input helper');
-  expect('says ready once its hooks are installed', await waitFor((l) => l === '{"ready":true}') !== null);
+  expect('says ready once its hooks are installed, and that it takes trigger keys', await waitFor((l) => l === '{"ready":true,"keys":true}') !== null);
 
   const none = await ask(1);
   expect('no drag in progress: no files, not an Explorer drag', none && none.files.length === 0 && none.explorer === false);
@@ -26,6 +26,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   proc.stdin.write('garbage\nkey nonsense\nkey alt\ndown x y\ndown 1 1\n');
   const after = await ask(2);
   expect('ignores malformed commands and keeps answering', after && after.id === 2 && Array.isArray(after.files));
+
+  proc.stdin.write('keys\nkeys nonsense\nkeys ctrl nonsense\nkeys  shift\nKEYS shift\nkeys shift ctrl\nkeys alt alt\nkeys ctrl shift\nkey ctrl\nkeys ctrl shift\n');
+  const keys = await ask(3);
+  expect('takes the keys command with one, two or repeated names, ignores a bad one, and keeps answering', keys && keys.id === 3 && Array.isArray(keys.files));
 
   const closed = new Promise((r) => proc.on('exit', r));
   proc.stdin.end();

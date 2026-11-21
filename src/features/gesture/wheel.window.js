@@ -8,6 +8,7 @@ const { createFloatingWindow } = require('#shared/electron/windows');
 const log = require('#shared/node/log');
 
 const WHEEL = 400;
+const ABOVE = 64;       // room over the wheel for the pill that names the other wheel's key
 
 class WheelWindow {
   constructor({ onDrop }) {
@@ -19,7 +20,7 @@ class WheelWindow {
   }
 
   create() {
-    this.win = createFloatingWindow({ width: WHEEL, height: WHEEL, preload: path.join(__dirname, 'ui', 'preload.js'), level: 'screen-saver' });
+    this.win = createFloatingWindow({ width: WHEEL, height: WHEEL + ABOVE, preload: path.join(__dirname, 'ui', 'preload.js'), level: 'screen-saver' });
     this.win.setIgnoreMouseEvents(false);
     registerWheelIpc({
       onLog: (msg) => log('overlay:', msg),
@@ -37,22 +38,29 @@ class WheelWindow {
     const p = screen.getCursorScreenPoint();
     const wa = screen.getDisplayNearestPoint(p).workArea;
     const cx = Math.min(Math.max(p.x, wa.x + WHEEL / 2), wa.x + wa.width - WHEEL / 2);
-    const cy = Math.min(Math.max(p.y, wa.y + WHEEL / 2), wa.y + wa.height - WHEEL / 2);
-    this.win.setBounds({ x: Math.round(cx - WHEEL / 2), y: Math.round(cy - WHEEL / 2), width: WHEEL, height: WHEEL });
+    const cy = Math.min(Math.max(p.y, wa.y + ABOVE + WHEEL / 2), wa.y + wa.height - WHEEL / 2);
+    this.win.setBounds({ x: Math.round(cx - WHEEL / 2), y: Math.round(cy - WHEEL / 2 - ABOVE), width: WHEEL, height: WHEEL + ABOVE });
   }
 
   // info = { name, ext, group, count } describes the selection (built by the app from the format catalog); the name is already shortened.
   // pickFiles: set when the wheel comes from the right-click menu. It then takes focus, so that a click elsewhere or Esc closes it.
-  async openWheel(info, targets, pickFiles = null) {
+  // view: { wheel: 'convert' (the default) | 'open', droppable (default true), switchable }. droppable: the files can be dropped on this
+  // wheel. switchable: the other wheel can be reached with its key, so the pill that names the key is shown.
+  async openWheel(info, targets, pickFiles = null, view = {}) {
     await this.loaded;
     clearTimeout(this.hideTimer);
     this.place();
     this.pickFiles = pickFiles;
-    this.win.webContents.send('wheel:open', { info, targets, pick: !!pickFiles });
+    this.win.webContents.send('wheel:open', { info, targets, pick: !!pickFiles, ...view });
     if (pickFiles) { this.win.setFocusable(true); this.win.show(); this.win.focus(); } else this.win.showInactive();
     this.win.setAlwaysOnTop(true, 'screen-saver');   // The topmost flag can be set while Windows keeps the wheel under the folder being dragged from; applying it again lifts it.
     this.shown = true;
     log('wheel shown', this.win.getBounds(), targets.map((t) => t.id));
+  }
+
+  // The wheel that is showing turns into the other one, same view options as openWheel.
+  switchWheel(targets, view) {
+    if (this.shown) this.win.webContents.send('wheel:switch', { targets, ...view });
   }
 
   // Released without a drop on us: give the drop event a moment to arrive, then fold the wheel away.

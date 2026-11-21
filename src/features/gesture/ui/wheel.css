@@ -2,7 +2,7 @@
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent;
   font: 500 14px/1.2 var(--font); color: var(--txt); }
 
-.stage { position: fixed; inset: 0; display: grid; place-items: center; }
+.stage { position: fixed; inset: 64px 0 0 0; display: grid; place-items: center; }
 #wheel { overflow: visible; filter: drop-shadow(0 14px 26px var(--shadow)); transform: scale(0.8); opacity: 0;
   transition: transform 0.2s cubic-bezier(0.2, 0.9, 0.25, 1.15), opacity 0.12s ease-out; }
 .stage.open #wheel { transform: scale(1); opacity: 1; }
@@ -20,3 +20,33 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 .stage.open #center .doc { transform: none; }
 #center .count { fill: var(--accent); stroke: var(--center); stroke-width: 2.5; }
 #center .countText { font-size: 9.5px; font-weight: 800; fill: #fff; }
+
+.spin, .seg.ring { transform-box: view-box; transform-origin: 200px 200px; }
+.seg .ticon * { fill: none; stroke: var(--txt); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; transition: stroke 0.12s; }
+.seg.hot .ticon * { stroke: #fff; }
+.seg.refused .label { font-size: 13px; }
+
+:root {
+  --bar: rgba(255, 255, 255, 0.9); --bar-line: rgba(0, 0, 0, 0.07); --bar-hi: rgba(255, 255, 255, 0.95);
+  --key-1: #fff; --key-2: #f1f1f4; --key-edge: rgba(0, 0, 0, 0.11); --key-depth: #d4d4db; --key-hi: #fff; --key-ink: rgba(0, 0, 0, 0.55);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bar: rgba(44, 44, 48, 0.92); --bar-line: rgba(255, 255, 255, 0.09); --bar-hi: rgba(255, 255, 255, 0.07);
+    --key-1: #5a5a62; --key-2: #4a4a51; --key-edge: rgba(0, 0, 0, 0.55); --key-depth: #2b2b30; --key-hi: rgba(255, 255, 255, 0.2); --key-ink: rgba(255, 255, 255, 0.78);
+  }
+}
+
+/* The pill names the key of the other wheel. It floats in the 64 px band above the wheel's box, about 28 px clear of the plate. */
+.pill { position: absolute; z-index: 2; bottom: calc(100% - 2px); left: 50%; translate: -50% 0; display: flex; justify-content: center; padding: 3px; border-radius: 19px; overflow: hidden;
+  background: var(--bar); border: 1px solid var(--bar-line); box-shadow: inset 0 1px 0 var(--bar-hi), 0 1px 2px rgba(0, 0, 0, 0.08), 0 6px 14px var(--shadow);
+  opacity: 0; transition: opacity 0.18s ease-out 0.08s; }
+.pill[hidden] { display: none; }
+.stage.open .pill { opacity: 1; }
+.stage.closing .pill { opacity: 0; transition-duration: 0.12s; transition-delay: 0s; }
+.pillin { display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 18px 0 5px; white-space: nowrap; }
+.pillin b { font-size: 14px; font-weight: 600; letter-spacing: 0.1px; }
+.key { width: 46px; height: 22px; border-radius: 7px; display: grid; place-items: center; color: var(--key-ink); background: linear-gradient(180deg, var(--key-1), var(--key-2));
+  box-shadow: 0 0 0 1px var(--key-edge), 0 2px 0 var(--key-depth), 0 3px 4px rgba(0, 0, 0, 0.12), inset 0 1px 0 var(--key-hi); transition: transform 0.12s, box-shadow 0.12s; }
+.key.down { transform: translateY(2px); box-shadow: 0 0 0 1px var(--key-edge), 0 0 0 var(--key-depth), 0 0 1px rgba(0, 0, 0, 0.1), inset 0 1px 0 var(--key-hi), 0 0 0 3px rgba(232, 77, 111, 0.2); }
+.key kbd { font: 600 12px var(--font); }
