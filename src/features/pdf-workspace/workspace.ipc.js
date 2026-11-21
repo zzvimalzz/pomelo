@@ -8,6 +8,7 @@ function registerWorkspaceIpc({ documents, state, isWorkspace }) {
   const guard = (e) => { if (!isWorkspace(e.sender)) throw new Error('not the workspace window'); };
   ipcMain.handle('pdfws:state', (e) => { guard(e); return state(); });
   ipcMain.handle('pdfws:read', (e, token, begin, end) => { guard(e); return documents.read(token, begin, end); });
+  ipcMain.handle('pdfws:unlock', (e, token, password) => { guard(e); documents.unlock(token, password); });
 }
 
 module.exports = { registerWorkspaceIpc };

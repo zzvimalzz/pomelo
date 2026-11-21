@@ -6,9 +6,11 @@ const fs = require('fs');
 const path = require('path');
 
 const MAX_SPAN = 4 * 1048576;
+const MAX_PASSWORD = 4096;
 
 function createDocuments() {
   const byToken = new Map();
+  const passwords = new Map();
 
   async function open(file) {
     const handle = await fs.promises.open(file, 'r');
@@ -35,14 +37,27 @@ function createDocuments() {
     return buffer;
   }
 
+  // A password lives only here, in memory, and only once pdf.js has accepted it. It is not a field of the document, so no log or
+  // state message can carry it.
+  function unlock(token, password) {
+    if (!byToken.has(token)) throw new Error('unknown document');
+    if (typeof password !== 'string' || !password || password.length > MAX_PASSWORD) throw new Error('bad password');
+    passwords.get(token)?.fill(0);
+    passwords.set(token, Buffer.from(password, 'utf8'));
+  }
+
+  const password = (token) => passwords.get(token);
+
   function closeAll() {
     for (const doc of byToken.values()) doc.handle.close().catch(() => {});
     byToken.clear();
+    for (const secret of passwords.values()) secret.fill(0);
+    passwords.clear();
   }
 
   const served = () => [...byToken.values()].reduce((sum, doc) => sum + doc.served, 0);
 
-  return { open, read, closeAll, served };
+  return { open, read, unlock, password, closeAll, served };
 }
 
 module.exports = { createDocuments, MAX_SPAN };

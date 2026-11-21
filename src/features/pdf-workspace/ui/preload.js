@@ -4,4 +4,5 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('workspaceApi', {
   state: () => ipcRenderer.invoke('pdfws:state'),
   read: (token, begin, end) => ipcRenderer.invoke('pdfws:read', token, begin, end),
+  unlock: (token, password) => ipcRenderer.invoke('pdfws:unlock', token, password),
 });

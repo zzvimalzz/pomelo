@@ -1,10 +1,17 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 /* The workspace window: glass title row, and the document in its own rounded well. The wheel's --plate tints the glass. */
 :root {
-  --solid: #efece8; --well: rgba(110, 110, 125, .13); --muted: rgba(0, 0, 0, .64);
+  --solid: #efece8; --well: rgba(110, 110, 125, .13); --muted: rgba(0, 0, 0, .64); --faint: rgba(0, 0, 0, .5); --thumb: rgba(0, 0, 0, .2);
+  --bar: rgba(255, 255, 255, .9); --bar-line: rgba(0, 0, 0, .07); --bar-hi: rgba(255, 255, 255, .95);
+  --accent-soft: rgba(232, 77, 111, .13); --accent-ink: #c22b4f; --field: rgba(255, 255, 255, .78); --field-line: rgba(0, 0, 0, .14);
+  --spring: cubic-bezier(.2, .9, .25, 1.12);
 }
 @media (prefers-color-scheme: dark) {
-  :root { --solid: #242427; --well: rgba(0, 0, 0, .28); --muted: rgba(255, 255, 255, .76); }
+  :root {
+    --solid: #242427; --well: rgba(0, 0, 0, .28); --muted: rgba(255, 255, 255, .76); --faint: rgba(255, 255, 255, .56); --thumb: rgba(255, 255, 255, .22);
+    --bar: rgba(44, 44, 48, .92); --bar-line: rgba(255, 255, 255, .09); --bar-hi: rgba(255, 255, 255, .07);
+    --accent-soft: rgba(232, 77, 111, .24); --accent-ink: #ff94ad; --field: rgba(255, 255, 255, .07); --field-line: rgba(255, 255, 255, .17);
+  }
 }
 
 html, body { height: 100%; margin: 0; overflow: hidden; background: transparent; font: 500 13px/1.35 var(--font); color: var(--txt); }
@@ -15,6 +22,57 @@ html.solid .window { background: var(--solid); }
 .titlerow b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .well { position: relative; flex: 1; margin: 0 8px 8px; border-radius: 10px; background: var(--well); overflow: hidden; }
-.scroller { position: absolute; inset: 6px 3px 6px 0; overflow: auto; }
+.scroller { position: absolute; inset: 6px 3px 6px 0; overflow: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color .35s; }
+.scroller:hover, .scroller.scrolling { scrollbar-color: var(--thumb) transparent; }
 .pdfViewer .page { box-shadow: 0 1px 3px rgba(0, 0, 0, .12), 0 10px 30px rgba(0, 0, 0, .1); }
 .failure { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--muted); font-size: 14px; }
+
+/* pdf.js draws its own note icons and popups; comments are shown as markers beside the page instead. */
+.annotationLayer .textAnnotation, .annotationLayer .popupAnnotation { display: none; }
+
+.cmarks { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.cmark { position: absolute; left: calc(100% + 10px); width: 26px; height: 24px; padding: 0; display: grid; place-items: center; border-radius: 8px; cursor: pointer; pointer-events: auto;
+  background: var(--bar); border: 1px solid var(--bar-line); color: var(--muted); box-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 4px 12px rgba(0, 0, 0, .08);
+  transition: top .2s var(--ease), color .12s, background .12s, transform .12s; animation: pop .22s var(--spring); }
+.cmark .i { width: 14px; height: 14px; }
+.cmark i { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1.5px var(--bar); }
+.cmark:hover { color: var(--accent-ink); transform: scale(1.06); }
+.cmark.on { background: var(--accent-soft); border-color: transparent; color: var(--accent-ink); }
+.cmark.left { left: auto; right: calc(100% + 10px); }
+.cmark.inside { left: auto; right: 8px; }
+.cmark.inside.left { right: auto; left: 8px; }
+@keyframes pop { from { transform: scale(.7); opacity: 0; } }
+
+.clight { position: absolute; pointer-events: none; opacity: 0; transition: opacity .2s; }
+.clight.on { opacity: 1; }
+.clight.text { background: rgba(232, 77, 111, .14); box-shadow: inset 0 -2px 0 var(--accent); }
+.clight.spot { border-radius: 50%; box-shadow: 0 0 0 2px var(--accent), 0 0 0 7px rgba(232, 77, 111, .16); }
+.clight.box { border-radius: 2px; box-shadow: 0 0 0 2px var(--accent); }
+
+.ccard { position: absolute; width: 240px; max-height: 260px; overflow: auto; padding: 10px; border-radius: 10px; pointer-events: auto; background: var(--bar); color: var(--txt);
+  border: 1px solid var(--bar-line); box-shadow: 0 10px 30px rgba(0, 0, 0, .2); backdrop-filter: blur(20px); font: 12.5px var(--font); animation: card-in .24s var(--spring); }
+.ccard small { color: var(--faint); margin-bottom: 5px; }
+.ccard p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ccard.out { left: calc(100% + 44px); }
+.ccard.out.left { left: auto; right: calc(100% + 44px); }
+.ccard.in { right: -2px; }
+.ccard.in.left { right: auto; left: -2px; }
+.ccard.in.inside { right: 42px; }
+.ccard.in.inside.left { right: auto; left: 42px; }
+@keyframes card-in { from { transform: translateY(10px) scale(.96); opacity: 0; } }
+
+.veil { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; background: rgba(0, 0, 0, .12); animation: fade .2s; }
+@keyframes fade { from { opacity: 0; } }
+.card { width: 380px; max-width: calc(100% - 32px); padding: 20px; border-radius: 16px; background: var(--bar); border: 1px solid var(--bar-line);
+  box-shadow: inset 0 1px 0 var(--bar-hi), 0 24px 60px rgba(0, 0, 0, .3); backdrop-filter: blur(30px); animation: card-in .32s var(--spring); }
+.card h3 { margin: 0 0 12px; font-size: 16px; }
+.card .badge { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-ink); margin-bottom: 12px; }
+.card .badge .i { width: 22px; height: 22px; }
+.card small.bad { margin-top: 6px; }
+.card .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.fld { width: 100%; height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--field-line); background: var(--field); color: var(--txt); font: inherit; outline: none; }
+.fld:focus, .fld:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); outline: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cmark, .ccard, .card, .veil { animation: none; transition: none; }
+}

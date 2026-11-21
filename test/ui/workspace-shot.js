@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Opens the real workspace window on PDFs drawn here: the window's size, place and look in both themes (glass and the opaque
-// window of Windows 10), the options pdf.js is given, how many bytes a 40 MB, 300-page file costs to show its first page and while
-// idle, a file that is not a PDF, a file that is not there, and that the page is cut off from the network. Saves screenshots.
+// window of Windows 10), the options pdf.js is given, how many bytes a 40 MB, 3 000-page file costs to show its first page, while
+// idle and after scrolling 50 pages, the comments a file holds as markers beside the page, the scroll bars, a password-protected
+// file, a file that is not a PDF, a file that is not there, and that the page is cut off from the network. Saves screenshots.
 //   npx electron test/ui/workspace-shot.js
 const { app, BrowserWindow, ipcMain, nativeTheme, screen } = require('electron');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { PDFDocument, PDFRawStream, StandardFonts, rgb } = require('pdf-lib');
+const { PDFDocument, PDFName, PDFRawStream, PDFString, PDFHexString, StandardFonts, rgb } = require('pdf-lib');
 const { createWorkspace } = require('../../src/features/pdf-workspace');
 const { expect: check, failed } = require('../support/expect');
+const { encryptedPdf } = require('../support/encrypted-pdf');
 const finish = require('../support/finish');
 const { dir: tmpDir } = require('../support/tmp');
 
@@ -25,11 +27,14 @@ const glassHere = Number(os.release().split('.')[2]) >= 22621;
 let settings = { pdfView: { window: null } };
 const notices = [];
 const errors = [];
+const calls = [];
+const handle = ipcMain.handle.bind(ipcMain);
+ipcMain.handle = (channel, fn) => handle(channel, (event, ...args) => { calls.push({ channel, args }); return fn(event, ...args); });
 const setSettings = (patch) => { settings = { ...settings, ...patch }; };
 
 // One workspace per scenario: the IPC handlers belong to one at a time.
 const fresh = (options = {}) => {
-  for (const channel of ['pdfws:state', 'pdfws:read']) ipcMain.removeHandler(channel);
+  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock']) ipcMain.removeHandler(channel);
   const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, ...options });
   workspace.registerIpc();
   return workspace;
@@ -63,6 +68,27 @@ async function openAndWait(workspace, file) {
   win?.webContents.on('console-message', (e) => { if (e.level === 'error') errors.push(e.message); });
   if (win) await until('the first page', () => js(win, `!!document.querySelector('.page[data-loaded="true"] canvas') || !document.getElementById('failure').hidden`));
   return win;
+}
+
+// Two pages. On the first: a note, a highlight with no opacity and a highlight with a comment, all three with text, and a highlight
+// with none. Heights are PDF points from the bottom of an 842 pt page.
+async function makeCommentsPdf(name) {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const first = doc.addPage([595, 842]);
+  doc.addPage([595, 842]);
+  for (const [y, text] of [[705, 'Quarterly figures'], [505, 'Check this figure'], [405, 'No comment here']]) first.drawText(text, { x: 100, y, size: 14, font });
+  const annotation = (fields) => doc.context.register(doc.context.obj({ Type: 'Annot', F: 4, ...fields }));
+  const highlight = (rect, extra) => annotation({ Subtype: 'Highlight', Rect: rect, QuadPoints: [rect[0], rect[3], rect[2], rect[3], rect[0], rect[1], rect[2], rect[1]], C: [1, 1, 0], ...extra });
+  first.node.set(PDFName.of('Annots'), doc.context.obj([
+    annotation({ Subtype: 'Text', Name: 'Comment', Rect: [60, 700, 82, 722], Contents: PDFHexString.fromText('A note from Sam'), T: PDFHexString.fromText('Sam'), M: PDFString.of('D:20260105103000Z') }),
+    highlight([100, 704, 260, 722], { CA: 0, Contents: PDFHexString.fromText('Said before the meeting') }),
+    highlight([100, 500, 260, 520], { CA: 0.4, Contents: PDFHexString.fromText('Check this figure\nwith the team') }),
+    highlight([100, 400, 260, 420], { CA: 0.4 }),
+  ]));
+  const file = path.join(root, name);
+  fs.writeFileSync(file, await doc.save({ useObjectStreams: false }));
+  return file;
 }
 
 const inkOnFirstPage = (win) => js(win, `(() => { const c = document.querySelector('.page canvas'); if (!c) return -1; const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
@@ -175,19 +201,155 @@ app.whenReady().then(async () => {
     await closeAndWait(win);
   }
 
+  console.log('comments a file already holds are markers beside the page');
+  for (const theme of ['light', 'dark']) {
+    nativeTheme.themeSource = theme;
+    const win = await openAndWait(fresh(), await makeCommentsPdf('Comments.pdf'));
+    await sleep(800);
+    const look = () => js(win, `(() => {
+      const page = document.querySelector('.page[data-page-number="1"]'); const p = page.getBoundingClientRect();
+      const box = (n) => { const r = n.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, height: r.height }; };
+      return { page: box(page), marks: [...page.querySelectorAll('.cmark')].map(box), others: document.querySelectorAll('.page:not([data-page-number="1"]) .cmark').length,
+        sections: document.querySelectorAll('.annotationLayer section').length,
+        shown: [...document.querySelectorAll('.textAnnotation, .popupAnnotation')].filter((n) => getComputedStyle(n).display !== 'none').length };
+    })()`);
+    const centreOf = (v, pdfY) => v.page.top + ((842 - pdfY) / 842) * v.page.height;
+    const v = await look();
+    check(`${theme}: pdf.js draws its annotation layer, and no note icon or popup of its own is shown`, v.sections > 0 && v.shown === 0, JSON.stringify([v.sections, v.shown]));
+    check(`${theme}: three comments give three markers on the first page and none elsewhere`, v.marks.length === 3 && v.others === 0, JSON.stringify([v.marks.length, v.others]));
+    check(`${theme}: the markers sit outside the right edge of the page`, v.marks.every((m) => m.left >= v.page.right + 8 && m.right <= v.page.right + 40), JSON.stringify(v.marks.map((m) => [m.left, v.page.right])));
+    const [note, quiet, said] = v.marks;
+    check(`${theme}: the marker of the commented highlight is level with it`, Math.abs((said.top + said.bottom) / 2 - centreOf(v, 510)) < 1.5, `${(said.top + said.bottom) / 2} vs ${centreOf(v, 510)}`);
+    check(`${theme}: the note and the invisible highlight are almost at the same height, yet their markers do not overlap, the higher one level with its item`,
+      Math.abs(note.top - quiet.top) >= 27 && Math.abs((quiet.top + quiet.bottom) / 2 - centreOf(v, 713)) < 1.5, JSON.stringify([note.top, quiet.top, centreOf(v, 713)]));
+    const cardState = () => js(win, `({ cards: [...document.querySelectorAll('.ccard')].map((c) => c.textContent), on: document.querySelectorAll('.cmark.on').length,
+      lit: [...document.querySelectorAll('.clight')].filter((n) => getComputedStyle(n).opacity === '1').length })`);
+    await js(win, `document.querySelectorAll('.page[data-page-number="1"] .cmark')[2].click()`);
+    await sleep(400);
+    let c = await cardState();
+    const light = await js(win, `(() => { const r = document.querySelector('.clight.on').getBoundingClientRect(); return { left: r.left, width: r.width, top: r.top, height: r.height }; })()`);
+    check(`${theme}: opening a marker shows its comment, tints the marker and lights what the comment is about`, c.cards.length === 1 && c.cards[0] === 'Check this figure\nwith the team' && c.on === 1 && c.lit === 1
+      && Math.abs(light.left - (v.page.left + (100 / 595) * (v.page.right - v.page.left))) < 1.5 && Math.abs(light.width - (160 / 595) * (v.page.right - v.page.left)) < 1.5 && Math.abs(light.top - centreOf(v, 520)) < 1.5, JSON.stringify([c, light]));
+    await shot(win, `workspace-comment-${theme}.png`);
+    win.webContents.focus();
+    for (const type of ['keyDown', 'keyUp']) win.webContents.sendInputEvent({ type, keyCode: 'Escape' });
+    await sleep(400);
+    c = await cardState();
+    check(`${theme}: Esc closes the card and clears the light`, c.cards.length === 0 && c.on === 0 && c.lit === 0, JSON.stringify(c));
+    await js(win, `document.querySelectorAll('.page[data-page-number="1"] .cmark')[0].click()`);
+    await sleep(300);
+    c = await cardState();
+    check(`${theme}: a note shows who wrote it and when`, c.cards.length === 1 && c.cards[0] === 'Sam · 5 Jan 2026A note from Sam', JSON.stringify(c.cards));
+    await js(win, `document.querySelectorAll('.page[data-page-number="1"] .cmark')[1].click()`);
+    await sleep(300);
+    c = await cardState();
+    check(`${theme}: opening another marker closes the first`, c.cards.length === 1 && c.cards[0] === 'Said before the meeting' && c.on === 1, JSON.stringify(c));
+    await js(win, `document.querySelector('.page canvas').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`);
+    await sleep(300);
+    check(`${theme}: a click anywhere else closes it`, (await cardState()).cards.length === 0);
+    await js(win, `document.querySelectorAll('.page[data-page-number="1"] .cmark')[2].click()`);
+    await js(win, `document.querySelectorAll('.page[data-page-number="1"] .cmark')[2].click()`);
+    check(`${theme}: a second click on the same marker closes it`, (await cardState()).cards.length === 0);
+
+    if (theme === 'light') {
+      await js(win, 'workspaceViewer.viewer.spreadMode = 1');
+      await sleep(900);
+      const two = await look();
+      check('in two-page view the left page has its markers on its left', two.marks.length === 3 && two.marks.every((m) => m.right <= two.page.left - 8), JSON.stringify([two.marks.map((m) => m.right), two.page.left]));
+      await js(win, 'workspaceViewer.viewer.spreadMode = 0');
+      await sleep(900);
+      await js(win, `workspaceViewer.viewer.currentScaleValue = 'page-width'`);
+      await sleep(1200);
+      const wide = await look();
+      check('with no room beside the page the markers move just inside its edge', wide.marks.length === 3 && wide.marks.every((m) => m.right <= wide.page.right && m.left >= wide.page.left), JSON.stringify([wide.marks.map((m) => [m.left, m.right]), wide.page]));
+      await js(win, `workspaceViewer.viewer.currentScaleValue = 'page-fit'`);
+      await sleep(900);
+
+      console.log('scroll bars');
+      // The pointer may be over the window, which would show the thumb, so the colours are read from a scroller it cannot reach.
+      const probe = await js(win, `(async () => { const n = document.createElement('div'); n.className = 'scroller'; n.style.pointerEvents = 'none'; document.querySelector('.well').append(n);
+        const colour = () => getComputedStyle(n).scrollbarColor; const rest = colour(); n.classList.add('scrolling'); await new Promise((r) => setTimeout(r, 600)); const scrolling = colour(); n.remove(); return { rest, scrolling }; })()`);
+      check('at rest the scroll bar thumb is transparent, and while the area scrolls it shows', /^rgba\(0, 0, 0, 0\) rgba\(0, 0, 0, 0\)$/.test(probe.rest) && !probe.scrolling.startsWith('rgba(0, 0, 0, 0)'), JSON.stringify(probe));
+      await js(win, `document.getElementById('scroller').scrollTop = 120`);
+      await sleep(300);
+      const marked = await js(win, `document.getElementById('scroller').classList.contains('scrolling')`);
+      await sleep(1500);
+      check('scrolling the document marks it, and the mark is gone 0.9 s after it stops', marked && !(await js(win, `document.getElementById('scroller').classList.contains('scrolling')`)));
+    }
+    await closeAndWait(win);
+  }
+  nativeTheme.themeSource = 'light';
+
+  console.log('a password-protected file');
+  {
+    const secret = `Pw-${crypto.randomBytes(6).toString('hex')}`;
+    const locked = path.join(root, 'Locked.pdf');
+    fs.writeFileSync(locked, encryptedPdf(secret));
+    const askedFor = (win) => until('the password dialog', () => js(win, `!!document.querySelector('.veil input')`));
+    const submit = (win, text) => js(win, `(() => { const f = document.querySelector('.veil input'); f.value = ${JSON.stringify(text)}; document.querySelector('.veil .primary').click(); })()`);
+
+    let workspace = fresh();
+    calls.length = 0;
+    await workspace.open([locked]);
+    let win = workspace.getWindow();
+    win.webContents.on('console-message', (e) => { if (e.level === 'error') errors.push(e.message); });
+    await askedFor(win);
+    const dialog = await js(win, `({ title: document.querySelector('.veil h3').textContent, type: document.querySelector('.veil input').type, hint: document.querySelector('.veil input').placeholder,
+      buttons: [...document.querySelectorAll('.veil button')].map((b) => b.textContent), focused: document.activeElement === document.querySelector('.veil input'), pages: document.querySelectorAll('.page').length })`);
+    check('a protected file asks for its password, in a field that hides what is typed, and shows no page yet', dialog.title === 'This file is password-protected' && dialog.type === 'password' && dialog.hint === 'Password' && dialog.buttons.join() === 'Cancel,Open' && dialog.focused && dialog.pages === 0, JSON.stringify(dialog));
+    await sleep(500);
+    await shot(win, 'workspace-password.png');
+    await submit(win, 'not the password');
+    await until('the second ask', () => js(win, `!!document.querySelector('.veil .bad')`));
+    check('a wrong password says so and asks again', (await js(win, `document.querySelector('.veil .bad').textContent`)) === 'Wrong password');
+    await js(win, `window.keep = document.querySelector('.veil input')`);
+    await submit(win, secret);
+    await until('the first page', () => js(win, `!!document.querySelector('.page[data-loaded="true"] canvas')`));
+    check('the right password opens the file, and the field was emptied and removed', (await js(win, `({ veil: !!document.querySelector('.veil'), field: window.keep.value, failure: document.getElementById('failure').hidden })`)).veil === false
+      && (await js(win, `window.keep.value`)) === '' && (await inkOnFirstPage(win)) > 100);
+    const sent = calls.filter((call) => JSON.stringify(call.args).includes(secret));
+    check('the password reached the main process once, through the unlock call only, and the wrong one never did', sent.length === 1 && sent[0].channel === 'pdfws:unlock' && sent[0].args[1] === secret && !JSON.stringify(calls).includes('not the password'), JSON.stringify(calls.map((c) => c.channel)));
+    check('the window title does not carry it', !win.getTitle().includes(secret));
+    await closeAndWait(win);
+
+    workspace = fresh();
+    calls.length = 0;
+    await workspace.open([locked]);
+    win = workspace.getWindow();
+    await askedFor(win);
+    await js(win, `document.querySelector('.veil .btn:not(.primary)').click()`);
+    await until('the failure', () => js(win, `!document.getElementById('failure').hidden`));
+    check('cancelling shows that the file is password-protected, and the main process was told nothing', (await js(win, `document.getElementById('failure').textContent`)) === 'This file is password-protected' && !calls.some((c) => c.channel === 'pdfws:unlock'));
+    await closeAndWait(win);
+
+    workspace = fresh();
+    calls.length = 0;
+    await workspace.open([locked]);
+    win = workspace.getWindow();
+    for (let attempt = 1; attempt <= 3; attempt++) { await askedFor(win); await submit(win, `wrong ${attempt}`); await sleep(300); }
+    await until('the failure', () => js(win, `!document.getElementById('failure').hidden`));
+    check('three wrong passwords end in the same message, with no further question', (await js(win, `document.getElementById('failure').textContent`)) === 'This file is password-protected' && (await js(win, `!document.querySelector('.veil')`)) && !calls.some((c) => c.channel === 'pdfws:unlock'));
+    await closeAndWait(win);
+  }
+
   console.log('a big file costs nothing until it is read');
   {
-    const big = await makePdf('Big.pdf', 300, { extraBytes: 40 * 1048576 });
+    const big = await makePdf('Big.pdf', 3000, { extraBytes: 40 * 1048576 });
     const size = fs.statSync(big).size;
     const workspace = fresh();
     const win = await openAndWait(workspace, big);
     await sleep(500);
     const first = workspace.served();
     const canvases = await js(win, `document.querySelectorAll('.page canvas').length`);
-    check(`opening ${Math.round(size / 1048576)} MB with 300 pages serves under 4 MB to draw the first page (${(first / 1048576).toFixed(2)} MB)`, first > 0 && first < 4 * 1048576, String(first));
-    check('the document has 300 pages and fewer than 20 of them are drawn', (await js(win, `document.querySelectorAll('.page').length`)) === 300 && canvases > 0 && canvases < 20, String(canvases));
+    check(`opening ${Math.round(size / 1048576)} MB with 3 000 pages serves under 4 MB to draw the first page (${(first / 1048576).toFixed(2)} MB)`, first > 0 && first < 4 * 1048576, String(first));
+    check('the document has 3 000 pages and fewer than 20 of them are drawn', (await js(win, `document.querySelectorAll('.page').length`)) === 3000 && canvases > 0 && canvases < 20, String(canvases));
     await sleep(5000);
     check('five idle seconds later nothing more has been read', workspace.served() === first, `${first} -> ${workspace.served()}`);
+    const reach = await js(win, `document.querySelectorAll('.page')[50].getBoundingClientRect().top - document.getElementById('scroller').getBoundingClientRect().top + document.getElementById('scroller').scrollTop`);
+    for (let step = 1; step <= 10; step++) { await js(win, `document.getElementById('scroller').scrollTop = ${(reach * step) / 10}`); await sleep(250); }
+    await sleep(1500);
+    const scrolled = await js(win, `({ canvases: document.querySelectorAll('.page canvas').length, page: workspaceViewer.viewer.currentPageNumber })`);
+    check('after scrolling 50 pages the view is at page 51, fewer than 20 pages are drawn and under 5 % of the file was read', scrolled.page === 51 && scrolled.canvases > 0 && scrolled.canvases < 20 && workspace.served() < size * 0.05, `${JSON.stringify(scrolled)} ${workspace.served()} of ${size}`);
     await closeAndWait(win);
     check('closing the window closes the file', workspace.served() === 0 && (() => { try { fs.rmSync(big); return true; } catch { return false; } })());
   }
