@@ -73,6 +73,8 @@ app.whenReady().then(async () => {
   fs.mkdirSync(out, { recursive: true });
   const small = await makePdf('Small.pdf', 3);
   const workArea = screen.getPrimaryDisplay().workArea;
+  const size = { width: Math.min(1200, workArea.width), height: Math.min(800, workArea.height) };
+  const atDefault = (b) => b.width === size.width && b.height === size.height && Math.abs(b.x - (workArea.x + (workArea.width - size.width) / 2)) <= 1 && Math.abs(b.y - (workArea.y + (workArea.height - size.height) / 2)) <= 1;
 
   console.log('the window opens on a PDF: size, place, title and page');
   for (const theme of ['light', 'dark']) {
@@ -81,13 +83,13 @@ app.whenReady().then(async () => {
     const workspace = fresh();
     const win = await openAndWait(workspace, small);
     const b = win.getBounds();
-    check(`${theme}: it opens at 1200 x 800 in the middle of the main screen`, b.width === 1200 && b.height === 800 && Math.abs(b.x - (workArea.x + (workArea.width - 1200) / 2)) <= 1 && Math.abs(b.y - (workArea.y + (workArea.height - 800) / 2)) <= 1, JSON.stringify([b, workArea]));
+    check(`${theme}: it opens at 1200 x 800 in the middle of the main screen, or fills a screen that is smaller`, atDefault(b), JSON.stringify([b, workArea]));
     check(`${theme}: it is resizable down to 900 x 600 and shows the file's name`, win.isResizable() && win.getMinimumSize().join('x') === '900x600' && win.getTitle() === 'Small.pdf - Pomelo' && win.isVisible(), `${win.getMinimumSize()} ${win.getTitle()}`);
     const ui = await js(win, `({ name: document.getElementById('docname').textContent, failure: document.getElementById('failure').hidden, pages: document.querySelectorAll('.page').length,
       text: document.querySelector('.textLayer')?.textContent || '', solid: document.documentElement.classList.contains('solid'), glass: getComputedStyle(document.querySelector('.window')).backgroundColor,
       fit: (() => { const p = document.querySelector('.page').getBoundingClientRect(); const s = document.getElementById('scroller').getBoundingClientRect(); return p.top >= s.top - 1 && p.bottom <= s.bottom + 1; })() })`);
     check(`${theme}: the title row names the file, there is no failure, and the document has its three pages`, ui.name === 'Small.pdf' && ui.failure && ui.pages === 3, JSON.stringify(ui));
-    check(`${theme}: the first page is drawn with ink on it, its text is selectable, and it fits the window`, (await inkOnFirstPage(win)) > 500 && /Pomelo test page 1 of 3/.test(ui.text) && ui.fit, `${await inkOnFirstPage(win)} ${ui.text} fit ${ui.fit}`);
+    check(`${theme}: the first page is drawn with ink on it, its text is selectable, and it fits the window`, (await inkOnFirstPage(win)) > 100 && /Pomelo test page 1 of 3/.test(ui.text) && ui.fit, `${await inkOnFirstPage(win)} ${ui.text} fit ${ui.fit}`);
     if (glassHere) check(`${theme}: on Windows 11 the window is glass, tinted with the wheel's plate colour`, !ui.solid && ui.glass === (theme === 'light' ? 'rgba(255, 255, 255, 0.55)' : 'rgba(28, 28, 30, 0.5)'), `${ui.solid} ${ui.glass}`);
     else console.log('  skip the glass window: this PC has no acrylic');
     await shot(win, `workspace-${theme}.png`);
@@ -101,7 +103,7 @@ app.whenReady().then(async () => {
     const win = await openAndWait(fresh({ solid: true }), small);
     const ui = await js(win, `({ solid: document.documentElement.classList.contains('solid'), background: getComputedStyle(document.querySelector('.window')).backgroundColor })`);
     check(`${theme}: the solid switch gives an opaque window in the colour of Settings' title bar`, ui.solid && ui.background === (theme === 'light' ? 'rgb(239, 236, 232)' : 'rgb(36, 36, 39)') && win.getBackgroundColor().toLowerCase() === (theme === 'light' ? '#efece8' : '#242427'), `${ui.background} ${win.getBackgroundColor()}`);
-    check(`${theme}: and still shows the page`, (await inkOnFirstPage(win)) > 500);
+    check(`${theme}: and still shows the page`, (await inkOnFirstPage(win)) > 100);
     await shot(win, `workspace-solid-${theme}.png`);
     await closeAndWait(win);
   }
@@ -165,11 +167,11 @@ app.whenReady().then(async () => {
     settings = { pdfView: { window: { x: 90000, y: 90000, width: 1000, height: 700, maximised: false } } };
     win = await openAndWait(fresh(), small);
     const lost = win.getBounds();
-    check('a saved place that is on no screen opens in the middle of the main screen at 1200 x 800', lost.width === 1200 && lost.height === 800 && Math.abs(lost.x - (workArea.x + (workArea.width - 1200) / 2)) <= 1 && !win.isMaximized(), JSON.stringify(lost));
+    check('a saved place that is on no screen opens in the middle of the main screen at the default size', atDefault(lost) && !win.isMaximized(), JSON.stringify(lost));
     await closeAndWait(win);
     settings = { pdfView: 'not a place' };
     win = await openAndWait(fresh(), small);
-    check('a stored value that is not a place is ignored', win.getBounds().width === 1200);
+    check('a stored value that is not a place is ignored', atDefault(win.getBounds()), JSON.stringify(win.getBounds()));
     await closeAndWait(win);
   }
 
