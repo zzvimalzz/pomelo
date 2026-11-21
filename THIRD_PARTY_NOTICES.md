@@ -56,6 +56,11 @@ Installed by `npm run setup:pdf`.
 | pillow-heif | 1.8.1 | BSD-3-Clause (wheels bundle libheif LGPL-3.0, libde265 LGPL-3.0 and the x265 encoder GPL-2.0-or-later) |
 | Pillow | 13.0.0 | MIT-CMU |
 | typing_extensions | 4.16.0 | PSF-2.0 |
+| msoffcrypto-tool | 6.1.0 | MIT |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause |
+| olefile | 0.47 | BSD-2-Clause |
+| cffi | 2.1.1 | MIT-0 |
+| pycparser | 3.12 | BSD-3-Clause |
 
 ## npm packages (159)
 

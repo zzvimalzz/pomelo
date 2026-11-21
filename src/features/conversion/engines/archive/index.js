@@ -10,11 +10,12 @@ const path = require('path');
 const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
 const { run } = require('../../engine-kit/run');
+const { currentContext, PasswordError } = require('../../engine-kit/context');
+const { sevenZip: runSevenZip } = require('../../engine-kit/seven-zip');
 const { scaled } = require('../../engine-kit/progress');
 const { uniquePath } = require('../../engine-kit/outputs');
 const { withTempDir, withTempFile } = require('#shared/node/fs');
 const { bundled } = require('#shared/node/paths');
-const { parsePercent } = require('#shared/node/process');
 
 const BSDTAR = path.join(process.env.SystemRoot || 'C:/Windows', 'System32', 'tar.exe');
 const FROM = new Set(['zip', '7z', 'tar', 'gz', 'rar']);
@@ -28,12 +29,7 @@ function detect() {
   } catch { return null; }
 }
 
-// 7-Zip prints "  42%" while it works (-bsp1 sends that to stdout); report(0..1) gets it.
-const sevenZip = (engines, args, { report, ...opts } = {}) => run(engines.sevenZip, ['-bsp1', '-y', ...args], {
-  timeout: 3600000,
-  onLine: report && ((line) => { const p = parsePercent(line); if (p !== undefined) report(p); }),
-  ...opts,
-});
+const sevenZip = (engines, args, opts) => runSevenZip(engines.sevenZip, args, opts);
 
 // A read stream that reports how much of the file has been read (for the steps zlib does itself).
 function watched(file, report) {
@@ -81,7 +77,7 @@ async function extract(src, from, dest, engines, report) {
     // tar.exe cannot open non-ASCII paths, so read a copy that has an ASCII name
     await withTempFile('rar', async (staged) => {
       fs.copyFileSync(src, staged);
-      await run(BSDTAR, ['-xf', staged, '-C', dest], { timeout: 3600000 });
+      await run(BSDTAR, ['-xf', staged, '-C', dest], { timeout: 3600000 }).catch((e) => { throw /encrypt|passphrase/i.test(e.message) ? new PasswordError('unsupported') : e; });
     });
     report?.(1);
   } else if (from === 'gz' && !(await gzIsTar(src))) {
@@ -93,7 +89,7 @@ async function extract(src, from, dest, engines, report) {
       await sevenZip(engines, ['x', `-o${dest}`, tar], { report: scaled(report, 0.5, 0.5) });
     });
   } else {
-    await sevenZip(engines, ['x', `-o${dest}`, src], { report });             // zip, 7z, tar
+    await sevenZip(engines, ['x', `-o${dest}`, src], { report, password: currentContext()?.password });   // zip, 7z, tar
   }
   assertContained(dest);
 }

@@ -6,3 +6,4 @@ python-docx
 pillow-heif
 rapidocr==3.10.0
 onnxruntime
+msoffcrypto-tool==6.1.0

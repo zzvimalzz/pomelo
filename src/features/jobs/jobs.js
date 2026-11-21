@@ -20,7 +20,7 @@ class Jobs extends EventEmitter {
     super();
     if (!formats?.extOf || !formats.kinds) throw new Error('Jobs needs formats = { extOf, kinds }');
     this.formats = formats;
-    this.convert = convert;          // async (src, to, { onProgress, signal }) => [output paths]
+    this.convert = convert;          // async (src, to, { onProgress, signal, password }) => [output paths]
     this.timings = timings;
     this.now = now;
     this.ticker = null;              // redraws the cards twice a second while something runs, so the ring and the time left move
@@ -36,15 +36,16 @@ class Jobs extends EventEmitter {
 
   active() { return this.batch.filter((j) => j.state === 'queued' || j.state === 'working'); }
 
-  // label: what the user sees for the target, e.g. "PDF"
-  addConversion(src, to, label) {
+  // label: what the user sees for the target, e.g. "PDF". password: a Buffer for a protected file; the job owns it and overwrites it
+  // when it ends or is cancelled, and it is never part of what the toast is sent.
+  addConversion(src, to, label, password = null) {
     if (!this.active().length) {                                                // a new burst starts
       if (this.mode === 'summary') this.items = this.items.filter((i) => i.kind !== 'job');   // the old summary stands in for them
       this.batch = [];
       this.mode = 'stack';
     }
     const job = { id: `job${++this.seq}`, kind: 'job', src, to, label, name: path.basename(src), key: `${src.toLowerCase()}|${to}`,
-      state: 'queued', progress: null, outPath: null, error: null, controller: new AbortController() };
+      state: 'queued', progress: null, outPath: null, error: null, controller: new AbortController(), password };
     this.batch.push(job);
     this.items.unshift(job);
     if (this.active().length > this.maxStack) this.mode = 'summary';
@@ -70,11 +71,14 @@ class Jobs extends EventEmitter {
     for (const job of targets) {
       this.queue = this.queue.filter((q) => q !== job);
       job.state = 'cancelled';
+      this.forget(job);
       job.controller.abort();                                                   // kills helper programs, deletes partial output
       this.items = this.items.filter((i) => i !== job);
     }
     if (targets.length) { this.changed(); this.pump(); }
   }
+
+  forget(job) { job.password?.fill(0); job.password = null; }
 
   // The card was clicked.
   activate(id) { this.items.find((i) => i.id === id)?.onClick?.(); }
@@ -119,7 +123,7 @@ class Jobs extends EventEmitter {
     this.startTicker();
     this.changed();
     try {
-      const outs = await this.convert(job.src, job.to, { signal: job.controller.signal, onProgress: (f) => { if (job.state === 'working' && Number.isFinite(f)) { job.progress = Math.max(job.progress || 0, Math.min(1, f)); this.changed(); } } });
+      const outs = await this.convert(job.src, job.to, { signal: job.controller.signal, password: job.password, onProgress: (f) => { if (job.state === 'working' && Number.isFinite(f)) { job.progress = Math.max(job.progress || 0, Math.min(1, f)); this.changed(); } } });
       if (job.state === 'working') {
         job.outPath = outs[0];
         job.state = 'done';
@@ -128,6 +132,7 @@ class Jobs extends EventEmitter {
     } catch (e) {
       if (job.state === 'working') { job.error = e.message; job.state = 'error'; }
     } finally {
+      this.forget(job);
       this.running--;
       this.trim();
       this.changed();

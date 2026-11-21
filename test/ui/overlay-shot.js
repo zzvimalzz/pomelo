@@ -99,6 +99,11 @@ app.whenReady().then(async () => {
   await mouse('click', 330, 205);
   await sleep(100);
   check('clicking a format picks it', picked.join() === docx[2].id, picked.join());
+  await mouse('click', 330, 205);
+  await sleep(100);
+  check('a second click while the files are being checked picks nothing more', picked.length === 1, String(picked.length));
+  win.webContents.send('wheel:open', { info: { name: 'report.docx', ext: 'docx', group: 'doc', count: 1 }, targets: docx, pick: true });
+  await sleep(700);
   await mouse('click', 200, 200);
   await input(`new KeyboardEvent('keydown', { key: 'Escape' })`);
   await sleep(100);

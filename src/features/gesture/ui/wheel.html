@@ -5,9 +5,11 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:">
   <title>Pomelo</title>
   <link rel="stylesheet" href="../../../ui-shared/tokens.css">
+  <link rel="stylesheet" href="../../../ui-shared/controls.css">
   <link rel="stylesheet" href="../../../ui-shared/wheel-look.css">
   <link rel="stylesheet" href="../../../ui-shared/wheel-icons.css">
   <link rel="stylesheet" href="wheel.css">
+  <link rel="stylesheet" href="unlock.css">
 </head>
 <body>
   <div id="stage" class="stage">
@@ -17,10 +19,14 @@
       <g id="segments"></g>
       <g id="center"></g>
     </svg>
+    <div id="card" class="cwrap"></div>
   </div>
+  <script src="../../../ui-shared/dom.js"></script>
+  <script src="../../../ui-shared/icons.js"></script>
   <script src="../../../ui-shared/wheel-shapes.js"></script>
   <script src="../../../ui-shared/wheel-glyphs.js"></script>
   <script src="../../../ui-shared/wheel-icons.js"></script>
+  <script src="unlock.js"></script>
   <script src="wheel.js"></script>
 </body>
 </html>

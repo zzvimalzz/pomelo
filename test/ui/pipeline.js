@@ -28,7 +28,7 @@ app.whenReady().then(async () => {
   const helper = new EventEmitter();
   helper.down = () => {};
   helper.files = async () => selection;
-  const overlay = new WheelWindow({ onDrop: (paths, to) => flow.onDrop(paths, to) });
+  const overlay = new WheelWindow({ onDrop: (paths, to) => flow.onDrop(paths, to), onUnlock: (request) => flow.onUnlock(request), onUnlockEnd: () => flow.onUnlockEnd() });
   overlay.create();
   const opened = [];
   const flow = createDropFlow({ conversion: convert, getWheel: () => overlay, getJobs: () => ({ addInfo: () => {} }), openPdfs: (paths) => opened.push(...paths), keysSupported: () => true, log: () => {} });

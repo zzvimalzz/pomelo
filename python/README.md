@@ -14,6 +14,7 @@ An entry point is run with `python -W ignore <script> <arguments>`. Libraries ar
 | `pdf_to_text.py` | entry | PDF to Markdown, HTML or plain text: `<in.pdf> <out> <md\|html\|txt> [images folder]` |
 | `pdf_to_tables.py` | entry | The tables of a PDF as JSON for the Excel writer: `<in.pdf> <out.json>` |
 | `pdf_to_layout.py` | entry | Text with exact positions, plus background pictures, for the PowerPoint writer: `<in.pdf> <out folder>` |
+| `unlock.py` | entry | A PDF or Office file that has a password: `probe <in>` prints `LOCKED` or `OPEN` (for the pre-2007 Office files); `open <in> [<out>]` reads the password as the first line of standard input and writes the file without it to `<out>`, or only checks it. Exit 4 means a wrong password (stderr says `POMELO_LOCK wrong`) and 5 a protection it cannot open or a damaged file |
 | `image_to_heic.py` | entry | An image to HEIC: `<in image> <out.heic>` |
 | `helper.py` | library | `require()`, `progress()`, `exit_no_text()` and `run_pdf_job()` |
 | `pdf_ocr.py` | library | Reads scanned pages with RapidOCR (the PP-OCR models its package ships, so nothing is downloaded) into a temporary PDF with real text; the faint show-through of the other side of a sheet is not written, and a line slanted against the others (a stamp) is written invisibly |
@@ -40,6 +41,7 @@ The Node side depends on these (`test/integration/python/cli-contract.test.js` c
 - Arguments as in the table.
 - `POMELO_PROGRESS <0..1>` lines on stdout while it works, and `OK` at the end.
 - On failure, one line on stderr and an exit code: 1 failed, 2 a component is not installed, 3 the PDF has no text to convert.
+- `unlock.py` adds exit codes 4 and 5 and takes the password on standard input, never as an argument.
 - The messages for a password-protected, a damaged and a page-less PDF, and for a scan when OCR is not installed. The tests assert on them.
 
 ## Testing
