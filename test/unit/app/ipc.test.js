@@ -29,8 +29,10 @@ const stored = [];
 require(path.join(features, 'settings', 'settings.ipc')).registerSettingsIpc({ store: { get: () => ({}), set: (patch) => stored.push(patch) }, getState: noop, onChange: noop, logPath: noop, describe: noop, history: noop });
 const served = [];
 const unlocked = [];
+const focused = [];
 require(path.join(features, 'pdf-workspace', 'workspace.ipc')).registerWorkspaceIpc({
-  documents: { read: (...args) => { served.push(args); return 'bytes'; }, unlock: (...args) => { unlocked.push(args); } }, state: () => ({ documents: [] }), isWorkspace: (sender) => sender === 'the workspace page',
+  documents: { read: (...args) => { served.push(args); return 'bytes'; }, unlock: (...args) => { unlocked.push(args); } }, state: () => ({ documents: [] }),
+  setFocus: (on) => focused.push(on), isWorkspace: (sender) => sender === 'the workspace page',
 });
 require(path.join(features, 'engine-setup', 'engine-setup.ipc')).registerEngineSetupIpc({ installer: {}, getEngines: noop, ...quiet });
 require(path.join(features, 'updates', 'updates.ipc')).registerUpdatesIpc({ current: '0.0.0', autoCheck: {}, onChecked: noop, isPackaged: false, execPath: '', isSettingsOpen: noop, downloader: {}, stopForUpdate: noop, exit: noop, ...quiet });
@@ -52,6 +54,11 @@ expect('another page is refused the document state, the bytes and the password',
 expect('the workspace page is answered', handlers['pdfws:read']({ sender: 'the workspace page' }, 'token', 0, 10) === 'bytes' && JSON.stringify(served) === '[["token",0,10]]' && handlers['pdfws:state']({ sender: 'the workspace page' }).documents.length === 0);
 handlers['pdfws:unlock']({ sender: 'the workspace page' }, 'token', 'secret');
 expect('the workspace page can give the password of its document', JSON.stringify(unlocked) === '[["token","secret"]]');
+
+// Only the workspace window's own page may ask for full screen, and only with a plain true or false.
+expect('another page cannot change full screen', refused(() => handlers['pdfws:focus']({ sender: 'another page' }, true)) && focused.length === 0);
+for (const on of [true, false, 'yes', 1, undefined]) handlers['pdfws:focus']({ sender: 'the workspace page' }, on);
+expect('the workspace page can enter and leave full screen, and anything but true leaves it', JSON.stringify(focused) === '[true,false,false,false,false]', JSON.stringify(focused));
 
 // Only the wheel page may send a password, and only in the one shape the card uses.
 const unlockBad = [['another page', { token: 't', password: 'p', all: false }], ['the wheel page', null], ['the wheel page', { token: 1, password: 'p', all: false }], ['the wheel page', { token: 't', password: 5, all: false }], ['the wheel page', { token: 't', password: 'p', all: 'yes' }]];
@@ -80,7 +87,7 @@ const orphaned = [...handled].filter((c) => !asked.has(c));
 
 expect(`every channel a page sends has a handler (${asked.size} channels)`, missing.length === 0, missing.join(', '));
 expect('every handler answers a channel some page sends', orphaned.length === 0, orphaned.join(', '));
-expect('invoke channels are handled with handle, so the page gets an answer', ['settings:get', 'settings:set', 'wheel:unlock', 'pdfws:state', 'pdfws:read', 'pdfws:unlock', 'engines:install', 'app:uninstall', 'updates:check', 'updates:download', 'updates:install'].every((c) => registered.handle.has(c)));
+expect('invoke channels are handled with handle, so the page gets an answer', ['settings:get', 'settings:set', 'wheel:unlock', 'pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus', 'engines:install', 'app:uninstall', 'updates:check', 'updates:download', 'updates:install'].every((c) => registered.handle.has(c)));
 
 // What the main process sends to a page, with webContents.send or the sendToSettings helper, anywhere under src.
 const sent = new Set();

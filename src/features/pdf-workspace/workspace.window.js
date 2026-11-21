@@ -36,10 +36,11 @@ function create({ asset, solid, saved, onBounds }) {
   if (start.maximised) win.maximize();
 
   let timer = null;
-  const save = () => onBounds({ ...win.getNormalBounds(), maximised: win.isMaximized(), savedAt: Date.now() });
+  const save = () => { if (!win.isFullScreen()) onBounds({ ...win.getNormalBounds(), maximised: win.isMaximized(), savedAt: Date.now() }); };
   const later = () => { clearTimeout(timer); timer = setTimeout(save, 400); };
   for (const event of ['move', 'resize', 'maximize', 'unmaximize']) win.on(event, later);
   win.on('close', () => { clearTimeout(timer); save(); });
+  for (const [event, on] of [['enter-full-screen', true], ['leave-full-screen', false]]) win.on(event, () => win.webContents.send('pdfws:focus-changed', on));
   win.on('closed', () => nativeTheme.off('updated', restyle));
 
   win.loadFile(path.join(__dirname, 'ui', 'workspace.html'), solid ? { query: { solid: '1' } } : undefined);

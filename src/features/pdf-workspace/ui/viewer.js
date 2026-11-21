@@ -3,6 +3,7 @@
 // A classic script that adds window.workspaceViewer. pdf.js ships as ES modules only, so it is loaded with import().
 (() => {
   const SPAN = 4 * 1048576;
+  const PRESETS = ['page-fit', 'page-width'];
   const root = new URL('../../../../node_modules/pdfjs-dist/', location.href).href;
 
   const loading = import(`${root}build/pdf.mjs`).then(async (lib) => {
@@ -69,9 +70,10 @@
     linkService.setViewer(viewer);
     api.viewer = viewer;
     window.workspaceComments.watch(viewer, eventBus, container);
-    const fit = () => { if (viewer.pagesCount) viewer.currentScaleValue = 'page-fit'; };
-    eventBus.on('pagesinit', fit);
-    new ResizeObserver(fit).observe(container);
+    window.workspaceDock.watch(viewer, eventBus, container);
+    eventBus.on('pagesinit', () => { viewer.currentScaleValue = 'page-fit'; });
+    // A fit keeps fitting as the window changes size; a zoom the user chose stays as it is.
+    new ResizeObserver(() => { const zoom = viewer.currentScaleValue; if (viewer.pagesCount && PRESETS.includes(zoom)) viewer.currentScaleValue = zoom; }).observe(container);
     let resting = null;
     container.addEventListener('scroll', () => {
       container.classList.add('scrolling');

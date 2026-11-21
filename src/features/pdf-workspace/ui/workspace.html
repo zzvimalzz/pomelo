@@ -14,10 +14,14 @@
 </head>
 <body>
   <div class="window">
-    <header class="titlerow"><b id="docname"></b></header>
+    <header class="titlerow">
+      <b id="docname"></b>
+      <div class="titletools"><button class="ib" id="focus" type="button"></button></div>
+    </header>
     <main class="well">
-      <div class="scroller" id="scroller"><div class="pdfViewer" id="viewer"></div></div>
+      <div class="scroller" id="scroller" tabindex="-1"><div class="pdfViewer" id="viewer"></div></div>
       <p class="failure" id="failure" hidden></p>
+      <div class="edgehint"></div>
     </main>
   </div>
   <script src="../../../ui-shared/dom.js"></script>
@@ -25,9 +29,12 @@
   <script src="../../../ui-shared/wheel-shapes.js"></script>
   <script src="../../../ui-shared/wheel-glyphs.js"></script>
   <script src="../../../ui-shared/wheel-icons.js"></script>
+  <script src="keys.js"></script>
   <script src="comments-margin.js"></script>
   <script src="dialogs.js"></script>
+  <script src="dock.js"></script>
   <script src="viewer.js"></script>
+  <script src="focus.js"></script>
   <script src="workspace.js"></script>
 </body>
 </html>
