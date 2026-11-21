@@ -3,7 +3,17 @@
 :root {
   --accent: #e84d6f; --txt: #1c1c1e; --ok: #1e9e5a; --err: #e5483d; --line: rgba(0, 0, 0, 0.08);
   --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --accent-2: #bf2f4f;
+  --bg: #f6f4f1; --chrome: #efece8; --side: #ece9e4; --card: #ffffff; --raise: #ffffff;
+  --muted: rgba(28, 28, 30, .56); --off: rgba(0, 0, 0, .06); --hover: rgba(0, 0, 0, .045);
+  --ok-bg: rgba(30, 158, 90, .12); --lift: 0 1px 2px rgba(40, 25, 15, .06);
+  --ease: cubic-bezier(.2, .8, .2, 1);
 }
 @media (prefers-color-scheme: dark) {
-  :root { --txt: #f5f5f7; --line: rgba(255, 255, 255, 0.1); }
+  :root {
+    --txt: #f5f5f7; --line: rgba(255, 255, 255, 0.1);
+    --bg: #1c1c1e; --chrome: #242427; --side: #202023; --card: #2a2a2d; --raise: #343438;
+    --muted: rgba(255, 255, 255, .58); --off: rgba(255, 255, 255, .08); --hover: rgba(255, 255, 255, .06);
+    --ok-bg: rgba(76, 208, 138, .14); --lift: 0 1px 2px rgba(0, 0, 0, .3);
+  }
 }
