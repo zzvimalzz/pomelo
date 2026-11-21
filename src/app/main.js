@@ -98,7 +98,7 @@ app.whenReady().then(async () => {
   helper.start();
 
   flow = createDropFlow({ conversion, getWheel: () => wheel, getJobs: () => jobs, openPdfs: showPdf, keysSupported: () => helper.keysSupported, log });
-  wheel = new WheelWindow({ onDrop: flow.onDrop });
+  wheel = new WheelWindow({ onDrop: flow.onDrop, onUnlock: flow.onUnlock, onUnlockEnd: flow.onUnlockEnd, onExpire: flow.onExpire, icon: asset('icon.png') });
   wheel.create();
   jobs = new Jobs({
     formats: conversion.timingFormats,
@@ -114,7 +114,7 @@ app.whenReady().then(async () => {
   trigger.on('switch', flow.onSwitch);
   trigger.on('unsupported', () => jobs.addInfo({ title: 'Nothing to convert here', detail: 'Drag a file or folder from Explorer or the desktop.' }));
   trigger.on('release', () => wheel.releaseSoon());
-  trigger.on('cancel', () => wheel.hide());
+  trigger.on('cancel', () => { if (!wheel.asking) wheel.hide(); });
   trigger.start();
 
   tray = createTray({

@@ -113,7 +113,21 @@ const rejection = async (p) => { try { await p; return null; } catch (e) { retur
     const progress = [];
     await runStatus(...node("console.log('Downloading 10 MB / 20 MB'); console.log('..'); console.log('45%')", { onLine: (l) => progress.push(l) }));
     expect('runStatus passes on lines with words or progress numbers only', progress.join('|') === 'Downloading 10 MB / 20 MB|45%', progress.join('|'));
+    const echoed = await runCapture(...node("process.stdin.setEncoding('utf8'); let s = ''; process.stdin.on('data', (d) => { s += d; }); process.stdin.on('end', () => console.log('got ' + s.trim()));", { input: 'Pa55\n' }));
+    expect('input is written to the program, which sees the end of it', echoed.trim() === 'got Pa55', echoed);
+    const t1 = Date.now();
+    const closed = await runCapture(...node("process.stdin.resume(); process.stdin.on('end', () => console.log('stdin closed'));", { timeout: 20000 }));
+    expect("without input a program's stdin is closed, so one that waits for it stops waiting", closed.trim() === 'stdin closed' && Date.now() - t1 < 10000, `${Date.now() - t1} ms`);
     killAll();
+  }
+
+  console.log('passwords from a page');
+  {
+    const { passwordBuffer } = require('../../../src/shared/node/secrets');
+    expect('a one-line string becomes a Buffer of its UTF-8 bytes', passwordBuffer('p\u00e4ssword').equals(Buffer.from('p\u00e4ssword', 'utf8')));
+    const bad = ['', 'a\nb', 'a\rb', 'x'.repeat(4097), 5, null, undefined, {}, ['a']];
+    expect('an empty, multi-line, over-long or non-string value is refused', bad.every((v) => { try { passwordBuffer(v); return false; } catch { return true; } }));
+    expect('4096 characters are allowed', passwordBuffer('x'.repeat(4096)).length === 4096);
   }
 
   finish();

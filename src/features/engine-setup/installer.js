@@ -34,7 +34,7 @@ function createInstaller({ root = enginesRoot(), run = runStatus, redetect = () 
   const manifest = createManifest(root);
   let busy = null;
 
-  // Install what `key` (pdf | ocr | heic | soffice | pandoc) needs. Resolves { ok, message, engines }.
+  // Install what `key` (pdf | ocr | heic | unlock | soffice | pandoc) needs. Resolves { ok, message, engines }.
   async function install(key, note = () => {}) {
     const packId = PACK[key];
     if (!packId) return { ok: false, message: 'Unknown engine' };
@@ -46,7 +46,7 @@ function createInstaller({ root = enginesRoot(), run = runStatus, redetect = () 
       else if (packId === 'soffice') await installLibreOffice(deps);
       else { await wingetInstall(run, PACKS[packId].winget, note); manifest.record({ winget: PACKS[packId].winget }); }
       const engines = redetect();
-      const found = { pdf: engines.pdf, pdf2docx: engines.pdf, ocr: engines.ocr, heic: engines.heic, soffice: engines.soffice, pandoc: engines.pandoc }[key];
+      const found = { pdf: engines.pdf, pdf2docx: engines.pdf, ocr: engines.ocr, heic: engines.heic, unlock: engines.unlock, soffice: engines.soffice, pandoc: engines.pandoc }[key];
       if (!found) throw new Error('The install finished but Pomelo still cannot find it. Restart Pomelo and check again');
       return { ok: true, engines };
     } catch (e) {

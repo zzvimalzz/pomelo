@@ -49,4 +49,4 @@ html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background:
 .key { width: 46px; height: 22px; border-radius: 7px; display: grid; place-items: center; color: var(--key-ink); background: linear-gradient(180deg, var(--key-1), var(--key-2));
   box-shadow: 0 0 0 1px var(--key-edge), 0 2px 0 var(--key-depth), 0 3px 4px rgba(0, 0, 0, 0.12), inset 0 1px 0 var(--key-hi); transition: transform 0.12s, box-shadow 0.12s; }
 .key.down { transform: translateY(2px); box-shadow: 0 0 0 1px var(--key-edge), 0 0 0 var(--key-depth), 0 0 1px rgba(0, 0, 0, 0.1), inset 0 1px 0 var(--key-hi), 0 0 0 3px rgba(232, 77, 111, 0.2); }
-.key kbd { font: 600 12px var(--font); }
+.key kbd { padding: 0; border: 0; background: none; color: inherit; font: 600 12px var(--font); }

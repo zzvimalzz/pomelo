@@ -176,7 +176,7 @@ app.whenReady().then(async () => {
     win.setBounds({ x: workArea.x + 100, y: workArea.y + 80, width: 1000, height: 700 });
     await sleep(800);
     const moved = win.getBounds();
-    check('moving and resizing stores the place, once the user pauses', JSON.stringify(settings.pdfView.window) === JSON.stringify({ ...win.getNormalBounds(), maximised: false }) && moved.width === 1000, JSON.stringify(settings.pdfView.window));
+    check('moving and resizing stores the place and the time, once the user pauses', JSON.stringify({ ...settings.pdfView.window, savedAt: 0 }) === JSON.stringify({ ...win.getNormalBounds(), maximised: false, savedAt: 0 }) && Math.abs(Date.now() - settings.pdfView.window.savedAt) < 5000 && moved.width === 1000, JSON.stringify(settings.pdfView.window));
     await closeAndWait(win);
     workspace = fresh();
     win = await openAndWait(workspace, small);
@@ -190,7 +190,11 @@ app.whenReady().then(async () => {
     win = await openAndWait(fresh(), small);
     check('and the window opens maximised', win.isMaximized());
     await closeAndWait(win);
-    settings = { pdfView: { window: { x: 90000, y: 90000, width: 1000, height: 700, maximised: false } } };
+    settings = { pdfView: { window: { ...moved, x: workArea.x + 100, y: workArea.y + 80, width: 1000, height: 700, maximised: true, savedAt: Date.now() - 25 * 3600 * 1000 } } };
+    win = await openAndWait(fresh(), small);
+    check('a place saved more than 24 hours ago is forgotten: the window opens at the default size, not maximised', atDefault(win.getBounds()) && !win.isMaximized(), JSON.stringify(win.getBounds()));
+    await closeAndWait(win);
+    settings = { pdfView: { window: { x: 90000, y: 90000, width: 1000, height: 700, maximised: false, savedAt: Date.now() } } };
     win = await openAndWait(fresh(), small);
     const lost = win.getBounds();
     check('a saved place that is on no screen opens in the middle of the main screen at the default size', atDefault(lost) && !win.isMaximized(), JSON.stringify(lost));

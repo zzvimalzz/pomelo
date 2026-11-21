@@ -16,7 +16,10 @@ const { pdfToXlsx } = require('./to-xlsx');
 
 // The PDF scripts run in the Python found for `pdf`, and they do the OCR themselves, so prefer one that has RapidOCR as well.
 // Otherwise a PC with an older environment (no OCR) and a newer one would show OCR as ready and then fail to use it.
-const detect = () => ({ pdf: findPython('pymupdf, docx, rapidocr') || findPython('pymupdf, docx'), ocr: findPython('rapidocr') });
+function detect() {
+  const pdf = findPython('pymupdf, docx, rapidocr') || findPython('pymupdf, docx');
+  return { pdf, ocr: findPython('rapidocr'), unlock: pdf && findPython('pymupdf, msoffcrypto') };      // unlock: opening a PDF or an Office file that has a password
+}
 
 // Markdown, HTML, plain text and EPUB all come from one reading of the PDF (python/pdf_to_text.py), so they
 // agree: all of the text in reading order, headings, lists, tables, links, bold and italic, code and pictures.

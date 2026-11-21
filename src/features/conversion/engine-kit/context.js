@@ -13,7 +13,15 @@ class CancelledError extends Error {
   constructor() { super('Cancelled'); this.name = 'CancelledError'; }
 }
 
+// A file that cannot be read without a password. kind: 'needed' (ask for one), 'wrong' (the one given did not fit), 'unsupported'
+// (a protection Pomelo cannot open), 'engine' (the component that opens it is not installed) or 'ascii' (7-Zip reads a password from
+// standard input in the console's code page, so only plain ASCII reaches it unchanged).
+const PASSWORD_TEXT = { needed: 'This file is password-protected', wrong: 'Wrong password', ascii: "Archive passwords can't have accented or non-Latin characters", unsupported: "This file's protection is not supported", engine: 'Opening protected files needs the PDF components, which can be installed in Settings' };
+class PasswordError extends Error {
+  constructor(kind) { super(PASSWORD_TEXT[kind]); this.name = 'PasswordError'; this.kind = kind; }
+}
+
 // Kill `child` if the current conversion is cancelled. Returns a function that stops listening.
 const killOnCancel = (child) => killOnAbort(child, context.getStore()?.signal);
 
-module.exports = { withContext, currentContext, CancelledError, killOnCancel };
+module.exports = { withContext, currentContext, CancelledError, PasswordError, killOnCancel };

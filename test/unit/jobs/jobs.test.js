@@ -236,6 +236,30 @@ const titles = (jobs) => jobs.view().cards.map((x) => x.title);
     expect('a file with no extension is not taken for a folder', !recorded.includes('folder>pdf') && recorded.includes('>pdf'), recorded.join(' '));
   }
 
+  console.log('a protected file');
+  {
+    const { jobs, c } = make();
+    const first = Buffer.from('Zq9-needle');
+    const second = Buffer.from('Zq9-needle');
+    let handed;
+    const convert = c.fn;
+    jobs.convert = (src, to, opts) => { handed = opts.password?.toString(); return convert(src, to, opts); };
+    jobs.addConversion('C:/x/locked.docx', 'pdf', 'PDF', first);
+    jobs.addConversion('C:/x/queued.docx', 'pdf', 'PDF', second);
+    await tick();
+    expect('the conversion is handed the password', handed === 'Zq9-needle');
+    expect('which is not part of what the toast is sent', !JSON.stringify(jobs.view()).includes('Zq9-needle'));
+    c.pending[0].resolve(); await tick();
+    expect('it is overwritten when the job ends', first.every((b) => b === 0));
+    jobs.cancel(jobs.items.find((i) => i.src.endsWith('queued.docx')).id);
+    expect('and when the job is cancelled', second.every((b) => b === 0));
+    const failing = Buffer.from('Zq9-needle');
+    jobs.convert = () => Promise.reject(new Error('Wrong password'));
+    jobs.addConversion('C:/x/other.docx', 'pdf', 'PDF', failing);
+    await tick();
+    expect('and when it fails', failing.every((b) => b === 0) && jobs.view().cards[0].detail === 'other.docx: Wrong password', jobs.view().cards[0].detail);
+  }
+
   console.log(failed() ? `\n${failed()} failed` : '\nall passed');
   finish();
 })();

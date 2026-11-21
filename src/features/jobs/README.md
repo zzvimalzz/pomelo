@@ -4,13 +4,15 @@ Runs conversions in parallel and shows them in the toast in the bottom-right cor
 
 ## How it works
 
-`Jobs` (`jobs.js`) takes a `convert(src, to, { onProgress, signal })` function and queues one job per file and target, three at a time. Each job has an `AbortController`; the X on a card, or on the summary, aborts it. `view()` turns the state into the cards the toast draws; the app sends it to the window on every `change` event.
+`Jobs` (`jobs.js`) takes a `convert(src, to, { onProgress, signal, password })` function and queues one job per file and target, three at a time. Each job has an `AbortController`; the X on a card, or on the summary, aborts it. `view()` turns the state into the cards the toast draws; the app sends it to the window on every `change` event.
 
 An info card can carry an `onClick`: the toast then shows it as a button (a pointer, a longer stay) and a click calls `Jobs.activate(id)`. The app uses it for "Update your Pomelo to v...", which opens Settings.
 
 `estimate.js` turns what an engine reports, or the time since the job started, into a progress fraction that never goes backwards, and into "about 40 s left". `Timings` learns how long each kind of conversion takes on this PC (`timings.json`, key `from>to`) and uses that for the estimate; until then `guessMs` gives a first guess.
 
 The toast window (`toast.window.js`) is a transparent, always-on-top window that never takes focus. It grows upward with the number of cards. `toast.ipc.js` has the messages from its page (`ui/`).
+
+`addConversion(src, to, label, password)` takes the password of a protected file as a Buffer. The job owns it: it is passed to `convert` and overwritten with zeros when the job ends, fails or is cancelled. It is not part of `view()`, the cards or any message.
 
 ## Files
 

@@ -4,7 +4,7 @@ Installs and removes the optional engines: the PDF, OCR and HEIC components, Lib
 
 ## How it works
 
-`packs.js` is the one table of what can be installed: three packs (`python`, `soffice`, `pandoc`) with their label, the engine keys they provide (`pdf`, `pdf2docx`, `ocr`, `heic` all come from `python`), a weight for the installer's progress bar, and their winget ids. `PACK` maps an engine key to its pack.
+`packs.js` is the one table of what can be installed: three packs (`python`, `soffice`, `pandoc`) with their label, the engine keys they provide (`pdf`, `pdf2docx`, `ocr`, `heic`, `unlock` all come from `python`), a weight for the installer's progress bar, and their winget ids. `PACK` maps an engine key to its pack.
 
 `installer.js` (`createInstaller`) installs a pack and records what it added in `manifest.json` (`manifest.js`), so uninstalling removes exactly that and never anything the user installed themselves. It does one install at a time.
 

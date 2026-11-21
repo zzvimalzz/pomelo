@@ -56,7 +56,9 @@ function parsePercent(line) {
 
 // env: extra environment variables for the child. onLine: each output line while the program runs (progress).
 // signal: an AbortSignal; aborting it kills the program and rejects (with the program's message, or at once if already aborted).
-function runCapture(cmd, args, { timeout = 180000, cwd, env, onLine, signal } = {}) {
+// input: written to the program's standard input, which is always closed afterwards: 7-Zip waits at its password prompt for as long as
+// the pipe stays open, and with it closed it gives up at once.
+function runCapture(cmd, args, { timeout = 180000, cwd, env, onLine, signal, input } = {}) {
   if (signal?.aborted) return Promise.reject(new Error('Cancelled'));
   return new Promise((resolve, reject) => {
     let stop = () => {};
@@ -66,6 +68,8 @@ function runCapture(cmd, args, { timeout = 180000, cwd, env, onLine, signal } = 
       resolve(stdout.toString());
     });
     track(child);
+    child.stdin.on('error', () => {});
+    child.stdin.end(input);
     stop = killOnAbort(child, signal);
     if (onLine) { watchLines(child.stdout, onLine); watchLines(child.stderr, onLine); }
     child.on('error', reject);

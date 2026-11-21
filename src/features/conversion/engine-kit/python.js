@@ -37,10 +37,10 @@ function timeoutFor(src) {
   return Math.min(4 * 3600 * 1000, 600000 + Math.ceil(pages / 10) * 120000);
 }
 
-// Runs python/<script> with `python`. The time limit comes from the size of `src`, unless `timeout` is given.
-function runHelper(python, script, args, { src, onProgress, timeout } = {}) {
+// Runs python/<script> with `python`. The time limit comes from the size of `src`, unless `timeout` is given. input: written to the script's standard input.
+function runHelper(python, script, args, { src, onProgress, timeout, input } = {}) {
   // PYTHONSAFEPATH (Python 3.11+) would keep the script's own folder off sys.path, and the scripts import their neighbours from it.
-  return run(python, ['-W', 'ignore', scriptPath(script), ...args], { timeout: timeout ?? timeoutFor(src), onLine: progressReader(onProgress), env: { PYTHONSAFEPATH: '' } });
+  return run(python, ['-W', 'ignore', scriptPath(script), ...args], { timeout: timeout ?? timeoutFor(src), onLine: progressReader(onProgress), env: { PYTHONSAFEPATH: '' }, input });
 }
 
 module.exports = { findPython, runHelper, progressReader, timeoutFor };

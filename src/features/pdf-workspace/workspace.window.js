@@ -13,7 +13,7 @@ const chrome = () => CHROME[nativeTheme.shouldUseDarkColors ? 'dark' : 'light'];
 const overlay = (solid) => ({ color: solid ? chrome().color : '#00000000', symbolColor: chrome().symbolColor, height: TITLE_ROW });
 
 // asset(name): path of a file shipped in assets/. solid: draw an opaque window. saved: the stored place of the window.
-// onBounds({ x, y, width, height, maximised }): called, after a pause, whenever the user moved or resized it.
+// onBounds({ x, y, width, height, maximised, savedAt }): called, after a pause, whenever the user moved or resized it.
 function create({ asset, solid, saved, onBounds }) {
   const primary = screen.getPrimaryDisplay();
   const areas = [primary, ...screen.getAllDisplays().filter((d) => d.id !== primary.id)].map((d) => d.workArea);
@@ -36,7 +36,7 @@ function create({ asset, solid, saved, onBounds }) {
   if (start.maximised) win.maximize();
 
   let timer = null;
-  const save = () => onBounds({ ...win.getNormalBounds(), maximised: win.isMaximized() });
+  const save = () => onBounds({ ...win.getNormalBounds(), maximised: win.isMaximized(), savedAt: Date.now() });
   const later = () => { clearTimeout(timer); timer = setTimeout(save, 400); };
   for (const event of ['move', 'resize', 'maximize', 'unmaximize']) win.on(event, later);
   win.on('close', () => { clearTimeout(timer); save(); });

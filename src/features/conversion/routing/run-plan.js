@@ -5,10 +5,11 @@ const path = require('path');
 const { extOf, baseOf, labelOf } = require('../catalog/formats');
 const { withContext, CancelledError } = require('../engine-kit/context');
 const { removeOutputs } = require('../engine-kit/outputs');
+const { unlock, unlocksToCopy } = require('../engine-kit/lock');
 const { scaled } = require('../engine-kit/progress');
 const { getEngines } = require('../engines/registry');
 const { plansFor } = require('./plans');
-const { withTempDir } = require('#shared/node/fs');
+const { withTempDir, withTempFile } = require('#shared/node/fs');
 
 // onProgress(fraction 0..1) is forwarded by engines that can report it (video/audio); for a two-step chain it is split in half.
 async function runPlan(plan, src, dir, base, onProgress) {
@@ -23,7 +24,9 @@ async function runPlan(plan, src, dir, base, onProgress) {
 
 // Convert one file next to the original, or into outDir. Resolves with the list of files written.
 // signal (AbortSignal): cancel it to kill the helper programs and delete any partial output.
-async function convertFile(src, to, { onProgress, signal, outDir } = {}) {
+// password (a Buffer): the one a protected file needs. A PDF or Office file is unlocked into a temporary copy that the plans then read; an archive
+// gets the password from the conversion's context.
+async function convertFile(src, to, { onProgress, signal, outDir, password } = {}) {
   const from = extOf(src);
   const dir = outDir || path.dirname(src);
   const base = baseOf(src);
@@ -32,13 +35,13 @@ async function convertFile(src, to, { onProgress, signal, outDir } = {}) {
   if (from !== 'folder' && fs.statSync(src).size === 0) throw new Error('This file is empty');
   if (signal?.aborted) throw new CancelledError();
 
-  const ctx = { signal, outputs: [] };
-  return withContext(ctx, async () => {
+  const ctx = { signal, outputs: [], password };
+  const attempt = async (file) => {
     let firstErr;                                                                         // the best engine's reason: the fallbacks' are usually less to the point
     for (const plan of plans) {
       const mark = ctx.outputs.length;
       try {
-        const outs = await runPlan(plan, src, dir, base, onProgress);
+        const outs = await runPlan(plan, file, dir, base, onProgress);
         if (signal?.aborted) { removeOutputs(ctx.outputs); throw new CancelledError(); }   // an engine that cannot be interrupted finished anyway
         return outs;
       } catch (e) {
@@ -49,7 +52,10 @@ async function convertFile(src, to, { onProgress, signal, outDir } = {}) {
       }
     }
     throw firstErr;
-  });
+  };
+  return withContext(ctx, () => (password && unlocksToCopy(from)
+    ? withTempFile(from, async (copy) => { await unlock(src, password, copy, getEngines()); return attempt(copy); })
+    : attempt(src)));
 }
 
 module.exports = { convertFile };

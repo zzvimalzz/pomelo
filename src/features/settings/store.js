@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 // outputDir is the folder conversions are saved to, or '' for next to the original file. autoUpdate is off by default: Pomelo goes online only when asked. lastUpdateCheck / updateNotified belong to the update checker
-// (features/updates/auto-check.js). pdfView belongs to the PDF window (features/pdf-workspace): where it was last, as { x, y, width, height, maximised }.
+// (features/updates/auto-check.js). pdfView belongs to the PDF window (features/pdf-workspace): where it was last, as { x, y, width, height, maximised, savedAt }, which the window forgets after 24 hours.
 const DEFAULTS = { enabled: true, outputDir: '', openAtLogin: true, advanced: false, theme: 'system', autoUpdate: false, lastUpdateCheck: 0, updateNotified: '', pdfView: { window: null } };
 
 function createStore(file) {

@@ -17,6 +17,7 @@ let hot = -1;
 let picking = false;       // opened from the right-click menu: segments are clicked, not dropped on
 let wheel = 'convert';     // 'convert' or 'open': which wheel is showing
 let droppable = true;      // the files being dragged can be dropped on this wheel
+let sent = false;          // files were dropped or a segment was clicked: the main process is checking them, and the wheel waits for its answer
 
 const ICONS = { book: ['M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z', 'M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z'] };
 const OTHER = { convert: { key: 'Shift', name: 'Open' }, open: { key: 'Ctrl', name: 'Convert' } };    // what the pill names: the other wheel
@@ -167,6 +168,8 @@ api.onOpen((data) => {
   stage.dataset.wheel = wheel;
   stage.classList.toggle('picking', picking);
   stage.classList.remove('open', 'closing');
+  window.pomeloCard.reset();
+  sent = false;
   for (const a of [...plate.getAnimations(), ...pill.getAnimations(), ...pillIn.getAnimations()]) a.cancel();
   buildWheel(data);
   pill.hidden = picking || !data.switchable;
@@ -186,7 +189,15 @@ api.onSwitch((data) => {
   turnPill();
 });
 
+api.onUnlock(({ files }) => {
+  picking = false;
+  stage.classList.remove('picking');
+  setHot(-1);
+  window.pomeloCard.show(files);
+});
+
 api.onClose(() => {
+  window.pomeloCard.close();
   stage.classList.remove('open');
   stage.classList.add('closing');
   targets = [];                       // nothing to hit-test while folding away (stale segments caused phantom drops)
@@ -198,6 +209,7 @@ let loggedOver = false;
 window.addEventListener('dragenter', (e) => { e.preventDefault(); api.log('dragenter'); loggedOver = false; });
 window.addEventListener('dragover', (e) => {
   e.preventDefault();
+  if (window.pomeloCard.isOpen()) { e.dataTransfer.dropEffect = 'none'; return; }
   const i = hitTest(e.clientX, e.clientY);
   if (!loggedOver) { loggedOver = true; api.log(`dragover at ${e.clientX},${e.clientY} segment=${i}`); }
   setHot(i);
@@ -205,19 +217,20 @@ window.addEventListener('dragover', (e) => {
 });
 window.addEventListener('drop', (e) => {
   e.preventDefault();
+  const paths = [...e.dataTransfer.files].map((f) => api.pathFor(f)).filter(Boolean);
+  if (sent) return;
   const i = hitTest(e.clientX, e.clientY);
   api.log(`drop segment=${i} files=${e.dataTransfer.files.length}`);
-  const paths = [...e.dataTransfer.files].map((f) => api.pathFor(f)).filter(Boolean);
-  if (i >= 0 && droppable && paths.length) api.drop(targets[i].id, paths);
-  else api.cancel();
+  if (i >= 0 && droppable && paths.length) { sent = true; api.drop(targets[i].id, paths); return; }
+  api.cancel();
   setHot(-1);
 });
 
-window.addEventListener('mousemove', (e) => { if (picking) setHot(hitTest(e.clientX, e.clientY)); });
+window.addEventListener('mousemove', (e) => { if (picking && !sent) setHot(hitTest(e.clientX, e.clientY)); });
 window.addEventListener('click', (e) => {
-  if (!picking) return;
+  if (!picking || sent) return;
   const i = hitTest(e.clientX, e.clientY);
-  if (i >= 0) api.pick(targets[i].id); else api.cancel();
+  if (i >= 0) { sent = true; api.pick(targets[i].id); } else api.cancel();
 });
 window.addEventListener('keydown', (e) => { if (picking && e.key === 'Escape') api.cancel(); });
 

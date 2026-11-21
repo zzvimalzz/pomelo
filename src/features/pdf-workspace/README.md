@@ -18,7 +18,7 @@ A comment is a Text (note), Highlight, Underline, StrikeOut, Squiggly, Ink, Squa
 
 The window is frameless with `titleBarStyle: 'hidden'`. The title row is part of the page and Windows draws the minimise, maximise and close buttons over its right-hand end, in colours that follow the theme. On Windows 11 (build 22621 or later) the window has an acrylic background that the wheel's `--plate` colour tints. Before that, or when `createWorkspace` is given `solid: true`, the window is opaque and the page gets the `solid` class (through `?solid=1`) so `workspace.css` paints the title bar colour of Settings.
 
-The window's size, place and maximised state are saved in `pdfView.window` of `settings.json` after the user pauses, and when the window closes. `bounds.js` decides where it opens: the saved place if at least 100 px of its title row is on a screen, otherwise 1200 × 800 in the middle of the main screen. The minimum size is 900 × 600.
+The window's size, place and maximised state are saved in `pdfView.window` of `settings.json` after the user pauses, and when the window closes, with the time (`savedAt`). `bounds.js` decides where it opens: the saved place if it was saved in the last 24 hours and at least 100 px of its title row is on a screen, otherwise 1200 × 800, not maximised, in the middle of the main screen. A place saved without `savedAt` counts as old. The minimum size is 900 × 600.
 
 ## Files
 

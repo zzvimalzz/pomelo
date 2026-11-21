@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { bundled } = require('#shared/node/paths');
+const { PasswordError } = require('../engine-kit/context');
 
 let pdfjsPromise;
 const getPdfjs = () => (pdfjsPromise ||= import('pdfjs-dist/legacy/build/pdf.mjs'));
@@ -22,7 +23,8 @@ async function openPdf(file) {
     cMapUrl: asDir(path.join(root, 'cmaps')),
     cMapPacked: true,
   });
-  const doc = await task.promise;
+  let doc;
+  try { doc = await task.promise; } catch (e) { throw e.name === 'PasswordException' ? new PasswordError('needed') : e; }
   doc.release = () => task.destroy();
   return doc;
 }
@@ -113,4 +115,4 @@ async function renderPages(file, format, dpi = 200, onProgress) {
   } finally { await doc.release(); }
 }
 
-module.exports = { extractBlocks, renderPages };
+module.exports = { openPdf, extractBlocks, renderPages };

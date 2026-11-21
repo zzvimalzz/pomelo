@@ -6,8 +6,8 @@
 const PACKS = {
   // PDF, OCR and HEIC come from one private Python environment. pdf2docx is the name 0.1.0 to 0.1.2 used for pdf.
   python: {
-    label: 'PDF, OCR and HEIC components', busy: 'the PDF, OCR and HEIC engine', weight: 220, keys: ['pdf', 'pdf2docx', 'ocr', 'heic'],
-    check: 'pymupdf, docx, pillow_heif, rapidocr',                       // what must import once the packages are installed
+    label: 'PDF, OCR and HEIC components', busy: 'the PDF, OCR and HEIC engine', weight: 220, keys: ['pdf', 'pdf2docx', 'ocr', 'heic', 'unlock'],
+    check: 'pymupdf, docx, pillow_heif, rapidocr, msoffcrypto',                       // what must import once the packages are installed
     runtime: { id: 'Python.Python.3.12', name: 'Python' },               // added with winget only if the PC has no suitable Python
   },
   // The official MSI is fetched with `winget download` and unpacked into Pomelo's own folder: nothing is installed.

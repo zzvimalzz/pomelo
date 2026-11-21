@@ -4,9 +4,9 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { passwordBuffer } = require('#shared/node/secrets');
 
 const MAX_SPAN = 4 * 1048576;
-const MAX_PASSWORD = 4096;
 
 function createDocuments() {
   const byToken = new Map();
@@ -41,9 +41,9 @@ function createDocuments() {
   // state message can carry it.
   function unlock(token, password) {
     if (!byToken.has(token)) throw new Error('unknown document');
-    if (typeof password !== 'string' || !password || password.length > MAX_PASSWORD) throw new Error('bad password');
+    const secret = passwordBuffer(password);
     passwords.get(token)?.fill(0);
-    passwords.set(token, Buffer.from(password, 'utf8'));
+    passwords.set(token, secret);
   }
 
   const password = (token) => passwords.get(token);
