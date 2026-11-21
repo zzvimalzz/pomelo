@@ -285,8 +285,8 @@ app.whenReady().then(async () => {
     const secret = `Pw-${crypto.randomBytes(6).toString('hex')}`;
     const locked = path.join(root, 'Locked.pdf');
     fs.writeFileSync(locked, encryptedPdf(secret));
-    const askedFor = (win) => until('the password dialog', () => js(win, `!!document.querySelector('.veil input')`));
-    const submit = (win, text) => js(win, `(() => { const f = document.querySelector('.veil input'); f.value = ${JSON.stringify(text)}; document.querySelector('.veil .primary').click(); })()`);
+    const askedFor = (win) => until('the password dialog', () => js(win, `!!document.querySelector('.veil input') && !document.querySelector('.veil input').disabled`));
+    const submit = (win, text) => js(win, `(() => { const f = document.querySelector('.veil input'); f.value = ${JSON.stringify(text)}; f.dispatchEvent(new Event('input')); document.querySelector('.veil .primary').click(); })()`);
 
     let workspace = fresh();
     calls.length = 0;
@@ -296,9 +296,17 @@ app.whenReady().then(async () => {
     await askedFor(win);
     const dialog = await js(win, `({ title: document.querySelector('.veil h3').textContent, type: document.querySelector('.veil input').type, hint: document.querySelector('.veil input').placeholder,
       buttons: [...document.querySelectorAll('.veil .btn')].map((b) => b.textContent), focused: document.activeElement === document.querySelector('.veil input'), pages: document.querySelectorAll('.page').length })`);
-    check('a protected file asks for its password, in a field that hides what is typed, and shows no page yet', dialog.title === 'This file is password-protected' && dialog.type === 'password' && dialog.hint === 'Password' && dialog.buttons.join() === 'Cancel,Open' && dialog.focused && dialog.pages === 0, JSON.stringify(dialog));
+    check('a protected file asks for its password, in a field that hides what is typed, and shows no page yet', dialog.title === 'Password protected' && dialog.type === 'password' && dialog.hint === 'Password' && dialog.buttons.join() === 'Cancel,Open' && dialog.focused && dialog.pages === 0, JSON.stringify(dialog));
     await sleep(500);
     await shot(win, 'workspace-password.png');
+    const head = await js(win, `({ name: document.querySelector('.veil .ut span').textContent, badge: document.querySelector('.veil .ico svg.f text.badge')?.textContent, lock: !!document.querySelector('.veil .ico .lk svg'), labelled: document.querySelector('.veil [role=dialog]').getAttribute('aria-labelledby') })`);
+    check('the card shows the file as a PDF icon with a lock on it, and the file name under the title', head.name === 'Locked.pdf' && head.badge === 'PDF' && head.lock && head.labelled === 'dialog-title', JSON.stringify(head));
+    const primary = () => js(win, `document.querySelector('.veil .primary').disabled`);
+    const emptyDisabled = await primary();
+    await js(win, `(() => { const f = document.querySelector('.veil input'); f.value = 'x'; f.dispatchEvent(new Event('input')); })()`);
+    const typedEnabled = !(await primary());
+    await js(win, `(() => { const f = document.querySelector('.veil input'); f.value = ''; f.dispatchEvent(new Event('input')); })()`);
+    check('the Open button is off until something is typed, and off again when the field is emptied', emptyDisabled && typedEnabled && (await primary()));
     const eye = () => js(win, `(() => { const f = document.querySelector('.veil input'); const b = document.querySelector('.veil .pw button'); return { type: f.type, label: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'), value: f.value, focused: document.activeElement === f, drawn: !!b.querySelector('svg') }; })()`);
     const before = await eye();
     await js(win, `(() => { document.querySelector('.veil input').value = 'typed text'; document.querySelector('.veil .pw button').click(); })()`);
@@ -308,9 +316,15 @@ app.whenReady().then(async () => {
     const hidden = await eye();
     check('an eye button in the field shows what was typed and hides it again, keeping the text and the focus', before.type === 'password' && before.label === 'Show password' && before.pressed === 'false' && before.drawn
       && shown.type === 'text' && shown.label === 'Hide password' && shown.pressed === 'true' && shown.value === 'typed text' && shown.focused && hidden.type === 'password' && hidden.label === 'Show password' && hidden.value === 'typed text', JSON.stringify([before, shown, hidden]));
+    await js(win, `window.firstCard = document.querySelector('.veil')`);
     await submit(win, 'not the password');
-    await until('the second ask', () => js(win, `!!document.querySelector('.veil .bad')`));
-    check('a wrong password says so, asks again and offers Try Again', (await js(win, `document.querySelector('.veil .bad').textContent`)) === 'Wrong Password' && (await js(win, `document.querySelector('.veil .primary').textContent`)) === 'Try Again');
+    await until('the second ask', () => js(win, `!!document.querySelector('.veil .emsg.on') && !document.querySelector('.veil input').disabled`));
+    const wrong = await js(win, `(() => { const f = document.querySelector('.veil input'); return { same: document.querySelector('.veil') === window.firstCard, message: document.querySelector('.veil .emsg p').textContent, button: document.querySelector('.veil .primary').textContent,
+      value: f.value, selected: f.selectionStart === 0 && f.selectionEnd === f.value.length, invalid: f.getAttribute('aria-invalid'), red: document.querySelector('.veil .pw').classList.contains('bad'), focused: document.activeElement === f, enabled: !document.querySelector('.veil .primary').disabled }; })()`);
+    await sleep(450);
+    await shot(win, 'workspace-password-wrong.png');
+    check('a wrong password is answered in the same card: the field turns red, says Wrong Password, keeps what was typed selected, and the button reads Try Again',
+      wrong.same && wrong.message === 'Wrong Password' && wrong.button === 'Try Again' && wrong.value === 'not the password' && wrong.selected && wrong.invalid === 'true' && wrong.red && wrong.focused && wrong.enabled, JSON.stringify(wrong));
     await js(win, `window.keep = document.querySelector('.veil input')`);
     await submit(win, secret);
     await until('the first page', () => js(win, `!!document.querySelector('.page[data-loaded="true"] canvas')`));
@@ -355,6 +369,26 @@ app.whenReady().then(async () => {
     await js(win, `document.querySelector('#failure button').click()`);
     await askedFor(win);
     check('Unlock after that asks again with a fresh count', !(await js(win, `!!document.querySelector('.veil .bad')`)));
+    await closeAndWait(win);
+  }
+
+  console.log('the password card while a password is checked');
+  {
+    const win = await openAndWait(fresh(), small);
+    const state = await js(win, `(async () => {
+      let aborted = 0;
+      const ask = workspaceDialogs.askPassword('Small.pdf', false, () => { aborted++; });
+      const field = document.querySelector('.veil input');
+      field.value = 'x'; field.dispatchEvent(new Event('input'));
+      document.querySelector('.veil .primary').click();
+      const typed = await ask;
+      const primary = document.querySelector('.veil .primary');
+      const busy = { typed, field: field.disabled, eye: document.querySelector('.veil .pw button').disabled, primary: primary.disabled, aria: primary.getAttribute('aria-busy'), spinner: !!primary.querySelector('.spin'), label: primary.textContent, cancel: !document.querySelector('.veil .btn:not(.primary)').disabled };
+      document.querySelector('.veil .btn:not(.primary)').click();
+      workspaceDialogs.closePassword();
+      return { busy, aborted, gone: !document.querySelector('.veil') };
+    })()`);
+    check('while the password is checked the field and the button rest with a spinner, and Cancel still works and stops the check', state.busy.typed === 'x' && state.busy.field && state.busy.eye && state.busy.primary && state.busy.aria === 'true' && state.busy.spinner && state.busy.label === '' && state.busy.cancel && state.aborted === 1 && state.gone, JSON.stringify(state));
     await closeAndWait(win);
   }
 

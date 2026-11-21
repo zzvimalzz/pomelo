@@ -40,16 +40,19 @@
     let password = null;
     let wrong = 0;
     let gaveUp = false;
+    const abort = () => { gaveUp = true; password = null; task.destroy(); };
     task.onPassword = async (update, reason) => {
       const again = reason === lib.PasswordResponses.INCORRECT_PASSWORD;
-      password = !again || ++wrong < 5 ? await window.workspaceDialogs.askPassword(again) : null;
-      if (password === null) { gaveUp = true; task.destroy(); } else update(password);
+      password = !again || ++wrong < 5 ? await window.workspaceDialogs.askPassword(doc.name, again, abort) : null;
+      if (password === null) abort(); else update(password);
     };
     let pdf;
     try {
       pdf = await task.promise;
     } catch (e) {
       throw gaveUp ? Object.assign(new Error('password needed'), { name: 'PasswordException' }) : e;
+    } finally {
+      window.workspaceDialogs.closePassword();
     }
     if (password !== null) await window.workspaceApi.unlock(doc.token, password);
     password = null;
