@@ -3,7 +3,7 @@
 // two runners keep their promises (runCapture rejects with a useful line, runStatus never throws).
 const fs = require('fs');
 const path = require('path');
-const { withTempFile, withTempDir, readText, dirBytes, removeDirReliably } = require('../../../src/shared/node/fs');
+const { withTempFile, withTempDir, makeTempDir, sweepTempDirs, readText, dirBytes, removeDirReliably } = require('../../../src/shared/node/fs');
 const { runCapture, runStatus, lastMeaningfulLine, parsePercent, killAll } = require('../../../src/shared/node/process');
 const { expect } = require('../../support/expect');
 const finish = require('../../support/finish');
@@ -27,6 +27,28 @@ const rejection = async (p) => { try { await p; return null; } catch (e) { retur
     expect('a temp folder is removed with its contents, and the result is passed on', !fs.existsSync(dir) && value === 42);
     await rejection(withTempDir(async (d) => { dir = d; throw new Error('boom'); }));
     expect('also when the callback throws', !fs.existsSync(dir));
+  }
+
+  console.log('session folders');
+  {
+    const tag = `fsp${process.pid}`;
+    const old = makeTempDir(tag);
+    const young = makeTempDir(tag);
+    const other = makeTempDir(`${tag}x`);
+    fs.writeFileSync(path.join(old, 'a.txt'), 'x');
+    expect('makeTempDir makes an empty folder that stays', fs.statSync(young).isDirectory() && fs.readdirSync(young).length === 0);
+    expect('each call gives a new folder', old !== young);
+    const hourAgo = new Date(Date.now() - 3600 * 1000);
+    fs.utimesSync(old, hourAgo, hourAgo);
+    fs.utimesSync(other, hourAgo, hourAgo);
+    sweepTempDirs(tag, 1800 * 1000);
+    expect('sweepTempDirs removes an old folder with its contents', !fs.existsSync(old));
+    expect('and leaves a young one alone', fs.existsSync(young));
+    expect('and an old one with another tag', fs.existsSync(other));
+    sweepTempDirs(tag, -1);
+    expect('with an age of nothing it removes the young one too', !fs.existsSync(young));
+    sweepTempDirs(`${tag}x`, 0);
+    expect('and the other tag is swept on its own call', !fs.existsSync(other));
   }
 
   console.log('reading text');

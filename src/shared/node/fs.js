@@ -25,6 +25,31 @@ async function withTempDir(fn) {
   try { return await fn(dir); } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
+// A folder that stays until the caller removes it, for work that outlives one function call. The tag ends the name so
+// sweepTempDirs can find the folders of one kind that an earlier run left behind.
+function makeTempDir(tag) {
+  const dir = tempPath(`${tag}.d`);
+  fs.mkdirSync(dir);
+  return dir;
+}
+
+// Removes the folders makeTempDir(tag) made that were last changed more than maxAgeMs ago. A folder that is still in use
+// by another running copy is young, or is skipped when Windows will not let go of it.
+function sweepTempDirs(tag, maxAgeMs) {
+  const prefix = `pomelo-${RUN_ID.slice(0, 8)}-`;
+  const suffix = `.${tag}.d`;
+  const root = os.tmpdir();
+  let names;
+  try { names = fs.readdirSync(root); } catch { return; }
+  for (const name of names) {
+    if (!name.startsWith(prefix) || !name.endsWith(suffix)) continue;
+    const dir = path.join(root, name);
+    try {
+      if (Date.now() - fs.statSync(dir).mtimeMs > maxAgeMs) fs.rmSync(dir, { recursive: true, force: true });
+    } catch { /* in use, or gone already */ }
+  }
+}
+
 // Text file -> string: handles UTF-8/UTF-16 BOMs, and falls back to Windows-1252 for legacy files.
 function readText(file) {
   const b = fs.readFileSync(file);
@@ -56,4 +81,4 @@ async function removeDirReliably(dir) {
   return false;
 }
 
-module.exports = { sleep, withTempFile, withTempDir, readText, dirBytes, removeDirReliably };
+module.exports = { sleep, withTempFile, withTempDir, makeTempDir, sweepTempDirs, readText, dirBytes, removeDirReliably };
