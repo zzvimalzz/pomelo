@@ -33,7 +33,7 @@ The Help page (`ui/help.js`, `ui/help.css`) shows an animation of the gesture an
 
 ## Contracts
 
-- The keys of `settings.json`: `enabled`, `outputDir`, `openAtLogin`, `advanced`, `theme`, `autoUpdate`, `lastUpdateCheck`, `updateNotified`. `advanced` is no longer used by the page and stays so the file keeps its shape.
+- The keys of `settings.json`: `enabled`, `outputDir`, `openAtLogin`, `advanced`, `theme`, `autoUpdate`, `lastUpdateCheck`, `updateNotified`, `pdfView`. `advanced` is no longer used by the page and stays so the file keeps its shape. `pdfView` is `{ window }`, the PDF workspace's window place; the page cannot set it.
 - IPC channels: `settings:get`, `settings:set`, `settings:choose-output`, `settings:samples`, `settings:history`, `settings:website`, `app:copy`, `app:open-logs` (page to main), `settings:go`, `settings:changed` (main to page).
 - The **Save conversions to** dropdown is drawn by the page, not a native `<select>`, so it matches the rest of the window and uses its font; it works with the mouse and with the arrow keys, Home, End, Enter, Space and Esc. It shows Default, the folder in use when there is one, and Choose folder (never more than three; a new folder replaces the old one). `outputDir` is the folder conversions are saved to, `''` for next to the original. It is only stored from the folder dialog behind `settings:choose-output`; `settings:set` drops it unless it is `''`, which clears it.
 - `settings:set` keeps only `enabled`, `openAtLogin` and `autoUpdate` (booleans), `theme` (`system`, `light` or `dark`) and `outputDir` (only `''`). Anything else in the patch, including the update checker's keys, is dropped.

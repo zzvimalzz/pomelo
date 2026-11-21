@@ -73,7 +73,7 @@
     "mammoth": "^1.13.0",
     "marked": "^18.1.2",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^6.5.438",
+    "pdfjs-dist": "6.5.438",
     "pptxgenjs": "^4.0.1",
     "sharp": "^0.35.5",
     "turndown": "^7.2.4",

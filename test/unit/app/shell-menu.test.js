@@ -3,7 +3,7 @@
 // and gathering one selection's starts into a batch.   node test/unit/app/shell-menu.test.js
 const fs = require('fs');
 const path = require('path');
-const { installShellMenu, removeShellMenu, convertPathsFromArgv, createBatcher } = require('../../../src/app/shell-menu');
+const { installShellMenu, removeShellMenu, convertPathsFromArgv, openPathsFromArgv, createBatcher } = require('../../../src/app/shell-menu');
 const { expect } = require('../../support/expect');
 const finish = require('../../support/finish');
 const { dir: tmpDir } = require('../../support/tmp');
@@ -23,6 +23,14 @@ const readReg = (file) => fs.readFileSync(file).subarray(2).toString('utf16le');
   expect('a relative path is ignored', convertPathsFromArgv(['Pomelo.exe', '--convert=report.docx']).length === 0);
   expect('an empty path is ignored', convertPathsFromArgv(['Pomelo.exe', '--convert=']).length === 0);
   expect('an ordinary start has nothing to convert', convertPathsFromArgv(['Pomelo.exe', '--hidden']).length === 0);
+
+  console.log('the file --open names');
+  const pdf = path.join(root, 'a b.pdf');
+  expect('an absolute path is taken as it is', openPathsFromArgv(['Pomelo.exe', `--open=${pdf}`], 'C:\\elsewhere').join() === pdf);
+  expect('a relative path starts from the folder of the start', openPathsFromArgv(['Pomelo.exe', '--open=a b.pdf'], root).join() === pdf);
+  expect('a path that does not exist is still returned, so the window can say so', openPathsFromArgv(['Pomelo.exe', `--open=${path.join(root, 'nope.pdf')}`], root).length === 1);
+  expect('it does not matter where Electron put the switch', openPathsFromArgv(['electron.exe', '--allow-file-access-from-files', `--open=${pdf}`, 'C:/app'], root).join() === pdf);
+  expect('an empty path or no switch gives nothing', openPathsFromArgv(['Pomelo.exe', '--open='], root).length === 0 && openPathsFromArgv(['Pomelo.exe', '--hidden'], root).length === 0);
 
   console.log('one selection, several starts');
   const batches = [];

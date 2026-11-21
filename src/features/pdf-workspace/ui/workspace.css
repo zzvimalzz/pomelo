@@ -1,0 +1,20 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* The workspace window: glass title row, and the document in its own rounded well. The wheel's --plate tints the glass. */
+:root {
+  --solid: #efece8; --well: rgba(110, 110, 125, .13); --muted: rgba(0, 0, 0, .64);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --solid: #242427; --well: rgba(0, 0, 0, .28); --muted: rgba(255, 255, 255, .76); }
+}
+
+html, body { height: 100%; margin: 0; overflow: hidden; background: transparent; font: 500 13px/1.35 var(--font); color: var(--txt); }
+.window { display: flex; flex-direction: column; height: 100%; background: var(--plate); }
+html.solid .window { background: var(--solid); }
+
+.titlerow { flex: none; display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 146px; -webkit-app-region: drag; }
+.titlerow b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.well { position: relative; flex: 1; margin: 0 8px 8px; border-radius: 10px; background: var(--well); overflow: hidden; }
+.scroller { position: absolute; inset: 6px 3px 6px 0; overflow: auto; }
+.pdfViewer .page { box-shadow: 0 1px 3px rgba(0, 0, 0, .12), 0 10px 30px rgba(0, 0, 0, .1); }
+.failure { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--muted); font-size: 14px; }

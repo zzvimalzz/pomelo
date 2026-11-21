@@ -28,12 +28,13 @@ const settings = { enabled: true, openAtLogin: false };
 const changes = [];
 const opened = [];
 let quit = 0;
-const menu = createTray({ icon: 'tray.png', getSettings: () => settings, onChange: (p) => changes.push(p), onOpen: (t) => opened.push(t), onQuit: () => { quit++; } });
+let pdfs = 0;
+const menu = createTray({ icon: 'tray.png', getSettings: () => settings, onChange: (p) => changes.push(p), onOpen: (t) => opened.push(t), onOpenPdf: () => { pdfs++; }, onQuit: () => { quit++; } });
 menu.refreshMenu();
 
 const labels = () => tray.menu.filter((i) => i.type !== 'separator').map((i) => i.label);
 const item = (label) => tray.menu.find((i) => i.label === label);
-expect('the menu lists the status, the two switches, Settings, the guide, updates and Quit', labels().join('|') === 'Pomelo  ·  Running|Enabled|Start with Windows|Settings|How Pomelo works|Check for updates|Quit Pomelo', labels().join('|'));
+expect('the menu lists the status, the two switches, Open a PDF, Settings, the guide, updates and Quit', labels().join('|') === 'Pomelo  ·  Running|Enabled|Start with Windows|Open a PDF…|Settings|How Pomelo works|Check for updates|Quit Pomelo', labels().join('|'));
 expect('the status line is not clickable', item('Pomelo  ·  Running').enabled === false);
 expect('the switches show what is stored', item('Enabled').checked === true && item('Start with Windows').checked === false);
 
@@ -46,6 +47,8 @@ item('How Pomelo works').click();
 item('Check for updates').click();
 tray.handlers.click();
 expect('each entry opens its own section, and a click on the icon opens Settings', JSON.stringify(opened) === JSON.stringify([undefined, { page: 'help' }, { page: 'updates', check: true }, undefined]), JSON.stringify(opened));
+item('Open a PDF…').click();
+expect('Open a PDF asks the app to choose a PDF and opens no Settings page', pdfs === 1 && opened.length === 4);
 item('Quit Pomelo').click();
 expect('Quit quits', quit === 1);
 

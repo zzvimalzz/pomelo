@@ -8,6 +8,12 @@ function lockNavigation(win) {
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 }
 
+// A page built from a user's document must not be able to call out to the internet (remote images, tracking pixels). Local files
+// stay readable.
+function blockNetwork(session) {
+  session.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*', 'ftp://*/*'] }, (_details, callback) => callback({ cancel: true }));
+}
+
 // The small transparent windows that float above everything and never take focus: the wheel and the toast.
 // level: the always-on-top level ('screen-saver' goes above full-screen apps, 'status' stays under menus).
 function createFloatingWindow({ width, height, preload, level }) {
@@ -22,4 +28,4 @@ function createFloatingWindow({ width, height, preload, level }) {
   return win;
 }
 
-module.exports = { createFloatingWindow, lockNavigation };
+module.exports = { createFloatingWindow, lockNavigation, blockNetwork };
