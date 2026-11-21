@@ -14,8 +14,9 @@ function dimmed(image) {
 }
 
 // icon: path of the tray image. getSettings(): the stored settings. onChange(patch): a switch in the menu was flipped.
-// onOpen(target): open Settings, on { page } or { page, check } for an update check. onQuit(). -> { setTooltip(text), refreshMenu() }
-function createTray({ icon, getSettings, onChange, onOpen, onQuit }) {
+// onOpen(target): open Settings, on { page } or { page, check } for an update check. onOpenPdf(): choose a PDF to read. onQuit().
+// -> { setTooltip(text), refreshMenu() }
+function createTray({ icon, getSettings, onChange, onOpen, onOpenPdf, onQuit }) {
   const normal = nativeImage.createFromPath(icon);
   const paused = dimmed(normal);
   const small = normal.resize({ width: 16, height: 16 });
@@ -32,6 +33,7 @@ function createTray({ icon, getSettings, onChange, onOpen, onQuit }) {
       { label: 'Enabled', type: 'checkbox', checked: s.enabled, click: (i) => onChange({ enabled: i.checked }) },
       { label: 'Start with Windows', type: 'checkbox', checked: s.openAtLogin, click: (i) => onChange({ openAtLogin: i.checked }) },
       { type: 'separator' },
+      { label: 'Open a PDF…', click: onOpenPdf },
       { label: 'Settings', click: () => onOpen() },
       { label: 'How Pomelo works', click: () => onOpen({ page: 'help' }) },
       { label: 'Check for updates', click: () => onOpen({ page: 'updates', check: true }) },

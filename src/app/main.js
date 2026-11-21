@@ -17,10 +17,11 @@ const { Jobs, Timings, Toast } = require('../features/jobs');
 const updates = require('../features/updates');
 const engineSetup = require('../features/engine-setup');
 const { registerUninstallIpc } = require('../features/uninstall');
+const { createWorkspace } = require('../features/pdf-workspace');
 const { createTray } = require('./tray');
 const { createDropFlow } = require('./drop-flow');
 const { createOutputDir, folderName } = require('./output-dir');
-const { installShellMenu, removeShellMenu, convertPathsFromArgv, createBatcher } = require('./shell-menu');
+const { installShellMenu, removeShellMenu, convertPathsFromArgv, openPathsFromArgv, createBatcher } = require('./shell-menu');
 const { stopAll } = require('./shutdown');
 
 const cli = engineSetup.parseCommandLine(process.argv);     // --install-engines / --uninstall-engines: run by the installer, no window, no tray
@@ -29,15 +30,22 @@ app.on('window-all-closed', () => { /* tray app: keep running */ });
 // Explorer's right-click menu starts Pomelo once per selected file: the primary instance gathers them and opens one wheel.
 let flow;
 const convertBatch = createBatcher(400, (files) => app.whenReady().then(() => flow.onOpen(files, true)));
-app.on('second-instance', (_e, argv) => {
+app.on('second-instance', (_e, argv, cwd) => {
   const files = convertPathsFromArgv(argv);
-  if (files.length) convertBatch.add(files); else openSettings();
+  const pdfs = openPathsFromArgv(argv, cwd);
+  if (pdfs.length) app.whenReady().then(() => showPdf(pdfs));
+  else if (files.length) convertBatch.add(files);
+  else openSettings();
 });
 
 const asset = (n) => path.join(APP_ROOT, 'assets', n);
 const settingsFile = userDataFile('settings.json');
 const firstRun = !fs.existsSync(settingsFile);         // checked before the store writes the file: only a new install opens on the Help page
 const settings = createStore(settingsFile);
+const workspace = createWorkspace({
+  asset, getSettings: () => settings.get(), setSettings: (patch) => settings.set(patch), notify: (message) => jobs?.addInfo(message), log,
+});
+const showPdf = (paths) => workspace.open(paths).catch((e) => log('PDF window failed:', e.message));
 const installer = engineSetup.createInstaller({ redetect: () => conversion.detectEngines() });
 let tray, wheel, jobs, trigger, helper;
 
@@ -109,10 +117,11 @@ app.whenReady().then(async () => {
   trigger.start();
 
   tray = createTray({
-    icon: asset('tray.png'), getSettings: () => settings.get(), onOpen: openSettings, onQuit: () => app.quit(),
+    icon: asset('tray.png'), getSettings: () => settings.get(), onOpen: openSettings, onOpenPdf: () => workspace.openDialog().catch((e) => log('PDF window failed:', e.message)), onQuit: () => app.quit(),
     onChange: (patch) => { settings.set(patch); applySettings(); sendToSettings('settings:changed', settings.get()); },
   });
 
+  workspace.registerIpc();
   const setup = engineSetup.registerEngineSetupIpc({ installer, getEngines: conversion.getEngines, sendToSettings, log });
   let justUpdated = updates.updatedStart(process.argv, app.getVersion());      // Settings says so the first time it opens, not every time
   registerSettingsIpc({
@@ -143,6 +152,8 @@ app.whenReady().then(async () => {
     .catch((e) => log('right-click menu not written:', e.message));
   const toConvert = convertPathsFromArgv(process.argv);
   if (toConvert.length) convertBatch.add(toConvert);
+  const toOpen = openPathsFromArgv(process.argv, process.cwd());
+  if (toOpen.length) showPdf(toOpen);
   // started again by an in-app update: add the engines the new version expects, then say it is done
   updates.reportUpdate({
     argv: process.argv, current: app.getVersion(), notify: (m) => jobs.addInfo(m), cleanup: updates.cleanup, log, ui: downloader,
@@ -150,9 +161,9 @@ app.whenReady().then(async () => {
   }).catch((e) => log('update follow-up failed:', e.message));
   log('ready');
   // Show the window on every manual launch so there is always a visible way in; login starts stay in the tray.
-  if (!process.argv.includes('--hidden') && !toConvert.length) {
+  if (!process.argv.includes('--hidden') && !toConvert.length && !toOpen.length) {
     openSettings(firstRun ? { page: 'help' } : undefined);
   }
 });
 
-app.on('will-quit', () => stopAll(helper));
+app.on('will-quit', () => { stopAll(helper); workspace.closeAll(); });

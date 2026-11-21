@@ -25,6 +25,10 @@ require(path.join(features, 'gesture', 'wheel.ipc')).registerWheelIpc({ onLog: n
 require(path.join(features, 'jobs', 'toast.ipc')).registerToastIpc({ onReady: noop, onRemove: noop, onCancel: noop, onClick: noop });
 const stored = [];
 require(path.join(features, 'settings', 'settings.ipc')).registerSettingsIpc({ store: { get: () => ({}), set: (patch) => stored.push(patch) }, getState: noop, onChange: noop, logPath: noop, describe: noop, history: noop });
+const served = [];
+require(path.join(features, 'pdf-workspace', 'workspace.ipc')).registerWorkspaceIpc({
+  documents: { read: (...args) => { served.push(args); return 'bytes'; } }, state: () => ({ documents: [] }), isWorkspace: (sender) => sender === 'the workspace page',
+});
 require(path.join(features, 'engine-setup', 'engine-setup.ipc')).registerEngineSetupIpc({ installer: {}, getEngines: noop, ...quiet });
 require(path.join(features, 'updates', 'updates.ipc')).registerUpdatesIpc({ current: '0.0.0', autoCheck: {}, onChecked: noop, isPackaged: false, execPath: '', isSettingsOpen: noop, downloader: {}, stopForUpdate: noop, exit: noop, ...quiet });
 require(path.join(features, 'uninstall', 'uninstall.ipc')).registerUninstallIpc({ installer: {}, getWindow: noop, setLoginItem: noop, isPackaged: false, execPath: '', quit: noop, log: noop });
@@ -37,6 +41,11 @@ expect('a page cannot choose the output folder, only clear it', stored[0].output
 handlers['settings:set']({}, { enabled: 'yes', theme: 'neon', autoUpdate: true, lastUpdateCheck: 1, constructor: true, toString: true });
 handlers['settings:set']({}, null);
 expect('a page can set only its own settings, and only to values they can hold', JSON.stringify(stored.slice(2)) === '[{"autoUpdate":true},{}]', JSON.stringify(stored.slice(2)));
+
+// Only the workspace window's own page may ask for a document's bytes.
+const refused = (call) => { try { call(); return false; } catch { return true; } };
+expect('another page is refused the document state and the bytes', refused(() => handlers['pdfws:state']({ sender: 'another page' })) && refused(() => handlers['pdfws:read']({ sender: 'another page' }, 'token', 0, 10)) && served.length === 0);
+expect('the workspace page is answered', handlers['pdfws:read']({ sender: 'the workspace page' }, 'token', 0, 10) === 'bytes' && JSON.stringify(served) === '[["token",0,10]]' && handlers['pdfws:state']({ sender: 'the workspace page' }).documents.length === 0);
 
 // What each preload sends to the main process, with ipcRenderer invoke or send
 const asked = new Set();
@@ -54,7 +63,7 @@ const orphaned = [...handled].filter((c) => !asked.has(c));
 
 expect(`every channel a page sends has a handler (${asked.size} channels)`, missing.length === 0, missing.join(', '));
 expect('every handler answers a channel some page sends', orphaned.length === 0, orphaned.join(', '));
-expect('invoke channels are handled with handle, so the page gets an answer', ['settings:get', 'settings:set', 'engines:install', 'app:uninstall', 'updates:check', 'updates:download', 'updates:install'].every((c) => registered.handle.has(c)));
+expect('invoke channels are handled with handle, so the page gets an answer', ['settings:get', 'settings:set', 'pdfws:state', 'pdfws:read', 'engines:install', 'app:uninstall', 'updates:check', 'updates:download', 'updates:install'].every((c) => registered.handle.has(c)));
 
 // What the main process sends to a page, with webContents.send or the sendToSettings helper, anywhere under src.
 const sent = new Set();

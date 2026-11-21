@@ -10,7 +10,7 @@ let printSession;
 function offlineSession() {
   if (!printSession) {
     printSession = require('electron').session.fromPartition(`pomelo-print-${PRINT_ID.slice(0, 12)}`);
-    printSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*', 'ftp://*/*'] }, (_details, callback) => callback({ cancel: true }));
+    require('#shared/electron/windows').blockNetwork(printSession);
   }
   return printSession;
 }

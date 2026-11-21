@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; worker-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pomelo</title>
+  <link rel="stylesheet" href="../../../ui-shared/tokens.css">
+  <link rel="stylesheet" href="../../../ui-shared/wheel-look.css">
+  <link rel="stylesheet" href="../../../ui-shared/controls.css">
+  <link rel="stylesheet" href="../../../../node_modules/pdfjs-dist/web/pdf_viewer.css">
+  <link rel="stylesheet" href="workspace.css">
+</head>
+<body>
+  <div class="window">
+    <header class="titlerow"><b id="docname"></b></header>
+    <main class="well">
+      <div class="scroller" id="scroller"><div class="pdfViewer" id="viewer"></div></div>
+      <p class="failure" id="failure" hidden></p>
+    </main>
+  </div>
+  <script src="viewer.js"></script>
+  <script src="workspace.js"></script>
+</body>
+</html>

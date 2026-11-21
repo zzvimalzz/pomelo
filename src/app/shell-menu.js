@@ -11,6 +11,7 @@ const CLASSES = 'HKEY_CURRENT_USER\\Software\\Classes';
 const keyOf = (ext) => `${CLASSES}\\SystemFileAssociations\\.${ext}\\shell\\Pomelo`;
 const FOLDER_KEY = `${CLASSES}\\Directory\\shell\\Pomelo`;
 const CONVERT = '--convert=';
+const OPEN = '--open=';
 const regString =(s) => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
 function addLines(key, exe, command, mark) {
@@ -52,6 +53,13 @@ function convertPathsFromArgv(argv) {
   return given && path.isAbsolute(given) && fs.existsSync(given) ? [given] : [];
 }
 
+// The file a `--open=<path>` start was asked to show: [] when there is no such switch. A relative path is taken from `cwd`, the
+// folder the start was made in.
+function openPathsFromArgv(argv, cwd) {
+  const given = argv.find((a) => a.startsWith(OPEN))?.slice(OPEN.length);
+  return given ? [path.resolve(cwd, given)] : [];
+}
+
 // Gathers the paths added within `delayMs` of each other and hands them over once, sorted.
 function createBatcher(delayMs, onBatch) {
   let paths = new Set();
@@ -65,4 +73,4 @@ function createBatcher(delayMs, onBatch) {
   };
 }
 
-module.exports = { installShellMenu, removeShellMenu, convertPathsFromArgv, createBatcher };
+module.exports = { installShellMenu, removeShellMenu, convertPathsFromArgv, openPathsFromArgv, createBatcher };
