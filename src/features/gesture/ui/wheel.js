@@ -1,15 +1,28 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 const api = window.pomelo;
-const { CX, CY, R_OUT, R_IN, svg: el, pt, segmentPath } = window.pomeloWheelShapes;
+const { CX, CY, R_OUT, R_IN, svg: el, pt, segmentPath, ringPath } = window.pomeloWheelShapes;
 
 const stage = document.getElementById('stage');
 const segmentsEl = document.getElementById('segments');
 const centerEl = document.getElementById('center');
+const plate = document.getElementById('plate');
+const pill = document.getElementById('pill');
+const pillIn = document.getElementById('pillIn');
+const pillKey = document.getElementById('pillKey');
 window.pomeloIcons.addDefs(el, document.getElementById('wheel'));
 
 let targets = [];
+let leaving = [];          // targets turning away while the other wheel turns in
 let hot = -1;
 let picking = false;       // opened from the right-click menu: segments are clicked, not dropped on
+let wheel = 'convert';     // 'convert' or 'open': which wheel is showing
+let droppable = true;      // the files being dragged can be dropped on this wheel
+
+const ICONS = { book: ['M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z', 'M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z'] };
+const OTHER = { convert: { key: 'Shift', name: 'Open' }, open: { key: 'Ctrl', name: 'Convert' } };    // what the pill names: the other wheel
+const REFUSED = 'PDF files only';
+const EASE_OUT = 'cubic-bezier(0.2, 0.9, 0.25, 1.12)';
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const DISC = R_IN - 8, NAME_MAX = 84;
 let centerName = null, centerText = '';
@@ -38,45 +51,64 @@ function drawCenter(info) {
   setName(centerText = info.count > 1 ? `${info.count} files` : info.name);      // the main process has already shortened a long name
 }
 
-function buildWheel(data) {
-  segmentsEl.replaceChildren();
-  targets = data.targets;
-  hot = -1;
-  const n = targets.length;
+// One segment for each target, each inside a group of its own that the turn animation moves. A single target is the whole ring.
+// With an icon, the icon stands above the label.
+function addTargets(list) {
+  const n = list.length;
   const step = 360 / n;
-  targets.forEach((t, i) => {
+  return list.map((t, i) => {
     const mid = -90 + i * step;
-    const g = el('g', { class: 'seg' }, segmentsEl);
-    el('path', { d: segmentPath(mid, step) }, g);
+    const spin = el('g', { class: 'spin' }, segmentsEl);
+    const g = el('g', { class: n === 1 ? 'seg ring' : 'seg' }, spin);
+    el('path', n === 1 ? { 'fill-rule': 'evenodd', d: ringPath() } : { d: segmentPath(mid, step) }, g);
     const [lx, ly] = pt((R_IN + R_OUT) / 2, mid);
-    el('text', { class: 'label', x: lx, y: ly + (t.sub ? 0 : 5) }, g).textContent = t.label;
+    if (ICONS[t.icon]) {
+      const icon = el('g', { class: 'ticon', transform: `translate(${lx - 11} ${ly - 20}) scale(0.92)` }, g);
+      for (const d of ICONS[t.icon]) el('path', { d }, icon);
+    }
+    const label = el('text', { class: 'label', x: lx, y: ly + (t.icon ? 20 : t.sub ? 0 : 5) }, g);
+    label.textContent = t.label;
     if (t.sub) el('text', { class: 'sub', x: lx, y: ly + 15 }, g).textContent = t.sub;
     g.style.transitionDelay = `${i * 14}ms, 0ms`;
-    t.node = g;
-    t.mid = mid;
+    return { ...t, node: g, spin, labelEl: label, mid, whole: n === 1 };
   });
+}
+
+function buildWheel(data) {
+  segmentsEl.replaceChildren();
+  leaving = [];
+  targets = addTargets(data.targets);
+  hot = -1;
   drawCenter(data.info);
 }
 
 function setHot(i) {
   if (i === hot) return;
-  if (hot >= 0) { targets[hot].node.classList.remove('hot'); targets[hot].node.style.transform = ''; }
-  hot = i;
-  if (centerName) {
-    setName(hot >= 0 ? `to ${targets[hot].label}` : centerText);
-    centerName.classList.toggle('to', hot >= 0);
-  }
   if (hot >= 0) {
-    const t = targets[hot];
-    const rad = (t.mid * Math.PI) / 180;
-    t.node.classList.add('hot');
-    t.node.style.transform = `translate(${Math.cos(rad) * 7}px, ${Math.sin(rad) * 7}px)`;
+    const old = targets[hot];
+    old.node.classList.remove('hot', 'refused');
+    old.node.style.transform = '';
+    old.labelEl.textContent = old.label;
   }
+  hot = i;
+  const t = hot >= 0 ? targets[hot] : null;
+  const refused = !!t && !droppable;
+  if (centerName) {
+    setName(t && !refused ? (wheel === 'open' ? t.label : `to ${t.label}`) : centerText);
+    centerName.classList.toggle('to', !!t && !refused);
+  }
+  if (!t) return;
+  if (refused) { t.node.classList.add('refused'); t.labelEl.textContent = REFUSED; return; }
+  t.node.classList.add('hot');
+  if (t.whole) { t.node.style.transform = 'scale(1.03)'; return; }
+  const rad = (t.mid * Math.PI) / 180;
+  t.node.style.transform = `translate(${Math.cos(rad) * 7}px, ${Math.sin(rad) * 7}px)`;
 }
 
 function hitTest(x, y) {
   if (!targets.length) return -1;
-  const dx = x - CX, dy = y - CY;
+  const box = stage.getBoundingClientRect();
+  const dx = x - box.left - CX, dy = y - box.top - CY;
   const r = Math.hypot(dx, dy);
   if (r < R_IN - 4 || r > R_OUT + 16) return -1;
   const step = 360 / targets.length;
@@ -84,14 +116,74 @@ function hitTest(x, y) {
   return Math.floor((((deg + 90 + step / 2) % 360) + 360) % 360 / step) % targets.length;
 }
 
+const fillPill = () => {
+  document.getElementById('pillKbd').textContent = OTHER[wheel].key;
+  document.getElementById('pillName').textContent = OTHER[wheel].name;
+};
+
+// The key just pressed sinks, its words lift away, and the other wheel's key and name rise in while the pill eases to its new width.
+function turnPill() {
+  for (const a of [...pill.getAnimations(), ...pillIn.getAnimations()]) a.cancel();
+  if (reduced()) { fillPill(); return; }
+  pillKey.classList.add('down');
+  setTimeout(() => pillKey.classList.remove('down'), 140);
+  const before = pill.offsetWidth;
+  pillIn.animate([{ opacity: 0, transform: 'translateY(-9px)' }], { duration: 120, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' }).onfinish = () => {
+    fillPill();
+    pillIn.getAnimations().forEach((a) => a.cancel());
+    pill.animate([{ width: `${before}px` }, { width: `${pill.offsetWidth}px` }], { duration: 320, easing: EASE_OUT });
+    pillIn.animate([{ opacity: 0, transform: 'translateY(9px)' }, { opacity: 1, transform: 'none' }], { duration: 300, easing: EASE_OUT });
+  };
+}
+
+// The old segments turn away and fade, one after another, as the new ones turn in; the plate and the file in the centre stay put,
+// so it reads as one dial turning. The new segments take drops at once; the turn is only to look at. With reduced motion they cross-fade.
+function turn(out, inn, dir) {
+  const still = reduced();
+  const keep = (t) => { for (const a of t.spin.getAnimations()) { a.commitStyles(); a.cancel(); } };     // a turn pressed during a turn goes on from where it is
+  [...leaving, ...out, ...inn].forEach(keep);
+  for (const t of leaving) t.spin.remove();
+  leaving = out;
+  out.forEach((t, i) => {
+    const gone = still ? { opacity: 0 } : { opacity: 0, transform: `rotate(${-34 * dir}deg) scale(0.84)` };
+    t.spin.animate([gone], { duration: still ? 160 : 200, delay: still ? 0 : i * 8, easing: 'cubic-bezier(0.4, 0, 0.7, 0.2)', fill: 'forwards' }).onfinish = () => t.spin.remove();
+  });
+  inn.forEach((t, i) => {
+    const from = still ? { opacity: 0 } : { opacity: 0, transform: `rotate(${34 * dir}deg) scale(0.84)` };
+    const a = t.spin.animate([from, still ? { opacity: 1 } : { opacity: 1, transform: 'none' }], { duration: still ? 160 : 330, delay: still ? 0 : 90 + i * 10, easing: still ? 'linear' : EASE_OUT, fill: 'both' });
+    a.onfinish = () => { a.cancel(); t.spin.style.opacity = ''; t.spin.style.transform = ''; };
+  });
+  if (still) return;
+  plate.animate([{ r: 170 }, { r: 163 }, { r: 170 }], { duration: 400, easing: 'cubic-bezier(0.3, 0.7, 0.3, 1)' });
+  document.querySelector('#center .doc').animate([{ transform: 'scale(1)' }, { transform: 'scale(0.9) rotate(-6deg)' }, { transform: 'scale(1)' }], { duration: 360, easing: 'cubic-bezier(0.3, 0.7, 0.3, 1.2)' });
+}
+
 // ---- show / hide -------------------------------------------------------------------------
 // The overlay only ever shows the wheel. Progress, results and errors live in the bottom-right toast.
 api.onOpen((data) => {
   picking = data.pick;
+  wheel = data.wheel || 'convert';
+  droppable = data.droppable !== false;
+  stage.dataset.wheel = wheel;
   stage.classList.toggle('picking', picking);
   stage.classList.remove('open', 'closing');
+  for (const a of [...plate.getAnimations(), ...pill.getAnimations(), ...pillIn.getAnimations()]) a.cancel();
   buildWheel(data);
+  pill.hidden = picking || !data.switchable;
+  fillPill();
   requestAnimationFrame(() => requestAnimationFrame(() => stage.classList.add('open')));
+});
+
+api.onSwitch((data) => {
+  if (!targets.length) return;        // folding away
+  const out = targets;
+  setHot(-1);
+  wheel = data.wheel;
+  droppable = data.droppable !== false;
+  stage.dataset.wheel = wheel;
+  targets = addTargets(data.targets);
+  turn(out, targets, wheel === 'open' ? 1 : -1);
+  turnPill();
 });
 
 api.onClose(() => {
@@ -109,14 +201,14 @@ window.addEventListener('dragover', (e) => {
   const i = hitTest(e.clientX, e.clientY);
   if (!loggedOver) { loggedOver = true; api.log(`dragover at ${e.clientX},${e.clientY} segment=${i}`); }
   setHot(i);
-  e.dataTransfer.dropEffect = i >= 0 ? 'copy' : 'none';
+  e.dataTransfer.dropEffect = i >= 0 && droppable ? 'copy' : 'none';
 });
 window.addEventListener('drop', (e) => {
   e.preventDefault();
   const i = hitTest(e.clientX, e.clientY);
   api.log(`drop segment=${i} files=${e.dataTransfer.files.length}`);
   const paths = [...e.dataTransfer.files].map((f) => api.pathFor(f)).filter(Boolean);
-  if (i >= 0 && paths.length) api.drop(targets[i].id, paths);
+  if (i >= 0 && droppable && paths.length) api.drop(targets[i].id, paths);
   else api.cancel();
   setHot(-1);
 });

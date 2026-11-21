@@ -97,7 +97,7 @@ app.whenReady().then(async () => {
   helper = new InputHelper();
   helper.start();
 
-  flow = createDropFlow({ conversion, getWheel: () => wheel, getJobs: () => jobs, log });
+  flow = createDropFlow({ conversion, getWheel: () => wheel, getJobs: () => jobs, openPdfs: showPdf, keysSupported: () => helper.keysSupported, log });
   wheel = new WheelWindow({ onDrop: flow.onDrop });
   wheel.create();
   jobs = new Jobs({
@@ -110,7 +110,8 @@ app.whenReady().then(async () => {
   jobs.on('change', (view) => toast.update(view));
 
   trigger = new Trigger(helper);
-  trigger.on('open', flow.onOpen);
+  trigger.on('open', (files, { wheel: kind }) => flow.onOpen(files, false, kind));
+  trigger.on('switch', flow.onSwitch);
   trigger.on('unsupported', () => jobs.addInfo({ title: 'Nothing to convert here', detail: 'Drag a file or folder from Explorer or the desktop.' }));
   trigger.on('release', () => wheel.releaseSoon());
   trigger.on('cancel', () => wheel.hide());

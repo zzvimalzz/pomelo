@@ -21,17 +21,22 @@ app.whenReady().then(async () => {
   const dir = tmp.dir('pipe');
   const file = path.join(dir, 'report.docx');
   fs.writeFileSync(file, 'x');
+  const pdf = path.join(dir, 'report.pdf');
+  fs.writeFileSync(pdf, 'x');
 
   let selection = { files: [file], explorer: true };
   const helper = new EventEmitter();
   helper.down = () => {};
   helper.files = async () => selection;
-  const overlay = new WheelWindow({ onDrop: () => {} });
+  const overlay = new WheelWindow({ onDrop: (paths, to) => flow.onDrop(paths, to) });
   overlay.create();
-  const flow = createDropFlow({ conversion: convert, getWheel: () => overlay, getJobs: () => ({ addInfo: () => {} }), log: () => {} });
+  const opened = [];
+  const flow = createDropFlow({ conversion: convert, getWheel: () => overlay, getJobs: () => ({ addInfo: () => {} }), openPdfs: (paths) => opened.push(...paths), keysSupported: () => true, log: () => {} });
   const trigger = new Trigger(helper);
   const events = [];
-  trigger.on('open', (files) => { events.push('open'); flow.onOpen(files); });
+  const wheels = [];
+  trigger.on('open', (files, { wheel }) => { events.push('open'); wheels.push(wheel); flow.onOpen(files, false, wheel); });
+  trigger.on('switch', (wheel) => { events.push('switch'); wheels.push(wheel); flow.onSwitch(wheel); });
   trigger.on('unsupported', () => events.push('unsupported'));
   trigger.on('release', () => { events.push('release'); overlay.releaseSoon(); });
   trigger.on('cancel', () => { events.push('cancel'); overlay.hide(); });
@@ -44,9 +49,38 @@ app.whenReady().then(async () => {
   await sleep(1000);
   check('the wheel opens', events.includes('open') && overlay.win.isVisible() && trigger.state === 'wheel');
   const b = overlay.win.getBounds();
-  check('and is 400x400', b.width === 400 && b.height === 400);
+  check('and is 400 wide, with a band above the wheel for the pill', b.width === 400 && b.height === 464);
   send('mu'); await sleep(900);
   check('releasing without dropping folds it away', !overlay.win.isVisible() && events.includes('release'));
+
+  console.log('drag a PDF, tap Shift: the Open wheel, and the other key turns it');
+  const page = (code) => overlay.win.webContents.executeJavaScript(code);
+  const showing = () => page(`document.getElementById('stage').dataset.wheel + ' ' + document.querySelectorAll('.seg').length + ' ' + document.querySelectorAll('.seg.ring').length + ' ' + document.querySelectorAll('#segments .spin').length`);
+  const dropEffect = (x, y) => page(`(() => { const e = new Event('dragover', { cancelable: true }); e.clientX = ${x}; e.clientY = ${y + 64}; e.dataTransfer = { dropEffect: '' }; window.dispatchEvent(e); return e.dataTransfer.dropEffect; })()`);
+  events.length = 0; wheels.length = 0;
+  selection = { files: [pdf], explorer: true };
+  send('md', '500', '500'); send('mm', '520', '520'); await sleep(100); send('kd', 'shift'); await sleep(1000);
+  check('Shift opens the Open wheel, one ring', wheels.join() === 'open' && overlay.win.isVisible() && (await showing()) === 'open 1 1 1' && overlay.win.getBounds().width === 400 && overlay.win.getBounds().height === 464, `${wheels} ${await showing()}`);
+  check('a drop on the ring is allowed, and the centre refuses', (await dropEffect(200, 80)) === 'copy' && (await dropEffect(200, 200)) === 'none');
+  send('kd', 'shift'); await sleep(200);
+  check('Shift again does nothing', wheels.join() === 'open' && !events.includes('switch'));
+  send('kd', 'ctrl'); await sleep(900);
+  const [kind, count, rings, groups] = (await showing()).split(' ');
+  check('Ctrl turns it into the conversion wheel, and the old segments are gone', wheels.join() === 'open,convert' && kind === 'convert' && +count > 1 && rings === '0' && groups === count, await showing());
+  send('kd', 'shift'); await sleep(900);
+  check('Shift turns it back', wheels.join() === 'open,convert,open' && (await showing()) === 'open 1 1 1', await showing());
+  await page(`window.pomelo.drop('open', [${JSON.stringify(pdf)}, ${JSON.stringify(file)}])`);
+  await sleep(300);
+  check('a drop on the ring hands the PDFs, and only them, to the PDF workspace', opened.join() === pdf, opened.join());
+  send('mu'); await sleep(900);
+  check('letting go folds it away', !overlay.win.isVisible());
+
+  console.log('drag a Word file, tap Shift: the ring refuses it');
+  selection = { files: [file], explorer: true };
+  send('md', '500', '500'); send('mm', '520', '520'); await sleep(100); send('kd', 'shift'); await sleep(900);
+  check('the Open wheel shows, and a drop on it is refused', (await showing()) === 'open 1 1 1' && (await dropEffect(200, 80)) === 'none');
+  send('mu'); await sleep(900);
+  selection = { files: [file], explorer: true };
 
   console.log('keys pressed without dragging do nothing');
   events.length = 0;

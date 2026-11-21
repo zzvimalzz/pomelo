@@ -3,12 +3,12 @@
 //
 // It installs a Windows mouse hook and keyboard hook, but reports only:
 //   - the left mouse button (down, up) and the mouse position while that button is held, and
-//   - the trigger key (ctrl, alt or shift) and Esc, and only while the left button is held.
+//   - the trigger keys (ctrl, alt or shift; ctrl until told otherwise) and Esc, and only while the left button is held.
 // Nothing else is reported, stored or logged. Pomelo does not log keystrokes.
 //
-// stdout, one line per event:  {"ready":true}   md <x> <y>   mm <x> <y>   mu   kd <key>
+// stdout, one line per event:  {"ready":true,"keys":true}   md <x> <y>   mm <x> <y>   mu   kd <key>
 //                              {"id":1,"files":["C:\\a.docx"],"why":"...","explorer":true}
-// stdin, one line per command: key <ctrl|alt|shift>   down <x> <y>   files <id>
+// stdin, one line per command: key <ctrl|alt|shift>   keys <name> <name>...   down <x> <y>   files <id>
 // x and y are physical screen pixels (this process is per-monitor DPI aware).
 //
 // "down" is sent at mouse-down: which Explorer window or desktop icon is under the cursor?
@@ -50,7 +50,7 @@ static class PomeloInput {
   // ---- hooks -------------------------------------------------------------------------------------------------
 
   static volatile bool leftDown;
-  static volatile string triggerKey = "ctrl";
+  static volatile string[] triggerKeys = { "ctrl" };
   static int lastMove;
   static readonly bool[] keyDown = new bool[256];
   static readonly HookProc mouseProc = OnMouse, keyProc = OnKey;   // kept in fields so the GC cannot collect them
@@ -86,7 +86,7 @@ static class PomeloInput {
         if (m == WM_KEYDOWN || m == WM_SYSKEYDOWN) {
           bool first = !keyDown[vk];            // ignore auto-repeat
           keyDown[vk] = true;
-          if (first && leftDown && (name == "esc" || name == triggerKey)) output.Add("kd " + name);
+          if (first && leftDown && (name == "esc" || Array.IndexOf(triggerKeys, name) >= 0)) output.Add("kd " + name);
         } else keyDown[vk] = false;
       }
     }
@@ -200,6 +200,15 @@ static class PomeloInput {
 
   // ---- stdin / stdout ------------------------------------------------------------------------------------------
 
+  static bool IsTriggerKey(string name) { return name == "ctrl" || name == "alt" || name == "shift"; }
+
+  // "keys ctrl shift": all of the names must be trigger keys, otherwise the command is ignored, as "key nonsense" is.
+  static void SetKeys(string[] p) {
+    var names = new List<string>();
+    for (int i = 1; i < p.Length; i++) { if (!IsTriggerKey(p[i])) return; names.Add(p[i]); }
+    if (names.Count > 0) triggerKeys = names.ToArray();
+  }
+
   // ASCII only, so the output never depends on a console code page.
   static string Json(string s) {
     var sb = new StringBuilder("\"");
@@ -231,13 +240,14 @@ static class PomeloInput {
     SetProcessDpiAwarenessContext((IntPtr)(-4));     // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
     StartWriter();
     StartHooks();
-    output.Add("{\"ready\":true}");
+    output.Add("{\"ready\":true,\"keys\":true}");
 
     string line;
     while ((line = Console.In.ReadLine()) != null) {     // ends when Pomelo closes our stdin
       string[] p = line.Trim().Split(' ');
       int a, b;
-      if (p[0] == "key" && p.Length >= 2 && (p[1] == "ctrl" || p[1] == "alt" || p[1] == "shift")) triggerKey = p[1];
+      if (p[0] == "key" && p.Length >= 2 && IsTriggerKey(p[1])) triggerKeys = new[] { p[1] };
+      else if (p[0] == "keys") SetKeys(p);
       else if (p[0] == "down" && p.Length >= 3 && int.TryParse(p[1], out a) && int.TryParse(p[2], out b)) { try { SetDown(a, b); } catch { down = null; } }
       else if (p[0] == "files" && p.Length >= 2 && int.TryParse(p[1], out a)) {
         string[] files;

@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('pomelo', {
   onOpen: (cb) => ipcRenderer.on('wheel:open', (_e, data) => cb(data)),
+  onSwitch: (cb) => ipcRenderer.on('wheel:switch', (_e, data) => cb(data)),
   onClose: (cb) => ipcRenderer.on('wheel:close', () => cb()),
   pathFor: (file) => webUtils.getPathForFile(file),
   drop: (targetId, paths) => ipcRenderer.send('wheel:drop', { targetId, paths }),

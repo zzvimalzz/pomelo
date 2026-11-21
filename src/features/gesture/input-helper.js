@@ -4,6 +4,7 @@ const { spawn } = require('child_process');
 const { EventEmitter } = require('events');
 const log = require('#shared/node/log');
 const { inApp } = require('#shared/node/paths');
+const { KEY_WHEELS } = require('./trigger');
 
 const EXE = inApp('native', 'bin', 'pomelo-input.exe');
 
@@ -12,6 +13,7 @@ class InputHelper extends EventEmitter {
     super();
     this.proc = null;
     this.ready = false;
+    this.keysSupported = false;     // the helper took the trigger keys: an older helper ignores `keys` and reports Ctrl only
     this.nextId = 1;
     this.pending = new Map();
     this.buf = '';
@@ -27,6 +29,7 @@ class InputHelper extends EventEmitter {
     this.proc.stderr.on('data', (d) => console.warn('[pomelo-input]', String(d).trim().slice(0, 300)));
     this.proc.on('exit', () => {
       this.ready = false;
+      this.keysSupported = false;
       for (const done of this.pending.values()) done({ files: [], explorer: false });
       this.pending.clear();
       if (!this.stopped) setTimeout(() => this.start(), 2000);   // helper died: bring it back
@@ -43,7 +46,12 @@ class InputHelper extends EventEmitter {
       if (line[0] !== '{') { this.emit('input', line.split(' ')); continue; }   // md/mm/mu/kd events
       let msg;
       try { msg = JSON.parse(line); } catch { continue; }
-      if (msg.ready) { this.ready = true; continue; }
+      if (msg.ready) {
+        this.ready = true;
+        this.keysSupported = !!msg.keys;
+        this.send(`keys ${Object.keys(KEY_WHEELS).join(' ')}`);
+        continue;
+      }
       const done = this.pending.get(msg.id);
       if (done) { this.pending.delete(msg.id); if (!(msg.files || []).length && msg.why) log('no files:', msg.why); done({ files: msg.files || [], explorer: !!msg.explorer }); }
     }
