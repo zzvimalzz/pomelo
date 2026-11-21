@@ -19,7 +19,8 @@
     }
   }
 
-  const [doc] = (await window.workspaceApi.state()).documents;
+  const { documents: [doc], dock } = await window.workspaceApi.state();
+  document.querySelector('.well').dataset.dock = dock;
   if (!doc) return;
   document.getElementById('docname').textContent = doc.name;
   document.title = `${doc.name} - Pomelo`;

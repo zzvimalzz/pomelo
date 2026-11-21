@@ -34,7 +34,7 @@ const setSettings = (patch) => { settings = { ...settings, ...patch }; };
 
 // One workspace per scenario: the IPC handlers belong to one at a time.
 const fresh = (options = {}) => {
-  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus']) ipcMain.removeHandler(channel);
+  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus', 'pdfws:dock']) ipcMain.removeHandler(channel);
   const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, ...options });
   workspace.registerIpc();
   return workspace;
@@ -412,7 +412,7 @@ app.whenReady().then(async () => {
     const win = await openAndWait(fresh(), twelve);
     await sleep(900);
     let d = await dockState(win);
-    check(`${theme}: the dock holds the page group and the zoom group and nothing else`, d.titles.join('|') === 'Previous page (Page Up)|Next page (Page Down)|Zoom out (Ctrl+−)|View options|Zoom in (Ctrl+=)'
+    check(`${theme}: the dock holds the page group and the zoom group and nothing else`, d.titles.join('|') === 'Drag to move|Previous page (Page Up)|Next page (Page Down)|Zoom out (Ctrl+−)|View options|Zoom in (Ctrl+=)'
       && d.page === '1' && d.count === '/ 12' && d.zoom === 'Fit page' && d.opacity === '1', JSON.stringify(d));
     await js(win, `document.querySelector('.dock [aria-label="Next page"]').click()`);
     await sleep(400);
@@ -528,6 +528,185 @@ app.whenReady().then(async () => {
     await closeAndWait(win);
   }
   nativeTheme.themeSource = 'light';
+
+  console.log('Ctrl and the wheel zoom anywhere in the window');
+  {
+    const win = await openAndWait(fresh(), twelve);
+    await sleep(900);
+    const height = await js(win, 'innerHeight');
+    const percent = async () => Number.parseInt(await js(win, `document.querySelector('.zoom').textContent`), 10);
+    const wheel = async (x, y, ticks) => {
+      win.webContents.focus();
+      for (let i = 0; i < Math.abs(ticks); i++) win.webContents.sendInputEvent({ type: 'mouseWheel', x, y, deltaX: 0, deltaY: ticks > 0 ? 100 : -100, wheelTicksY: ticks > 0 ? 1 : -1, modifiers: ['control'] });
+      await sleep(500);
+    };
+    for (const [name, x, y] of [['the page', 600, 300], ['the dock', 600, height - 40], ['the title row', 600, 20]]) {
+      await press(win, '1', ['control']);
+      await wheel(x, y, 1);
+      const one = await percent();
+      await press(win, '1', ['control']);
+      await wheel(x, y, 3);
+      const three = await percent();
+      await wheel(x, y, -3);
+      const back = await percent();
+      check(`over ${name}: Ctrl and the wheel zoom in, and three quick turns go further than one`, one > 100 && three > one, `${one} ${three}`);
+      check(`over ${name}: and the wheel the other way zooms out`, back < three, `${three} -> ${back}`);
+    }
+    await wheel(600, 300, -3);
+    const small = await percent();
+    check('the page is not scrolled by it and the browser does not zoom either', (await js(win, `document.getElementById('scroller').scrollTop`)) < 50 && win.webContents.getZoomFactor() === 1 && small > 0, String(small));
+    await closeAndWait(win);
+  }
+
+  console.log('the dock can stand at the bottom, top, left or right, and stays there');
+  {
+    settings = { pdfView: { window: null } };
+    calls.length = 0;
+    const workspace = fresh();
+    const win = await openAndWait(workspace, twelve);
+    await sleep(900);
+    const where = () => js(win, `(() => { const dock = document.querySelector('.dock'); const w = document.querySelector('.well').getBoundingClientRect(); const d = dock.getBoundingClientRect();
+      return { side: document.querySelector('.well').dataset.dock, left: d.left - w.left, right: w.right - d.right, top: d.top - w.top, bottom: w.bottom - d.bottom, cx: (d.left + d.right) / 2 - (w.left + w.right) / 2, cy: (d.top + d.bottom) / 2 - (w.top + w.bottom) / 2,
+        column: getComputedStyle(dock).flexDirection === 'column', dragging: dock.classList.contains('dragging'), on: [...document.querySelectorAll('.snap.on')].map((n) => n.className.replace('snap ', '').replace(' on', '')), ghosts: document.querySelectorAll('.snap').length,
+        opacity: getComputedStyle(dock).opacity, inside: d.left >= w.left && d.right <= w.right && d.top >= w.top && d.bottom <= w.bottom }; })()`);
+    const grip = () => js(win, `(() => { const r = document.querySelector('.grip').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+    const mouse = (type, x, y) => win.webContents.sendInputEvent({ type, x, y, button: 'left', clickCount: 1, modifiers: type === 'mouseUp' ? [] : ['leftButtonDown'] });
+    const box = await js(win, `(() => { const r = document.querySelector('.well').getBoundingClientRect(); return { l: r.left, t: r.top, w: r.width, h: r.height }; })()`);
+    const dragTo = async (x, y, hold = false) => {
+      win.webContents.focus();
+      const g = await grip();
+      mouse('mouseDown', g.x, g.y);
+      for (let i = 1; i <= 8; i++) { mouse('mouseMove', g.x + ((x - g.x) * i) / 8, g.y + ((y - g.y) * i) / 8); await sleep(30); }
+      await sleep(200);
+      if (hold) return;
+      mouse('mouseUp', x, y);
+      await sleep(800);
+    };
+    const edges = { left: [box.l + 24, box.t + box.h / 2], right: [box.l + box.w - 24, box.t + box.h / 2], top: [box.l + box.w / 2, box.t + 24], bottom: [box.l + box.w / 2, box.t + box.h - 24] };
+
+    let v = await where();
+    check('the dock starts at the bottom middle, 16 px up, in a row', v.side === 'bottom' && Math.abs(v.cx) < 2 && Math.abs(v.bottom - 16) < 2 && !v.column, JSON.stringify(v));
+    check('a grip leads the dock, ahead of the page buttons, with a tooltip', (await js(win, `(() => { const g = document.querySelector('.dock').firstElementChild; return g.className === 'grip' && g.title === 'Drag to move' && g.getAttribute('aria-label') === 'Drag to move'; })()`)));
+    await dragTo(...edges.left, true);
+    v = await where();
+    check('while it is dragged the dock follows the pointer and four places are marked, the nearest in the accent', v.dragging && v.ghosts === 4 && v.on.join() === 'left' && v.left < 120, JSON.stringify(v));
+    await shot(win, 'workspace-dock-dragging.png');
+    mouse('mouseUp', ...edges.left);
+    await sleep(800);
+    v = await where();
+    check('dropped near the left edge it stands at the left middle, as a column', v.side === 'left' && v.column && Math.abs(v.left - 16) < 2 && Math.abs(v.cy) < 2 && v.ghosts === 0 && !v.dragging && v.opacity === '1' && v.inside, JSON.stringify(v));
+    check('and the main process was told once, with the side', JSON.stringify(calls.filter((c) => c.channel === 'pdfws:dock').map((c) => c.args)) === '[["left"]]' && settings.pdfView.dock === 'left');
+    await shot(win, 'workspace-dock-left.png');
+
+    const menuBeside = async (side) => {
+      await js(win, `document.querySelector('.dock .zoom').click()`);
+      await sleep(500);
+      const m = await js(win, `(() => { const r = document.querySelector('.menu').getBoundingClientRect(); const d = document.querySelector('.dock').getBoundingClientRect(); const w = document.querySelector('.well').getBoundingClientRect();
+        return { menu: { l: r.left, r: r.right, t: r.top, b: r.bottom }, dock: { l: d.left, r: d.right, t: d.top, b: d.bottom }, well: { l: w.left, r: w.right, t: w.top, b: w.bottom } }; })()`);
+      if (side === 'left') return m.menu.l >= m.dock.r + 8 && m.menu.r <= m.well.r && m.menu.t >= m.well.t && m.menu.b <= m.well.b;
+      if (side === 'right') return m.menu.r <= m.dock.l - 8 && m.menu.l >= m.well.l && m.menu.t >= m.well.t && m.menu.b <= m.well.b;
+      if (side === 'top') return m.menu.t >= m.dock.b + 8 && m.menu.b <= m.well.b && m.menu.l >= m.well.l && m.menu.r <= m.well.r;
+      return m.menu.b <= m.dock.t - 8 && m.menu.t >= m.well.t && m.menu.l >= m.well.l && m.menu.r <= m.well.r;
+    };
+    const closeMenu = () => press(win, 'Escape');
+    check('at the left the View menu opens beside the dock, inside the window', await menuBeside('left'));
+    await shot(win, 'workspace-dock-left-menu.png');
+    await closeMenu();
+
+    await dragTo(...edges.right);
+    v = await where();
+    check('dragged to the right edge it stands at the right middle', v.side === 'right' && v.column && Math.abs(v.right - 16) < 2 && Math.abs(v.cy) < 2 && v.inside, JSON.stringify(v));
+    check('at the right the View menu opens to the dock\'s left', await menuBeside('right'));
+    await closeMenu();
+    await shot(win, 'workspace-dock-right.png');
+
+    await dragTo(...edges.top);
+    v = await where();
+    check('dragged to the top edge it stands at the top middle, as a row', v.side === 'top' && !v.column && Math.abs(v.top - 16) < 2 && Math.abs(v.cx) < 2 && v.inside, JSON.stringify(v));
+    check('at the top the View menu opens below the dock', await menuBeside('top'));
+    await closeMenu();
+    await shot(win, 'workspace-dock-top.png');
+
+    await dragTo(...edges.bottom);
+    v = await where();
+    check('dragged back to the bottom edge it stands at the bottom middle again', v.side === 'bottom' && !v.column && Math.abs(v.bottom - 16) < 2 && Math.abs(v.cx) < 2, JSON.stringify(v));
+    check('at the bottom the View menu opens above it', await menuBeside('bottom'));
+    await closeMenu();
+
+    const stored = calls.filter((c) => c.channel === 'pdfws:dock').length;
+    const g = await grip();
+    win.webContents.focus();
+    mouse('mouseDown', g.x, g.y);
+    mouse('mouseUp', g.x, g.y);
+    await sleep(700);
+    v = await where();
+    check('a click on the grip without a drag changes nothing and sends nothing', v.side === 'bottom' && !v.dragging && v.ghosts === 0 && calls.filter((c) => c.channel === 'pdfws:dock').length === stored, JSON.stringify(v));
+
+    await js(win, `document.querySelector('.grip').focus()`);
+    await press(win, 'Left');
+    await sleep(500);
+    check('with the grip focused the arrow keys move the dock: Left', (await where()).side === 'left');
+    await press(win, 'Up');
+    await sleep(400);
+    check('Up', (await where()).side === 'top');
+    await press(win, 'Right');
+    await sleep(400);
+    check('Right', (await where()).side === 'right');
+    await press(win, 'Down');
+    await sleep(400);
+    check('and Down brings it back to the bottom, without turning a page', (await where()).side === 'bottom' && (await js(win, 'workspaceViewer.viewer.currentPageNumber')) === 1);
+
+    const before = settings.pdfView.dock;
+    for (const bad of ['elsewhere', 5, null, {}, 'LEFT', ['left']]) await js(win, `workspaceApi.setDock(${JSON.stringify(bad)})`);
+    check('the page cannot store a place that is not one of the four', settings.pdfView.dock === before, `${before} -> ${settings.pdfView.dock}`);
+
+    await dragTo(...edges.left);
+    check('the window kept its own stored place beside the dock\'s', settings.pdfView.dock === 'left' && !!settings.pdfView.window && settings.pdfView.window.width > 0, JSON.stringify(settings.pdfView));
+
+    console.log('reading with the dock at the side');
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: box.l + box.w / 2, y: box.t + 200 });
+    await js(win, `document.getElementById('scroller').focus()`);
+    await js(win, `document.getElementById('scroller').scrollTop = 0`);
+    await sleep(400);
+    await js(win, `document.getElementById('scroller').scrollTop = 400`);
+    await sleep(600);
+    v = await where();
+    check('scrolling down slides a dock at the left away to the left', (await js(win, `document.querySelector('.dock').classList.contains('tuck')`)) && v.opacity === '0' && v.left < 0, JSON.stringify(v));
+    await js(win, `document.getElementById('scroller').scrollTop = 100`);
+    await sleep(600);
+    win.setBounds({ ...win.getBounds(), width: 900, height: 600 });
+    await sleep(900);
+    check('at the smallest window a column dock is inside the document area', (await where()).inside);
+    win.setBounds({ ...win.getBounds(), width: size.width, height: size.height });
+    await sleep(600);
+    await closeAndWait(win);
+
+    const again = await openAndWait(fresh(), twelve);
+    await sleep(900);
+    check('the next window opens with the dock where it was left', (await js(again, `document.querySelector('.well').dataset.dock`)) === 'left');
+    await closeAndWait(again);
+    settings = { pdfView: { window: null, dock: 'diagonal' } };
+    const odd = await openAndWait(fresh(), twelve);
+    check('a stored place that is not one of the four is ignored: the dock is at the bottom', (await js(odd, `document.querySelector('.well').dataset.dock`)) === 'bottom');
+    await closeAndWait(odd);
+    settings = { pdfView: { window: null, dock: 'top' } };
+    const top = await openAndWait(fresh(), twelve);
+    await sleep(900);
+    await js(top, `document.getElementById('focus').click()`);
+    await until('full screen', () => top.isFullScreen());
+    await sleep(1000);
+    const dockVisible = () => js(top, `Number(getComputedStyle(document.querySelector('.dock')).opacity)`);
+    check('in focus reading a dock at the top is hidden until the pointer is near the top', (await dockVisible()) === 0);
+    await js(top, `document.getElementById('scroller').dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 600, clientY: 90 }))`);
+    await sleep(600);
+    const topFocus = await js(top, `(() => { const d = document.querySelector('.dock').getBoundingClientRect(); const t = document.querySelector('.titlerow').getBoundingClientRect(); return { dock: Number(getComputedStyle(document.querySelector('.dock')).opacity), clear: d.top >= t.bottom }; })()`);
+    check('and then shows, below the title row', topFocus.dock === 1, JSON.stringify(topFocus));
+    await shot(top, 'workspace-focus-dock-top.png');
+    await press(top, 'Escape');
+    await until('windowed', () => !top.isFullScreen());
+    await closeAndWait(top);
+    settings = { pdfView: { window: null } };
+  }
 
   console.log('focus reading');
   {

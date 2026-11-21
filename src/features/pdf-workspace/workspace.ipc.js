@@ -4,12 +4,13 @@
 const { ipcMain } = require('electron');
 
 // documents: the open documents (documents.js). state(): what the page starts from. setFocus(on): enter or leave full screen.
-// isWorkspace(sender): is this the workspace window's page.
-function registerWorkspaceIpc({ documents, state, setFocus, isWorkspace }) {
+// setDock(side): keep the dock's place. isWorkspace(sender): is this the workspace window's page.
+function registerWorkspaceIpc({ documents, state, setFocus, setDock, isWorkspace }) {
   const guard = (e) => { if (!isWorkspace(e.sender)) throw new Error('not the workspace window'); };
   ipcMain.handle('pdfws:state', (e) => { guard(e); return state(); });
   ipcMain.handle('pdfws:read', (e, token, begin, end) => { guard(e); return documents.read(token, begin, end); });
   ipcMain.handle('pdfws:unlock', (e, token, password) => { guard(e); documents.unlock(token, password); });
+  ipcMain.handle('pdfws:dock', (e, side) => { guard(e); setDock(side); });
   ipcMain.handle('pdfws:focus', (e, on) => { guard(e); setFocus(on === true); });
 }
 

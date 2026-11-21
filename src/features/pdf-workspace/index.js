@@ -7,6 +7,7 @@ const { createDocuments } = require('./documents');
 const { registerWorkspaceIpc } = require('./workspace.ipc');
 
 const WINDOWS_11 = 22621;
+const DOCKS = ['bottom', 'top', 'left', 'right'];
 
 const REASONS = {
   ENOENT: 'The file is no longer there.', ENOTFILE: 'This is not a file.',
@@ -20,6 +21,9 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, solid =
   let win = null;
   let current = null;
   let opening = false;
+
+  const setView = (patch) => setSettings({ pdfView: { ...getSettings().pdfView, ...patch } });
+  const dock = () => { const side = getSettings().pdfView?.dock; return DOCKS.includes(side) ? side : 'bottom'; };
 
   const focus = () => { if (win.isMinimized()) win.restore(); win.show(); win.focus(); };
 
@@ -39,7 +43,7 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, solid =
       }
       win = require('./workspace.window').create({
         asset, solid, saved: getSettings().pdfView?.window,
-        onBounds: (bounds) => setSettings({ pdfView: { ...getSettings().pdfView, window: bounds } }),
+        onBounds: (bounds) => setView({ window: bounds }),
       });
       win.on('closed', () => { win = null; current = null; documents.closeAll(); });
     } finally {
@@ -53,8 +57,9 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, solid =
 
   const registerIpc = () => registerWorkspaceIpc({
     documents,
-    state: () => ({ documents: current ? [current] : [] }),
+    state: () => ({ documents: current ? [current] : [], dock: dock() }),
     setFocus: (on) => win?.setFullScreen(on),
+    setDock: (side) => { if (DOCKS.includes(side)) setView({ dock: side }); },
     isWorkspace: (sender) => !!win && !win.isDestroyed() && win.webContents === sender,
   });
 

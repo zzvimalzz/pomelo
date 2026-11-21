@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The dock: the page box with its arrows, the zoom buttons and the View menu. It slides away while the user reads downwards and comes
-// back on the way up. A classic script that adds window.workspaceDock.
+// back on the way up. A grip at its start end moves it (dock-place.js). A classic script that adds window.workspaceDock.
 (() => {
   const { el, icon } = window.pomeloUi;
   const { label, bind } = window.workspaceKeys;
   const TUCK_FROM = 80;
   const TUCK_STEP = 6;
-  const NEAR_BOTTOM = 110;
+  const NEAR_EDGE = 110;
   const SETTLE = 400;
-  const WHEEL_GAP = 120;
+  const WHEEL_STEP = 100;
   const PRESETS = { 'page-fit': 'Fit page', 'page-width': 'Fit width' };
 
   let viewer = null;
@@ -76,6 +76,10 @@
     viewer = pdfViewer;
     const dock = el('nav', 'dock');
     dock.hidden = true;
+    const grip = el('button', 'grip');
+    grip.type = 'button';
+    grip.title = 'Drag to move';
+    grip.setAttribute('aria-label', 'Drag to move');
     const previous = button('sm', 'left', 'Previous page', 'previousPage');
     const next = button('sm', 'right', 'Next page', 'nextPage');
     const page = el('input', 'pageno');
@@ -95,7 +99,7 @@
     menu = buildMenu([['Continuous', 0], ['Two pages side by side', 1]]);
     const zoomGroup = el('div', 'zoomgroup');
     zoomGroup.append(out, zoom, menu, into);
-    dock.append(previous, box, next, el('span', 'sep'), zoomGroup);
+    dock.append(grip, previous, box, next, el('span', 'sep'), zoomGroup);
     flash = el('div', 'flash');
     well().append(dock, flash);
 
@@ -151,18 +155,25 @@
       else if (moved < -TUCK_STEP) dock.classList.remove('tuck');
     }, { passive: true });
     well().addEventListener('pointermove', (e) => {
-      if (well().getBoundingClientRect().bottom - e.clientY < NEAR_BOTTOM) dock.classList.remove('tuck');
+      if (window.workspaceDockPlace.edgeDistance(e, well().getBoundingClientRect()) < NEAR_EDGE) dock.classList.remove('tuck');
     });
 
-    // A wheel turn is one step; a trackpad pinch sends many, so they are spaced out.
-    let wheeled = 0;
-    container.addEventListener('wheel', (e) => {
+    // Ctrl and the wheel zoom wherever the pointer is. A mouse notch is 100 and one step; a trackpad pinch sends many small turns,
+    // which add up to a step.
+    let pulled = 0;
+    window.addEventListener('wheel', (e) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
-      if (Date.now() - wheeled < WHEEL_GAP) return;
-      wheeled = Date.now();
-      zoomBy(e.deltaY < 0 ? 1 : -1, inWell(e.clientX, e.clientY));
+      if (Math.sign(e.deltaY) !== Math.sign(pulled)) pulled = 0;
+      pulled += e.deltaMode === 0 ? e.deltaY : e.deltaY * 40;
+      const steps = Math.max(-3, Math.min(3, Math.trunc(-pulled / WHEEL_STEP)));
+      if (!steps) return;
+      pulled += steps * WHEEL_STEP;
+      const r = well().getBoundingClientRect();
+      const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+      zoomBy(steps, inside ? inWell(e.clientX, e.clientY) : middle(container));
     }, { passive: false });
+    window.workspaceDockPlace.attach(dock, grip, () => { closeMenu(); dock.classList.remove('tuck'); });
 
     bind('zoomIn', () => zoomBy(1));
     bind('zoomOut', () => zoomBy(-1));
