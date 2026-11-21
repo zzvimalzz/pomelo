@@ -59,8 +59,22 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   fs.truncateSync(shrinking, 10);
   expect('a file cut short while open is reported, never padded', await fails(docs.read(grown.token, 0, 100)));
 
+  console.log('a password');
+  expect('a document has no password until one is given', docs.password(doc.token) === undefined);
+  docs.unlock(doc.token, 'Pw-é1');
+  const stored = docs.password(doc.token);
+  expect('the password is kept in memory as UTF-8, under the document\'s token only', stored.toString('utf8') === 'Pw-é1' && docs.password(second.token) === undefined);
+  expect('the document record carries no password', !JSON.stringify(doc).includes('Pw-') && Object.keys(doc).sort().join() === 'name,size,token');
+  docs.unlock(doc.token, 'another');
+  expect('a new password replaces the old one, which is overwritten with zeros', docs.password(doc.token).toString() === 'another' && stored.every((b) => b === 0));
+  const refusedPasswords = { 'an unknown token': ['0'.repeat(64), 'x'], 'no password': [doc.token, undefined], 'an empty password': [doc.token, ''], 'a password that is not text': [doc.token, 12], 'a password of 4097 characters': [doc.token, 'x'.repeat(4097)] };
+  for (const [what, args] of Object.entries(refusedPasswords)) expect(`${what} is refused`, (() => { try { docs.unlock(...args); return false; } catch { return true; } })());
+  expect('a refused password changes nothing', docs.password(doc.token).toString() === 'another');
+  const last = docs.password(doc.token);
+
   console.log('closing');
   docs.closeAll();
+  expect('closing forgets every password and overwrites it with zeros', docs.password(doc.token) === undefined && last.every((b) => b === 0));
   expect('after closing, no token reads', await fails(docs.read(doc.token, 0, 10)) && docs.served() === 0);
   await new Promise((resolve) => setTimeout(resolve, 100));
   fs.rmSync(shrinking);

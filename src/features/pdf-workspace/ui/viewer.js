@@ -33,20 +33,52 @@
     };
   }
 
+  // A password is asked for until pdf.js accepts one, three wrong ones in all. The main process hears of it only after pdf.js has
+  // accepted it, and the page forgets it.
+  async function load(lib, doc) {
+    const task = lib.getDocument(loadOptions(transport(lib, doc.token, doc.size)));
+    let password = null;
+    let wrong = 0;
+    let gaveUp = false;
+    task.onPassword = async (update, reason) => {
+      const again = reason === lib.PasswordResponses.INCORRECT_PASSWORD;
+      password = !again || ++wrong < 3 ? await window.workspaceDialogs.askPassword(again) : null;
+      if (password === null) { gaveUp = true; task.destroy(); } else update(password);
+    };
+    let pdf;
+    try {
+      pdf = await task.promise;
+    } catch (e) {
+      throw gaveUp ? Object.assign(new Error('password needed'), { name: 'PasswordException' }) : e;
+    }
+    if (password !== null) await window.workspaceApi.unlock(doc.token, password);
+    password = null;
+    return pdf;
+  }
+
   // doc: { token, size } from the main process. The page is drawn into viewerEl, which sits in the absolutely positioned container.
   async function open(doc, container, viewerEl) {
     const { lib, viewerLib } = await loading;
-    const pdf = await lib.getDocument(loadOptions(transport(lib, doc.token, doc.size))).promise;
+    const pdf = await load(lib, doc);
     const eventBus = new viewerLib.EventBus();
     const linkService = new viewerLib.PDFLinkService({ eventBus });
     const viewer = new viewerLib.PDFViewer({ container, viewer: viewerEl, eventBus, linkService, annotationEditorMode: lib.AnnotationEditorType.DISABLE, removePageBorders: true });
     linkService.setViewer(viewer);
+    api.viewer = viewer;
+    window.workspaceComments.watch(viewer, eventBus, container);
     const fit = () => { if (viewer.pagesCount) viewer.currentScaleValue = 'page-fit'; };
     eventBus.on('pagesinit', fit);
     new ResizeObserver(fit).observe(container);
+    let resting = null;
+    container.addEventListener('scroll', () => {
+      container.classList.add('scrolling');
+      clearTimeout(resting);
+      resting = setTimeout(() => container.classList.remove('scrolling'), 900);
+    }, { passive: true });
     viewer.setDocument(pdf);
     linkService.setDocument(pdf, null);
   }
 
-  window.workspaceViewer = { loadOptions, open };
+  const api = { loadOptions, open, viewer: null };
+  window.workspaceViewer = api;
 })();
