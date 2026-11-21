@@ -34,6 +34,7 @@ class Line:
         self.parts = ()               # the lines this one was joined from, so that the check for text never written counts them
         self.wrapped = False          # a picture or box beside the line shortens it, and Word wraps the paragraph round that drawing
         self.floats = ()              # the drawings anchored in the paragraph this line belongs to
+        self.tags = ()                # the elements a tagged PDF puts the line in, outermost first, as (number, type)
 
     @property
     def text(self):
@@ -104,7 +105,10 @@ def clipped_runs(spans, seen, upright):
     for s in spans:
         org, text = s["org"], s["text"]
         shown = [(round(x, 2), round(y, 2)) in seen for x, y in org]
-        if all(shown) or s["raw"] != text or len(org) != len(text) or not upright:
+        if not upright:
+            out.append(dict(s, hidden=True) if org and not any(shown) else s)
+            continue
+        if all(shown) or s["raw"] != text or len(org) != len(text):
             out.append(s)
             continue
         cuts = [0] + [k for k in range(1, len(text)) if shown[k] != shown[k - 1]] + [len(text)]
@@ -115,8 +119,45 @@ def clipped_runs(spans, seen, upright):
     return out
 
 
+HEADINGS = {"Title": 0, "H": 1, "H1": 1, "H2": 2, "H3": 3, "H4": 3, "H5": 3, "H6": 3}
+PARAGRAPHS = {"P", "LI", "TD", "TH", "Caption", "TOCI", "BlockQuote", *HEADINGS}
+
+
+def struct_tags(page, clip=None):
+    """{where a span starts: the elements it is tagged with, outermost first} for a tagged PDF, as Word, Google Docs and most office programs write them; {} for any other.
+    The tags say which lines make one paragraph, which are headings and which are the cells of a table, where the page itself only says where each letter stands."""
+    doc = page.parent
+    try:
+        if doc.xref_get_key(doc.pdf_catalog(), "StructTreeRoot")[0] == "null":
+            return {}
+        blocks = page.get_text("dict", flags=TEXT_FLAGS | pymupdf.TEXT_COLLECT_STRUCTURE, clip=clip)["blocks"]
+    except Exception:
+        return {}
+    out = {}
+    todo = [(b, ()) for b in blocks]
+    while todo:
+        b, path = todo.pop()
+        if b["type"] == 2:
+            path += ((b["number"], b.get("std") or b.get("raw") or ""),)
+            todo += [(c, path) for c in b.get("blocks", ())]
+        elif b["type"] == 0 and path:
+            out.update((spot(s["origin"]), path) for ln in b["lines"] for s in ln["spans"])
+    return out
+
+
+def spot(origin):
+    return round(origin[0], 1), round(origin[1], 1)
+
+
+def para_tag(l):
+    """The paragraph a tagged PDF puts the line in, as (number, type): its innermost list item (whose number and text are tagged apart), or else its innermost paragraph,
+    heading or cell; None when the line has no such tag."""
+    return next((t for t in reversed(l.tags) if t[1] == "LI"), None) or next((t for t in reversed(l.tags) if t[1] in PARAGRAPHS), None)
+
+
 def read_lines(page, clip=None, hidden_ok=False):
     out = []
+    tags = struct_tags(page, clip)
     blocks = page.get_text("rawdict", flags=TEXT_FLAGS, clip=clip)["blocks"]
     r = page.rect
     off = lambda c: c["bbox"][0] < r.x0 or c["bbox"][1] < r.y0 or c["bbox"][2] > r.x1 or c["bbox"][3] > r.y1
@@ -158,6 +199,7 @@ def read_lines(page, clip=None, hidden_ok=False):
             line.block, line.block_x1 = bi, block["bbox"][2]
             line.seq = len(out)
             line.dir = (dx, dy)
+            line.tags = next((tags[spot(s["origin"])] for s in real if spot(s["origin"]) in tags), ())
             out.append(line)
     return out
 
@@ -204,15 +246,19 @@ def in_separate_boxes(r, shapes):
 
 
 def stretched_row(r, shapes=(), others=()):
-    """The words of a justified line, which the PDF holds one by one: three or more of them from one text block, with the same wide gap between each pair, the last one
+    """The words of a justified line, which the PDF holds one by one: three or more of them from one text block, with the same wide gap between each pair (or two, one wide gap apart, that start and end on the edges of other lines of the block), the last one
     at the block's right edge or at an edge that other lines of the block end on, as in a column that text wraps round. A row of numbers, a menu bar or the cells of a
     table fail one of these tests and stay apart."""
-    if len(r) < 3 or r[0].block is None or any(l.block != r[0].block for l in r) or in_separate_boxes(r, shapes):
+    if len(r) < 2 or r[0].block is None or any(l.block != r[0].block for l in r) or in_separate_boxes(r, shapes):
         return False
+    mates = [m for m in others if m.block == r[0].block and abs(m.base - r[0].base) > 0.3 * r[0].size]
+    if len(r) == 2:
+        return (r[1].x0 - r[0].x1 < 1.5 * r[0].size and all(re.search(r"[^\W\d_]{2}", l.text) for l in r)
+                and any(abs(m.x0 - r[0].x0) <= 1.5 for m in mates) and any(abs(m.x1 - r[1].x1) <= 1.5 for m in mates))
     if sum(bool(re.search(r"[^\W\d_]", l.text)) for l in r) < 2 * len(r) / 3:
         return False
     gaps = [b.x0 - a.x1 for a, b in zip(r, r[1:])]
-    flush = r[-1].x1 >= r[-1].block_x1 - 2.5 or any(m.block == r[0].block and abs(m.base - r[0].base) > 0.3 * r[0].size and abs(m.x1 - r[-1].x1) <= 1.5 for m in others)
+    flush = r[-1].x1 >= r[-1].block_x1 - 2.5 or any(abs(m.x1 - r[-1].x1) <= 1.5 for m in mates)
     return max(gaps) - min(gaps) <= 1.0 and max(gaps) < 3 * min(l.size for l in r) and flush
 
 
@@ -235,6 +281,7 @@ def join_pieces(cur, nxt, tab=False):
     merged = Line(spans + nxt.spans, (min(cur.x0, nxt.x0), min(cur.y0, nxt.y0), max(cur.x1, nxt.x1), max(cur.y1, nxt.y1)), cur.base, max(cur.size, nxt.size))
     merged.block, merged.block_x1 = cur.block, cur.block_x1
     merged.seq = min(cur.seq, nxt.seq)
+    merged.tags = cur.tags
     return merged
 
 
@@ -437,6 +484,7 @@ def end_figures(items):
         tab = {k: v for k, v in text.spans[-1].items() if k not in ("ul", "st", "hl", "link", "field")}
         tab.update(text="	", bbox=(text.x1, text.y0, fig.x0, text.y1))
         line = Line(text.spans + [tab] + fig.spans, (text.x0, min(text.y0, fig.y0), fig.x1, max(text.y1, fig.y1)), text.base, max(text.size, fig.size))
+        line.tags = text.tags
         line.block, line.block_x1, line.seq = text.block, text.block_x1, min(text.seq, fig.seq)
         line.leader = ("none", fig.x1)
         line.parts = (text, fig)
@@ -463,6 +511,7 @@ def attach_markers(lines):
         o = min(mates, key=lambda o: o.x0 - m.x1)
         gap = dict(m.spans[-1], text=" ", bbox=(m.x1, m.y0, o.x0, m.y1))
         merged = Line(m.spans + [gap] + o.spans, (m.x0, min(m.y0, o.y0), o.x1, max(m.y1, o.y1)), o.base, max(m.size, o.size))
+        merged.tags = o.tags
         merged.seq = min(m.seq, o.seq)
         out.remove(m)
         out[out.index(o)] = merged
@@ -526,7 +575,11 @@ def split_marker(line, body):
     if not spans:
         return
     if text_x0 is None:
-        text_x0 = spans[0]["bbox"][0]
+        t = spans[0]["text"]
+        lead = len(t) - len(t.lstrip())
+        text_x0 = letter_x(spans[0], lead)
+        if lead and "org" in spans[0]:
+            spans[0] = cut_span(spans[0], lead, len(t))
     line.marker_box = (marker_x0, line.y0, max(text_x0, marker_x0 + 1.0), line.y1)
     line.spans = spans
     line.marker = (kind, first, marker_x0, text_x0)

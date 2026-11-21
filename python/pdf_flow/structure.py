@@ -88,6 +88,49 @@ def set_styles(out, font, half, looks=(), hyphenate=False):
         settings.insert(list(settings).index(settings.find(qn("w:defaultTabStop"))) + 1, parse_xml(f'<w:autoHyphenation {W}/>'))
 
 
+def even_spacing(out):
+    """Spacing as a Word user would have set it. The point-high paragraph that carries the gap above or below a table goes into the space after the paragraph above it or the
+    space before the paragraph below it, where Word keeps such a gap, so Show All shows no empty paragraph there. The gaps measured before the paragraphs of the page (not of a table cell, and not a ruled line) that are within a quarter point (the rounding of one gap the PDF set alike) of
+    one another become the most common of them, and the most common of all becomes the Body Text style that the paragraphs with that gap take, so changing the style changes them all."""
+    body = out.element.body
+    SP, PPR = qn("w:spacing"), qn("w:pPr")
+    spacing = lambda p: p.find(PPR + "/" + SP) if p is not None and p.tag == qn("w:p") else None
+    plain = lambda p: spacing(p) is not None and p.find(f"{PPR}/{qn('w:sectPr')}") is None and p.find(f".//{qn('w:br')}[@{qn('w:type')}='page']") is None
+    spacer = lambda p: plain(p) and spacing(p).get(qn("w:lineRule")) == "exact" and p.find(qn("w:r")) is None and p.find(f"{PPR}/{qn('w:rPr')}/{qn('w:sz')}") is not None
+    add = lambda p, key, v: spacing(p).set(qn(key), str(int(spacing(p).get(qn(key), "0")) + v))
+    for p in list(body.iter(qn("w:p"))):
+        if not spacer(p) or p.getparent().tag not in FLOW:
+            continue
+        prev, nxt, h = p.getprevious(), p.getnext(), int(spacing(p).get(qn("w:line")))
+        if nxt is not None and nxt.tag == qn("w:tbl") and plain(prev) and not spacer(prev) and spacing(prev).get(qn("w:after"), "0") == "0":
+            add(prev, "w:after", h)
+        elif prev is not None and prev.tag == qn("w:tbl") and plain(nxt) and not spacer(nxt):
+            add(nxt, "w:before", h)
+        else:
+            continue
+        p.getparent().remove(p)
+    paras = [p for p in body.findall(qn("w:p")) if plain(p) and int(spacing(p).get(qn("w:before"), "0")) > 0 and p.find(f"{PPR}/{qn('w:pBdr')}") is None]
+    before = lambda p: int(spacing(p).get(qn("w:before")))
+    gaps = Counter(map(before, paras))
+    for p in paras:
+        v = max((v for v in gaps if abs(v - before(p)) <= 5), key=lambda v: (gaps[v], v == before(p)))
+        spacing(p).set(qn("w:before"), str(v))
+    paras = [p for p in paras if p.find(f"{PPR}/{qn('w:pStyle')}") is None]
+    common, n = (Counter(map(before, paras)).most_common(1) or [(0, 0)])[0]
+    if n < 3:
+        return
+    for p in paras:
+        if before(p) == common:
+            spacing(p).attrib.pop(qn("w:before"))
+            p.find(PPR).insert(0, parse_xml(f'<w:pStyle {W} w:val="BodyText"/>'))
+    root = out.styles.element
+    for old in root.findall(qn("w:style")):
+        if old.get(qn("w:styleId")) == "BodyText":
+            root.remove(old)
+    root.append(parse_xml(f'<w:style {W} w:type="paragraph" w:styleId="BodyText"><w:name w:val="Body Text"/><w:basedOn w:val="Normal"/><w:qFormat/>'
+                            f'<w:pPr><w:spacing w:before="{common}"/></w:pPr></w:style>'))
+
+
 def add_notes(out, notes):
     """The footnotes part, from the XML of each note, with the two separators Word expects, and the entry in the settings that names them."""
     if not notes:

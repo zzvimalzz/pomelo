@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The private Python environment of the PDF, OCR and HEIC engine: find (or add) a Python, build root/pyenv, install the packages
-// of python/requirements.txt, check they import and fetch the OCR models.
+// of python/requirements.txt and check they import.
 const fs = require('fs');
 const path = require('path');
 const { PACKS } = require('./packs');
 const { wingetInstall } = require('./winget');
 const { removeDirReliably } = require('#shared/node/fs');
 const { lastMeaningfulLine } = require('#shared/node/process');
-const { inApp, pyenvPython, scriptPath } = require('#shared/node/paths');
+const { inApp, pyenvPython } = require('#shared/node/paths');
 
 const requirementsFile = () => inApp('python', 'requirements.txt');
 
@@ -46,8 +46,6 @@ async function installPython({ run, root, note, manifest }) {
     note('Checking the components…', 0.85);
     r = await run(pyenvPython(root), ['-W', 'ignore', '-c', `import ${PACKS.python.check}`]);
     if (r.code !== 0) throw new Error(`The components did not start: ${lastMeaningfulLine(r.out)}`);
-    note('Downloading the text-recognition models…', 0.92);
-    await run(pyenvPython(root), ['-W', 'ignore', scriptPath('ocr_warmup.py')], { timeout: 10 * 60 * 1000 });     // best effort: a scan fetches them itself when it first needs them
   } catch (e) {
     fs.rmSync(env, { recursive: true, force: true });                              // no half-installed environment left behind
     throw e;

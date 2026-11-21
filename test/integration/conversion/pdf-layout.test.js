@@ -1236,6 +1236,152 @@ if kind == "badmap":                                # a font whose text map give
     doc.update_stream(x, cmap.encode(), new=True)
     doc.xref_set_key(doc.get_page_fonts(0)[0][0], "ToUnicode", "%d 0 R" % x)
     doc.save(sys.argv[1]); sys.exit()
+if kind == "turnedclip":                            # a column head turned upright that a clip path hides whole, over an upright head; extra: the size
+    size = float(sys.argv[3])
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((60, 100), "Region", fontname="helv", fontsize=size)
+    page.insert_text((60, 130), "An ordinary line below the heads.", fontname="helv", fontsize=11)
+    page.clean_contents()
+    page.insert_text((70, 98), "Variance", fontname="helv", fontsize=size, rotate=90)
+    xref = page.get_contents()[-1]
+    doc.update_stream(xref, b"q 300 0 100 100 re W n\\n" + doc.xref_stream(xref) + b"\\nQ\\n")
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "frameline":                             # a frame filled as one outline traced round its outer and inner edges, with a divider, and text in it; extra: the frame's height
+    h = float(sys.argv[3])
+    page = doc.new_page(width=595, height=842)
+    x0, y0, x1, xm, t = 29, 36, 562, 188, 0.5
+    pts = [(x1, y0), (x1 - t, y0), (x1 - t, y0 + h - t), (xm + t, y0 + h - t), (xm + t, y0), (xm, y0), (xm, y0 + h - t), (x0 + t, y0 + h - t), (x0 + t, y0), (x0, y0), (x0, y0 + h), (x1, y0 + h), (x1, y0)]
+    sh = page.new_shape()
+    sh.draw_polyline(pts)
+    sh.finish(color=None, fill=(0, 0, 0), even_odd=True, closePath=True)
+    sh.draw_rect(pymupdf.Rect(x0, y0 - t, x1, y0))
+    sh.finish(color=None, fill=(0, 0, 0))
+    sh.commit()
+    page.insert_text((200, y0 + h / 2), "COURSE INFORMATION FOR THIS TERM", fontname="hebo", fontsize=11)
+    page.insert_text((40, y0 + h / 2), "Faculty", fontname="helv", fontsize=11)
+    page.insert_text((40, y0 + h + 40), "An ordinary line below the frame.", fontname="helv", fontsize=11)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "wraplist":                              # numbered statements whose second line starts under the number, one statement on one line, each with a bold T / F after it; extra: the labels
+    labels = sys.argv[3].split(",")
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((65, 80), "Circle T if the statement is true or F if it is false.", fontname="helv", fontsize=11)
+    rows = (("Passive reconnaissance interacts directly with the target's systems and therefore", "shows up clearly in the target's logs."),
+            ("Open-Source Intelligence relies only on illegally obtained information.",),
+            ("Metadata embedded in a photograph can reveal the camera or phone model, the", "date taken, and the GPS location of the shot."))
+    y = 110
+    for label, row in zip(labels, rows):
+        page.insert_text((65, y), label, fontname="hebo", fontsize=11)
+        for k, part in enumerate(row):
+            x = 80 if k == 0 else 65
+            page.insert_text((x, y), part + ("    " if k == len(row) - 1 else ""), fontname="helv", fontsize=11)
+            if k == len(row) - 1:
+                page.insert_text((x + pymupdf.get_text_length(part + "    ", fontname="helv", fontsize=11), y), "T  /  F", fontname="hebo", fontsize=11)
+            y += 15.5
+        y += 6
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "justpair":                              # a justified paragraph whose one line is held as two pieces a wide gap apart; extra: the size
+    size = float(sys.argv[3])
+    page = doc.new_page(width=595, height=842)
+    lines = ["Write the abstract, research background, the problem", "definition and the research objectives of the study,", None, "and contribution."]
+    left, right = 100.0, 100.0 + pymupdf.get_text_length(lines[0], fontname="helv", fontsize=size)
+    for i, t in enumerate(lines):
+        y = 100 + i * size * 1.15
+        if t is None:
+            a, b = "with three objectives,", "research questions, the scope"
+            page.insert_text((left, y), a, fontname="helv", fontsize=size)
+            page.insert_text((right - pymupdf.get_text_length(b, fontname="helv", fontsize=size), y), b, fontname="helv", fontsize=size)
+        else:
+            page.insert_text((left, y), t, fontname="helv", fontsize=size)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "obullet":                               # items after an "o" bullet in Courier, the text after it starting with a space and running on to a second line a little right of the text, as Word sets a hanging indent; extra: the size
+    size = float(sys.argv[3])
+    page = doc.new_page(width=595, height=842)
+    y = 100
+    for first, second in (("Write the abstract, research background, problem", "definition and the research objectives."), ("Include a comparative table of the methods,", "datasets and findings of the works.")):
+        page.insert_text((171, y), "o", fontname="cour", fontsize=size)
+        gap = pymupdf.get_text_length("o", fontname="cour", fontsize=size)
+        page.insert_text((171 + gap, y), " " + first, fontname="helv", fontsize=size)
+        page.insert_text((171 + gap + pymupdf.get_text_length(" ", fontname="helv", fontsize=size) + 0.4 * size, y + size * 1.15), second, fontname="helv", fontsize=size)
+        y += size * 3
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "scan-plain":                            # the picture of a page of plain lines and no text layer; extra: the size
+    size = float(sys.argv[3])
+    src = pymupdf.open(); sp = src.new_page(width=595, height=842)
+    for i, t in enumerate(["The records office keeps a copy of every delivery note", "for seven years, and a second copy goes to the depot."]):
+        sp.insert_text((60, 150 + i * size * 1.6), t, fontname="helv", fontsize=size)
+    page = doc.new_page(width=595, height=842)
+    page.insert_image(page.rect, pixmap=sp.get_pixmap(dpi=150))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "scan-dark":                             # the picture of a page with a line of print and a dark panel of light text, as a screenshot of a terminal; extra: the panel's colour as r,g,b
+    ground = tuple(float(v) for v in sys.argv[3].split(","))
+    src = pymupdf.open(); sp = src.new_page(width=595, height=842)
+    sp.insert_text((60, 120), "The table below shows the users of the system and their roles.", fontname="helv", fontsize=12)
+    sp.draw_rect(pymupdf.Rect(60, 150, 460, 260), color=None, fill=ground)
+    for i, t in enumerate(["mysql> describe users;", "id      int        NO   PRI", "email   varchar    NO   UNI"]):
+        sp.insert_text((72, 178 + i * 26), t, fontname="cour", fontsize=13, color=(0.95, 0.95, 0.95))
+    page = doc.new_page(width=595, height=842)
+    page.insert_image(page.rect, pixmap=sp.get_pixmap(dpi=150))
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "wordbox":                               # a one-cell box as Word prints it: a tinted fill, a tinted fill for each line inside it and 0.5 pt borders as thin filled rectangles, then a heading; extra: how far the box is moved right
+    dx = float(sys.argv[3])
+    page = doc.new_page(width=612, height=792)
+    tint, rule = (0.98, 0.96, 0.9), (0.79, 0.83, 0.88)
+    page.draw_rect(pymupdf.Rect(56.2 + dx, 481.2, 530.6 + dx, 542.2), color=None, fill=tint)
+    for y0, y1 in ((481.2, 495.8), (495.8, 510.7), (510.7, 525.4), (525.4, 542.2)):
+        page.draw_rect(pymupdf.Rect(61.2 + dx, y0, 525.6 + dx, y1), color=None, fill=tint)
+    for r in ((55.4, 480.7, 55.9, 481.2), (55.9, 480.7, 530.9, 481.2), (530.9, 480.7, 531.4, 481.2), (55.4, 481.2, 55.9, 542.2), (55.4, 542.2, 55.9, 542.6),
+              (55.9, 542.2, 530.9, 542.6), (530.9, 481.2, 531.4, 542.2), (530.9, 542.2, 531.4, 542.6)):
+        page.draw_rect(pymupdf.Rect(r[0] + dx, r[1], r[2] + dx, r[3]), color=None, fill=rule)
+    for i, t in enumerate(["SAFE AND OFFLINE. The sandbox is a teaching tool with make-believe data;", "nothing you type leaves your browser and there is no real system anywhere."]):
+        page.insert_text((61 + dx, 500 + i * 14), t, fontname="helv", fontsize=10)
+    page.insert_text((61, 580), "Before you start", fontname="hebo", fontsize=13)
+    doc.save(sys.argv[1]); sys.exit()
+if kind == "tagged":                                # a page saved with tags, as Word writes it: short lines that are paragraphs of their own, a heading in body size, a paragraph of three lines, a table with no rules, closing paragraphs; extra: the text size
+    fs = float(sys.argv[3])
+    page = doc.new_page(width=612, height=792)
+    page.insert_font(fontname="helv")
+    y, parts = 90.0, []                             # (tag, [(text, x, y)]), a table as ("Table", rows of (text, x, y))
+    for t in ("Objective", "Background", "Overview", "Detailed design"):
+        parts.append(("P", [(t, 72, y)])); y += 1.3 * fs
+    y += 1.2 * fs
+    parts.append(("H2", [("Scope of the work", 72, y)])); y += 1.6 * fs
+    parts.append(("P", [(t, 72, y + k * 1.3 * fs) for k, t in enumerate(["The board asked for a review of the stores before the year ends, and for a",
+                                                                         "list of what is kept, where it is kept and what it is worth, so that the",
+                                                                         "insurance can be set at the right figure."])])); y += 5 * fs
+    parts.append(("Table", [[(t, x, y + r * 1.6 * fs) for t, x in zip(row, (72, 220, 320))] for r, row in enumerate([("Item", "Qty", "Price"), ("Pens", "12", "3.40"), ("Paper", "500", "6.10")])])); y += 5.5 * fs
+    for t in ("The prices hold until the end of the year.", "Orders go through the office.", "Deliveries come on Mondays.", "Returns go back the same way."):
+        parts.append(("P", [(t, 72, y)])); y += 2 * fs
+    xref = lambda: doc.get_new_xref()
+    root, top, tree, stream = xref(), xref(), xref(), xref()
+    mcids, body, kids = [], [], []
+    def mark(el, text, x, yy):
+        body.append("/Span <</MCID %d>> BDC BT /helv %g Tf %g %g Td (%s) Tj ET EMC" % (len(mcids), fs, x, 792 - yy, text))
+        mcids.append(el)
+        return len(mcids) - 1
+    for tag, lines in parts:
+        el = xref(); kids.append(el)
+        if tag != "Table":
+            ks = [mark(el, *ln) for ln in lines]
+            doc.update_object(el, "<</Type/StructElem/S/%s/P %d 0 R/Pg %d 0 R/K[%s]>>" % (tag, top, page.xref, " ".join(map(str, ks))))
+            continue
+        rows = []
+        for row in lines:
+            tr = xref(); rows.append(tr); cells = []
+            for cell in row:
+                td = xref(); cells.append(td)
+                doc.update_object(td, "<</Type/StructElem/S/TD/P %d 0 R/Pg %d 0 R/K %d>>" % (tr, page.xref, mark(td, *cell)))
+            doc.update_object(tr, "<</Type/StructElem/S/TR/P %d 0 R/K[%s]>>" % (el, " ".join("%d 0 R" % c for c in cells)))
+        doc.update_object(el, "<</Type/StructElem/S/Table/P %d 0 R/K[%s]>>" % (top, " ".join("%d 0 R" % r for r in rows)))
+    doc.update_object(stream, "<<>>")
+    doc.update_stream(stream, "\\n".join(body).encode())
+    page.set_contents(stream)
+    doc.update_object(top, "<</Type/StructElem/S/Document/P %d 0 R/K[%s]>>" % (root, " ".join("%d 0 R" % k for k in kids)))
+    doc.update_object(tree, "<</Nums[0[%s]]>>" % " ".join("%d 0 R" % m for m in mcids))
+    doc.update_object(root, "<</Type/StructTreeRoot/K %d 0 R/ParentTree %d 0 R>>" % (top, tree))
+    doc.xref_set_key(page.xref, "StructParents", "0")
+    doc.xref_set_key(doc.pdf_catalog(), "StructTreeRoot", "%d 0 R" % root)
+    doc.xref_set_key(doc.pdf_catalog(), "MarkInfo", "<</Marked true>>")
+    doc.save(sys.argv[1]); sys.exit()
 if kind == "clauses":                               # numbered clauses whose numbers stand left of their text, beside a column of notes; extra: the labels, more: "number x:text x"
     labels = sys.argv[3].split(",")
     x_num, x_text = (float(v) for v in sys.argv[4].split(":"))
@@ -2651,6 +2797,80 @@ const isFramed = (d, word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>)
     fs.rmSync(docx);
   }
 
+  const parasOf = (xml) => (xml.match(/<w:p[ >].*?<\/w:p>/gs) || []).map((p) => [...p.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map((m) => m[1]).join(''));
+
+  console.log('a turned head that a clip path hides whole');
+  for (const size of ['9', '12']) {
+    [docx] = await convert.convertFile(draw(`turnedclip-${size}`, 'turnedclip', size), 'docx');
+    d = await read(docx);
+    const run = (word) => (new RegExp(`<w:r>(?:(?!</w:r>).)*${word}(?:(?!</w:r>).)*</w:r>`, 's').exec(d.xml) || [''])[0];
+    expect(`the turned head the clip hides is hidden text, the upright one is shown (${size} pt)`, /<w:vanish\/>/.test(run('Variance')) && !/<w:vanish\/>/.test(run('Region')), run('Variance').slice(0, 200));
+    fs.rmSync(docx);
+  }
+
+  console.log('a frame filled as one outline round both its edges');
+  for (const h of ['64', '40']) {
+    [docx] = await convert.convertFile(draw(`frameline-${h}`, 'frameline', h), 'docx');
+    d = await read(docx);
+    expect(`the frame is not a black box over its text (${h} pt tall)`, !/w:fill="000000"/i.test(d.xml) && !/<\/a:prstGeom><a:solidFill><a:srgbClr val="000000"/.test(d.xml)
+      && !missingFrom(d.text, ['COURSE INFORMATION FOR THIS TERM', 'An ordinary line below the frame.']).length, (d.xml.match(/w:fill="[^"]*"|<\/a:prstGeom><a:solidFill><a:srgbClr val="[^"]*"/g) || []).join(' '));
+    fs.rmSync(docx);
+  }
+
+  console.log('numbered statements whose second line starts under the number');
+  for (const labels of ['1.,2.,3.', 'a),b),c)']) {
+    [docx] = await convert.convertFile(draw(`wraplist-${labels.replace(/\W/g, '')}`, 'wraplist', labels), 'docx');
+    d = await read(docx);
+    const ps = parasOf(d.xml);
+    const together = (a, b) => ps.some((p) => p.includes(a) && p.includes(b));
+    expect(`each statement is a paragraph of its own and no number runs on after the one before (${labels})`, !together('Passive', 'Open-Source') && !together('illegally', 'Metadata')
+      && !missingFrom(d.text, ['shows up clearly in the target\'s logs.', 'date taken, and the GPS location of the shot.']).length, ps.filter((p) => p.trim()).map((p) => p.slice(0, 50)).join(' | '));
+    fs.rmSync(docx);
+  }
+
+  console.log('a justified line held as two pieces a wide gap apart');
+  for (const size of ['11', '13']) {
+    [docx] = await convert.convertFile(draw(`justpair-${size}`, 'justpair', size), 'docx');
+    d = await read(docx);
+    const ps = parasOf(d.xml).map(squash);
+    expect(`the two pieces stay in the paragraph, in order (${size} pt)`, ps.some((p) => p.includes(squash('of the study, with three objectives, research questions, the scope and contribution.'))), parasOf(d.xml).filter((p) => p.trim()).join(' | '));
+    fs.rmSync(docx);
+  }
+
+  console.log('items after an "o" bullet whose text starts with a space');
+  for (const size of ['11', '13']) {
+    [docx] = await convert.convertFile(draw(`obullet-${size}`, 'obullet', size), 'docx');
+    d = await read(docx);
+    const ps = parasOf(d.xml).map(squash);
+    expect(`each item runs on to its second line (${size} pt)`, ps.some((p) => p.includes(squash('problem definition and the research objectives.'))) && ps.some((p) => p.includes(squash('methods, datasets and findings'))), parasOf(d.xml).filter((p) => p.trim()).join(' | '));
+    fs.rmSync(docx);
+  }
+
+  console.log('a one-cell box with half-point borders drawn as thin rectangles');
+  for (const dx of ['0', '0.3']) {
+    [docx] = await convert.convertFile(draw(`wordbox-${dx.replace('.', '')}`, 'wordbox', dx), 'docx');
+    d = await read(docx);
+    expect(`the borders are not pictures that push the text down (moved ${dx} pt)`, !/<a:blip /.test(d.xml) && !missingFrom(d.text, ['SAFE AND OFFLINE', 'Before you start']).length, `${(d.xml.match(/<a:blip /g) || []).length} pictures`);
+    fs.rmSync(docx);
+  }
+
+  console.log('a page saved with tags');
+  for (const size of ['10', '12']) {
+    [docx] = await convert.convertFile(draw(`tagged-${size}`, 'tagged', size), 'docx');
+    d = await read(docx);
+    const ps = parasOf(d.xml).map((p) => p.trim()).filter(Boolean);
+    const styles = await d.zip.file('word/styles.xml').async('string');
+    const table = (d.xml.match(/<w:tbl>.*?<\/w:tbl>/s) || [''])[0];
+    expect(`each line tagged as a paragraph is a paragraph of its own (${size} pt)`, ['Objective', 'Background', 'Overview', 'Detailed design'].every((t) => ps.includes(t)), ps.slice(0, 5).join(' | '));
+    expect(`the line tagged H2 has the Heading 2 style (${size} pt)`, /<w:pStyle w:val="Heading2"\/>(?:(?!<\/w:p>).)*Scope of the work/s.test(d.xml), ps.slice(4, 6).join(' | '));
+    expect(`the three lines tagged as one paragraph are one paragraph (${size} pt)`, ps.some((p) => p.startsWith('The board asked') && p.endsWith('at the right figure.')), ps.slice(5, 7).join(' | '));
+    expect(`the table tagged with no rules is a Word table of three rows (${size} pt)`, (table.match(/<w:tr>/g) || []).length === 3 && ['Item', 'Pens', '3.40', 'Paper', '6.10'].every((t) => table.includes(t)), table.slice(0, 120));
+    expect(`no empty paragraph stands after the table (${size} pt)`, /<\/w:tbl><w:p>(?:(?!<\/w:p>).)*The prices hold/s.test(d.xml), (d.xml.match(/<\/w:tbl>.{0,200}/s) || [''])[0]);
+    expect(`the common gap is the Body Text style that the closing paragraphs take (${size} pt)`, /w:styleId="BodyText">(?:(?!<\/w:style>).)*w:before="\d+"/s.test(styles)
+      && /<w:pStyle w:val="BodyText"\/>(?:(?!<\/w:p>).)*Orders go through the office/s.test(d.xml), (styles.match(/w:styleId="BodyText">.{0,160}/s) || [''])[0]);
+    fs.rmSync(docx);
+  }
+
   console.log('numbered clauses whose numbers stand left of their text');
   for (const [labels, at] of [['1.,2.,3.', '60:74'], ['(a),(b),(c)', '90:112']]) {
     [docx] = await convert.convertFile(draw(`clauses-${at.replace(':', '-')}`, 'clauses', labels, at), 'docx');
@@ -2918,6 +3138,29 @@ const isFramed = (d, word) => /<w:framePr /.test((new RegExp(`<w:p>(?:(?!</w:p>)
       expect(`${name}: the lines of the letter are text, the words of the stamp are hidden text`,
         !missingFrom(textOf(shown(d.xml)), LETTER).length && !/RECEIVED/.test(textOf(shown(d.xml))) && hiddenOf(d.xml).includes('RECEIVED'), textOf(shown(d.xml)).slice(0, 200));
       expect(`${name}: it keeps its pixels, not cut by a line of text`, (await pixelsIn(d, [200, 380, 460, 450])).red > 500, JSON.stringify(await pixelsIn(d, [200, 380, 460, 450])));
+      fs.rmSync(docx);
+    }
+  }
+
+  console.log('the spaces of text read from a scan');
+  if (!engines.ocr) console.log('  OCR component not installed: skipped');
+  else {
+    for (const size of ['11', '14']) {
+      [docx] = await convert.convertFile(draw(`scan-plain-${size}`, 'scan-plain', size), 'docx');
+      d = await read(docx);
+      expect(`the words are parted by ordinary spaces, so Word can wrap the lines (${size} pt)`, /records office keeps/.test(d.text) && !/\u00a0|&#160;|&#xa0;/i.test(d.text), JSON.stringify(d.text.slice(0, 80)));
+      fs.rmSync(docx);
+    }
+  }
+
+  console.log('light text on a dark panel in a scan');
+  if (!engines.ocr) console.log('  OCR component not installed: skipped');
+  else {
+    for (const ground of ['0.05,0.05,0.05', '0.1,0.12,0.3']) {
+      [docx] = await convert.convertFile(draw(`scan-dark-${ground.replace(/\D/g, '')}`, 'scan-dark', ground), 'docx');
+      d = await read(docx);
+      expect(`the print is text, the light lines on the panel stay in the picture with their words hidden (${ground})`, /table below shows the users/.test(textOf(shown(d.xml))) && !/describe|varchar/.test(textOf(shown(d.xml)))
+        && hiddenOf(d.xml).includes('describeusers'), `${textOf(shown(d.xml)).slice(0, 120)} | ${hiddenOf(d.xml).slice(0, 80)}`);
       fs.rmSync(docx);
     }
   }

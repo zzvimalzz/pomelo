@@ -20,7 +20,7 @@ SCAN_COVER = 0.35
 BOX_NOISE = 1.5               # degrees; the angle of an OCR box on a short line, measured on lines of a level scan
 FAINT = 40                   # print is at least 60 grey levels darker than its paper; the show-through of the other side of a sheet is under 25
 COPY_ID = "19869de063b97343198a3ff4d0a6116d352c5c375efc0fa08874bb6de8cb2169"
-JOINED = re.compile(r"(?<=[a-z][.,;!?])(?=[A-Z][a-z])|(?<=[a-z]:)(?=[A-Z])")      # the English model often drops the space after a full stop or a colon
+JOINED = re.compile(r"(?<=[a-z][.,;!?])(?=[A-Z][a-z])|(?<=[a-z]:)(?=[A-Z])")      # the recogniser often drops the space after a full stop or a colon
 
 
 class OcrUnavailable(Exception):
@@ -47,10 +47,10 @@ def engine():
     global _engine
     if _engine is None:
         try:
-            from rapidocr import RapidOCR, LangRec, ModelType, OCRVersion
+            from rapidocr import RapidOCR
         except Exception:
             raise OcrUnavailable("This PDF is a scan and needs the OCR component. Install it in Pomelo: Settings, Advanced, Conversion engines, OCR")
-        _engine = RapidOCR(params={"Rec.lang_type": LangRec.EN, "Rec.ocr_version": OCRVersion.PPOCRV4, "Rec.model_type": ModelType.MOBILE, "Global.log_level": "error"})
+        _engine = RapidOCR(params={"Global.log_level": "error"})              # the models the package ships: as good on English as its English model, in half the time
     return _engine
 
 
@@ -72,13 +72,13 @@ def lean(angles, noise=0.0):
 
 
 def contrast(gray, box):
-    """How far the darkest ink in a box of pixels lies from the paper round it, in grey levels."""
+    """How far the ink in a box of pixels lies from the paper round it, in grey levels: dark ink on light paper, or light letters on a dark ground."""
     x0, y0, x1, y1 = (int(v) for v in box)
     x0, y0, x1, y1 = max(0, x0), max(0, y0), min(gray.width, x1), min(gray.height, y1)
     step = max(2, int(math.sqrt(max(0, x1 - x0) * max(0, y1 - y0) / 10000)))
     grey = gray.samples                                     # a property that copies the whole picture each time it is read
     seen = sorted(grey[y * gray.width + x] for y in range(y0, y1, step) for x in range(x0, x1, step))
-    return seen[int(len(seen) * 0.8)] - seen[int(len(seen) * 0.03)] if seen else 0
+    return max(seen[int(len(seen) * 0.8)] - seen[int(len(seen) * 0.03)], seen[int(len(seen) * 0.97)] - seen[int(len(seen) * 0.2)]) if seen else 0
 
 
 def read_page(page):

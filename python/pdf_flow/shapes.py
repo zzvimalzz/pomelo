@@ -222,8 +222,8 @@ def rect_shapes(drawings, faint=None):
         if "c" in ops and polygon_area(items) < 0.86 * r.width * r.height:
             continue                                                  # a circle or a blob, not a (rounded) rectangle
         pieces = piece_areas(items)
-        if "c" not in ops and len(pieces) > 1 and sum(pieces) < 0.86 * r.width * r.height:
-            continue                                                  # the bars of a chart drawn as one path are bars, not one box
+        if "c" not in ops and (len(pieces) > 1 or "s" not in d["type"]) and sum(pieces) < 0.86 * r.width * r.height:
+            continue                                                  # the bars of a chart, or a frame traced round both edges, drawn as one path are not one box
         fill = d.get("fill")
         color = d.get("color")
         fill = None if (fill is None or is_white(fill, 0.012)) else rgb_hex(fill)

@@ -17,12 +17,12 @@ from pdf_spans import dominant_size, hexcolor
 from .builder import Builder
 from .common import HI_DPI, NS, area, inside, overlap, tw
 from .fonts import FontMeter
-from .lines import attach_markers, even_sizes, merge_rows, read_lines
+from .lines import HEADINGS, attach_markers, even_sizes, merge_rows, para_tag, read_lines
 from .lists import Lists
 from .maths import equations
 from .page import Page, flat_colour, page_kind
 from .shapes import Fig, Img, Rule
-from .structure import ONE_POINT, Furniture, add_notes, attach, body_font, captions, contents, set_styles
+from .structure import ONE_POINT, Furniture, add_notes, attach, body_font, captions, contents, even_spacing, set_styles
 
 
 def body_size(all_lines):
@@ -85,6 +85,7 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None, original=None
         meter.register(page)
         sample += [l for l in read_lines(page) if not l.rot]
     body_pt = body_size(sample)
+    meter.headed = any((para_tag(l) or (0, ""))[1] in HEADINGS for l in sample)     # then a large line tagged as a paragraph is no heading
     meter.hyphenated = {w.lower() for l in sample for w in re.findall(r"[^\W\d_]+-[^\W\d_]+", l.text)}
     breaks = sum(1 for a, b in zip(sample, sample[1:]) if re.search(r"[^\W\d_]-$", a.text.rstrip()) and b.text.lstrip()[:1].islower())
     meter.hyphenating = breaks >= 10 and breaks >= 0.015 * len(sample)         # Word, which breaks lines greedily, sets such text over more lines unless it hyphenates too
@@ -115,6 +116,7 @@ def convert(src, dst, progress=lambda f: None, log=lambda m: None, original=None
             final = body.find(qn("w:sectPr"))
             body.replace(final, parse_xml(sect))
     set_styles(out, font, half, lists.looks, meter.hyphenating)
+    even_spacing(out)
     add_notes(out, lists.notes)
     contents(out, doc.get_toc())
     captions(out)
@@ -257,6 +259,13 @@ def inked_in_colour(pix, box):
     return ink >= 8 and colour >= 0.1 * ink
 
 
+def on_dark(pix, box):
+    """True when most of a line's box is dark: light letters on a dark ground, which typing them black on paper cannot show."""
+    step = max(2, int(math.sqrt((box[2] - box[0]) * (box[3] - box[1]) / 10000)))
+    seen = sorted(sum(pix.pixel(x, y)[:3]) for y in range(max(0, box[1]), min(pix.height, box[3]), step) for x in range(max(0, box[0]), min(pix.width, box[2]), step))
+    return bool(seen) and seen[len(seen) // 2] < 3 * 110
+
+
 def uneven(pix):
     """True when the paper's brightness differs by more than a tenth between the inner parts of the sheet (a grid of six by six, the outer ring left out): a photograph, not a scan (a scanner's lid shades its pages by a few percent)."""
     gray = pymupdf.Pixmap(pymupdf.csGRAY, pix)
@@ -295,7 +304,7 @@ def paint_quad(pix, corners, colour):
 def scan_page(P, source):
     """The picture of a scanned sheet, to lie behind its text, with the lines that become text painted out in the paper's colour around each. A line much larger
     than the body text (a logo, a signature, a stamp) stays in the picture unless it is a title on plain paper (`plain_title`); so does a line at another angle than
-    the rest, and a line with colour in its ink (a stamp, a pen). When the lines of a skewed scan share one angle under 2 degrees they are written level (`straighten`) and
+    the rest, a line with colour in its ink (a stamp, a pen), and a light line on dark ground (a screenshot of a terminal, a slide's band). When the lines of a skewed scan share one angle under 2 degrees they are written level (`straighten`) and
     painted out along their own slant. A photograph (`lean`, `uneven`) is left whole. A mark of one or two characters that is not a word, alone at the top or left
     edge, is noise and stays in the picture. P keeps only the lines that are text; the words of the others are hidden text."""
     dpi = min(HI_DPI, int(72 * math.sqrt(25e6 / (P.w * P.h))))
@@ -310,7 +319,7 @@ def scan_page(P, source):
     for l in [] if photo else lines:
         slant = angle(l)
         shape = (int((l.x0 - 1) * k), int((l.y0 - 1) * k), int((l.x1 + 1) * k), int((l.y1 + 1) * k))
-        if abs(slant - tilt) > 1.5 or (l.size > 1.6 * P.body and not plain_title(l, pix, k)) or inked_in_colour(pix, shape):
+        if abs(slant - tilt) > 1.5 or (l.size > 1.6 * P.body and not plain_title(l, pix, k)) or inked_in_colour(pix, shape) or on_dark(pix, shape):
             shelved.append(l)
             continue
         ink = ink_colour(pix, shape)
@@ -357,6 +366,9 @@ def convert_page(doc, work_all, work_keep, out, page, pno, meter, lists, body_pt
     P = Page(doc, work_all[pno], work_keep[pno], page, pno, meter, body_pt)
     given = source
     P.read()
+    if given is not None:
+        for s in (s for l in P.upright + P.rotated for s in l.spans):
+            s["text"], s["raw"] = s["text"].replace("\xa0", " "), s.get("raw", s["text"]).replace("\xa0", " ")   # Arial gives its space glyph to U+00A0 too, so the words written onto a scan read back joined by unbreakable spaces
     if turn and P.layer:
         keep_in_picture(P, P.upright + P.rotated)
         P.upright, P.rotated = [], []

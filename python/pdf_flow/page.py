@@ -15,7 +15,7 @@ from pdf_spans import RTL, dedupe, hexcolor
 from .common import HI_DPI, area, cluster, esc, inside, is_white, nearest, overlap, rgb_hex, tw
 from .lines import attach_markers, cut_at_cells, cut_at_rects, even_sizes, field_marks, hangs, is_bold, is_italic, merge_rows, read_lines, split_leader, split_marker
 from .maths import inline_run
-from .shapes import Box, Tbl, bent, corner_radius, field_borders, polygon_area, rect_shapes, segments_of
+from .shapes import Box, Tbl, bent, corner_radius, field_borders, piece_areas, polygon_area, rect_shapes, segments_of
 
 SHAPED = re.compile(r"[\ufb50-\ufdff\ufe70-\ufeff]+")
 NOTE_MARK = re.compile(r"\d{1,2}|[*\u2020\u2021\u00a7\u00b6]|[a-z]|[ivx]{2,4}")
@@ -313,12 +313,10 @@ class Page:
     # -- tables
     def tables(self):
         self.tbls = []
-        if len(self.drawings) < 4:
-            return
         try:
-            found = self.page.find_tables().tables
+            found = self.page.find_tables().tables if len(self.drawings) >= 4 else []
         except Exception:
-            return
+            found = []
         for t in found:
             try:
                 cells = [c for c in t.cells if c and c[2] - c[0] >= 8 and c[3] - c[1] >= 8]   # a cell drawn as an outer colour with an inset tint leaves thin strips between the two: they are no cells
@@ -341,8 +339,9 @@ class Page:
             if len(xs) == 2 and len(ys) == 2:
                 continue
             empty = sum(1 for c in cells if not self.page.get_text("text", clip=pymupdf.Rect(c)).strip())
-            if len(ys) - 1 >= 6 and empty > 0.4 * len(cells):
-                continue                                   # a grid read into unrelated parts of the page, not a table
+            tagged = any(t[1] == "Table" for l in self.upright if inside(l.bbox, (xs[0], ys[0], xs[-1], ys[-1]), 0) for t in l.tags)
+            if len(ys) - 1 >= 6 and empty > 0.4 * len(cells) and not tagged:
+                continue                                   # a grid read into unrelated parts of the page, not a table; a form the PDF tags as a table has empty rows to fill in
             grid = []
             for c in cells:
                 c0, c1, r0, r1 = nearest(xs, c[0]), nearest(xs, c[2]), nearest(ys, c[1]), nearest(ys, c[3])
@@ -366,6 +365,7 @@ class Page:
             if sticks or stray or any(bent(d["items"]) >= 10 and overlap(bbox, tuple(d["rect"])) >= 0.2 * area(bbox) for d in self.drawings):
                 continue                                   # the frame and gridlines of a plot, read as a grid
             self.tbls.append(Tbl(bbox, xs, ys, cells_ok))
+        self.tagged_tables()
         # nested or overlapping finds: keep the larger
         keep = []
         for t in sorted(self.tbls, key=lambda t: -area(t.bbox)):
@@ -387,8 +387,8 @@ class Page:
                     # a fill rectangle drawn as a thin-bordered one is already in shapes; also try the raw drawings
                     for d in self.drawings:
                         f = d.get("fill")
-                        if f and not is_white(f) and (d.get("fill_opacity") if d.get("fill_opacity") is not None else 1) >= 0.85 and overlap(f0, tuple(d["rect"])) >= 0.85 * area(f0) and in_table(tuple(d["rect"])):
-                            best = rgb_hex(f)
+                        if f and not is_white(f) and (d.get("fill_opacity") if d.get("fill_opacity") is not None else 1) >= 0.85 and overlap(f0, tuple(d["rect"])) >= 0.85 * area(f0) and in_table(tuple(d["rect"]))                                 and not (all(it[0] == "l" for it in d["items"]) and sum(piece_areas(d["items"])) < 0.86 * d["rect"].get_area()):
+                            best = rgb_hex(f)                   # a frame filled as one outline round both its edges covers the cell's bounds, not the cell
                 c["fill"] = best
                 for side, (o, pos) in {"top": ("h", b[1]), "bottom": ("h", b[3]), "left": ("v", b[0]), "right": ("v", b[2])}.items():
                     lo, hi = (b[0], b[2]) if o == "h" else (b[1], b[3])
@@ -399,6 +399,52 @@ class Page:
                             self.used_segments.update(j for j, (o2, p2, a2, b2, *_) in enumerate(self.segments) if o2 == so and abs(p2 - pos) <= 1.8 and min(b2, hi) - max(a2, lo) >= 0.6 * (hi - lo))
                             break
             self.shapes = [sh for sh in self.shapes if not (overlap(tuple(sh[0]), t.bbox) >= 0.6 * area(tuple(sh[0])))]
+
+    def tagged_tables(self):
+        """The tables a tagged PDF marks (a Table of rows TR of cells TD or TH): a table with no rules, or with only its cells shaded, and one the grid finder read wrong. A grid
+        found where the tags put a table is kept when all the text in it is that table's, and gives way when it takes in other text. The k-th cell of a row with the most cells is the k-th column;
+        an edge lies halfway between the text on either side of it, or on a rule drawn near it."""
+        found = {}
+        for l in self.upright:
+            k = max((k for k, t in enumerate(l.tags) if t[1] == "Table"), default=None)
+            row = next((t for t in l.tags[k:] if t[1] == "TR"), None) if k is not None else None
+            cell = next((t for t in l.tags[k:] if t[1] in ("TD", "TH")), None) if row else None
+            if cell:
+                found.setdefault(l.tags[k], {}).setdefault(row, {}).setdefault(cell, []).append(l)
+        box = lambda ls: (min(l.x0 for l in ls), min(l.y0 for l in ls), max(l.x1 for l in ls), max(l.y1 for l in ls))
+        out = []
+        for rows in found.values():
+            mine = {id(l) for r in rows.values() for ls in r.values() for l in ls}
+            rows = sorted((sorted(map(box, r.values())) for r in rows.values()), key=lambda r: min(c[1] for c in r))
+            n = max(len(r) for r in rows)
+            bbox = box([l for l in self.upright if id(l) in mine])
+            agrees = lambda t: overlap(bbox, t.bbox) > 0 and all(id(l) in mine for l in self.upright if inside(l.bbox, t.bbox, 0.5))     # its empty cells have no tagged text
+            if len(rows) < 2 or n < 2 or any(map(agrees, self.tbls)) or any(id(l) not in mine and overlap(l.bbox, bbox) > 0 for l in self.upright):
+                continue
+            full = [r for r in rows if len(r) == n]
+            lo = [min(r[k][0] for r in full) for k in range(n)]
+            hi = [max(r[k][2] for r in full) for k in range(n)]
+            xs = [lo[0] - 4] + [(hi[k - 1] + lo[k]) / 2 if hi[k - 1] < lo[k] else lo[k] - 1 for k in range(1, n)] + [hi[-1] + 4]
+            tops, bottoms = [min(c[1] for c in r) for r in rows], [max(c[3] for c in r) for r in rows]
+            ys = [tops[0] - 3] + [(b + t) / 2 for b, t in zip(bottoms, tops[1:])] + [bottoms[-1] + 3]
+            if any(b <= a for a, b in zip(xs, xs[1:])) or any(b <= a for a, b in zip(ys, ys[1:])):
+                continue                                   # rows that overlap or columns out of order: the tags do not describe a grid
+            across = [(a, b) for o, pos, a, b, *_ in self.segments if o == "h" and ys[0] - 4 <= pos <= ys[-1] + 4 and a < xs[-1] and b > xs[0]]
+            across += [(r.x0, r.x1) for r, *_ in self.shapes if r.y0 < ys[-1] and r.y1 > ys[0] and r.x0 < xs[-1] and r.x1 > xs[0] and r.width < 0.95 * self.w]
+            if across:                                     # the rules and fills drawn across the rows are the table's width, wider than its text
+                xs[0], xs[-1] = min([xs[0]] + [a for a, _ in across]), max([xs[-1]] + [b for _, b in across])
+            frame = (xs[0], ys[0], xs[-1], ys[-1])
+            xs, ys = self.rule_edges(xs, "v", frame), self.rule_edges(ys, "h", frame)
+            if len(xs) != n + 1 or len(ys) != len(rows) + 1:
+                continue
+            cells = []
+            for i, r in enumerate(rows):
+                for c in r:
+                    c0 = min(n - 1, max(0, sum(e <= c[0] + 1 for e in xs) - 1))
+                    c1 = min(n, max(c0 + 1, sum(e < c[2] - 1 for e in xs)))
+                    cells.append(dict(c0=c0, c1=c1, r0=i, r1=i + 1, bbox=(xs[c0], ys[i], xs[c1], ys[i + 1]), raw=(xs[c0], ys[i], xs[c1], ys[i + 1]), items=[], fill=None, borders={}))
+            out.append(Tbl((xs[0], ys[0], xs[-1], ys[-1]), xs, ys, cells))
+        self.tbls = [t for t in self.tbls if not any(overlap(t.bbox, o.bbox) > 0 for o in out)] + out
 
     def label_column(self, xs, ys):
         """Where the rules above and below a table begin when they run past its first vertical rule with text beside them: a column of labels that has no rule at its side, as in a
@@ -782,8 +828,12 @@ class Page:
             fw, fh = f[2] - f[0], f[3] - f[1]
             if fw < 3 or fh < 3 or f[4] < 1:
                 continue
-            if min(fw, fh) <= 4.2 and max(fw, fh) >= 10:
-                continue                                              # a hairline: a rule or a border, already carried over
+            if fw < fh:
+                edge = any(min(abs((f[0] + f[2]) / 2 - o[0]), abs((f[0] + f[2]) / 2 - o[2])) <= 6 and f[1] < o[3] and f[3] > o[1] for o in outlines)
+            else:
+                edge = any(min(abs((f[1] + f[3]) / 2 - o[1]), abs((f[1] + f[3]) / 2 - o[3])) <= 6 and f[0] < o[2] and f[2] > o[0] for o in outlines)
+            if min(fw, fh) <= (3 / scale + 0.01 if edge else 4.2) and max(fw, fh) >= 10:
+                continue                                              # a hairline: a rule or a border, already carried over; the half point border of a box that straddles pixels marks three
             if f[5] <= 4.5 * 2 * (fw + fh) and any(all(abs(f[i] - o[i]) <= 4.5 for i in range(4)) for o in outlines):
                 continue                                              # the soft edge of a box that is a cell here: a ring no thicker than the 4.5 pt the box may be off by, not shapes inside it
             kept.append(f)

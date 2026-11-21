@@ -52,6 +52,8 @@ LibreOffice lays pages out differently from Word. `node test/fidelity/run.js --w
 - If Word shows "Recovered" documents when it starts, open it by hand once, close each with **Don't Save** and quit before running again.
 - `python test/fidelity/compare.py --docx-words <original.pdf> <converted.docx>` runs the xml check alone.
 
+`vendor\pyenv\Scripts\python.exe test/fidelity/tagged.py <folders or PDFs>` scores paragraphs, headings and tables on tagged PDFs, whose tags say where each of them is, so any folder of PDFs saved from Word or Google Docs is a test set the converter was never tuned on. Each file is converted as it is and again with its tags taken out; the second run scores the guessing that untagged PDFs get. It prints, per file and in total, the share of tagged paragraphs that are one Word paragraph with the same text, of tagged headings that have a heading style, and of tagged tables (two rows and two columns or more) whose cells are in one Word table.
+
 ## Things that trip people up
 
 - Some editors set `ELECTRON_RUN_AS_NODE=1`, which makes Electron behave as Node. `run.js` removes it for the Electron suites; do it yourself when starting one by hand.
