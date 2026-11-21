@@ -54,6 +54,7 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, solid =
   const registerIpc = () => registerWorkspaceIpc({
     documents,
     state: () => ({ documents: current ? [current] : [] }),
+    setFocus: (on) => win?.setFullScreen(on),
     isWorkspace: (sender) => !!win && !win.isDestroyed() && win.webContents === sender,
   });
 

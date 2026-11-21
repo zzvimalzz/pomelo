@@ -5,4 +5,6 @@ contextBridge.exposeInMainWorld('workspaceApi', {
   state: () => ipcRenderer.invoke('pdfws:state'),
   read: (token, begin, end) => ipcRenderer.invoke('pdfws:read', token, begin, end),
   unlock: (token, password) => ipcRenderer.invoke('pdfws:unlock', token, password),
+  focus: (on) => ipcRenderer.invoke('pdfws:focus', on),
+  onFocus: (cb) => ipcRenderer.on('pdfws:focus-changed', (_e, on) => cb(on)),
 });

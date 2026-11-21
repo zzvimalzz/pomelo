@@ -34,7 +34,7 @@ const setSettings = (patch) => { settings = { ...settings, ...patch }; };
 
 // One workspace per scenario: the IPC handlers belong to one at a time.
 const fresh = (options = {}) => {
-  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock']) ipcMain.removeHandler(channel);
+  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus']) ipcMain.removeHandler(channel);
   const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, ...options });
   workspace.registerIpc();
   return workspace;
@@ -94,10 +94,20 @@ async function makeCommentsPdf(name) {
 const inkOnFirstPage = (win) => js(win, `(() => { const c = document.querySelector('.page canvas'); if (!c) return -1; const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
   let dark = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 100 && d[i + 1] < 100 && d[i + 2] < 100) dark++; return dark; })()`);
 const closeAndWait = async (win) => { win.close(); await sleep(500); };
+const press = async (win, keyCode, modifiers = []) => {
+  win.webContents.focus();
+  for (const type of ['keyDown', 'keyUp']) win.webContents.sendInputEvent({ type, keyCode, modifiers });
+  await sleep(300);
+};
+const dockState = (win) => js(win, `(() => { const d = document.querySelector('.dock'); const own = [...d.querySelectorAll('button:not(.mi)')];
+  return { titles: own.map((b) => b.title), page: d.querySelector('.pageno').value, count: d.querySelector('.pagecount').textContent, zoom: d.querySelector('.zoom').textContent,
+    tucked: d.classList.contains('tuck'), opacity: getComputedStyle(d).opacity, current: workspaceViewer.viewer.currentPageNumber, scale: workspaceViewer.viewer.currentScaleValue,
+    menu: !d.querySelector('.menu').hidden, layout: workspaceViewer.viewer.spreadMode, full: document.body.classList.contains('focus') }; })()`);
 
 app.whenReady().then(async () => {
   fs.mkdirSync(out, { recursive: true });
   const small = await makePdf('Small.pdf', 3);
+  const twelve = await makePdf('Twelve.pdf', 12);
   const workArea = screen.getPrimaryDisplay().workArea;
   const size = { width: Math.min(1200, workArea.width), height: Math.min(800, workArea.height) };
   const atDefault = (b) => b.width === size.width && b.height === size.height && Math.abs(b.x - (workArea.x + (workArea.width - size.width) / 2)) <= 1 && Math.abs(b.y - (workArea.y + (workArea.height - size.height) / 2)) <= 1;
@@ -394,6 +404,216 @@ app.whenReady().then(async () => {
     })()`);
     check('while the password is checked the field and the button rest with a spinner, and Cancel still works and stops the check', state.busy.typed === 'x' && state.busy.field && state.busy.eye && state.busy.primary && state.busy.aria === 'true' && state.busy.spinner && state.busy.label === '' && state.busy.cancel && state.aborted === 1 && state.gone, JSON.stringify(state));
     await closeAndWait(win);
+  }
+
+  console.log('the dock: pages, zoom and the View menu');
+  for (const theme of ['light', 'dark']) {
+    nativeTheme.themeSource = theme;
+    const win = await openAndWait(fresh(), twelve);
+    await sleep(900);
+    let d = await dockState(win);
+    check(`${theme}: the dock holds the page group and the zoom group and nothing else`, d.titles.join('|') === 'Previous page (Page Up)|Next page (Page Down)|Zoom out (Ctrl+−)|View options|Zoom in (Ctrl+=)'
+      && d.page === '1' && d.count === '/ 12' && d.zoom === 'Fit page' && d.opacity === '1', JSON.stringify(d));
+    await js(win, `document.querySelector('.dock [aria-label="Next page"]').click()`);
+    await sleep(400);
+    d = await dockState(win);
+    check(`${theme}: Next goes to page 2, the page box follows and the dock stays`, d.current === 2 && d.page === '2' && !d.tucked, JSON.stringify(d));
+    const typeInBox = (text) => js(win, `(() => { const f = document.querySelector('.pageno'); f.focus(); f.value = ${JSON.stringify(text)}; f.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); })()`);
+    await typeInBox('7');
+    await sleep(400);
+    d = await dockState(win);
+    check(`${theme}: a number and Enter in the page box goes to that page, and the focus returns to the document`, d.current === 7 && d.page === '7' && !d.tucked && (await js(win, `document.activeElement === document.getElementById('scroller')`)), JSON.stringify(d));
+    await typeInBox('99');
+    await sleep(400);
+    check(`${theme}: a number past the end goes to the last page`, (await dockState(win)).current === 12);
+    await typeInBox('abc');
+    await sleep(300);
+    d = await dockState(win);
+    check(`${theme}: text that is not a number changes nothing and the box shows the page again`, d.current === 12 && d.page === '12', JSON.stringify(d));
+    await shot(win, `workspace-dock-${theme}.png`);
+
+    await press(win, '=', ['control']);
+    d = await dockState(win);
+    check(`${theme}: Ctrl+= zooms in from Fit page to a percentage`, /^\d+%$/.test(d.zoom), JSON.stringify(d));
+    await press(win, '0', ['control']);
+    check(`${theme}: Ctrl+0 fits the width`, (await dockState(win)).zoom === 'Fit width');
+    await press(win, '1', ['control']);
+    check(`${theme}: Ctrl+1 is actual size`, (await dockState(win)).zoom === '100%');
+    await press(win, '-', ['control']);
+    check(`${theme}: Ctrl+minus zooms out`, (await dockState(win)).zoom === '90%');
+    await press(win, '+', ['control', 'shift']);
+    check(`${theme}: Ctrl+plus with Shift zooms in`, (await dockState(win)).zoom === '100%');
+    await js(win, `document.querySelector('.dock [aria-label="Zoom in"]').click()`);
+    await sleep(300);
+    const zoomedIn = (await dockState(win)).zoom;
+    await js(win, `document.querySelector('.dock [aria-label="Zoom out"]').click()`);
+    await sleep(300);
+    check(`${theme}: the plus and minus buttons zoom in and out`, zoomedIn === '110%' && (await dockState(win)).zoom === '100%', zoomedIn);
+
+    await js(win, `document.querySelector('.dock .zoom').click()`);
+    await sleep(500);
+    const menu = await js(win, `(() => { const m = document.querySelector('.menu'); return { shown: !m.hidden, caps: [...m.querySelectorAll('.cap')].map((n) => n.textContent), items: [...m.querySelectorAll('.mi')].map((n) => n.firstChild.textContent),
+      keys: [...m.querySelectorAll('kbd')].map((n) => n.textContent), expanded: document.querySelector('.dock .zoom').getAttribute('aria-expanded') }; })()`);
+    check(`${theme}: the zoom value opens the View menu with Zoom and Layout and no page colours`, menu.shown && menu.expanded === 'true' && menu.caps.join() === 'Zoom,Layout'
+      && menu.items.join() === 'Fit width,Fit page,Actual size,Continuous,Two pages side by side' && menu.keys.join() === 'Ctrl+0,Ctrl+1', JSON.stringify(menu));
+    await shot(win, `workspace-menu-${theme}.png`);
+    await press(win, 'Escape');
+    check(`${theme}: Esc closes the menu`, !(await dockState(win)).menu);
+    await js(win, `document.querySelector('.dock .zoom').click()`);
+    await js(win, `[...document.querySelectorAll('.menu .mi')].find((n) => n.textContent.startsWith('Two pages')).click()`);
+    await sleep(500);
+    d = await dockState(win);
+    check(`${theme}: choosing Two pages side by side lays the pages out in pairs and closes the menu`, d.layout === 1 && !d.menu, JSON.stringify(d));
+    await js(win, `document.querySelector('.dock .zoom').click()`);
+    check(`${theme}: the menu marks the layout in use`, (await js(win, `[...document.querySelectorAll('.menu .mi.on')].map((n) => n.firstChild.textContent).join()`)) === 'Two pages side by side');
+    await js(win, `document.querySelector('.page canvas').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`);
+    check(`${theme}: a click elsewhere closes it`, !(await dockState(win)).menu);
+    await js(win, `document.querySelector('.dock .zoom').click()`);
+    await js(win, `[...document.querySelectorAll('.menu .mi')].find((n) => n.textContent.startsWith('Continuous')).click()`);
+    await js(win, `document.querySelector('.dock .zoom').click()`);
+    await js(win, `[...document.querySelectorAll('.menu .mi')].find((n) => n.textContent.startsWith('Fit width')).click()`);
+    await sleep(500);
+    d = await dockState(win);
+    check(`${theme}: Continuous and Fit width from the menu are applied`, d.layout === 0 && d.zoom === 'Fit width' && !d.menu, JSON.stringify(d));
+
+    if (theme === 'light') {
+      await js(win, `workspaceViewer.viewer.currentScaleValue = 'page-fit'`);
+      await sleep(400);
+      const scaleOf = () => js(win, `workspaceViewer.viewer.currentScale`);
+      const fitScale = await scaleOf();
+      win.setBounds({ ...win.getBounds(), width: 900, height: 600 });
+      await sleep(900);
+      check('a fit follows the window as it is resized', Math.abs((await scaleOf()) - fitScale) > 0.01, `${fitScale} -> ${await scaleOf()}`);
+      await js(win, `workspaceViewer.viewer.currentScaleValue = '1.5'`);
+      await sleep(300);
+      win.setBounds({ ...win.getBounds(), width: 1100, height: 760 });
+      await sleep(900);
+      check('a zoom the user chose stays as it is when the window is resized', (await scaleOf()) === 1.5, String(await scaleOf()));
+      win.setBounds({ ...win.getBounds(), width: 900, height: 600 });
+      await sleep(900);
+      const fits = await js(win, `(() => { const r = document.querySelector('.dock').getBoundingClientRect(); const w = document.querySelector('.well').getBoundingClientRect(); return r.left >= w.left && r.right <= w.right && r.top >= w.top && r.bottom <= w.bottom; })()`);
+      check('in a window of the smallest size the dock is inside the document area', fits);
+      win.setBounds({ ...win.getBounds(), width: size.width, height: size.height });
+      await sleep(600);
+
+      console.log('zoom keeps the point under the pointer');
+      await js(win, `workspaceViewer.viewer.currentScaleValue = '2.5'`);
+      await sleep(800);
+      const at = await js(win, `(async () => { const s = document.getElementById('scroller'); const scaleBefore = workspaceViewer.viewer.currentScale; s.scrollLeft = 400; s.scrollTop = document.querySelector('.page[data-page-number="2"]').offsetTop + 300;
+        await new Promise((r) => setTimeout(r, 400)); const c = s.getBoundingClientRect(); const x = c.left + 500; const y = c.top + 300;
+        const page = [...document.querySelectorAll('.page')].find((p) => { const r = p.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; }); const r = page.getBoundingClientRect();
+        window.probe = { n: page.dataset.pageNumber, x, y, fx: (x - r.left) / r.width, fy: (y - r.top) / r.height };
+        s.dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: -100, clientX: x, clientY: y, bubbles: true, cancelable: true })); return { scale: scaleBefore, ...window.probe }; })()`);
+      await sleep(900);
+      const after = await js(win, `(() => { const p = window.probe; const r = document.querySelector('.page[data-page-number="' + p.n + '"]').getBoundingClientRect(); return { scale: workspaceViewer.viewer.currentScale, x: r.left + p.fx * r.width, y: r.top + p.fy * r.height }; })()`);
+      check('Ctrl and the wheel zoom one step and the spot under the pointer stays under it', after.scale > at.scale && Math.abs(after.x - at.x) < 3 && Math.abs(after.y - at.y) < 3, JSON.stringify([at, after]));
+      await js(win, `workspaceViewer.viewer.currentScaleValue = 'page-fit'`);
+      await sleep(600);
+
+      console.log('the dock slides away while reading downwards');
+      const scrollTo = async (top) => { await js(win, `document.getElementById('scroller').scrollTop = ${top}`); await sleep(500); };
+      await scrollTo(0);
+      await scrollTo(300);
+      check('scrolling down tucks the dock away', (await dockState(win)).tucked && (await dockState(win)).opacity === '0');
+      await scrollTo(100);
+      check('scrolling up brings it back', !(await dockState(win)).tucked && (await dockState(win)).opacity === '1');
+      await scrollTo(600);
+      await js(win, `(() => { const w = document.querySelector('.well').getBoundingClientRect(); document.querySelector('.well').dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: w.left + 300, clientY: w.bottom - 20 })); })()`);
+      await sleep(400);
+      check('moving the pointer to the bottom of the document brings it back', !(await dockState(win)).tucked);
+      await press(win, '=', ['control']);
+      await sleep(700);
+      check('zooming does not tuck it', !(await dockState(win)).tucked);
+    }
+    await closeAndWait(win);
+  }
+  nativeTheme.themeSource = 'light';
+
+  console.log('focus reading');
+  {
+    settings = { pdfView: { window: null } };
+    const workspace = fresh();
+    const win = await openAndWait(workspace, twelve);
+    await sleep(900);
+    const placed = JSON.stringify(settings.pdfView.window);
+    await js(win, `workspaceViewer.viewer.currentScaleValue = '1.5'`);
+    const look = () => js(win, `(() => { const t = document.querySelector('.titlerow').getBoundingClientRect(); const dock = getComputedStyle(document.querySelector('.dock'));
+      const b = document.getElementById('focus'); return { full: document.body.classList.contains('focus'), title: b.title, label: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'),
+        titleBottom: t.bottom, dock: Number(dock.opacity), dockClick: dock.pointerEvents, hint: Number(getComputedStyle(document.querySelector('.edgehint')).opacity), scale: workspaceViewer.viewer.currentScaleValue,
+        page: workspaceViewer.viewer.currentPageNumber, pill: document.querySelector('.flash').classList.contains('show'), pillText: document.querySelector('.flash').textContent }; })()`);
+    let v = await look();
+    check('the title row has a Focus reading button with its shortcut', v.title === 'Focus reading (F11)' && v.label === 'Focus reading' && v.pressed === 'false' && !v.full && v.titleBottom > 40, JSON.stringify(v));
+    await js(win, `document.getElementById('focus').click()`);
+    check('the button puts the window full screen', await until('full screen', () => win.isFullScreen()));
+    await sleep(900);
+    v = await look();
+    check('in focus reading the title row and the dock are out of sight, a handle hints at the dock, and the zoom is Fit page', v.full && v.titleBottom <= 0 && v.dock === 0 && v.dockClick === 'none' && v.hint > 0.4 && v.scale === 'page-fit', JSON.stringify(v));
+    check('the button now leaves focus reading', v.title === 'Leave focus reading (Esc)' && v.label === 'Leave focus reading' && v.pressed === 'true', JSON.stringify(v));
+    await shot(win, 'workspace-focus.png');
+    const at = (x, y) => js(win, `document.getElementById('scroller').dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: ${x}, clientY: ${y} }))`);
+    await at(300, 20);
+    await sleep(500);
+    check('the pointer at the top edge brings the title row back', (await look()).titleBottom >= 40);
+    await shot(win, 'workspace-focus-title.png');
+    await at(300, 400);
+    await sleep(500);
+    check('and it goes away with the pointer', (await look()).titleBottom <= 0);
+    await at(300, await js(win, 'innerHeight - 40'));
+    await sleep(600);
+    v = await look();
+    check('the pointer near the bottom edge brings the dock back', v.dock === 1 && v.dockClick !== 'none' && v.hint === 0, JSON.stringify(v));
+    await shot(win, 'workspace-focus-dock.png');
+    await at(300, 300);
+    await sleep(500);
+    check('and it goes away with the pointer', (await look()).dock === 0);
+    await js(win, `document.querySelector('.dock .sm').focus()`);
+    await sleep(500);
+    check('Tab brings the dock back and keeps it while the focus is inside it', (await look()).dock === 1);
+    await js(win, `document.getElementById('scroller').focus()`);
+    await sleep(500);
+
+    const page = (await look()).page;
+    await press(win, 'PageDown');
+    v = await look();
+    check('Page Down turns to the next page and a small pill says which', v.page === page + 1 && v.pill && v.pillText === `${page + 1} / 12`, JSON.stringify(v));
+    await press(win, 'Right');
+    check('the right arrow turns to the next page too', (await look()).page === page + 2);
+    await press(win, 'PageUp');
+    await press(win, 'Left');
+    check('Page Up and the left arrow turn back', (await look()).page === page);
+    await sleep(1000);
+    check('the pill goes after a moment', !(await look()).pill);
+
+    await press(win, 'F11');
+    check('F11 leaves focus reading', await until('windowed', () => !win.isFullScreen()));
+    await sleep(900);
+    v = await look();
+    check('and the zoom the user had comes back', !v.full && v.scale === '1.5' && v.title === 'Focus reading (F11)' && v.titleBottom > 40, JSON.stringify(v));
+    const place = (w) => JSON.stringify({ ...w, savedAt: 0 });
+    check('entering and leaving full screen did not change the saved place', place(settings.pdfView.window) === place(JSON.parse(placed)), `${placed} vs ${JSON.stringify(settings.pdfView.window)}`);
+    await press(win, 'F11');
+    check('F11 enters it', await until('full screen', () => win.isFullScreen()));
+    await sleep(900);
+    await press(win, 'Escape');
+    check('Esc leaves it', await until('windowed', () => !win.isFullScreen()));
+    await sleep(600);
+    await press(win, 'Escape');
+    check('Esc in the window does nothing else', !win.isFullScreen() && !(await look()).full);
+    await closeAndWait(win);
+
+    const commented = await openAndWait(fresh(), await makeCommentsPdf('CommentsFocus.pdf'));
+    await sleep(800);
+    await js(commented, `document.getElementById('focus').click()`);
+    await until('full screen', () => commented.isFullScreen());
+    await sleep(1500);
+    await js(commented, `document.querySelectorAll('.page[data-page-number="1"] .cmark')[2].click()`);
+    await sleep(400);
+    check('a comment opens in focus reading', (await js(commented, `document.querySelectorAll('.ccard').length`)) === 1);
+    await press(commented, 'Escape');
+    check('Esc closes an open comment first and stays in focus reading', commented.isFullScreen() && (await js(commented, `document.querySelectorAll('.ccard').length`)) === 0);
+    await press(commented, 'Escape');
+    check('the next Esc leaves focus reading', await until('windowed', () => !commented.isFullScreen()));
+    await closeAndWait(commented);
   }
 
   console.log('a big file costs nothing until it is read');
