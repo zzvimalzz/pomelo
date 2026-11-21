@@ -43,7 +43,7 @@
     const abort = () => { gaveUp = true; password = null; task.destroy(); };
     task.onPassword = async (update, reason) => {
       const again = reason === lib.PasswordResponses.INCORRECT_PASSWORD;
-      password = !again || ++wrong < 5 ? await window.workspaceDialogs.askPassword(doc.name, again, abort) : null;
+      password = !again || ++wrong < 5 ? await window.workspaceDialogs.askPassword(again, abort) : null;
       if (password === null) abort(); else update(password);
     };
     let pdf;

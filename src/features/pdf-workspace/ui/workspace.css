@@ -71,9 +71,7 @@ html.solid .window { background: var(--solid); }
 .lk { position: absolute; right: -13px; bottom: 2px; width: 21px; height: 21px; border-radius: 50%; display: grid; place-items: center; background: var(--solid); color: var(--accent-ink);
   box-shadow: 0 0 0 1.5px var(--bar-line), 0 1px 3px rgba(0, 0, 0, .18); }
 .lk .i { width: 13px; height: 13px; stroke-width: 2.3; }
-.ut { display: flex; flex-direction: column; gap: 3px; }
-.ut h3 { font-size: 16px; font-weight: 650; letter-spacing: -.005em; }
-.ut span { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.uhead h3 { font-size: 16px; font-weight: 650; letter-spacing: -.005em; }
 .emsg { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .2s ease; }
 .emsg.on { grid-template-rows: 1fr; }
 .emsg > div { overflow: hidden; }

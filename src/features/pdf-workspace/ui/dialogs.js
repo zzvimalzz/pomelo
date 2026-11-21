@@ -4,7 +4,7 @@
   const { el, icon } = window.pomeloUi;
   let card = null;
 
-  function build(name) {
+  function build() {
     const box = el('div', 'card');
     box.setAttribute('role', 'dialog');
     box.setAttribute('aria-modal', 'true');
@@ -19,10 +19,8 @@
     picture.append(file, lock);
     const title = el('h3', '', 'Password protected');
     title.id = 'dialog-title';
-    const words = el('div', 'ut');
-    words.append(title, el('span', '', name));
     const head = el('div', 'uhead');
-    head.append(picture, words);
+    head.append(picture, title);
     const field = el('input', 'fld');
     field.type = 'password';
     field.placeholder = 'Password';
@@ -94,8 +92,8 @@
 
   // Resolves with the password typed, or null when the user cancels. The card stays up while it is checked, so a wrong password is
   // answered where it was typed and can be corrected. `abort` is called when the user cancels during the check.
-  function askPassword(name, wrong, abort) {
-    card ??= build(name);
+  function askPassword(wrong, abort) {
+    card ??= build();
     const c = card;
     c.abort = abort;
     c.label = wrong ? 'Try Again' : 'Open';

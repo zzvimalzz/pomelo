@@ -299,8 +299,8 @@ app.whenReady().then(async () => {
     check('a protected file asks for its password, in a field that hides what is typed, and shows no page yet', dialog.title === 'Password protected' && dialog.type === 'password' && dialog.hint === 'Password' && dialog.buttons.join() === 'Cancel,Open' && dialog.focused && dialog.pages === 0, JSON.stringify(dialog));
     await sleep(500);
     await shot(win, 'workspace-password.png');
-    const head = await js(win, `({ name: document.querySelector('.veil .ut span').textContent, badge: document.querySelector('.veil .ico svg.f text.badge')?.textContent, lock: !!document.querySelector('.veil .ico .lk svg'), labelled: document.querySelector('.veil [role=dialog]').getAttribute('aria-labelledby') })`);
-    check('the card shows the file as a PDF icon with a lock on it, and the file name under the title', head.name === 'Locked.pdf' && head.badge === 'PDF' && head.lock && head.labelled === 'dialog-title', JSON.stringify(head));
+    const head = await js(win, `({ badge: document.querySelector('.veil .ico svg.f text.badge')?.textContent, lock: !!document.querySelector('.veil .ico .lk svg'), labelled: document.querySelector('.veil [role=dialog]').getAttribute('aria-labelledby') })`);
+    check('the card shows the file as a PDF icon with a lock on it', head.badge === 'PDF' && head.lock && head.labelled === 'dialog-title', JSON.stringify(head));
     const primary = () => js(win, `document.querySelector('.veil .primary').disabled`);
     const emptyDisabled = await primary();
     await js(win, `(() => { const f = document.querySelector('.veil input'); f.value = 'x'; f.dispatchEvent(new Event('input')); })()`);
@@ -377,7 +377,7 @@ app.whenReady().then(async () => {
     const win = await openAndWait(fresh(), small);
     const state = await js(win, `(async () => {
       let aborted = 0;
-      const ask = workspaceDialogs.askPassword('Small.pdf', false, () => { aborted++; });
+      const ask = workspaceDialogs.askPassword(false, () => { aborted++; });
       const field = document.querySelector('.veil input');
       field.value = 'x'; field.dispatchEvent(new Event('input'));
       document.querySelector('.veil .primary').click();
