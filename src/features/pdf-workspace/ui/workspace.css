@@ -25,7 +25,7 @@ html.solid .window { background: var(--solid); }
 .scroller { position: absolute; inset: 6px 3px 6px 0; overflow: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color .35s; }
 .scroller:hover, .scroller.scrolling { scrollbar-color: var(--thumb) transparent; }
 .pdfViewer .page { box-shadow: 0 1px 3px rgba(0, 0, 0, .12), 0 10px 30px rgba(0, 0, 0, .1); }
-.failure { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--muted); font-size: 14px; }
+.failure { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; margin: 0; color: var(--muted); font-size: 14px; }
 
 /* pdf.js draws its own note icons and popups; comments are shown as markers beside the page instead. */
 .annotationLayer .textAnnotation, .annotationLayer .popupAnnotation { display: none; }
@@ -71,6 +71,10 @@ html.solid .window { background: var(--solid); }
 .card small.bad { margin-top: 6px; }
 .card .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
 .fld { width: 100%; height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--field-line); background: var(--field); color: var(--txt); font: inherit; outline: none; }
+.pw { position: relative; }
+.pw .fld { padding-right: 36px; }
+.pw button { position: absolute; top: 3px; right: 4px; width: 26px; height: 26px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+.pw button:hover { background: var(--hover); color: var(--txt); }
 .fld:focus, .fld:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); outline: none; }
 
 @media (prefers-reduced-motion: reduce) {

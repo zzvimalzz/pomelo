@@ -295,13 +295,22 @@ app.whenReady().then(async () => {
     win.webContents.on('console-message', (e) => { if (e.level === 'error') errors.push(e.message); });
     await askedFor(win);
     const dialog = await js(win, `({ title: document.querySelector('.veil h3').textContent, type: document.querySelector('.veil input').type, hint: document.querySelector('.veil input').placeholder,
-      buttons: [...document.querySelectorAll('.veil button')].map((b) => b.textContent), focused: document.activeElement === document.querySelector('.veil input'), pages: document.querySelectorAll('.page').length })`);
+      buttons: [...document.querySelectorAll('.veil .btn')].map((b) => b.textContent), focused: document.activeElement === document.querySelector('.veil input'), pages: document.querySelectorAll('.page').length })`);
     check('a protected file asks for its password, in a field that hides what is typed, and shows no page yet', dialog.title === 'This file is password-protected' && dialog.type === 'password' && dialog.hint === 'Password' && dialog.buttons.join() === 'Cancel,Open' && dialog.focused && dialog.pages === 0, JSON.stringify(dialog));
     await sleep(500);
     await shot(win, 'workspace-password.png');
+    const eye = () => js(win, `(() => { const f = document.querySelector('.veil input'); const b = document.querySelector('.veil .pw button'); return { type: f.type, label: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'), value: f.value, focused: document.activeElement === f, drawn: !!b.querySelector('svg') }; })()`);
+    const before = await eye();
+    await js(win, `(() => { document.querySelector('.veil input').value = 'typed text'; document.querySelector('.veil .pw button').click(); })()`);
+    const shown = await eye();
+    await shot(win, 'workspace-password-shown.png');
+    await js(win, `document.querySelector('.veil .pw button').click()`);
+    const hidden = await eye();
+    check('an eye button in the field shows what was typed and hides it again, keeping the text and the focus', before.type === 'password' && before.label === 'Show password' && before.pressed === 'false' && before.drawn
+      && shown.type === 'text' && shown.label === 'Hide password' && shown.pressed === 'true' && shown.value === 'typed text' && shown.focused && hidden.type === 'password' && hidden.label === 'Show password' && hidden.value === 'typed text', JSON.stringify([before, shown, hidden]));
     await submit(win, 'not the password');
     await until('the second ask', () => js(win, `!!document.querySelector('.veil .bad')`));
-    check('a wrong password says so and asks again', (await js(win, `document.querySelector('.veil .bad').textContent`)) === 'Wrong password');
+    check('a wrong password says so, asks again and offers Try Again', (await js(win, `document.querySelector('.veil .bad').textContent`)) === 'Wrong Password' && (await js(win, `document.querySelector('.veil .primary').textContent`)) === 'Try Again');
     await js(win, `window.keep = document.querySelector('.veil input')`);
     await submit(win, secret);
     await until('the first page', () => js(win, `!!document.querySelector('.page[data-loaded="true"] canvas')`));
@@ -319,16 +328,33 @@ app.whenReady().then(async () => {
     await askedFor(win);
     await js(win, `document.querySelector('.veil .btn:not(.primary)').click()`);
     await until('the failure', () => js(win, `!document.getElementById('failure').hidden`));
-    check('cancelling shows that the file is password-protected, and the main process was told nothing', (await js(win, `document.getElementById('failure').textContent`)) === 'This file is password-protected' && !calls.some((c) => c.channel === 'pdfws:unlock'));
+    const panel = () => js(win, `({ text: document.getElementById('failure').firstChild.textContent, button: document.querySelector('#failure button')?.textContent || '' })`);
+    check('cancelling shows that the file is password-protected with an Unlock button, and the main process was told nothing', JSON.stringify(await panel()) === '{"text":"This file is password-protected","button":"Unlock"}' && !calls.some((c) => c.channel === 'pdfws:unlock'));
+    await shot(win, 'workspace-locked.png');
+    await js(win, `document.querySelector('#failure button').click()`);
+    await askedFor(win);
+    check('Unlock asks for the password again, from the start', (await js(win, `({ panel: document.getElementById('failure').hidden, error: !!document.querySelector('.veil .bad'), submit: document.querySelector('.veil .primary').textContent })`)).submit === 'Open'
+      && (await js(win, `document.getElementById('failure').hidden && !document.querySelector('.veil .bad')`)));
+    await submit(win, secret);
+    await until('the first page', () => js(win, `!!document.querySelector('.page[data-loaded="true"] canvas')`));
+    check('and the right password then opens the file', (await inkOnFirstPage(win)) > 100 && (await js(win, `document.getElementById('failure').hidden`)) && calls.filter((c) => c.channel === 'pdfws:unlock').length === 1);
     await closeAndWait(win);
 
     workspace = fresh();
     calls.length = 0;
     await workspace.open([locked]);
     win = workspace.getWindow();
-    for (let attempt = 1; attempt <= 3; attempt++) { await askedFor(win); await submit(win, `wrong ${attempt}`); await sleep(300); }
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      await askedFor(win);
+      if (attempt > 1) check(`after ${attempt - 1} wrong passwords the question is still there`, (await js(win, `!!document.querySelector('.veil .bad')`)));
+      await submit(win, `wrong ${attempt}`);
+      await sleep(300);
+    }
     await until('the failure', () => js(win, `!document.getElementById('failure').hidden`));
-    check('three wrong passwords end in the same message, with no further question', (await js(win, `document.getElementById('failure').textContent`)) === 'This file is password-protected' && (await js(win, `!document.querySelector('.veil')`)) && !calls.some((c) => c.channel === 'pdfws:unlock'));
+    check('five wrong passwords end in the same message and Unlock button, with no further question', JSON.stringify(await panel()) === '{"text":"This file is password-protected","button":"Unlock"}' && (await js(win, `!document.querySelector('.veil')`)) && !calls.some((c) => c.channel === 'pdfws:unlock'));
+    await js(win, `document.querySelector('#failure button').click()`);
+    await askedFor(win);
+    check('Unlock after that asks again with a fresh count', !(await js(win, `!!document.querySelector('.veil .bad')`)));
     await closeAndWait(win);
   }
 

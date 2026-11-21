@@ -3,14 +3,25 @@
 (async () => {
   if (new URLSearchParams(location.search).has('solid')) document.documentElement.classList.add('solid');
   const failure = document.getElementById('failure');
-  try {
-    const [doc] = (await window.workspaceApi.state()).documents;
-    if (!doc) return;
-    document.getElementById('docname').textContent = doc.name;
-    document.title = `${doc.name} - Pomelo`;
-    await window.workspaceViewer.open(doc, document.getElementById('scroller'), document.getElementById('viewer'));
-  } catch (e) {
-    failure.textContent = e && e.name === 'PasswordException' ? 'This file is password-protected' : 'This file is damaged or is not a PDF';
-    failure.hidden = false;
+
+  async function show(doc) {
+    try {
+      await window.workspaceViewer.open(doc, document.getElementById('scroller'), document.getElementById('viewer'));
+    } catch (e) {
+      const locked = e && e.name === 'PasswordException';
+      failure.textContent = locked ? 'This file is password-protected' : 'This file is damaged or is not a PDF';
+      if (locked) {
+        const unlock = window.pomeloUi.el('button', 'btn primary', 'Unlock');
+        unlock.onclick = () => { failure.hidden = true; show(doc); };
+        failure.append(unlock);
+      }
+      failure.hidden = false;
+    }
   }
+
+  const [doc] = (await window.workspaceApi.state()).documents;
+  if (!doc) return;
+  document.getElementById('docname').textContent = doc.name;
+  document.title = `${doc.name} - Pomelo`;
+  await show(doc);
 })();
