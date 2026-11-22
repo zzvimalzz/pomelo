@@ -1116,6 +1116,7 @@ app.whenReady().then(async () => {
     const g = await drag(295, false);
     v = await geo();
     check('while the grip is dragged the panel follows the pointer at once and the sheets with it, the pictures not yet redrawn', v.dragging && Math.abs(v.panel - 300) <= 1 && Math.abs(v.sheet - 206) <= 1 && v.canvasW === Math.ceil(120 * Math.min(v.dpr, 2)), JSON.stringify(v));
+    await shot(win, 'workspace-panel-drag.png');
     mouse('mouseUp', 295, g.y);
     await sleep(900);
     v = await geo();

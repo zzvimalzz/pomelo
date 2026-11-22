@@ -36,7 +36,7 @@ html.solid .window { background: var(--solid); }
 .inner { position: relative; box-sizing: border-box; display: flex; flex-direction: column; width: var(--rail, 214px); height: 100%; padding: 2px 6px 8px 8px; }
 .inner[hidden] { display: none; }
 .railgrip { position: absolute; top: 0; right: 0; bottom: 0; z-index: 1; width: 10px; cursor: col-resize; touch-action: none; outline: none; }
-.railgrip::after { content: ''; position: absolute; top: 14px; right: 3px; bottom: 14px; width: 3px; border-radius: 2px; background: transparent; transition: background .15s; }
+.railgrip::after { content: ''; position: absolute; top: 48px; right: 2px; bottom: 20px; width: 2px; border-radius: 2px; background: transparent; transition: background .15s; }
 .railgrip:hover::after { background: var(--faint); }
 .panel.dragging .railgrip::after, .railgrip:focus-visible::after { background: var(--accent); }
 .seg3 { flex: none; display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--hover); }
@@ -210,6 +210,7 @@ body.focus.reveal-top .titlerow, body.focus .titlerow:focus-within { transform: 
 body.focus .panel { position: absolute; left: 0; top: 0; bottom: 0; z-index: 3; background: var(--bar); backdrop-filter: blur(24px) saturate(160%); }
 body.focus .panel.open { box-shadow: 1px 0 0 var(--bar-line), 0 12px 32px rgba(0, 0, 0, .16); }
 body.focus .inner { padding-top: 50px; }
+body.focus .railgrip::after { top: 98px; }
 body.focus .well { margin: 0; border-radius: 0; }
 body.focus .well[data-dock="top"] .dockwrap { top: 56px; }
 body.focus .scroller { top: 0; bottom: 0; }
