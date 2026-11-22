@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Find in the document: a bar at the top of the well, opened by the title row's button or Ctrl+F. pdf.js's find controller does the
-// matching, the counting and the highlighting; this sends it the question and shows what it answers. A classic script that adds
-// window.workspaceSearch.
+// matching, the counting and the highlighting; this sends it the question and shows what it answers, and gives the list of hits in the
+// side panel and the marks beside the scroll bar the same view of the matches. A classic script that adds window.workspaceSearch.
 (() => {
   const { el, icon } = window.pomeloUi;
   const { label, bind } = window.workspaceKeys;
@@ -22,7 +22,7 @@
     return b;
   }
 
-  function watch(viewer, eventBus, container) {
+  function watch(pdf, viewer, eventBus, container) {
     const bar = el('div', 'findbar');
     bar.hidden = true;
     bar.setAttribute('role', 'search');
@@ -36,27 +36,93 @@
     count.setAttribute('aria-live', 'polite');
     const matchCase = tool('opt', 'Match case', 'Aa');
     const wholeWords = tool('opt', 'Whole words', 'W');
+    const listing = tool('sm', 'Show all results', icon('list'));
     const previous = tool('sm', 'Previous (Shift+Enter)', icon('up'));
     const next = tool('sm', 'Next (Enter)', icon('down'));
     const close = tool('sm', `Close (${label('escape')})`, icon('close'));
-    bar.append(glass, input, count, matchCase, wholeWords, previous, next, close);
+    bar.append(glass, input, count, matchCase, wholeWords, listing, previous, next, close);
     document.querySelector('.well').append(bar);
 
     const on = (b) => b.getAttribute('aria-pressed') === 'true';
-    const ask = (type, backwards = false) => eventBus.dispatch('find', {
+    const ask = (type, backwards = false) => {
+      if (type !== 'again') window.workspaceResults.reset();
+      eventBus.dispatch('find', {
       source: bar, type, query: input.value.trim(), caseSensitive: on(matchCase), entireWord: on(wholeWords), highlightAll: true, findPrevious: backwards,
-    });
+      });
+    };
 
+    // pdf.js keeps the place of every match on the controller, page by page and in order, and has no call to go to a given one, so the
+    // list and the marks read what it keeps and a click on a row sets the match it would have stepped to. The version is pinned.
+    let starts = [];
+    let total = 0;
+    let now = -1;
     let state = 0;
-    const show = ({ current, total }) => {
-      if (total) count.textContent = `${current} of ${total}`;
+    const finder = viewer.findController;
+    const hits = {
+      count: () => total,
+      current: () => now,
+      locate(n) {
+        let low = 0;
+        let high = starts.length - 1;
+        while (low < high) {
+          const mid = Math.ceil((low + high) / 2);
+          if (starts[mid] <= n) low = mid; else high = mid - 1;
+        }
+        return { page: low, index: n - starts[low] };
+      },
+      offset: (page, index) => finder.pageMatches[page][index],
+      length: (page, index) => finder.pageMatchesLength[page][index],
+      fraction: (page, index) => Math.min(1, finder.pageMatches[page][index] / Math.max(1, finder._pageContents[page]?.length ?? 1)),
+      jump(n) {
+        const { page, index } = hits.locate(n);
+        Object.assign(finder.selected, { pageIdx: page, matchIdx: index });
+        Object.assign(finder._offset, { pageIdx: page, matchIdx: index, wrapped: false });
+        finder._scrollMatches = true;
+        viewer.currentPageNumber = page + 1;
+        eventBus.dispatch('updatetextlayermatches', { source: finder, pageIndex: -1 });
+        now = n;
+        count.textContent = `${n + 1} of ${total}`;
+        refresh();
+      },
+    };
+    let queued = false;
+    function refresh() {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        starts = [];
+        total = 0;
+        for (let page = 0; page < viewer.pagesCount; page++) {
+          starts.push(total);
+          total += finder.pageMatches[page]?.length ?? 0;
+        }
+        if (bar.hidden) total = 0;
+        window.workspaceResults.draw(state === NOT_FOUND && !!input.value.trim());
+        window.workspaceTicks.draw();
+      });
+    }
+    window.workspaceResults.watch(pdf, hits, container);
+    window.workspaceTicks.watch(hits, viewer, container);
+    const side = window.workspaceSidebar;
+    side.listen(() => listing.setAttribute('aria-pressed', String(side.showing('results'))));
+    listing.setAttribute('aria-pressed', 'false');
+    listing.onclick = () => side.toggle('results');
+    eventBus.on('scalechanging', refresh);
+    eventBus.on('spreadmodechanged', refresh);
+
+    const show = ({ current, total: all }) => {
+      now = current - 1;
+      if (all) count.textContent = `${current} of ${all}`;
       else count.textContent = state === NOT_FOUND && input.value.trim() ? 'No results' : '';
+      refresh();
     };
     eventBus.on('updatefindmatchescount', ({ matchesCount }) => show(matchesCount));
     eventBus.on('updatefindcontrolstate', ({ state: found, matchesCount }) => { state = found; show(matchesCount); });
 
     function open() {
       bar.hidden = false;
+      side.offer(true);
       button.setAttribute('aria-pressed', 'true');
       input.focus();
       input.select();
@@ -64,6 +130,8 @@
     }
     function shut() {
       bar.hidden = true;
+      side.offer(false);
+      refresh();
       button.setAttribute('aria-pressed', 'false');
       eventBus.dispatch('findbarclose', { source: bar });
       container.focus();

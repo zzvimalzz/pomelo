@@ -106,6 +106,19 @@ async function makeSearchPdf(name) {
   return file;
 }
 
+// Two pages of forty lines, each line six times 'alpha'.
+async function makeManyPdf(name) {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  for (let n = 0; n < 2; n++) {
+    const page = doc.addPage([595, 842]);
+    for (let line = 0; line < 40; line++) page.drawText('alpha alpha alpha alpha alpha alpha', { x: 60, y: 800 - line * 18, size: 12, font });
+  }
+  const file = path.join(root, name);
+  fs.writeFileSync(file, await doc.save({ useObjectStreams: false }));
+  return file;
+}
+
 async function makeOutlinePdf(name) {
   const doc = await PDFDocument.create();
   for (let n = 1; n <= 5; n++) doc.addPage([595, 842]).drawText(`Outline test page ${n}`, { x: 60, y: 700, size: 22 });
@@ -159,11 +172,20 @@ const panelState = (win) => js(win, `(() => { const p = document.getElementById(
     labels: items.slice(0, 3).map((i) => i.getAttribute('aria-label')).join(), kept: window.workspaceSidebar.thumbs ? window.workspaceSidebar.thumbs.kept() : -1, current: workspaceViewer.viewer.currentPageNumber, page: document.querySelector('.pageno').value }; })()`);
 const outlineState = (win) => js(win, `(() => { const rows = [...document.querySelectorAll('#outline .orow')].filter((r) => !r.closest('[hidden]'));
   const folds = {}; for (const r of document.querySelectorAll('#outline .orow')) if (r.parentElement.hasAttribute('aria-expanded')) folds[r.textContent] = r.parentElement.getAttribute('aria-expanded');
-  return { checked: [...document.querySelectorAll('.seg3 button')].map((b) => b.textContent + '=' + b.getAttribute('aria-checked')).join(), thumbsHidden: document.getElementById('thumbs').hidden, outlineHidden: document.getElementById('outline').hidden,
+  return { checked: [...document.querySelectorAll('.seg3 button')].filter((b) => !b.hidden).map((b) => b.textContent + '=' + b.getAttribute('aria-checked')).join(), thumbsHidden: document.getElementById('thumbs').hidden, outlineHidden: document.getElementById('outline').hidden,
     rows: rows.map((r) => r.textContent).join('|'), folds: JSON.stringify(folds), empty: document.querySelector('#outline .empty')?.textContent ?? '', trees: document.querySelectorAll('#outline .tree').length, markup: document.querySelectorAll('#outline b').length,
     tabstops: document.querySelectorAll('#outline .orow[tabindex="0"]').length, focused: document.activeElement.classList.contains('orow') ? document.activeElement.textContent : document.activeElement.id, current: workspaceViewer.viewer.currentPageNumber, canvases: document.querySelectorAll('.thumb canvas').length, inScroller: document.getElementById('scroller').contains(document.activeElement) }; })()`);
 const clickRow = (win, title, part = 'span:last-child') => js(win, `[...document.querySelectorAll('#outline .orow')].find((r) => r.textContent === ${JSON.stringify(title)}).querySelector('${part}').click()`);
 const clickPagesButton = async (win) => { await js(win, `document.getElementById('pagesbtn').click()`); await sleep(900); };
+const barState = (win) => js(win, `(() => { const s = document.querySelector('.findbar'); const b = document.getElementById('findbtn'); const q = s.querySelector('input'); const hits = [...document.querySelectorAll('.textLayer .highlight')];
+  return { hidden: s.hidden, count: s.querySelector('.count').textContent, query: q.value, focused: document.activeElement === q, pressed: b.getAttribute('aria-pressed'), title: b.title, hits: hits.length, selected: hits.filter((h) => h.classList.contains('selected')).length,
+    page: workspaceViewer.viewer.currentPageNumber, opts: [...s.querySelectorAll('.opt')].map((o) => o.title + '=' + o.getAttribute('aria-pressed')).join(), inScroller: document.getElementById('scroller').contains(document.activeElement), disabled: b.disabled,
+    tips: [...s.querySelectorAll('.sm')].map((o) => o.title).join(), placeholder: q.placeholder, titleLeft: [...document.querySelector('.titleleft').children].map((c) => c.id).join() }; })()`);
+const typeInto = async (win, text) => {
+  for (const ch of text) for (const type of ['keyDown', 'char', 'keyUp']) win.webContents.sendInputEvent({ type, keyCode: ch });
+  await sleep(600);
+};
+const countIs = (win, what) => until(String(what), async () => { const c = (await barState(win)).count; return what instanceof RegExp ? what.test(c) : c === what; }, 8000);
 
 app.whenReady().then(async () => {
   fs.mkdirSync(out, { recursive: true });
@@ -1173,21 +1195,15 @@ app.whenReady().then(async () => {
   {
     const win = await openAndWait(fresh(), await makeSearchPdf('Search.pdf'));
     await sleep(500);
-    const bar = () => js(win, `(() => { const s = document.querySelector('.findbar'); const b = document.getElementById('findbtn'); const q = s.querySelector('input'); const hits = [...document.querySelectorAll('.textLayer .highlight')];
-      return { hidden: s.hidden, count: s.querySelector('.count').textContent, query: q.value, focused: document.activeElement === q, pressed: b.getAttribute('aria-pressed'), title: b.title, hits: hits.length, selected: hits.filter((h) => h.classList.contains('selected')).length,
-        page: workspaceViewer.viewer.currentPageNumber, opts: [...s.querySelectorAll('.opt')].map((o) => o.title + '=' + o.getAttribute('aria-pressed')).join(), inScroller: document.getElementById('scroller').contains(document.activeElement), disabled: b.disabled,
-        tips: [...s.querySelectorAll('.sm')].map((o) => o.title).join(), placeholder: q.placeholder, titleLeft: [...document.querySelector('.titleleft').children].map((c) => c.id).join() }; })()`);
-    const typeText = async (text) => {
-      for (const ch of text) for (const type of ['keyDown', 'char', 'keyUp']) win.webContents.sendInputEvent({ type, keyCode: ch });
-      await sleep(600);
-    };
-    const count = (what) => until(String(what), async () => { const c = (await bar()).count; return what instanceof RegExp ? what.test(c) : c === what; }, 8000);
+    const bar = () => barState(win);
+    const typeText = (text) => typeInto(win, text);
+    const count = (what) => countIs(win, what);
     let v = await bar();
     check('the title row has a Find button after the panel button, ready once the pages are known, and the bar is shut', v.titleLeft === 'pagesbtn,findbtn' && v.title === 'Find (Ctrl+F)' && !v.disabled && v.hidden && v.pressed === 'false', JSON.stringify(v));
     await press(win, 'F', ['control']);
     v = await bar();
     check('Ctrl+F opens the bar with the focus in its field, and the button is pressed', !v.hidden && v.focused && v.pressed === 'true' && v.placeholder === 'Find in document', JSON.stringify(v));
-    check('the bar names its buttons, Aa for Match case and W for Whole words, neither on', v.opts === 'Match case=false,Whole words=false' && v.tips === 'Previous (Shift+Enter),Next (Enter),Close (Esc)', JSON.stringify(v));
+    check('the bar names its buttons, Aa for Match case and W for Whole words, neither on', v.opts === 'Match case=false,Whole words=false' && v.tips === 'Show all results,Previous (Shift+Enter),Next (Enter),Close (Esc)', JSON.stringify(v));
     await typeText('delivery');
     check('searching a word counts the hits in the whole document, 1 of 4', await count('1 of 4'), JSON.stringify(await bar()));
     v = await bar();
@@ -1245,6 +1261,130 @@ app.whenReady().then(async () => {
     const copied = (await clipboard.readText()).replace(/\r\n/g, '\n');
     await clipboard.writeText(saved);
     check('dragging over two lines and Ctrl+C copies them in reading order, one line after the other', /^Delivery of the goods\s*\n+\s*will happen on Monday\.?\s*$/.test(copied), `${JSON.stringify(copied)} selected ${JSON.stringify(selected)} ${JSON.stringify(rects)}`);
+    await closeAndWait(win);
+  }
+
+  console.log('selecting from empty paper');
+  {
+    const win = await openAndWait(fresh(), await makeSearchPdf('Search select.pdf'));
+    await sleep(500);
+    const mouse = (type, x, y) => win.webContents.sendInputEvent({ type, x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1, modifiers: type === 'mouseUp' ? [] : ['leftButtonDown'] });
+    const geometry = await js(win, `(() => { const spans = [...document.querySelectorAll('.page[data-page-number="1"] .textLayer span')].filter((s) => /Delivery of the goods|will happen/.test(s.textContent)).map((s) => s.getBoundingClientRect());
+      const p = document.querySelector('.page[data-page-number="1"]').getBoundingClientRect(); return { lines: spans.map((r) => ({ l: r.left, r: r.right, y: r.top + r.height / 2 })), page: { l: p.left, r: p.right, b: p.bottom } }; })()`);
+    const [one, two] = geometry.lines;
+    const drag = async (from, to) => {
+      mouse('mouseDown', from[0], from[1]);
+      for (let i = 1; i <= 10; i++) { mouse('mouseMove', from[0] + ((to[0] - from[0]) * i) / 10, from[1] + ((to[1] - from[1]) * i) / 10); await sleep(30); }
+      mouse('mouseUp', to[0], to[1]);
+      await sleep(300);
+      return js(win, `getSelection().toString().replace(/\\s+/g, ' ').trim()`);
+    };
+    let picked = await drag([one.l - 40, one.y], [(two.l + two.r) / 2, two.y]);
+    check('a press in the blank before a line and a drag into the next one select from the start of the first line', /^Delivery of the goods will \w+/.test(picked) && !/Monday/.test(picked), JSON.stringify(picked));
+    picked = await drag([one.r + 60, one.y], [(two.l + two.r) / 2, two.y]);
+    check('a press in the blank after a line selects from the end of that line, so only the next line is picked', /^will \w+/.test(picked) && !/Delivery/.test(picked), JSON.stringify(picked));
+    picked = await drag([geometry.page.r - 30, geometry.page.b - 30], [(one.l + one.r) / 2, one.y]);
+    check('a press far below the text and a drag up into the first line select the lines between them, to the end of the last', /goods will happen on Monday\.$/.test(picked) && !/^Delivery/.test(picked), JSON.stringify(picked));
+    await closeAndWait(win);
+  }
+
+  console.log('finding: the hits listed, marked and coloured');
+  {
+    const win = await openAndWait(fresh(), await makeSearchPdf('Search hits.pdf'));
+    await sleep(500);
+    const resultsState = () => js(win, `(() => { const rows = [...document.querySelectorAll('#results .hitrow')]; const t = document.getElementById('tabresults'); const sel = document.querySelector('.textLayer .highlight.selected');
+      return { tabHidden: t.hidden, checked: [...document.querySelectorAll('.seg3 button')].filter((b) => !b.hidden).map((b) => b.textContent + '=' + b.getAttribute('aria-checked')).join(), open: document.getElementById('rail').classList.contains('open'),
+        listHidden: document.getElementById('results').hidden, rows: rows.length, pages: rows.map((r) => r.querySelector('.pg').textContent).join(), marks: rows.map((r) => r.querySelector('mark') ? r.querySelector('mark').textContent : '').join(),
+        snips: rows.map((r) => r.querySelector('.snip').textContent), on: rows.filter((r) => r.classList.contains('on')).map((r) => rows.indexOf(r)).join(), space: parseFloat(document.querySelector('.rowspace').style.height) || 0,
+        pressed: document.querySelector('.findbar button[title="Show all results"]').getAttribute('aria-pressed'), selectedText: sel ? sel.textContent : '', selectedPage: sel && sel.closest('.page') ? sel.closest('.page').dataset.pageNumber : '' }; })()`);
+    const ticks = () => js(win, `(() => { const c = document.querySelector('.ticks'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; const x = Math.floor(c.width / 2); const bands = []; let cur = null;
+      for (let y = 0; y < c.height; y++) { const i = (y * c.width + x) * 4; if (d[i + 3] > 0) { if (!cur) { cur = { from: y, to: y, current: false }; bands.push(cur); } cur.to = y; if (d[i] > 240 && d[i + 1] > 200 && d[i + 1] < 235 && d[i + 2] < 60) cur.current = true; } else cur = null; }
+      return { w: c.clientWidth, h: c.clientHeight, bands: bands.map((b) => ({ from: +(b.from / c.height).toFixed(3), to: +(b.to / c.height).toFixed(3), current: b.current })) }; })()`);
+    let v = await resultsState();
+    check('with no search the Results tab is not offered and the list is not shown', v.tabHidden && v.checked === 'Pages=true,Outline=false' && v.listHidden, JSON.stringify(v));
+    await press(win, 'F', ['control']);
+    await typeInto(win, 'delivery');
+    await countIs(win, '1 of 4');
+    v = await resultsState();
+    check('while the bar is open the panel offers a Results tab after Pages and Outline, not yet chosen', !v.tabHidden && v.checked === 'Pages=true,Outline=false,Results=false', JSON.stringify(v));
+    const colours = await js(win, `(() => { const all = [...document.querySelectorAll('.textLayer .highlight')]; const now = all.find((h) => h.classList.contains('selected')); const other = all.find((h) => !h.classList.contains('selected'));
+      return { now: getComputedStyle(now).backgroundColor, other: getComputedStyle(other).backgroundColor, ring: getComputedStyle(now).boxShadow }; })()`);
+    check('the hit being viewed is yellow, with a ring, and the other hits stay the pink', colours.now === 'rgba(255, 221, 0, 0.5)' && colours.other === 'rgba(232, 77, 111, 0.26)' && /199, 150, 0/.test(colours.ring), JSON.stringify(colours));
+    let t = { bands: [] };
+    await until('the marks', async () => { t = await ticks(); return t.bands.length >= 4; });
+    check('a mark for each hit stands beside the scroll bar, the first page near the top and the last near the bottom, and the hit in view is yellow', t.w === 8 && t.bands.length === 4 && t.bands[0].from < 0.2 && t.bands[3].to > 0.7 && t.bands[0].current && !t.bands[3].current, JSON.stringify(t));
+    await shot(win, 'workspace-search-marks.png');
+    await press(win, 'Return');
+    await press(win, 'Return');
+    await countIs(win, '3 of 4');
+    await sleep(300);
+    t = await ticks();
+    check('stepping on moves the yellow mark with it', t.bands.findIndex((b) => b.current) === 2 && t.bands.filter((b) => b.current).length === 1, JSON.stringify(t));
+    await js(win, `document.querySelector('.findbar button[title="Show all results"]').click()`);
+    await sleep(900);
+    await until('rows', async () => { const r = await resultsState(); return r.snips.length === 4 && r.snips.every(Boolean); });
+    v = await resultsState();
+    check('the list button opens the panel on Results, with a row for every hit and its button pressed', v.open && !v.listHidden && v.checked === 'Pages=false,Outline=false,Results=true' && v.rows === 4 && v.pressed === 'true', JSON.stringify(v));
+    check('each row names its page and marks the hit in a few words of the text round it', v.pages === 'Page 1,Page 2,Page 3,Page 3' && v.marks === 'Delivery,delivery,Delivery,delivery' && /^Delivery of the goods/.test(v.snips[0]) && /ask for delivery here/.test(v.snips[1]) && v.snips[1].startsWith('…') && v.snips[2] === 'Delivery redelivery', JSON.stringify(v.snips));
+    check('the row of the hit in view is the one marked on', v.on === '2', JSON.stringify(v));
+    await shot(win, 'workspace-search-results.png');
+    await js(win, `document.querySelectorAll('#results .hitrow')[3].click()`);
+    await countIs(win, '4 of 4');
+    await sleep(800);
+    v = await resultsState();
+    check('a click on a row goes to that hit: its page, its text marked in yellow and the count', v.selectedPage === '3' && v.selectedText === 'delivery' && v.on === '3' && (await barState(win)).page === 3, JSON.stringify(v));
+    await js(win, `document.querySelectorAll('#results .hitrow')[0].click()`);
+    await countIs(win, '1 of 4');
+    await sleep(800);
+    v = await resultsState();
+    check('and back on the first, on page 1', v.selectedPage === '1' && v.selectedText === 'Delivery' && v.on === '0', JSON.stringify(v));
+    await js(win, `document.querySelector('.findbar input').focus()`);
+    await press(win, 'Return');
+    check('Enter carries on from the row that was clicked', (await countIs(win, '2 of 4')) && (await resultsState()).on === '1');
+    await js(win, `document.querySelector('.findbar button[title="Show all results"]').click()`);
+    await sleep(900);
+    v = await resultsState();
+    check('the list button shuts the panel again', !v.open && v.pressed === 'false', JSON.stringify(v));
+    await js(win, `document.querySelector('.findbar button[title="Show all results"]').click()`);
+    await sleep(900);
+    await js(win, `document.querySelector('.findbar input').focus()`);
+    await press(win, 'Escape');
+    await sleep(900);
+    v = await resultsState();
+    t = await ticks();
+    check('closing the bar takes the Results tab, the rows and the marks away and puts the panel back on Pages', v.tabHidden && v.checked === 'Pages=true,Outline=false' && v.listHidden && v.rows === 0 && t.bands.length === 0, JSON.stringify({ v, t }));
+    await closeAndWait(win);
+  }
+
+  console.log('finding a word that is found hundreds of times');
+  {
+    const win = await openAndWait(fresh(), await makeManyPdf('Search many.pdf'));
+    await sleep(500);
+    await press(win, 'F', ['control']);
+    await typeInto(win, 'alpha');
+    await countIs(win, '1 of 480');
+    await js(win, `document.querySelector('.findbar button[title="Show all results"]').click()`);
+    await sleep(900);
+    const rowsNow = () => js(win, `(() => { const l = document.getElementById('results'); const rows = [...l.querySelectorAll('.hitrow')]; return { rows: rows.length, space: parseFloat(document.querySelector('.rowspace').style.height), top: l.scrollTop, height: l.clientHeight,
+      first: rows.length ? rows[0].querySelector('.pg').textContent : '', last: rows.length ? rows[rows.length - 1].querySelector('.pg').textContent : '', empty: rows.filter((r) => !r.querySelector('mark')).length }; })()`);
+    let v = await rowsNow();
+    check('480 hits are one list as tall as 480 rows, with only the rows in view built', v.space === 480 * 68 && v.rows > 5 && v.rows < 30, JSON.stringify(v));
+    await js(win, `document.getElementById('results').scrollTop = 100 * 68`);
+    await sleep(600);
+    await js(win, `[...document.querySelectorAll('#results .hitrow')].find((r) => r.style.top === '6800px').click()`);
+    await countIs(win, '101 of 480');
+    await sleep(1000);
+    const clear = await js(win, `(() => { const bar = document.querySelector('.findbar').getBoundingClientRect(); const hit = document.querySelector('.textLayer .highlight.selected').getBoundingClientRect(); const s = document.getElementById('scroller').getBoundingClientRect();
+      return { barBottom: bar.bottom, hitTop: hit.top, hitBottom: hit.bottom, scrollerBottom: s.bottom }; })()`);
+    check('a hit that is stepped to comes to rest well below the find bar and inside the view', clear.hitTop >= clear.barBottom + 40 && clear.hitBottom <= clear.scrollerBottom, JSON.stringify(clear));
+    await js(win, `document.getElementById('results').scrollTop = document.getElementById('results').scrollHeight`);
+    await sleep(900);
+    v = await rowsNow();
+    check('at the end of the list the rows are the last ones, from page 2, and still few', v.last === 'Page 2' && v.rows < 30 && v.empty === 0, JSON.stringify(v));
+    await js(win, `[...document.querySelectorAll('#results .hitrow')].pop().click()`);
+    check('a click on the last row goes to the last hit', await countIs(win, '480 of 480'));
+    await sleep(800);
+    check('and the page it is on is in view', (await barState(win)).page === 2, JSON.stringify(await barState(win)));
     await closeAndWait(win);
   }
 

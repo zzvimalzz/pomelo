@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The left panel: a switch between the pages (a thumbnail for every page, the page in view outlined, a click goes to it) and the outline.
+// The left panel: a switch between the pages (a thumbnail for every page, the page in view outlined, a click goes to it), the outline and,
+// while the find bar is open, the list of hits.
 // The title row's button slides it open and shut and a grip on its right edge sets its width; nothing is built or drawn until a tab is
 // first shown. A classic script that adds window.workspaceSidebar.
 (() => {
@@ -15,7 +16,8 @@
   const list = document.getElementById('thumbs');
   const outlineList = document.getElementById('outline');
   const grip = document.getElementById('railgrip');
-  const tabs = { pages: document.getElementById('tabpages'), outline: document.getElementById('taboutline') };
+  const resultsList = document.getElementById('results');
+  const tabs = { pages: document.getElementById('tabpages'), outline: document.getElementById('taboutline'), results: document.getElementById('tabresults') };
   const button = document.getElementById('pagesbtn');
 
   button.innerHTML = icon('sidebar');
@@ -36,6 +38,7 @@
     let outlined = false;
     let current = null;
     let closing = null;
+    const listeners = [];
 
     const paint = (n, { bitmap, ratio }) => {
       const { button: b, sheet } = items[n - 1];
@@ -107,13 +110,17 @@
       for (const [id, b] of Object.entries(tabs)) b.setAttribute('aria-checked', String(id === name));
       list.hidden = name !== 'pages';
       outlineList.hidden = name !== 'outline';
+      resultsList.hidden = name !== 'results';
       if (name === 'pages') {
         if (!items.length) build();
         mark(viewer.currentPageNumber, 'center');
+      } else if (name === 'results') {
+        window.workspaceResults.shown();
       } else if (!outlined) {
         outlined = true;
         window.workspaceOutline.fill(outlineList, pdf, linkService, container);
       }
+      for (const fn of listeners) fn();
     }
 
     function setOpen(on) {
@@ -127,6 +134,7 @@
       }
       panel.classList.toggle('open', on);
       button.setAttribute('aria-pressed', String(on));
+      for (const fn of listeners) fn();
     }
 
     function setRail(px) {
@@ -175,9 +183,21 @@
     eventBus.on('pagechanging', ({ pageNumber }) => mark(pageNumber, 'nearest'));
     window.workspaceViewer.restScrollbar(list);
     window.workspaceViewer.restScrollbar(outlineList);
+    window.workspaceViewer.restScrollbar(resultsList);
     api.thumbs = thumbs;
+    api.toggle = (name) => {
+      if (open && tab === name) { setOpen(false); return; }
+      if (!open) setOpen(true);
+      show(name);
+    };
+    api.offer = (on) => {
+      tabs.results.hidden = !on;
+      if (!on && tab === 'results') { tab = 'pages'; if (open) show('pages'); else tabs.results.setAttribute('aria-checked', 'false'); }
+    };
+    api.showing = (name) => open && tab === name;
+    api.listen = (fn) => listeners.push(fn);
   }
 
-  const api = { watch, thumbs: null };
+  const api = { watch, thumbs: null, toggle: null, offer: null, showing: null, listen: null };
   window.workspaceSidebar = api;
 })();
