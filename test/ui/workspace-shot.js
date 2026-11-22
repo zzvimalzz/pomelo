@@ -99,6 +99,7 @@ const press = async (win, keyCode, modifiers = []) => {
   for (const type of ['keyDown', 'keyUp']) win.webContents.sendInputEvent({ type, keyCode, modifiers });
   await sleep(300);
 };
+const DOCK_IN_VIEW = `(() => { const r = document.querySelector('.dock').getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth ? 1 : 0; })()`;
 const dockState = (win) => js(win, `(() => { const d = document.querySelector('.dock'); const own = [...d.querySelectorAll('button:not(.mi)')];
   return { titles: own.map((b) => b.title), page: d.querySelector('.pageno').value, count: d.querySelector('.pagecount').textContent, zoom: d.querySelector('.zoom').textContent,
     folded: d.classList.contains('folded'), opacity: getComputedStyle(d).opacity, current: workspaceViewer.viewer.currentPageNumber, scale: workspaceViewer.viewer.currentScaleValue,
@@ -512,10 +513,10 @@ app.whenReady().then(async () => {
 
       console.log('scrolling leaves the dock alone, and a round button folds it away and back');
       const scrollTo = async (top) => { await js(win, `document.getElementById('scroller').scrollTop = ${top}`); await sleep(500); };
-      const foldState = () => js(win, `(() => { const d = document.querySelector('.dock'); const f = document.querySelector('.fold'); const dr = d.getBoundingClientRect(); const fr = f.getBoundingClientRect();
+      const foldState = () => js(win, `(() => { const d = document.querySelector('.dock'); const f = document.querySelector('.fold'); const dr = document.querySelector('.dockwrap').getBoundingClientRect(); const fr = f.getBoundingClientRect(); const br = d.getBoundingClientRect();
         const p = document.querySelector('.dock .zoom').getBoundingClientRect(); const hit = document.elementFromPoint((p.left + p.right) / 2, (p.top + p.bottom) / 2);
         return { folded: d.classList.contains('folded'), opacity: getComputedStyle(d).opacity, inert: d.inert, title: f.title, label: f.getAttribute('aria-label'), fx: (fr.left + fr.right) / 2 - (dr.left + dr.right) / 2,
-          fy: (fr.top + fr.bottom) / 2 - (dr.top + dr.bottom) / 2, gap: fr.left - dr.right, button: getComputedStyle(f).opacity, reachable: !!hit && !!hit.closest('.dock'), round: getComputedStyle(f).borderRadius,
+          fy: (fr.top + fr.bottom) / 2 - (dr.top + dr.bottom) / 2, gap: fr.left - dr.right, button: getComputedStyle(f).opacity, reachable: !!hit && !!hit.closest('.dock'), away: br.top >= document.querySelector('.well').getBoundingClientRect().bottom, round: getComputedStyle(f).borderRadius,
           select: getComputedStyle(d).userSelect, alpha: Number(getComputedStyle(d).backgroundColor.match(/[0-9.]+/g)[3] ?? 1) }; })()`);
       await scrollTo(0);
       await scrollTo(300);
@@ -529,7 +530,7 @@ app.whenReady().then(async () => {
       await js(win, `document.querySelector('.fold').click()`);
       await sleep(700);
       f = await foldState();
-      check('the button folds the dock away; the button moves to the middle of where the dock was', f.folded && f.opacity === '0' && f.inert && !f.reachable && f.button === '1' && Math.abs(f.fx) < 2 && Math.abs(f.fy) < 2 && f.title === 'Show controls' && f.label === 'Show controls', JSON.stringify(f));
+      check('the button slides the dock off the bottom edge, and then the button takes the middle of where the dock was', f.folded && f.away && f.opacity === '1' && f.inert && !f.reachable && f.button === '1' && Math.abs(f.fx) < 2 && Math.abs(f.fy) < 2 && f.title === 'Show controls' && f.label === 'Show controls', JSON.stringify(f));
       await shot(win, `workspace-dock-folded-${theme}.png`);
       await js(win, `workspaceViewer.viewer.currentPageNumber = 5`);
       await sleep(300);
@@ -539,7 +540,7 @@ app.whenReady().then(async () => {
       await js(win, `document.querySelector('.fold').click()`);
       await sleep(700);
       f = await foldState();
-      check('pressing the button again brings the dock back, and the button returns beside it', !f.folded && f.opacity === '1' && !f.inert && f.reachable && f.gap > 6 && f.gap < 14 && Math.abs(f.fy) < 2 && f.title === 'Hide controls', JSON.stringify(f));
+      check('pressing the button again brings the dock back, and the button returns beside it', !f.folded && !f.away && f.opacity === '1' && !f.inert && f.reachable && f.gap > 6 && f.gap < 14 && Math.abs(f.fy) < 2 && f.title === 'Hide controls', JSON.stringify(f));
       await js(win, `workspaceViewer.viewer.currentPageNumber = 1`);
     }
     await closeAndWait(win);
@@ -584,7 +585,7 @@ app.whenReady().then(async () => {
     await sleep(900);
     const where = () => js(win, `(() => { const dock = document.querySelector('.dock'); const w = document.querySelector('.well').getBoundingClientRect(); const d = dock.getBoundingClientRect();
       return { side: document.querySelector('.well').dataset.dock, left: d.left - w.left, right: w.right - d.right, top: d.top - w.top, bottom: w.bottom - d.bottom, cx: (d.left + d.right) / 2 - (w.left + w.right) / 2, cy: (d.top + d.bottom) / 2 - (w.top + w.bottom) / 2,
-        column: getComputedStyle(dock).flexDirection === 'column', dragging: dock.classList.contains('dragging'), on: [...document.querySelectorAll('.snap.on')].map((n) => n.className.replace('snap ', '').replace(' on', '')), ghosts: document.querySelectorAll('.snap').length,
+        column: getComputedStyle(dock).flexDirection === 'column', dragging: document.querySelector('.dockwrap').classList.contains('dragging'), on: [...document.querySelectorAll('.snap.on')].map((n) => n.className.replace('snap ', '').replace(' on', '')), ghosts: document.querySelectorAll('.snap').length,
         opacity: getComputedStyle(dock).opacity, inside: d.left >= w.left && d.right <= w.right && d.top >= w.top && d.bottom <= w.bottom }; })()`);
     const grip = () => js(win, `(() => { const r = document.querySelector('.grip').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
     const mouse = (type, x, y) => win.webContents.sendInputEvent({ type, x, y, button: 'left', clickCount: 1, modifiers: type === 'mouseUp' ? [] : ['leftButtonDown'] });
@@ -705,13 +706,13 @@ app.whenReady().then(async () => {
     await sleep(600);
     v = await where();
     check('scrolling down leaves a dock at the left where it is', v.opacity === '1' && Math.abs(v.left - 16) < 2, JSON.stringify(v));
-    const column = () => js(win, `(() => { const d = document.querySelector('.dock').getBoundingClientRect(); const f = document.querySelector('.fold').getBoundingClientRect(); return { fx: (f.left + f.right) / 2 - (d.left + d.right) / 2, fy: (f.top + f.bottom) / 2 - (d.top + d.bottom) / 2, below: f.top - d.bottom, folded: document.querySelector('.dock').classList.contains('folded'), opacity: getComputedStyle(document.querySelector('.dock')).opacity }; })()`);
+    const column = () => js(win, `(() => { const d = document.querySelector('.dockwrap').getBoundingClientRect(); const b = document.querySelector('.dock').getBoundingClientRect(); const f = document.querySelector('.fold').getBoundingClientRect(); return { fx: (f.left + f.right) / 2 - (d.left + d.right) / 2, fy: (f.top + f.bottom) / 2 - (d.top + d.bottom) / 2, below: f.top - d.bottom, folded: document.querySelector('.dock').classList.contains('folded'), away: b.right <= document.querySelector('.well').getBoundingClientRect().left }; })()`);
     let col = await column();
     check('its round button is centred just below the column', Math.abs(col.fx) < 2 && col.below > 6 && col.below < 14, JSON.stringify(col));
     await js(win, `document.querySelector('.fold').click()`);
     await sleep(700);
     col = await column();
-    check('folded, the column is gone and the button is in the middle of its place', col.folded && col.opacity === '0' && Math.abs(col.fx) < 2 && Math.abs(col.fy) < 2, JSON.stringify(col));
+    check('folded, the column has slid off the left edge and the button is in the middle of its place', col.folded && col.away && Math.abs(col.fx) < 2 && Math.abs(col.fy) < 2, JSON.stringify(col));
     await js(win, `document.querySelector('.fold').click()`);
     await sleep(700);
     check('and it comes back', !(await column()).folded);
@@ -738,11 +739,11 @@ app.whenReady().then(async () => {
     await js(top, `document.getElementById('focus').click()`);
     await until('full screen', () => top.isFullScreen());
     await sleep(1000);
-    const dockVisible = () => js(top, `Number(getComputedStyle(document.querySelector('.dock')).opacity)`);
+    const dockVisible = () => js(top, DOCK_IN_VIEW);
     check('in focus reading a dock at the top is hidden until the pointer is near the top', (await dockVisible()) === 0);
     await js(top, `document.getElementById('scroller').dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: 600, clientY: 90 }))`);
     await sleep(600);
-    const topFocus = await js(top, `(() => { const d = document.querySelector('.dock').getBoundingClientRect(); const t = document.querySelector('.titlerow').getBoundingClientRect(); return { dock: Number(getComputedStyle(document.querySelector('.dock')).opacity), clear: d.top >= t.bottom }; })()`);
+    const topFocus = await js(top, `(() => { const d = document.querySelector('.dock').getBoundingClientRect(); const t = document.querySelector('.titlerow').getBoundingClientRect(); return { dock: Number(${DOCK_IN_VIEW}), clear: d.top >= t.bottom }; })()`);
     check('and then shows, below the title row', topFocus.dock === 1, JSON.stringify(topFocus));
     await shot(top, 'workspace-focus-dock-top.png');
     await press(top, 'Escape');
@@ -761,7 +762,7 @@ app.whenReady().then(async () => {
     await js(win, `workspaceViewer.viewer.currentScaleValue = '1.5'`);
     const look = () => js(win, `(() => { const t = document.querySelector('.titlerow').getBoundingClientRect(); const dock = getComputedStyle(document.querySelector('.dock'));
       const b = document.getElementById('focus'); return { full: document.body.classList.contains('focus'), title: b.title, label: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'),
-        titleBottom: t.bottom, dock: Number(dock.opacity), dockClick: dock.pointerEvents, hint: Number(getComputedStyle(document.querySelector('.edgehint')).opacity), scale: workspaceViewer.viewer.currentScaleValue,
+        titleBottom: t.bottom, dock: ${DOCK_IN_VIEW}, dockClick: dock.pointerEvents, hint: Number(getComputedStyle(document.querySelector('.edgehint')).opacity), scale: workspaceViewer.viewer.currentScaleValue,
         page: workspaceViewer.viewer.currentPageNumber, pill: document.querySelector('.flash').classList.contains('show'), pillText: document.querySelector('.flash').textContent }; })()`);
     let v = await look();
     check('the title row has a Focus reading button with its shortcut', v.title === 'Focus reading (F11)' && v.label === 'Focus reading' && v.pressed === 'false' && !v.full && v.titleBottom > 40, JSON.stringify(v));
@@ -793,6 +794,42 @@ app.whenReady().then(async () => {
     check('Tab brings the dock back and keeps it while the focus is inside it', (await look()).dock === 1);
     await js(win, `document.getElementById('scroller').focus()`);
     await sleep(500);
+
+    console.log('focus reading keeps the bar and its button in step, open or folded');
+    const spacing = () => js(win, `(() => { const d = document.querySelector('.dockwrap').getBoundingClientRect(); const b = document.querySelector('.dock').getBoundingClientRect(); const f = document.querySelector('.fold').getBoundingClientRect(); const full = document.body.classList.contains('focus');
+      const w = full ? { l: 0, r: innerWidth, b: innerHeight } : (() => { const r = document.querySelector('.well').getBoundingClientRect(); return { l: r.left, r: r.right, b: r.bottom }; })();
+      return { gap: f.left - d.right, fx: (f.left + f.right) / 2 - (d.left + d.right) / 2, fy: (f.top + f.bottom) / 2 - (d.top + d.bottom) / 2, cx: (d.left + d.right) / 2 - (w.l + w.r) / 2, bottom: w.b - d.bottom, seen: ${DOCK_IN_VIEW},
+        away: b.top >= w.b, button: getComputedStyle(document.querySelector('.fold')).pointerEvents }; })()`);
+    await at(300, await js(win, 'innerHeight - 40'));
+    await sleep(900);
+    let sp = await spacing();
+    check('in focus reading the open bar is centred 16 px above the bottom edge with its button 10 px beside it', Math.abs(sp.cx) < 2 && Math.abs(sp.bottom - 16) < 2 && Math.abs(sp.gap - 10) < 2 && Math.abs(sp.fy) < 2 && sp.button !== 'none', JSON.stringify(sp));
+    await js(win, `document.querySelector('.fold').click()`);
+    await sleep(1000);
+    sp = await spacing();
+    check('folded, the bar is off the edge and the button is in the middle of its place', sp.away && Math.abs(sp.fx) < 2 && Math.abs(sp.fy) < 2 && Math.abs(sp.cx) < 2 && sp.button !== 'none', JSON.stringify(sp));
+    await shot(win, 'workspace-focus-folded.png');
+    await at(300, 300);
+    await sleep(900);
+    sp = await spacing();
+    check('moving the pointer away takes the folded button off the screen with it', sp.button === 'none' && (await js(win, `(() => { const r = document.querySelector('.fold').getBoundingClientRect(); return r.top >= innerHeight; })()`)), JSON.stringify(sp));
+    await at(300, await js(win, 'innerHeight - 40'));
+    await sleep(900);
+    sp = await spacing();
+    check('and the edge brings it back in the same place', sp.away && Math.abs(sp.fx) < 2 && Math.abs(sp.fy) < 2 && Math.abs(sp.cx) < 2 && sp.button !== 'none', JSON.stringify(sp));
+    await js(win, `document.getElementById('focus').click()`);
+    check('leaving focus reading with the bar folded', await until('windowed', () => !win.isFullScreen()));
+    await sleep(1200);
+    sp = await spacing();
+    check('keeps the button in the middle of the bar\'s place, inside the document area', sp.away && Math.abs(sp.fx) < 2 && Math.abs(sp.fy) < 2 && Math.abs(sp.cx) < 2 && Math.abs(sp.bottom - 16) < 2, JSON.stringify(sp));
+    await js(win, `document.querySelector('.fold').click()`);
+    await sleep(1000);
+    sp = await spacing();
+    check('and unfolded, the bar and the button are as they were before focus reading', !sp.away && Math.abs(sp.cx) < 2 && Math.abs(sp.bottom - 16) < 2 && Math.abs(sp.gap - 10) < 2 && Math.abs(sp.fy) < 2, JSON.stringify(sp));
+    await js(win, `document.getElementById('focus').click()`);
+    check('focus reading again', await until('full screen', () => win.isFullScreen()));
+    await sleep(1000);
+    await js(win, `document.getElementById('scroller').focus()`);
 
     const page = (await look()).page;
     await press(win, 'PageDown');

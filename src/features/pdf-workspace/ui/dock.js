@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The dock: the page box with its arrows, the zoom buttons and the View menu. A round button beside it folds it away and, once it is
-// folded, brings it back from the middle of the place it stood. A grip at its start end moves it (dock-place.js). A classic script that
-// adds window.workspaceDock.
+// The dock: the page box with its arrows, the zoom buttons and the View menu. A round button beside it slides it off the edge and, once
+// it is folded, takes the middle of the place it stood and brings it back. A grip at its start end moves it (dock-place.js). A classic
+// script that adds window.workspaceDock.
 (() => {
   const { el, icon } = window.pomeloUi;
   const { label, bind } = window.workspaceKeys;
   const WHEEL_STEP = 100;
-  const FOLD_SIZE = 36;
-  const FOLD_GAP = 10;
   const PRESETS = { 'page-fit': 'Fit page', 'page-width': 'Fit width' };
 
   let viewer = null;
@@ -75,7 +73,6 @@
   function watch(pdfViewer, eventBus, container) {
     viewer = pdfViewer;
     const dock = el('nav', 'dock');
-    dock.hidden = true;
     const grip = el('button', 'grip');
     grip.type = 'button';
     grip.title = 'Drag to move';
@@ -101,26 +98,17 @@
     zoomGroup.append(out, zoom, menu, into);
     dock.append(grip, previous, box, next, el('span', 'sep'), zoomGroup);
     const fold = button('fold', 'right', 'Hide controls');
-    fold.hidden = true;
+    const wrap = el('div', 'dockwrap');
+    wrap.hidden = true;
+    wrap.append(dock, fold);
     flash = el('div', 'flash');
-    well().append(dock, fold, flash);
+    well().append(wrap, flash);
 
     const zoomBy = (steps, at = middle(container)) => viewer.updateScale({ steps, origin: at });
     const turn = (n) => { viewer.currentPageNumber = Math.min(Math.max(n, 1), viewer.pagesCount); };
     previous.onclick = () => viewer.previousPage();
     next.onclick = () => viewer.nextPage();
 
-    // The button sits just past the end of the dock, or, once the dock is folded, in the middle of where it stood. The dock keeps its
-    // box while folded, so the offsets stay true; getBoundingClientRect would include the settling animation.
-    const place = () => {
-      const row = well().dataset.dock === 'bottom' || well().dataset.dock === 'top';
-      let x = dock.offsetLeft + (dock.offsetWidth - FOLD_SIZE) / 2;
-      let y = dock.offsetTop + (dock.offsetHeight - FOLD_SIZE) / 2;
-      if (!folded && row) x = dock.offsetLeft + dock.offsetWidth + FOLD_GAP;
-      if (!folded && !row) y = dock.offsetTop + dock.offsetHeight + FOLD_GAP;
-      fold.style.left = `${x}px`;
-      fold.style.top = `${y}px`;
-    };
     const setFolded = (on) => {
       folded = on;
       closeMenu();
@@ -130,12 +118,8 @@
       const text = on ? 'Show controls' : 'Hide controls';
       fold.title = text;
       fold.setAttribute('aria-label', text);
-      place();
     };
     fold.onclick = () => setFolded(!folded);
-    new ResizeObserver(place).observe(dock);
-    window.addEventListener('resize', place);
-    dock.addEventListener('placed', place);
     out.onclick = () => zoomBy(-1);
     into.onclick = () => zoomBy(1);
     zoom.onclick = () => {
@@ -163,9 +147,7 @@
     eventBus.on('pagesinit', () => {
       count.replaceChildren(el('span', 'of', '/ '), String(viewer.pagesCount));
       sync();
-      dock.hidden = false;
-      place();
-      fold.hidden = false;
+      wrap.hidden = false;
     });
     eventBus.on('pagechanging', ({ pageNumber }) => {
       if (document.activeElement !== page) { page.value = pageNumber; fit(); }
@@ -190,7 +172,7 @@
       const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
       zoomBy(steps, inside ? inWell(e.clientX, e.clientY) : middle(container));
     }, { passive: false });
-    window.workspaceDockPlace.attach(dock, grip, closeMenu);
+    window.workspaceDockPlace.attach(wrap, grip, closeMenu);
 
     bind('zoomIn', () => zoomBy(1));
     bind('zoomOut', () => zoomBy(-1));
