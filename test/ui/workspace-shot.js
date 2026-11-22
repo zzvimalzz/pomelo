@@ -101,7 +101,7 @@ const press = async (win, keyCode, modifiers = []) => {
 };
 const dockState = (win) => js(win, `(() => { const d = document.querySelector('.dock'); const own = [...d.querySelectorAll('button:not(.mi)')];
   return { titles: own.map((b) => b.title), page: d.querySelector('.pageno').value, count: d.querySelector('.pagecount').textContent, zoom: d.querySelector('.zoom').textContent,
-    tucked: d.classList.contains('tuck'), opacity: getComputedStyle(d).opacity, current: workspaceViewer.viewer.currentPageNumber, scale: workspaceViewer.viewer.currentScaleValue,
+    folded: d.classList.contains('folded'), opacity: getComputedStyle(d).opacity, current: workspaceViewer.viewer.currentPageNumber, scale: workspaceViewer.viewer.currentScaleValue,
     menu: !d.querySelector('.menu').hidden, layout: workspaceViewer.viewer.spreadMode, full: document.body.classList.contains('focus') }; })()`);
 
 app.whenReady().then(async () => {
@@ -417,12 +417,12 @@ app.whenReady().then(async () => {
     await js(win, `document.querySelector('.dock [aria-label="Next page"]').click()`);
     await sleep(400);
     d = await dockState(win);
-    check(`${theme}: Next goes to page 2, the page box follows and the dock stays`, d.current === 2 && d.page === '2' && !d.tucked, JSON.stringify(d));
+    check(`${theme}: Next goes to page 2, the page box follows and the dock stays`, d.current === 2 && d.page === '2' && !d.folded, JSON.stringify(d));
     const typeInBox = (text) => js(win, `(() => { const f = document.querySelector('.pageno'); f.focus(); f.value = ${JSON.stringify(text)}; f.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); })()`);
     await typeInBox('7');
     await sleep(400);
     d = await dockState(win);
-    check(`${theme}: a number and Enter in the page box goes to that page, and the focus returns to the document`, d.current === 7 && d.page === '7' && !d.tucked && (await js(win, `document.activeElement === document.getElementById('scroller')`)), JSON.stringify(d));
+    check(`${theme}: a number and Enter in the page box goes to that page, and the focus returns to the document`, d.current === 7 && d.page === '7' && !d.folded && (await js(win, `document.activeElement === document.getElementById('scroller')`)), JSON.stringify(d));
     await typeInBox('99');
     await sleep(400);
     check(`${theme}: a number past the end goes to the last page`, (await dockState(win)).current === 12);
@@ -510,20 +510,37 @@ app.whenReady().then(async () => {
       await js(win, `workspaceViewer.viewer.currentScaleValue = 'page-fit'`);
       await sleep(600);
 
-      console.log('the dock slides away while reading downwards');
+      console.log('scrolling leaves the dock alone, and a round button folds it away and back');
       const scrollTo = async (top) => { await js(win, `document.getElementById('scroller').scrollTop = ${top}`); await sleep(500); };
+      const foldState = () => js(win, `(() => { const d = document.querySelector('.dock'); const f = document.querySelector('.fold'); const dr = d.getBoundingClientRect(); const fr = f.getBoundingClientRect();
+        const p = document.querySelector('.dock .zoom').getBoundingClientRect(); const hit = document.elementFromPoint((p.left + p.right) / 2, (p.top + p.bottom) / 2);
+        return { folded: d.classList.contains('folded'), opacity: getComputedStyle(d).opacity, inert: d.inert, title: f.title, label: f.getAttribute('aria-label'), fx: (fr.left + fr.right) / 2 - (dr.left + dr.right) / 2,
+          fy: (fr.top + fr.bottom) / 2 - (dr.top + dr.bottom) / 2, gap: fr.left - dr.right, button: getComputedStyle(f).opacity, reachable: !!hit && !!hit.closest('.dock'), round: getComputedStyle(f).borderRadius,
+          select: getComputedStyle(d).userSelect, alpha: Number(getComputedStyle(d).backgroundColor.match(/[0-9.]+/g)[3] ?? 1) }; })()`);
       await scrollTo(0);
       await scrollTo(300);
-      check('scrolling down tucks the dock away', (await dockState(win)).tucked && (await dockState(win)).opacity === '0');
-      await scrollTo(100);
-      check('scrolling up brings it back', !(await dockState(win)).tucked && (await dockState(win)).opacity === '1');
+      let f = await foldState();
+      check('scrolling down leaves the dock where it is', !f.folded && f.opacity === '1' && f.reachable, JSON.stringify(f));
       await scrollTo(600);
-      await js(win, `(() => { const w = document.querySelector('.well').getBoundingClientRect(); document.querySelector('.well').dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX: w.left + 300, clientY: w.bottom - 20 })); })()`);
-      await sleep(400);
-      check('moving the pointer to the bottom of the document brings it back', !(await dockState(win)).tucked);
-      await press(win, '=', ['control']);
+      await scrollTo(100);
+      check('so does scrolling back up', (await foldState()).opacity === '1');
+      check('a round button stands just past the end of the dock, level with it, and offers to hide it', Math.abs(f.fy) < 2 && f.gap > 6 && f.gap < 14 && f.title === 'Hide controls' && f.label === 'Hide controls' && f.round === '50%', JSON.stringify(f));
+      check('the dock is opaque enough that text under it does not show through, and cannot be selected from it', f.alpha >= 0.95 && f.select === 'none', JSON.stringify(f));
+      await js(win, `document.querySelector('.fold').click()`);
       await sleep(700);
-      check('zooming does not tuck it', !(await dockState(win)).tucked);
+      f = await foldState();
+      check('the button folds the dock away; the button moves to the middle of where the dock was', f.folded && f.opacity === '0' && f.inert && !f.reachable && f.button === '1' && Math.abs(f.fx) < 2 && Math.abs(f.fy) < 2 && f.title === 'Show controls' && f.label === 'Show controls', JSON.stringify(f));
+      await shot(win, `workspace-dock-folded-${theme}.png`);
+      await js(win, `workspaceViewer.viewer.currentPageNumber = 5`);
+      await sleep(300);
+      check('a folded dock still shows the page for a moment when it changes', await js(win, `(() => { const n = document.querySelector('.flash'); return n.classList.contains('show') && n.textContent === '5 / 12'; })()`));
+      await scrollTo(400);
+      check('scrolling does not bring it back', (await foldState()).folded);
+      await js(win, `document.querySelector('.fold').click()`);
+      await sleep(700);
+      f = await foldState();
+      check('pressing the button again brings the dock back, and the button returns beside it', !f.folded && f.opacity === '1' && !f.inert && f.reachable && f.gap > 6 && f.gap < 14 && Math.abs(f.fy) < 2 && f.title === 'Hide controls', JSON.stringify(f));
+      await js(win, `workspaceViewer.viewer.currentPageNumber = 1`);
     }
     await closeAndWait(win);
   }
@@ -687,7 +704,17 @@ app.whenReady().then(async () => {
     await js(win, `document.getElementById('scroller').scrollTop = 400`);
     await sleep(600);
     v = await where();
-    check('scrolling down slides a dock at the left away to the left', (await js(win, `document.querySelector('.dock').classList.contains('tuck')`)) && v.opacity === '0' && v.left < 0, JSON.stringify(v));
+    check('scrolling down leaves a dock at the left where it is', v.opacity === '1' && Math.abs(v.left - 16) < 2, JSON.stringify(v));
+    const column = () => js(win, `(() => { const d = document.querySelector('.dock').getBoundingClientRect(); const f = document.querySelector('.fold').getBoundingClientRect(); return { fx: (f.left + f.right) / 2 - (d.left + d.right) / 2, fy: (f.top + f.bottom) / 2 - (d.top + d.bottom) / 2, below: f.top - d.bottom, folded: document.querySelector('.dock').classList.contains('folded'), opacity: getComputedStyle(document.querySelector('.dock')).opacity }; })()`);
+    let col = await column();
+    check('its round button is centred just below the column', Math.abs(col.fx) < 2 && col.below > 6 && col.below < 14, JSON.stringify(col));
+    await js(win, `document.querySelector('.fold').click()`);
+    await sleep(700);
+    col = await column();
+    check('folded, the column is gone and the button is in the middle of its place', col.folded && col.opacity === '0' && Math.abs(col.fx) < 2 && Math.abs(col.fy) < 2, JSON.stringify(col));
+    await js(win, `document.querySelector('.fold').click()`);
+    await sleep(700);
+    check('and it comes back', !(await column()).folded);
     await js(win, `document.getElementById('scroller').scrollTop = 100`);
     await sleep(600);
     win.setBounds({ ...win.getBounds(), width: 900, height: 600 });

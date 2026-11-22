@@ -21,7 +21,7 @@
   // Puts the dock at `side` and eases it over from where it was, then tells the main process so the place is kept.
   function settleAt(dock, side) {
     const from = dock.getBoundingClientRect();
-    dock.classList.remove('dragging', 'tuck');
+    dock.classList.remove('dragging');
     dock.style.left = '';
     dock.style.top = '';
     const changed = side !== area().dataset.dock;
@@ -31,6 +31,7 @@
       const move = `translate(${from.left + from.width / 2 - to.left - to.width / 2}px, ${from.top + from.height / 2 - to.top - to.height / 2}px)`;
       dock.animate([{ transform: move }, { transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.2, .9, .25, 1)' });
     }
+    dock.dispatchEvent(new Event('placed'));
     if (changed) window.workspaceApi.setDock(side);
   }
 

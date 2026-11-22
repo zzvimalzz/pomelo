@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The dock: the page box with its arrows, the zoom buttons and the View menu. It slides away while the user reads downwards and comes
-// back on the way up. A grip at its start end moves it (dock-place.js). A classic script that adds window.workspaceDock.
+// The dock: the page box with its arrows, the zoom buttons and the View menu. A round button beside it folds it away and, once it is
+// folded, brings it back from the middle of the place it stood. A grip at its start end moves it (dock-place.js). A classic script that
+// adds window.workspaceDock.
 (() => {
   const { el, icon } = window.pomeloUi;
   const { label, bind } = window.workspaceKeys;
-  const TUCK_FROM = 80;
-  const TUCK_STEP = 6;
-  const NEAR_EDGE = 110;
-  const SETTLE = 400;
   const WHEEL_STEP = 100;
+  const FOLD_SIZE = 36;
+  const FOLD_GAP = 10;
   const PRESETS = { 'page-fit': 'Fit page', 'page-width': 'Fit width' };
 
   let viewer = null;
@@ -16,6 +15,7 @@
   let zoomButton = null;
   let flash = null;
   let flashTimer = null;
+  let folded = false;
   const focusReading = () => document.body.classList.contains('focus');
   const menuOpen = () => !!menu && !menu.hidden;
   const closeMenu = () => { if (menu) { menu.hidden = true; zoomButton.setAttribute('aria-expanded', 'false'); } };
@@ -100,15 +100,42 @@
     const zoomGroup = el('div', 'zoomgroup');
     zoomGroup.append(out, zoom, menu, into);
     dock.append(grip, previous, box, next, el('span', 'sep'), zoomGroup);
+    const fold = button('fold', 'right', 'Hide controls');
+    fold.hidden = true;
     flash = el('div', 'flash');
-    well().append(dock, flash);
+    well().append(dock, fold, flash);
 
     const zoomBy = (steps, at = middle(container)) => viewer.updateScale({ steps, origin: at });
-    let settledAt = 0;
-    const settle = () => { settledAt = Date.now(); };
-    const turn = (n) => { settle(); viewer.currentPageNumber = Math.min(Math.max(n, 1), viewer.pagesCount); };
-    previous.onclick = () => { settle(); viewer.previousPage(); };
-    next.onclick = () => { settle(); viewer.nextPage(); };
+    const turn = (n) => { viewer.currentPageNumber = Math.min(Math.max(n, 1), viewer.pagesCount); };
+    previous.onclick = () => viewer.previousPage();
+    next.onclick = () => viewer.nextPage();
+
+    // The button sits just past the end of the dock, or, once the dock is folded, in the middle of where it stood. The dock keeps its
+    // box while folded, so the offsets stay true; getBoundingClientRect would include the settling animation.
+    const place = () => {
+      const row = well().dataset.dock === 'bottom' || well().dataset.dock === 'top';
+      let x = dock.offsetLeft + (dock.offsetWidth - FOLD_SIZE) / 2;
+      let y = dock.offsetTop + (dock.offsetHeight - FOLD_SIZE) / 2;
+      if (!folded && row) x = dock.offsetLeft + dock.offsetWidth + FOLD_GAP;
+      if (!folded && !row) y = dock.offsetTop + dock.offsetHeight + FOLD_GAP;
+      fold.style.left = `${x}px`;
+      fold.style.top = `${y}px`;
+    };
+    const setFolded = (on) => {
+      folded = on;
+      closeMenu();
+      dock.classList.toggle('folded', on);
+      fold.classList.toggle('folded', on);
+      dock.inert = on;
+      const text = on ? 'Show controls' : 'Hide controls';
+      fold.title = text;
+      fold.setAttribute('aria-label', text);
+      place();
+    };
+    fold.onclick = () => setFolded(!folded);
+    new ResizeObserver(place).observe(dock);
+    window.addEventListener('resize', place);
+    dock.addEventListener('placed', place);
     out.onclick = () => zoomBy(-1);
     into.onclick = () => zoomBy(1);
     zoom.onclick = () => {
@@ -130,34 +157,22 @@
       else if (e.key === 'Escape') { e.preventDefault(); container.focus(); }
     };
     // Keys from here on act on the document, so a click on a button must not take the focus away from it.
-    dock.addEventListener('mousedown', (e) => { if (e.target !== page) e.preventDefault(); });
+    for (const part of [dock, fold]) part.addEventListener('mousedown', (e) => { if (e.target !== page) e.preventDefault(); });
     document.addEventListener('pointerdown', (e) => { if (menuOpen() && !e.target.closest('.zoomgroup')) closeMenu(); });
 
     eventBus.on('pagesinit', () => {
       count.replaceChildren(el('span', 'of', '/ '), String(viewer.pagesCount));
       sync();
       dock.hidden = false;
+      place();
+      fold.hidden = false;
     });
     eventBus.on('pagechanging', ({ pageNumber }) => {
       if (document.activeElement !== page) { page.value = pageNumber; fit(); }
-      if (focusReading() || dock.classList.contains('tuck')) showPill(`${pageNumber} / ${viewer.pagesCount}`);
+      if (focusReading() || folded) showPill(`${pageNumber} / ${viewer.pagesCount}`);
     });
     eventBus.on('scalechanging', ({ scale, presetValue }) => {
       zoom.textContent = PRESETS[presetValue] ?? `${Math.round(scale * 100)}%`;
-      settle();
-    });
-
-    // Zooming and jumping to a page move the scroll position too; only the user's own scrolling should tuck the dock.
-    let last = 0;
-    container.addEventListener('scroll', () => {
-      const moved = container.scrollTop - last;
-      last = container.scrollTop;
-      if (menuOpen() || dock.matches(':hover') || Date.now() - settledAt < SETTLE) return;
-      if (moved > TUCK_STEP && container.scrollTop > TUCK_FROM) dock.classList.add('tuck');
-      else if (moved < -TUCK_STEP) dock.classList.remove('tuck');
-    }, { passive: true });
-    well().addEventListener('pointermove', (e) => {
-      if (window.workspaceDockPlace.edgeDistance(e, well().getBoundingClientRect()) < NEAR_EDGE) dock.classList.remove('tuck');
     });
 
     // Ctrl and the wheel zoom wherever the pointer is. A mouse notch is 100 and one step; a trackpad pinch sends many small turns,
@@ -175,7 +190,7 @@
       const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
       zoomBy(steps, inside ? inWell(e.clientX, e.clientY) : middle(container));
     }, { passive: false });
-    window.workspaceDockPlace.attach(dock, grip, () => { closeMenu(); dock.classList.remove('tuck'); });
+    window.workspaceDockPlace.attach(dock, grip, closeMenu);
 
     bind('zoomIn', () => zoomBy(1));
     bind('zoomOut', () => zoomBy(-1));

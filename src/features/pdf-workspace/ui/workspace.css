@@ -2,14 +2,14 @@
 /* The workspace window: glass title row, and the document in its own rounded well. The wheel's --plate tints the glass. */
 :root {
   --solid: #efece8; --well: rgba(110, 110, 125, .13); --muted: rgba(0, 0, 0, .64); --faint: rgba(0, 0, 0, .5); --thumb: rgba(0, 0, 0, .2);
-  --bar: rgba(255, 255, 255, .9); --bar-line: rgba(0, 0, 0, .07); --bar-hi: rgba(255, 255, 255, .95);
+  --bar: rgba(255, 255, 255, .9); --dock: rgba(255, 255, 255, .97); --bar-line: rgba(0, 0, 0, .07); --bar-hi: rgba(255, 255, 255, .95);
   --accent-soft: rgba(232, 77, 111, .13); --accent-ink: #c22b4f; --field: rgba(255, 255, 255, .78); --field-line: rgba(0, 0, 0, .14);
   --spring: cubic-bezier(.2, .9, .25, 1.12);
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --solid: #242427; --well: rgba(0, 0, 0, .28); --muted: rgba(255, 255, 255, .76); --faint: rgba(255, 255, 255, .56); --thumb: rgba(255, 255, 255, .22);
-    --bar: rgba(44, 44, 48, .92); --bar-line: rgba(255, 255, 255, .09); --bar-hi: rgba(255, 255, 255, .07);
+    --bar: rgba(44, 44, 48, .92); --dock: rgba(44, 44, 48, .97); --bar-line: rgba(255, 255, 255, .09); --bar-hi: rgba(255, 255, 255, .07);
     --accent-soft: rgba(232, 77, 111, .24); --accent-ink: #ff94ad; --field: rgba(255, 255, 255, .07); --field-line: rgba(255, 255, 255, .17);
   }
 }
@@ -75,8 +75,23 @@ html.solid .window { background: var(--solid); }
 .well[data-dock="left"] .dock, .well[data-dock="right"] .dock { top: 0; bottom: 0; width: 76px; height: max-content; margin: auto 0; padding: 7px 0; flex-direction: column; }
 .well[data-dock="left"] .dock { left: 16px; --away: translateX(-130px); }
 .well[data-dock="right"] .dock { right: 16px; --away: translateX(130px); }
-.dock.tuck:not(:focus-within), body.focus:not(.reveal-dock) .dock:not(:focus-within) { transform: var(--away); opacity: 0; pointer-events: none; }
+.dock.folded { transform: scale(.9); opacity: 0; pointer-events: none; }
+body.focus:not(.reveal-dock) .dock:not(:focus-within) { transform: var(--away); opacity: 0; pointer-events: none; }
 .well .dock.dragging { right: auto; bottom: auto; margin: 0; transform: none; transition: none; box-shadow: inset 0 1px 0 var(--bar-hi), 0 2px 4px rgba(0, 0, 0, .1), 0 18px 44px rgba(0, 0, 0, .26); }
+.dock, .fold { background: var(--dock); }
+.dock { user-select: none; }
+.fold { position: absolute; z-index: 5; width: 36px; height: 36px; padding: 0; display: grid; place-items: center; border-radius: 50%; color: var(--muted); border: 1px solid var(--bar-line);
+  backdrop-filter: blur(24px) saturate(160%); box-shadow: inset 0 1px 0 var(--bar-hi), 0 1px 2px rgba(0, 0, 0, .08), 0 8px 22px rgba(0, 0, 0, .16); cursor: pointer;
+  transition: left .4s var(--ease), top .4s var(--ease), opacity .25s, transform .18s var(--ease), color .15s; animation: dock-in .42s .3s var(--spring) backwards; }
+.fold:hover { color: var(--txt); transform: scale(1.08); }
+.fold:active { transform: scale(.94); }
+.fold .i { width: 16px; height: 16px; transform: rotate(var(--aim)); transition: transform .4s var(--ease); }
+.fold.folded .i { transform: rotate(calc(var(--aim) + 180deg)); }
+.well[data-dock="bottom"] .fold { --aim: 90deg; }
+.well[data-dock="top"] .fold { --aim: -90deg; }
+.well[data-dock="left"] .fold { --aim: 180deg; }
+.well[data-dock="right"] .fold { --aim: 0deg; }
+.dock.dragging ~ .fold, body.focus:not(.reveal-dock) .fold:not(:focus) { opacity: 0; pointer-events: none; }
 .grip { --dots: var(--faint); flex: none; width: 18px; height: 30px; padding: 0; display: grid; place-items: center; border: 0; background: none; cursor: grab; touch-action: none; }
 .grip::before { content: ''; width: 10px; height: 15px; background: radial-gradient(circle, var(--dots) 1.1px, transparent 1.6px) 0 0 / 5px 5px; }
 .grip:hover { --dots: var(--muted); }
@@ -174,5 +189,5 @@ body.focus .scroller { top: 0; bottom: 0; }
 .fld:focus, .fld:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); outline: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .cmark, .ccard, .card, .veil, .pw.shake, .emsg, .dock, .menu, .flash, .titlerow, .edgehint { animation: none; transition: none; }
+  .cmark, .ccard, .card, .veil, .pw.shake, .emsg, .dock, .fold, .fold .i, .menu, .flash, .titlerow, .edgehint { animation: none; transition: none; }
 }

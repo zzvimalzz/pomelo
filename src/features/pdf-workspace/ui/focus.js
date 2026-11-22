@@ -42,7 +42,7 @@
     if (!on()) return;
     body.classList.toggle('reveal-top', e.clientY < TOP || !!e.target.closest('.titlerow'));
     const edge = window.workspaceDockPlace.edgeDistance(e, { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight });
-    body.classList.toggle('reveal-dock', edge < DOCK_EDGE || !!e.target.closest('.dock'));
+    body.classList.toggle('reveal-dock', edge < DOCK_EDGE || !!e.target.closest('.dock, .fold'));
   });
   document.documentElement.addEventListener('mouseleave', () => body.classList.remove('reveal-top', 'reveal-dock'));
 })();
