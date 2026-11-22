@@ -10,6 +10,7 @@
     nextPage: { keys: ['PageDown', 'ArrowRight', 'ArrowDown'], label: 'Page Down' },
     previousPage: { keys: ['PageUp', 'ArrowLeft', 'ArrowUp'], label: 'Page Up' },
     focusReading: { keys: ['F11'], label: 'F11' },
+    find: { keys: ['Ctrl+f', 'Ctrl+F'], label: 'Ctrl+F' },
     escape: { keys: ['Escape'], label: 'Esc' },
   };
   const actions = {};

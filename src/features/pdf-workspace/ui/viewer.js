@@ -76,11 +76,13 @@
     const pdf = await load(lib, doc);
     const eventBus = new viewerLib.EventBus();
     const linkService = new viewerLib.PDFLinkService({ eventBus });
-    const viewer = new viewerLib.PDFViewer({ container, viewer: viewerEl, eventBus, linkService, annotationEditorMode: lib.AnnotationEditorType.DISABLE, removePageBorders: true });
+    const findController = new viewerLib.PDFFindController({ linkService, eventBus });
+    const viewer = new viewerLib.PDFViewer({ container, viewer: viewerEl, eventBus, linkService, findController, annotationEditorMode: lib.AnnotationEditorType.DISABLE, removePageBorders: true });
     linkService.setViewer(viewer);
     api.viewer = viewer;
     window.workspaceComments.watch(viewer, eventBus, container);
     window.workspaceDock.watch(viewer, eventBus, container);
+    window.workspaceSearch.watch(viewer, eventBus, container);
     window.workspaceSidebar.watch(pdf, viewer, eventBus, container, linkService);
     eventBus.on('pagesinit', () => { viewer.currentScaleValue = 'page-fit'; });
     // A fit keeps fitting as the window changes size; a zoom the user chose stays as it is.
