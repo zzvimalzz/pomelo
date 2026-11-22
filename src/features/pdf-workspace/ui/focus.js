@@ -5,14 +5,14 @@
   const { icon } = window.pomeloUi;
   const { label, bind } = window.workspaceKeys;
   const TOP = 56;
-  const BOTTOM = 120;
+  const DOCK_EDGE = 120;
   const body = document.body;
   const button = document.getElementById('focus');
   const on = () => body.classList.contains('focus');
 
   function paint(entered) {
     body.classList.toggle('focus', entered);
-    body.classList.remove('reveal-top', 'reveal-bottom');
+    body.classList.remove('reveal-top', 'reveal-dock');
     const text = entered ? 'Leave focus reading' : 'Focus reading';
     button.innerHTML = icon(entered ? 'shrink' : 'expand');
     button.title = `${text} (${label(entered ? 'escape' : 'focusReading')})`;
@@ -41,7 +41,8 @@
   document.addEventListener('pointermove', (e) => {
     if (!on()) return;
     body.classList.toggle('reveal-top', e.clientY < TOP || !!e.target.closest('.titlerow'));
-    body.classList.toggle('reveal-bottom', window.innerHeight - e.clientY < BOTTOM || !!e.target.closest('.dock'));
+    const edge = window.workspaceDockPlace.edgeDistance(e, { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight });
+    body.classList.toggle('reveal-dock', edge < DOCK_EDGE || !!e.target.closest('.dock, .fold'));
   });
-  document.documentElement.addEventListener('mouseleave', () => body.classList.remove('reveal-top', 'reveal-bottom'));
+  document.documentElement.addEventListener('mouseleave', () => body.classList.remove('reveal-top', 'reveal-dock'));
 })();
