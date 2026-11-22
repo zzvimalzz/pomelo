@@ -163,6 +163,7 @@
     window.addEventListener('wheel', (e) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
+      if (window.workspaceDialogs.isOpen()) return;
       if (Math.sign(e.deltaY) !== Math.sign(pulled)) pulled = 0;
       pulled += e.deltaMode === 0 ? e.deltaY : e.deltaY * 40;
       const steps = Math.max(-3, Math.min(3, Math.trunc(-pulled / WHEEL_STEP)));

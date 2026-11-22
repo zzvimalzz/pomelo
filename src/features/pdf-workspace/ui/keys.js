@@ -32,7 +32,7 @@
   window.addEventListener('keydown', (e) => {
     if (e.defaultPrevented) return;
     const id = Object.keys(TABLE).find((k) => TABLE[k].keys.some((combo) => matches(e, combo)));
-    if (!id || !actions[id]) return;
+    if (!id || !actions[id] || (id !== 'escape' && window.workspaceDialogs.isOpen())) return;
     if (typing(e) && id !== 'focusReading' && !e.ctrlKey) return;
     if (actions[id].some((fn) => fn(e) !== false)) e.preventDefault();
   });

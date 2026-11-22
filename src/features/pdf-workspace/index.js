@@ -17,8 +17,8 @@ const REASONS = {
 
 // asset(name): path of a file shipped in assets/. getSettings(), setSettings(patch): the stored settings. notify({ title, detail }): the
 // notice in the corner of the screen. log(...). openExternal(url): open an address with the program Windows has for it, as a promise.
-// solid: draw an opaque window; by default only before Windows 11.
-function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
+// copyText(text): put text on the clipboard. solid: draw an opaque window; by default only before Windows 11.
+function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
   const documents = createDocuments();
   let win = null;
   let current = null;
@@ -62,6 +62,11 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     if (target) openExternal(target).catch(() => notify({ title: "Can't open this link", detail: 'Windows has nothing to open it with.' }));
   }
 
+  function copyLink(url) {
+    const target = linkTarget(url);
+    if (target) copyText(target);
+  }
+
   const registerIpc = () => registerWorkspaceIpc({
     documents,
     state: () => ({ documents: current ? [current] : [], dock: dock() }),
@@ -69,6 +74,7 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     setDock: (side) => { if (DOCKS.includes(side)) setView({ dock: side }); },
     checkLink: linkTarget,
     openLink,
+    copyLink,
     isWorkspace: (sender) => !!win && !win.isDestroyed() && win.webContents === sender,
   });
 

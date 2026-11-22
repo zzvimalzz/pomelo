@@ -3,7 +3,7 @@
 // needs from another is handed in here.
 const fs = require('fs');
 const path = require('path');
-const { app, nativeTheme, shell } = require('electron');
+const { app, clipboard, nativeTheme, shell } = require('electron');
 const log = require('#shared/node/log');
 const { userDataFile } = require('#shared/electron/user-data');
 
@@ -44,7 +44,7 @@ const firstRun = !fs.existsSync(settingsFile);         // checked before the sto
 const settings = createStore(settingsFile);
 const workspace = createWorkspace({
   asset, getSettings: () => settings.get(), setSettings: (patch) => settings.set(patch), notify: (message) => jobs?.addInfo(message), log,
-  openExternal: (url) => shell.openExternal(url),
+  openExternal: (url) => shell.openExternal(url), copyText: (text) => clipboard.writeText(text),
 });
 const showPdf = (paths) => workspace.open(paths).catch((e) => log('PDF window failed:', e.message));
 const installer = engineSetup.createInstaller({ redetect: () => conversion.detectEngines() });
