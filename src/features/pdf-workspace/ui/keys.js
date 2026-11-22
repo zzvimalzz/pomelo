@@ -11,14 +11,16 @@
     previousPage: { keys: ['PageUp', 'ArrowLeft', 'ArrowUp'], label: 'Page Up' },
     focusReading: { keys: ['F11'], label: 'F11' },
     find: { keys: ['Ctrl+f', 'Ctrl+F'], label: 'Ctrl+F' },
+    back: { keys: ['Alt+ArrowLeft'], label: 'Alt+Left' },
+    forward: { keys: ['Alt+ArrowRight'], label: 'Alt+Right' },
     escape: { keys: ['Escape'], label: 'Esc' },
   };
   const actions = {};
 
   const label = (id) => TABLE[id].label;
   const matches = (e, combo) => {
-    const ctrl = combo.startsWith('Ctrl+');
-    return e.ctrlKey === ctrl && !e.altKey && !e.metaKey && e.key === (ctrl ? combo.slice(5) : combo);
+    const [, modifier, key] = /^(?:(Ctrl|Alt)\+)?(.+)$/.exec(combo);
+    return e.ctrlKey === (modifier === 'Ctrl') && e.altKey === (modifier === 'Alt') && !e.metaKey && e.key === key;
   };
   const typing = (e) => e.target.closest('input, textarea, [contenteditable="true"]');
 
@@ -30,7 +32,7 @@
   window.addEventListener('keydown', (e) => {
     if (e.defaultPrevented) return;
     const id = Object.keys(TABLE).find((k) => TABLE[k].keys.some((combo) => matches(e, combo)));
-    if (!id || !actions[id]) return;
+    if (!id || !actions[id] || (id !== 'escape' && window.workspaceDialogs.isOpen())) return;
     if (typing(e) && id !== 'focusReading' && !e.ctrlKey) return;
     if (actions[id].some((fn) => fn(e) !== false)) e.preventDefault();
   });

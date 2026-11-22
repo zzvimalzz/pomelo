@@ -3,12 +3,36 @@
 (() => {
   const { el, icon } = window.pomeloUi;
   let card = null;
+  let linkOpen = false;
 
-  function build() {
+  // A card over a veil in the document area, labelled by the element whose id is dialog-title. While it is up everything round it is
+  // inert, so nothing behind it can be clicked, selected or scrolled, and close() gives that back (a folded dock stays inert).
+  function frame() {
     const box = el('div', 'card');
     box.setAttribute('role', 'dialog');
     box.setAttribute('aria-modal', 'true');
     box.setAttribute('aria-labelledby', 'dialog-title');
+    const veil = el('div', 'veil');
+    veil.append(box);
+    veil.addEventListener('mousedown', (e) => { if (e.target === veil) e.preventDefault(); });
+    document.querySelector('.well').append(veil);
+    const idle = [];
+    for (let n = veil; n !== document.body; n = n.parentElement) {
+      for (const other of n.parentElement.children) if (other !== n && !other.inert) { other.inert = true; idle.push(other); }
+    }
+    const close = () => { veil.remove(); for (const n of idle) n.inert = false; };
+    return { box, close };
+  }
+
+  function loop(e, stops) {
+    const live = stops.filter((s) => !s.disabled);
+    const next = live[(live.indexOf(document.activeElement) + (e.shiftKey ? -1 : 1) + live.length) % live.length];
+    e.preventDefault();
+    next.focus();
+  }
+
+  function build() {
+    const { box, close } = frame();
     const { svg } = window.pomeloWheelShapes;
     const file = svg('svg', { class: 'f', viewBox: '0 0 52 62', 'aria-hidden': 'true' });
     window.pomeloIcons.addDefs(svg, file);
@@ -49,10 +73,8 @@
     const row = el('div', 'row');
     row.append(cancel, submit);
     box.append(head, holder, room, row);
-    const veil = el('div', 'veil');
-    veil.append(box);
 
-    const c = { veil, field, eye, holder, message, room, cancel, submit, pending: null, abort: null, busy: false };
+    const c = { close, field, eye, holder, message, room, cancel, submit, pending: null, abort: null, busy: false };
     field.oninput = () => { submit.disabled = !field.value || c.busy; };
     submit.onclick = () => {
       if (submit.disabled || !c.pending) return;
@@ -69,14 +91,8 @@
     box.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); cancel.click(); }
       else if (e.key === 'Enter' && e.target === field) { e.preventDefault(); submit.click(); }
-      else if (e.key === 'Tab') {
-        const stops = [field, eye, cancel, submit].filter((s) => !s.disabled);
-        const next = stops[(stops.indexOf(document.activeElement) + (e.shiftKey ? -1 : 1) + stops.length) % stops.length];
-        e.preventDefault();
-        next.focus();
-      }
+      else if (e.key === 'Tab') loop(e, [field, eye, cancel, submit]);
     });
-    document.querySelector('.well').append(veil);
     return c;
   }
 
@@ -114,9 +130,61 @@
   function closePassword() {
     if (!card) return;
     card.field.value = '';
-    card.veil.remove();
+    card.close();
     card = null;
   }
 
-  window.workspaceDialogs = { askPassword, closePassword };
+  // Resolves with true when the user chooses to open the address, false otherwise. The address is shown whole: it is what the link
+  // really opens, which the text over it may not say.
+  function confirmLink(address) {
+    if (linkOpen) return Promise.resolve(false);
+    const { box, close } = frame();
+    const badge = el('i', 'badge');
+    badge.innerHTML = icon('external');
+    const title = el('h3', '', 'Open this link?');
+    title.id = 'dialog-title';
+    const head = el('div', 'uhead');
+    head.append(badge, title);
+    const shown = el('p', 'addr', address);
+    const cancel = el('button', 'btn', 'Cancel');
+    const open = el('button', 'btn primary', 'Open');
+    const copy = el('button', 'copy');
+    copy.type = 'button';
+    copy.title = 'Copy link';
+    copy.setAttribute('aria-label', 'Copy link');
+    copy.innerHTML = icon('copy');
+    const tip = el('span', 'tip');
+    tip.setAttribute('role', 'status');
+    let fading = null;
+    copy.onclick = async () => {
+      await window.workspaceApi.copyLink(address);
+      tip.textContent = 'Copied';
+      tip.classList.add('on');
+      clearTimeout(fading);
+      fading = setTimeout(() => tip.classList.remove('on'), 1400);
+    };
+    const field = el('div', 'addrbox');
+    field.append(shown, copy, tip);
+    const row = el('div', 'row');
+    row.append(cancel, open);
+    box.append(head, field, row);
+    linkOpen = true;
+    return new Promise((resolve) => {
+      const done = (answer) => {
+        close();
+        linkOpen = false;
+        document.getElementById('scroller').focus();
+        resolve(answer);
+      };
+      cancel.onclick = () => done(false);
+      open.onclick = () => done(true);
+      box.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); done(false); }
+        else if (e.key === 'Tab') loop(e, [copy, cancel, open]);
+      });
+      open.focus();
+    });
+  }
+
+  window.workspaceDialogs = { askPassword, closePassword, confirmLink, isOpen: () => !!document.querySelector('[aria-modal="true"]') };
 })();

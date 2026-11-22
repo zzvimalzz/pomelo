@@ -41,7 +41,7 @@ function create({ asset, solid, saved, onBounds }) {
   for (const event of ['move', 'resize', 'maximize', 'unmaximize']) win.on(event, later);
   win.on('close', () => { clearTimeout(timer); save(); });
   for (const [event, on] of [['enter-full-screen', true], ['leave-full-screen', false]]) win.on(event, () => win.webContents.send('pdfws:focus-changed', on));
-  win.on('closed', () => nativeTheme.off('updated', restyle));
+  win.on('closed', () => { clearTimeout(timer); nativeTheme.off('updated', restyle); });
 
   win.loadFile(path.join(__dirname, 'ui', 'workspace.html'), solid ? { query: { solid: '1' } } : undefined);
   win.once('ready-to-show', () => { win.show(); win.focus(); });

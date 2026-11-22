@@ -88,6 +88,13 @@ html.solid .window { background: var(--solid); }
 
 /* pdf.js draws its own note icons and popups; comments are shown as markers beside the page instead. */
 .annotationLayer .textAnnotation, .annotationLayer .popupAnnotation { display: none; }
+/* A web link is blue because its layer lightens what is under it: dark text turns blue and white paper stays white. A link inside the
+   document (a contents entry, a cross reference) keeps the text as it is. A page with form fields is left alone, since lightening would also
+   hide the text typed in them, and pdf.js's yellow hover is never shown. */
+.pdfViewer .page .annotationLayer .linkAnnotation > a, .pdfViewer .page .annotationLayer .linkAnnotation:not(.hasBorder) > a:hover { opacity: 1; background-color: transparent; }
+.pdfViewer .page .annotationLayer .linkAnnotation:not([data-internal-link]) > a, .pdfViewer .page .annotationLayer .linkAnnotation:not(.hasBorder):not([data-internal-link]) > a:hover { background-color: var(--link, transparent); }
+.pdfViewer .page .annotationLayer .linkAnnotation.hasBorder:hover { background-color: transparent; }
+.pdfViewer .annotationLayer:not(:has(:is(.textWidgetAnnotation, .buttonWidgetAnnotation, .choiceWidgetAnnotation))) { --link: #0b57d0; mix-blend-mode: lighten; }
 
 .cmarks { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .cmark { position: absolute; left: calc(100% + 10px); width: 26px; height: 24px; padding: 0; display: grid; place-items: center; border-radius: 8px; cursor: pointer; pointer-events: auto;
@@ -263,6 +270,20 @@ body.focus .scroller { top: 0; bottom: 0; }
   box-shadow: 0 0 0 1.5px var(--bar-line), 0 1px 3px rgba(0, 0, 0, .18); }
 .lk .i { width: 13px; height: 13px; stroke-width: 2.3; }
 .uhead h3 { font-size: 16px; font-weight: 650; letter-spacing: -.005em; }
+.badge { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-ink); }
+.badge .i { width: 20px; height: 20px; }
+.addr { max-height: 96px; overflow-y: auto; padding: 8px 34px 8px 10px; border-radius: 8px; border: 1px solid var(--field-line); background: var(--field); font-size: 12.5px; overflow-wrap: anywhere; user-select: text; }
+.addr::-webkit-scrollbar { width: 10px; }
+.addr::-webkit-scrollbar-button { display: none; }
+.addr::-webkit-scrollbar-track { background: transparent; margin: 4px 0; }
+.addr::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 6px; background-clip: padding-box; background-color: color-mix(in srgb, var(--txt) 26%, transparent); }
+.addr::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--txt) 46%, transparent); }
+.addrbox { position: relative; }
+.copy { position: absolute; top: 5px; right: 14px; width: 24px; height: 24px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+.copy:hover { background: var(--hover); color: var(--txt); }
+.copy .i { width: 14px; height: 14px; }
+.tip { position: absolute; right: 8px; bottom: calc(100% + 6px); padding: 4px 9px; border-radius: 7px; background: var(--txt); color: var(--solid); font-size: 12px; font-weight: 600; pointer-events: none; opacity: 0; transform: translateY(3px); transition: opacity .15s, transform .15s; }
+.tip.on { opacity: 1; transform: none; }
 .emsg { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .2s ease; }
 .emsg.on { grid-template-rows: 1fr; }
 .emsg > div { overflow: hidden; }
@@ -283,5 +304,5 @@ body.focus .scroller { top: 0; bottom: 0; }
 .fld:focus, .fld:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); outline: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .panel, .cmark, .ccard, .card, .veil, .pw.shake, .emsg, .dockwrap, .dock, .fold, .fold .i, .menu, .findbar, .flash, .titlerow, .edgehint { animation: none; transition: none; }
+  .panel, .cmark, .ccard, .card, .veil, .tip, .pw.shake, .emsg, .dockwrap, .dock, .fold, .fold .i, .menu, .findbar, .flash, .titlerow, .edgehint { animation: none; transition: none; }
 }

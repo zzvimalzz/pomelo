@@ -39,6 +39,7 @@ const SUITES = [
   { name: 'text', file: 'unit/shared/text.test.js', tier: 'unit' },
   { name: 'workspace-documents', file: 'unit/pdf-workspace/documents.test.js', tier: 'unit' },
   { name: 'workspace-bounds', file: 'unit/pdf-workspace/bounds.test.js', tier: 'unit' },
+  { name: 'workspace-links', file: 'unit/pdf-workspace/links.test.js', tier: 'unit' },
   { name: 'app-start', file: 'integration/app/start.test.js', tier: 'integration', timeout: 120 },
   { name: 'matrix', file: 'integration/conversion/matrix.test.js', tier: 'integration', electron: true, timeout: 600 },
   { name: 'edge-cases', file: 'integration/conversion/edge-cases.test.js', tier: 'integration', electron: true, timeout: 300 },

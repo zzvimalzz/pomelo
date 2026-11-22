@@ -28,14 +28,15 @@ let settings = { pdfView: { window: null } };
 const notices = [];
 const errors = [];
 const calls = [];
+const opened = [];
 const handle = ipcMain.handle.bind(ipcMain);
 ipcMain.handle = (channel, fn) => handle(channel, (event, ...args) => { calls.push({ channel, args }); return fn(event, ...args); });
 const setSettings = (patch) => { settings = { ...settings, ...patch }; };
 
 // One workspace per scenario: the IPC handlers belong to one at a time.
 const fresh = (options = {}) => {
-  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus', 'pdfws:dock']) ipcMain.removeHandler(channel);
-  const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, ...options });
+  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus', 'pdfws:dock', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link']) ipcMain.removeHandler(channel);
+  const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), ...options });
   workspace.registerIpc();
   return workspace;
 };
@@ -86,6 +87,36 @@ async function makeCommentsPdf(name) {
     highlight([100, 500, 260, 520], { CA: 0.4, Contents: PDFHexString.fromText('Check this figure\nwith the team') }),
     highlight([100, 400, 260, 420], { CA: 0.4 }),
   ]));
+  const file = path.join(root, name);
+  fs.writeFileSync(file, await doc.save({ useObjectStreams: false }));
+  return file;
+}
+
+// Page 1 has a line of text under each link, from the top: a web page, a mail address, a file, a script, an ftp address, page 3, an
+// action that goes to the next page, a link to another file and a program to launch. Pages 2 and 3 say which they are.
+async function makeLinksPdf(name) {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const [first, second, third] = [doc.addPage([595, 842]), doc.addPage([595, 842]), doc.addPage([595, 842])];
+  second.drawText('Page two', { x: 80, y: 700, size: 20, font });
+  third.drawText('Page three', { x: 80, y: 700, size: 20, font });
+  const actions = [
+    ['Web page', { S: 'URI', URI: PDFString.of('HTTPS://Example.COM/Docs?a=1#top') }],
+    ['Mail', { S: 'URI', URI: PDFString.of('mailto:team@example.com') }],
+    ['File', { S: 'URI', URI: PDFString.of('file:///C:/Windows/System32/calc.exe') }],
+    ['Script', { S: 'URI', URI: PDFString.of('javascript:alert(1)') }],
+    ['Ftp', { S: 'URI', URI: PDFString.of('ftp://example.com/x') }],
+    ['Go to page 3', { S: 'GoTo', D: [third.ref, 'Fit'] }],
+    ['Next page', { S: 'Named', N: 'NextPage' }],
+    ['Another file', { S: 'GoToR', F: PDFString.of('other.pdf'), D: [0, 'Fit'] }],
+    ['Launch', { S: 'Launch', F: PDFString.of('calc.exe') }],
+  ];
+  const links = actions.map(([text, A], i) => {
+    const y = 760 - i * 40;
+    first.drawText(text, { x: 80, y, size: 16, font });
+    return doc.context.register(doc.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [70, y - 6, 260, y + 20], Border: [0, 0, 0], F: 4, A }));
+  });
+  first.node.set(PDFName.of('Annots'), doc.context.obj(links));
   const file = path.join(root, name);
   fs.writeFileSync(file, await doc.save({ useObjectStreams: false }));
   return file;
@@ -248,6 +279,23 @@ app.whenReady().then(async () => {
     check('the page cannot read with a token it was not given', (await js(win, `workspaceApi.read('0'.repeat(64), 0, 10).then(() => 'read', () => 'refused')`)) === 'refused');
     check('the page cannot read more than 4 MiB in one call', (await js(win, `workspaceApi.state().then((s) => workspaceApi.read(s.documents[0].token, 0, 4 * 1048576 + 1)).then(() => 'read', () => 'refused')`)) === 'refused');
     await closeAndWait(win);
+  }
+
+  console.log('closing the window just after it moved');
+  {
+    const thrown = [];
+    const caught = (e) => thrown.push(e.message);
+    process.on('uncaughtException', caught);
+    for (let round = 0; round < 3; round++) {
+      const win = await openAndWait(fresh(), small);
+      const b = win.getBounds();
+      win.setBounds({ ...b, x: b.x + 10, width: b.width - 10 });
+      win.on('close', () => win.emit('resize'));
+      win.close();
+      await sleep(900);
+    }
+    process.off('uncaughtException', caught);
+    check('a move or resize that arrives while the window is closing leaves no timer behind to fail on a window that is gone', thrown.length === 0, thrown.join(' | '));
   }
 
   console.log('a second start while the window is open');
@@ -1420,6 +1468,182 @@ app.whenReady().then(async () => {
     check('the first Esc closes the bar and stays in focus reading', win.isFullScreen() && await js(win, `document.querySelector('.findbar').hidden`));
     await press(win, 'Escape');
     check('the next Esc leaves focus reading', await until('windowed', () => !win.isFullScreen()));
+    await closeAndWait(win);
+  }
+
+  console.log('links in a document');
+  for (const theme of ['light', 'dark']) {
+    nativeTheme.themeSource = theme;
+    opened.length = 0;
+    const win = await openAndWait(fresh(), await makeLinksPdf('Links.pdf'));
+    await until('the links', () => js(win, `document.querySelectorAll('.page[data-page-number="1"] .linkAnnotation a').length >= 5`));
+    const here = await js(win, `location.href`);
+    const page = () => js(win, `workspaceViewer.viewer.currentPageNumber`);
+    const onPage = (n) => until(`page ${n}`, async () => (await page()) === n, 5000);
+    const stayed = async () => (await js(win, `location.href`)) === here && BrowserWindow.getAllWindows().length === 1;
+    const list = await js(win, `[...document.querySelectorAll('.page[data-page-number="1"] .linkAnnotation a')].map((a) => ({ href: a.getAttribute('href'), title: a.title, target: a.target }))`);
+    const external = list.filter((a) => /^[a-z]+:/i.test(a.title));
+    check(`${theme}: every link to an address holds no address, so a middle click or a drag takes the page nowhere`, external.length === 3 && external.every((a) => a.href === '' && a.target === ''), JSON.stringify(list));
+    check(`${theme}: pdf.js draws no link for a file, a script, another document or a program`, list.length === 5 && list.map((a) => a.title).join('|') === 'https://example.com/Docs?a=1#top|mailto:team@example.com|ftp://example.com/x|Go to page 3|Next page', JSON.stringify(list));
+    const look = () => js(win, `(() => { const s = getComputedStyle(document.querySelector('.page[data-page-number="1"] .linkAnnotation a')); return { bg: s.backgroundColor, blend: getComputedStyle(document.querySelector('.page[data-page-number="1"] .annotationLayer')).mixBlendMode, opacity: s.opacity }; })()`);
+    const blue = await look();
+    check(`${theme}: a link is the usual blue, drawn so that the dark text under it turns blue and the paper stays white`, blue.bg === 'rgb(11, 87, 208)' && blue.blend === 'lighten' && blue.opacity === '1', JSON.stringify(blue));
+    const firstAt = await js(win, `(() => { const r = document.querySelector('.page[data-page-number="1"] .linkAnnotation a').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(firstAt.x), y: Math.round(firstAt.y) });
+    await sleep(300);
+    const hover = await look();
+    check(`${theme}: with the pointer over a link it is the same blue, not pdf.js's yellow`, hover.bg === 'rgb(11, 87, 208)' && hover.opacity === '1', JSON.stringify(hover));
+    const tint = async (rect) => {
+      const image = await win.webContents.capturePage({ x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) });
+      const bytes = image.toBitmap();
+      let blueish = 0;
+      let dark = 0;
+      for (let i = 0; i < bytes.length; i += 4) {
+        const [b, g, r] = [bytes[i], bytes[i + 1], bytes[i + 2]];
+        if (b > r + 90 && b > g + 50) blueish++;
+        else if (r < 90 && g < 90 && b < 90) dark++;
+      }
+      return { blueish, dark };
+    };
+    const lines = await js(win, `(() => { const r = document.querySelector('.page[data-page-number="1"]').getBoundingClientRect(); const at = (row) => ({ x: r.left + (80 / 595) * r.width, y: r.top + ((842 - (760 - row * 40 + 16)) / 842) * r.height, width: (110 / 595) * r.width, height: (20 / 842) * r.height });
+      return { linked: at(0), plain: at(2), inside: at(5) }; })()`);
+    const [linked, plain, inside] = [await tint(lines.linked), await tint(lines.plain), await tint(lines.inside)];
+    check(`${theme}: the text of a link is drawn blue on white paper, and the text of a line with no link stays black`, linked.blueish > 120 && linked.dark === 0 && plain.dark > 10 && plain.blueish < 60, JSON.stringify([linked, plain]));
+    const jumps = await js(win, `[3, 4].map((i) => getComputedStyle([...document.querySelectorAll('.page[data-page-number="1"] .linkAnnotation a')][i]).backgroundColor).join('|')`);
+    check(`${theme}: a link to a page of the document is not blue: its text stays black and its anchor takes no colour`, inside.dark > 100 && inside.blueish < inside.dark && jumps === 'rgba(0, 0, 0, 0)|rgba(0, 0, 0, 0)', JSON.stringify([inside, jumps]));
+    await shot(win, `workspace-links-${theme}.png`);
+    const press1 = async (at) => {
+      for (const type of ['mouseDown', 'mouseUp']) win.webContents.sendInputEvent({ type, x: Math.round(at.x), y: Math.round(at.y), button: 'left', clickCount: 1 });
+      await sleep(500);
+    };
+    const click = async (n) => press1(await js(win, `(() => { const r = [...document.querySelectorAll('.page[data-page-number="1"] .linkAnnotation a')][${n}].getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`));
+    const clickLine = async (row) => press1(await js(win, `(() => { const r = document.querySelector('.page[data-page-number="1"]').getBoundingClientRect(); return { x: r.left + (100 / 595) * r.width, y: r.top + ((842 - (760 - ${row} * 40 + 7)) / 842) * r.height }; })()`));
+    const cardState = () => js(win, `(() => { const c = document.querySelector('.card'); return c ? { title: c.querySelector('h3').textContent, address: c.querySelector('.addr').textContent, buttons: [...c.querySelectorAll('button')].map((b) => b.getAttribute('aria-label') || b.textContent).join(),
+      focused: document.activeElement.getAttribute('aria-label') || document.activeElement.textContent, role: c.getAttribute('role'), modal: c.getAttribute('aria-modal'), labelled: !!document.getElementById(c.getAttribute('aria-labelledby')) } : null; })()`);
+    const choose = async (name) => { await js(win, `[...document.querySelectorAll('.card button')].find((b) => b.textContent === ${JSON.stringify(name)}).click()`); await sleep(300); };
+    const mark = calls.length;
+    const sent = (channel) => calls.slice(mark).filter((c) => c.channel === channel).map((c) => c.args[0]);
+
+    await click(0);
+    let card = await cardState();
+    check(`${theme}: a click on a web link asks first, showing the whole address as the parser reads it`, card && card.title === 'Open this link?' && card.address === 'https://example.com/Docs?a=1#top' && card.buttons === 'Copy link,Cancel,Open'
+      && card.role === 'dialog' && card.modal === 'true' && card.labelled, JSON.stringify(card));
+    check(`${theme}: nothing is opened while the card is up, and Open has the focus`, opened.length === 0 && card.focused === 'Open', JSON.stringify([opened, card]));
+    await shot(win, `workspace-link-${theme}.png`);
+    await press(win, 'Tab');
+    check(`${theme}: Tab goes round the card's three buttons and stays inside it`, (await cardState()).focused === 'Copy link');
+    await press(win, 'Tab');
+    check(`${theme}: and on`, (await cardState()).focused === 'Cancel');
+    await press(win, 'Tab', ['shift']);
+    await press(win, 'Tab', ['shift']);
+    check(`${theme}: Shift+Tab goes back through them to Open`, (await cardState()).focused === 'Open');
+    const behind = await js(win, `({ scroller: document.getElementById('scroller').inert, title: document.querySelector('.titlerow').inert, dock: document.querySelector('.dockwrap').inert,
+      scroll: document.getElementById('scroller').scrollTop, scale: workspaceViewer.viewer.currentScaleValue, page: workspaceViewer.viewer.currentPageNumber })`);
+    check(`${theme}: while the card is up the pages, the title row and the dock cannot be reached`, behind.scroller && behind.title && behind.dock, JSON.stringify(behind));
+    win.webContents.sendInputEvent({ type: 'mouseWheel', x: 600, y: 300, deltaX: 0, deltaY: -300 });
+    win.webContents.sendInputEvent({ type: 'mouseWheel', x: 600, y: 300, deltaX: 0, deltaY: -100, modifiers: ['control'] });
+    await press(win, 'PageDown');
+    await press(win, '0', ['control']);
+    await press(win, 'Left', ['alt']);
+    const still = await js(win, `({ scroll: document.getElementById('scroller').scrollTop, scale: workspaceViewer.viewer.currentScaleValue, page: workspaceViewer.viewer.currentPageNumber })`);
+    check(`${theme}: and neither the wheel, Ctrl and the wheel, Page Down, Ctrl+0 nor Alt+Left moves or zooms the pages behind it`, still.scroll === behind.scroll && still.scale === behind.scale && still.page === behind.page, JSON.stringify([behind, still]));
+    const veilAt = await js(win, `(() => { const r = document.querySelector('.veil').getBoundingClientRect(); return { x: r.left + 20, y: r.top + 20 }; })()`);
+    await press1(veilAt);
+    check(`${theme}: a click on the veil leaves the focus in the card`, await js(win, `document.querySelector('.card').contains(document.activeElement)`));
+    const inField = await js(win, `(() => { const f = document.querySelector('.card .addr').getBoundingClientRect(); const c = document.querySelector('.card .copy').getBoundingClientRect(); return { inside: c.left >= f.left && c.right <= f.right - 10 && c.top >= f.top && c.bottom <= f.bottom, top: c.top - f.top, gap: f.right - c.right }; })()`);
+    check(`${theme}: the copy button sits inside the address box at its top right, clear of the scroll bar`, inField.inside && inField.top < 10 && inField.gap >= 12, JSON.stringify(inField));
+    await js(win, `document.querySelector('.card .copy').click()`);
+    await sleep(300);
+    const copied = await js(win, `(() => { const t = document.querySelector('.card .tip'); return { text: t.textContent, opacity: getComputedStyle(t).opacity }; })()`);
+    check(`${theme}: the copy button puts the address on the clipboard and says Copied`, (await clipboard.readText()) === 'https://example.com/Docs?a=1#top' && copied.text === 'Copied' && copied.opacity === '1', JSON.stringify([await clipboard.readText(), copied]));
+    await shot(win, `workspace-link-copied-${theme}.png`);
+    await sleep(1500);
+    check(`${theme}: the tip goes again by itself`, (await js(win, `getComputedStyle(document.querySelector('.card .tip')).opacity`)) === '0');
+    clipboard.writeText('');
+    await press(win, 'Escape');
+    const closed = await js(win, `({ card: !!document.querySelector('.card'), inScroller: document.getElementById('scroller').contains(document.activeElement), inert: document.querySelectorAll('[inert]').length })`);
+    check(`${theme}: Esc closes the card, opens nothing, returns the keys to the document and gives back everything behind it`, !closed.card && closed.inScroller && opened.length === 0 && closed.inert === 0, JSON.stringify([closed, opened]));
+    await click(0);
+    await choose('Cancel');
+    check(`${theme}: Cancel closes it and opens nothing`, !(await cardState()) && opened.length === 0);
+    await click(0);
+    await choose('Open');
+    check(`${theme}: Open opens the address the card showed, once, and closes the card`, !(await cardState()) && JSON.stringify(opened) === '["https://example.com/Docs?a=1#top"]', JSON.stringify(opened));
+    check(`${theme}: the main process was asked to check the address on each of the three clicks, and to open it once`, sent('pdfws:check-link').length === 3 && sent('pdfws:check-link').every((u) => u === 'https://example.com/Docs?a=1#top')
+      && JSON.stringify(sent('pdfws:open-link')) === '["https://example.com/Docs?a=1#top"]', JSON.stringify(calls.slice(mark).map((c) => [c.channel, c.args[0]])));
+
+    await click(1);
+    card = await cardState();
+    await choose('Open');
+    check(`${theme}: a mail link asks and opens the mail address`, card && card.address === 'mailto:team@example.com' && opened.length === 2 && opened[1] === 'mailto:team@example.com', JSON.stringify([card, opened]));
+
+    await click(2);
+    check(`${theme}: a link to an ftp address shows no card and opens nothing`, !(await cardState()) && opened.length === 2 && sent('pdfws:check-link').length === 5 && await stayed(), JSON.stringify([opened.length, sent('pdfws:check-link')]));
+    for (const [row, what] of [[2, 'a file'], [3, 'a script'], [7, 'another document'], [8, 'a program']]) {
+      await clickLine(row);
+      check(`${theme}: a click where the file has a link to ${what} shows no card and opens nothing`, !(await cardState()) && opened.length === 2 && await stayed(), JSON.stringify(opened));
+    }
+    const hostile = ['file:///C:/Windows/System32/calc.exe', 'javascript:alert(1)', 'data:text/html,x', 'ms-msdt:/id PCWDiagnostic', '\\\\server\\share\\a.exe', 'ftp://example.com/x', 'tel:+60123456789'];
+    await js(win, `window.hostile = ${JSON.stringify(hostile)}.map((url) => { const a = document.createElement('a'); workspaceViewer.viewer.linkService.addLinkAttributes(a, url); document.querySelector('.well').append(a); return a; })`);
+    await js(win, `window.hostile.forEach((a) => a.click())`);
+    await sleep(500);
+    check(`${theme}: the same links made by the page for any other address show no card and open nothing`, !(await cardState()) && opened.length === 2 && await stayed(), JSON.stringify(opened));
+    await js(win, `window.hostile.forEach((a) => a.remove())`);
+    const longUrl = `https://invoice.example.com/i/acct_${'1HQFCaCM3YxTUEmt'.repeat(24)}?s=pd`;
+    await js(win, `(() => { const a = document.createElement('a'); workspaceViewer.viewer.linkService.addLinkAttributes(a, ${JSON.stringify(longUrl)}); document.querySelector('.well').append(a); a.click(); a.remove(); })()`);
+    await sleep(500);
+    const long = await js(win, `(() => { const a = document.querySelector('.card .addr'); return { shown: a.textContent, scrolls: a.scrollHeight > a.clientHeight, height: a.getBoundingClientRect().height, bar: a.offsetWidth - a.clientWidth - 2, cardHeight: document.querySelector('.card').getBoundingClientRect().height }; })()`);
+    check(`${theme}: a very long address is shown whole in a box that holds to 96 px and scrolls, with a thin scroll bar of its own`, long.shown === longUrl && long.scrolls && long.height <= 98 && long.bar === 10 && long.cardHeight < 260, JSON.stringify(long));
+    await shot(win, `workspace-link-long-${theme}.png`);
+    await press(win, 'Escape');
+
+    await click(3);
+    check(`${theme}: a link to a page goes to it`, await onPage(3));
+    await press(win, 'Left', ['alt']);
+    check(`${theme}: Alt+Left goes back to where the link was followed from`, await onPage(1));
+    await press(win, 'Right', ['alt']);
+    check(`${theme}: Alt+Right goes forward again`, await onPage(3));
+    await press(win, 'Right', ['alt']);
+    check(`${theme}: with nothing further forward Alt+Right does nothing`, (await page()) === 3);
+    await press(win, 'Left', ['alt']);
+    await press(win, 'Left', ['alt']);
+    await sleep(500);
+    check(`${theme}: with nothing further back Alt+Left does nothing, and the window stays where it is`, (await page()) === 1 && await stayed());
+
+    await click(3);
+    await onPage(3);
+    await js(win, `document.getElementById('findbtn').click()`);
+    await sleep(500);
+    await press(win, 'Left', ['alt']);
+    check(`${theme}: while the find field has the keys Alt+Left does not go back`, (await page()) === 3);
+    await js(win, `document.getElementById('findbtn').click()`);
+    await sleep(300);
+    await press(win, 'Left', ['alt']);
+    check(`${theme}: with the find bar shut it does`, await onPage(1));
+
+    await click(4);
+    check(`${theme}: a link that runs the next-page action goes to page 2`, await onPage(2));
+    await closeAndWait(win);
+  }
+  nativeTheme.themeSource = 'light';
+
+  console.log('links on a page with a form field');
+  {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const page = doc.addPage([595, 842]);
+    page.drawText('Web page', { x: 80, y: 760, size: 16, font });
+    const field = doc.getForm().createTextField('name');
+    field.setText('Sam Ng');
+    field.addToPage(page, { x: 80, y: 600, width: 200, height: 26 });
+    page.node.set(PDFName.of('Annots'), doc.context.obj([...page.node.Annots().asArray(), doc.context.register(doc.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [70, 754, 260, 780], Border: [0, 0, 0], F: 4, A: { S: 'URI', URI: PDFString.of('https://example.com/') } }))]));
+    const file = path.join(root, 'Form links.pdf');
+    fs.writeFileSync(file, await doc.save({ useObjectStreams: false }));
+    const win = await openAndWait(fresh(), file);
+    await until('the link', () => js(win, `!!document.querySelector('.linkAnnotation a')`));
+    await sleep(500);
+    const form = await js(win, `({ blend: getComputedStyle(document.querySelector('.annotationLayer')).mixBlendMode, bg: getComputedStyle(document.querySelector('.linkAnnotation a')).backgroundColor, field: document.querySelector('.textWidgetAnnotation input')?.value })`);
+    check('on a page with a form field the links are not tinted and the field keeps its text', form.blend === 'normal' && form.bg === 'rgba(0, 0, 0, 0)' && form.field === 'Sam Ng', JSON.stringify(form));
     await closeAndWait(win);
   }
 

@@ -4,14 +4,18 @@
 const { ipcMain } = require('electron');
 
 // documents: the open documents (documents.js). state(): what the page starts from. setFocus(on): enter or leave full screen.
-// setDock(side): keep the dock's place. isWorkspace(sender): is this the workspace window's page.
-function registerWorkspaceIpc({ documents, state, setFocus, setDock, isWorkspace }) {
+// setDock(side): keep the dock's place. checkLink(url): the address a link may open, or null. openLink(url): open it. copyLink(url): put
+// it on the clipboard. isWorkspace(sender): is this the workspace window's page.
+function registerWorkspaceIpc({ documents, state, setFocus, setDock, checkLink, openLink, copyLink, isWorkspace }) {
   const guard = (e) => { if (!isWorkspace(e.sender)) throw new Error('not the workspace window'); };
   ipcMain.handle('pdfws:state', (e) => { guard(e); return state(); });
   ipcMain.handle('pdfws:read', (e, token, begin, end) => { guard(e); return documents.read(token, begin, end); });
   ipcMain.handle('pdfws:unlock', (e, token, password) => { guard(e); documents.unlock(token, password); });
   ipcMain.handle('pdfws:dock', (e, side) => { guard(e); setDock(side); });
   ipcMain.handle('pdfws:focus', (e, on) => { guard(e); setFocus(on === true); });
+  ipcMain.handle('pdfws:check-link', (e, url) => { guard(e); return checkLink(url); });
+  ipcMain.handle('pdfws:open-link', (e, url) => { guard(e); openLink(url); });
+  ipcMain.handle('pdfws:copy-link', (e, url) => { guard(e); copyLink(url); });
 }
 
 module.exports = { registerWorkspaceIpc };
