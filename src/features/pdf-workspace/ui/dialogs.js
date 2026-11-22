@@ -148,7 +148,7 @@
     const shown = el('p', 'addr', address);
     const cancel = el('button', 'btn', 'Cancel');
     const open = el('button', 'btn primary', 'Open');
-    const copy = el('button', 'btn copy');
+    const copy = el('button', 'copy');
     copy.type = 'button';
     copy.title = 'Copy link';
     copy.setAttribute('aria-label', 'Copy link');
@@ -163,9 +163,11 @@
       clearTimeout(fading);
       fading = setTimeout(() => tip.classList.remove('on'), 1400);
     };
+    const field = el('div', 'addrbox');
+    field.append(shown, copy, tip);
     const row = el('div', 'row');
-    row.append(copy, tip, cancel, open);
-    box.append(head, shown, row);
+    row.append(cancel, open);
+    box.append(head, field, row);
     linkOpen = true;
     return new Promise((resolve) => {
       const done = (answer) => {

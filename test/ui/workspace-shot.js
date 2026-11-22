@@ -1506,9 +1506,11 @@ app.whenReady().then(async () => {
       return { blueish, dark };
     };
     const lines = await js(win, `(() => { const r = document.querySelector('.page[data-page-number="1"]').getBoundingClientRect(); const at = (row) => ({ x: r.left + (80 / 595) * r.width, y: r.top + ((842 - (760 - row * 40 + 16)) / 842) * r.height, width: (110 / 595) * r.width, height: (20 / 842) * r.height });
-      return { linked: at(0), plain: at(2) }; })()`);
-    const [linked, plain] = [await tint(lines.linked), await tint(lines.plain)];
+      return { linked: at(0), plain: at(2), inside: at(5) }; })()`);
+    const [linked, plain, inside] = [await tint(lines.linked), await tint(lines.plain), await tint(lines.inside)];
     check(`${theme}: the text of a link is drawn blue on white paper, and the text of a line with no link stays black`, linked.blueish > 120 && linked.dark === 0 && plain.dark > 10 && plain.blueish < 60, JSON.stringify([linked, plain]));
+    const jumps = await js(win, `[3, 4].map((i) => getComputedStyle([...document.querySelectorAll('.page[data-page-number="1"] .linkAnnotation a')][i]).backgroundColor).join('|')`);
+    check(`${theme}: a link to a page of the document is not blue: its text stays black and its anchor takes no colour`, inside.dark > 100 && inside.blueish < inside.dark && jumps === 'rgba(0, 0, 0, 0)|rgba(0, 0, 0, 0)', JSON.stringify([inside, jumps]));
     await shot(win, `workspace-links-${theme}.png`);
     const press1 = async (at) => {
       for (const type of ['mouseDown', 'mouseUp']) win.webContents.sendInputEvent({ type, x: Math.round(at.x), y: Math.round(at.y), button: 'left', clickCount: 1 });
@@ -1548,6 +1550,8 @@ app.whenReady().then(async () => {
     const veilAt = await js(win, `(() => { const r = document.querySelector('.veil').getBoundingClientRect(); return { x: r.left + 20, y: r.top + 20 }; })()`);
     await press1(veilAt);
     check(`${theme}: a click on the veil leaves the focus in the card`, await js(win, `document.querySelector('.card').contains(document.activeElement)`));
+    const inField = await js(win, `(() => { const f = document.querySelector('.card .addr').getBoundingClientRect(); const c = document.querySelector('.card .copy').getBoundingClientRect(); return { inside: c.left >= f.left && c.right <= f.right - 10 && c.top >= f.top && c.bottom <= f.bottom, top: c.top - f.top, gap: f.right - c.right }; })()`);
+    check(`${theme}: the copy button sits inside the address box at its top right, clear of the scroll bar`, inField.inside && inField.top < 10 && inField.gap >= 12, JSON.stringify(inField));
     await js(win, `document.querySelector('.card .copy').click()`);
     await sleep(300);
     const copied = await js(win, `(() => { const t = document.querySelector('.card .tip'); return { text: t.textContent, opacity: getComputedStyle(t).opacity }; })()`);
