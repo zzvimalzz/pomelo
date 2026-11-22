@@ -60,6 +60,16 @@
     return pdf;
   }
 
+  // A scroll bar shows while its area scrolls and for 0.9 s after, and while the pointer is over it (workspace.css).
+  function restScrollbar(area) {
+    let resting = null;
+    area.addEventListener('scroll', () => {
+      area.classList.add('scrolling');
+      clearTimeout(resting);
+      resting = setTimeout(() => area.classList.remove('scrolling'), 900);
+    }, { passive: true });
+  }
+
   // doc: { token, size } from the main process. The page is drawn into viewerEl, which sits in the absolutely positioned container.
   async function open(doc, container, viewerEl) {
     const { lib, viewerLib } = await loading;
@@ -71,19 +81,15 @@
     api.viewer = viewer;
     window.workspaceComments.watch(viewer, eventBus, container);
     window.workspaceDock.watch(viewer, eventBus, container);
+    window.workspaceSidebar.watch(pdf, viewer, eventBus, container);
     eventBus.on('pagesinit', () => { viewer.currentScaleValue = 'page-fit'; });
     // A fit keeps fitting as the window changes size; a zoom the user chose stays as it is.
     new ResizeObserver(() => { const zoom = viewer.currentScaleValue; if (viewer.pagesCount && PRESETS.includes(zoom)) viewer.currentScaleValue = zoom; }).observe(container);
-    let resting = null;
-    container.addEventListener('scroll', () => {
-      container.classList.add('scrolling');
-      clearTimeout(resting);
-      resting = setTimeout(() => container.classList.remove('scrolling'), 900);
-    }, { passive: true });
+    restScrollbar(container);
     viewer.setDocument(pdf);
     linkService.setDocument(pdf, null);
   }
 
-  const api = { loadOptions, open, viewer: null };
+  const api = { loadOptions, open, restScrollbar, viewer: null };
   window.workspaceViewer = api;
 })();
