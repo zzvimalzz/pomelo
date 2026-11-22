@@ -25,10 +25,10 @@ html.solid .window { background: var(--solid); }
 .ib { width: 30px; height: 30px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
 .ib:hover { background: var(--hover); color: var(--txt); }
 .ib .i { width: 16px; height: 16px; }
-.ib[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); }
+#pagesbtn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); }
 .ib:disabled { opacity: .4; pointer-events: none; }
 
-.body { flex: 1; display: flex; min-height: 0; }
+.body { position: relative; flex: 1; display: flex; min-height: 0; }
 .panel { flex: none; width: 0; overflow: hidden; transition: width .32s var(--ease); }
 .panel.open { width: 214px; }
 .panel.open + .well { margin-left: 0; }
@@ -185,7 +185,9 @@ body.focus:not(.reveal-dock) .edgehint { opacity: .5; }
 body.focus .titlerow { position: absolute; inset: 0 0 auto; z-index: 6; background: var(--bar); backdrop-filter: blur(24px); border-bottom: 1px solid var(--bar-line); transform: translateY(-100%); opacity: 0;
   transition: transform .3s var(--ease), opacity .25s; }
 body.focus.reveal-top .titlerow, body.focus .titlerow:focus-within { transform: none; opacity: 1; }
-body.focus .panel { display: none; }
+body.focus .panel { position: absolute; left: 0; top: 0; bottom: 0; z-index: 3; background: var(--bar); backdrop-filter: blur(24px) saturate(160%); }
+body.focus .panel.open { box-shadow: 1px 0 0 var(--bar-line), 0 12px 32px rgba(0, 0, 0, .16); }
+body.focus .scrolly { padding-top: 50px; }
 body.focus .well { margin: 0; border-radius: 0; }
 body.focus .well[data-dock="top"] .dockwrap { top: 56px; }
 body.focus .scroller { top: 0; bottom: 0; }
