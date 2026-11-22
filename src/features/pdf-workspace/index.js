@@ -4,6 +4,7 @@
 const os = require('os');
 const path = require('path');
 const { createDocuments } = require('./documents');
+const { linkTarget } = require('./links');
 const { registerWorkspaceIpc } = require('./workspace.ipc');
 
 const WINDOWS_11 = 22621;
@@ -15,8 +16,9 @@ const REASONS = {
 };
 
 // asset(name): path of a file shipped in assets/. getSettings(), setSettings(patch): the stored settings. notify({ title, detail }): the
-// notice in the corner of the screen. log(...). solid: draw an opaque window; by default only before Windows 11.
-function createWorkspace({ asset, getSettings, setSettings, notify, log, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
+// notice in the corner of the screen. log(...). openExternal(url): open an address with the program Windows has for it, as a promise.
+// solid: draw an opaque window; by default only before Windows 11.
+function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
   const documents = createDocuments();
   let win = null;
   let current = null;
@@ -55,11 +57,18 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, solid =
     await open(await require('./workspace.window').choosePdf(win && !win.isDestroyed() ? win : null));
   }
 
+  function openLink(url) {
+    const target = linkTarget(url);
+    if (target) openExternal(target).catch(() => notify({ title: "Can't open this link", detail: 'Windows has nothing to open it with.' }));
+  }
+
   const registerIpc = () => registerWorkspaceIpc({
     documents,
     state: () => ({ documents: current ? [current] : [], dock: dock() }),
     setFocus: (on) => win?.setFullScreen(on),
     setDock: (side) => { if (DOCKS.includes(side)) setView({ dock: side }); },
+    checkLink: linkTarget,
+    openLink,
     isWorkspace: (sender) => !!win && !win.isDestroyed() && win.webContents === sender,
   });
 

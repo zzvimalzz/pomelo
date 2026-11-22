@@ -28,14 +28,15 @@ let settings = { pdfView: { window: null } };
 const notices = [];
 const errors = [];
 const calls = [];
+const opened = [];
 const handle = ipcMain.handle.bind(ipcMain);
 ipcMain.handle = (channel, fn) => handle(channel, (event, ...args) => { calls.push({ channel, args }); return fn(event, ...args); });
 const setSettings = (patch) => { settings = { ...settings, ...patch }; };
 
 // One workspace per scenario: the IPC handlers belong to one at a time.
 const fresh = (options = {}) => {
-  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus', 'pdfws:dock']) ipcMain.removeHandler(channel);
-  const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, ...options });
+  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus', 'pdfws:dock', 'pdfws:check-link', 'pdfws:open-link']) ipcMain.removeHandler(channel);
+  const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, ...options });
   workspace.registerIpc();
   return workspace;
 };
@@ -86,6 +87,36 @@ async function makeCommentsPdf(name) {
     highlight([100, 500, 260, 520], { CA: 0.4, Contents: PDFHexString.fromText('Check this figure\nwith the team') }),
     highlight([100, 400, 260, 420], { CA: 0.4 }),
   ]));
+  const file = path.join(root, name);
+  fs.writeFileSync(file, await doc.save({ useObjectStreams: false }));
+  return file;
+}
+
+// Page 1 has a line of text under each link, from the top: a web page, a mail address, a file, a script, an ftp address, page 3, an
+// action that goes to the next page, a link to another file and a program to launch. Pages 2 and 3 say which they are.
+async function makeLinksPdf(name) {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const [first, second, third] = [doc.addPage([595, 842]), doc.addPage([595, 842]), doc.addPage([595, 842])];
+  second.drawText('Page two', { x: 80, y: 700, size: 20, font });
+  third.drawText('Page three', { x: 80, y: 700, size: 20, font });
+  const actions = [
+    ['Web page', { S: 'URI', URI: PDFString.of('HTTPS://Example.COM/Docs?a=1#top') }],
+    ['Mail', { S: 'URI', URI: PDFString.of('mailto:team@example.com') }],
+    ['File', { S: 'URI', URI: PDFString.of('file:///C:/Windows/System32/calc.exe') }],
+    ['Script', { S: 'URI', URI: PDFString.of('javascript:alert(1)') }],
+    ['Ftp', { S: 'URI', URI: PDFString.of('ftp://example.com/x') }],
+    ['Go to page 3', { S: 'GoTo', D: [third.ref, 'Fit'] }],
+    ['Next page', { S: 'Named', N: 'NextPage' }],
+    ['Another file', { S: 'GoToR', F: PDFString.of('other.pdf'), D: [0, 'Fit'] }],
+    ['Launch', { S: 'Launch', F: PDFString.of('calc.exe') }],
+  ];
+  const links = actions.map(([text, A], i) => {
+    const y = 760 - i * 40;
+    first.drawText(text, { x: 80, y, size: 16, font });
+    return doc.context.register(doc.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [70, y - 6, 260, y + 20], Border: [0, 0, 0], F: 4, A }));
+  });
+  first.node.set(PDFName.of('Annots'), doc.context.obj(links));
   const file = path.join(root, name);
   fs.writeFileSync(file, await doc.save({ useObjectStreams: false }));
   return file;
@@ -1422,6 +1453,102 @@ app.whenReady().then(async () => {
     check('the next Esc leaves focus reading', await until('windowed', () => !win.isFullScreen()));
     await closeAndWait(win);
   }
+
+  console.log('links in a document');
+  for (const theme of ['light', 'dark']) {
+    nativeTheme.themeSource = theme;
+    opened.length = 0;
+    const win = await openAndWait(fresh(), await makeLinksPdf('Links.pdf'));
+    await until('the links', () => js(win, `document.querySelectorAll('.page[data-page-number="1"] .linkAnnotation a').length >= 5`));
+    const here = await js(win, `location.href`);
+    const page = () => js(win, `workspaceViewer.viewer.currentPageNumber`);
+    const onPage = (n) => until(`page ${n}`, async () => (await page()) === n, 5000);
+    const stayed = async () => (await js(win, `location.href`)) === here && BrowserWindow.getAllWindows().length === 1;
+    const list = await js(win, `[...document.querySelectorAll('.page[data-page-number="1"] .linkAnnotation a')].map((a) => ({ href: a.getAttribute('href'), title: a.title, target: a.target }))`);
+    const external = list.filter((a) => /^[a-z]+:/i.test(a.title));
+    check(`${theme}: every link to an address holds no address, so a middle click or a drag takes the page nowhere`, external.length === 3 && external.every((a) => a.href === '' && a.target === ''), JSON.stringify(list));
+    check(`${theme}: pdf.js draws no link for a file, a script, another document or a program`, list.length === 5 && list.map((a) => a.title).join('|') === 'https://example.com/Docs?a=1#top|mailto:team@example.com|ftp://example.com/x|Go to page 3|Next page', JSON.stringify(list));
+    const press1 = async (at) => {
+      for (const type of ['mouseDown', 'mouseUp']) win.webContents.sendInputEvent({ type, x: Math.round(at.x), y: Math.round(at.y), button: 'left', clickCount: 1 });
+      await sleep(500);
+    };
+    const click = async (n) => press1(await js(win, `(() => { const r = [...document.querySelectorAll('.page[data-page-number="1"] .linkAnnotation a')][${n}].getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`));
+    const clickLine = async (row) => press1(await js(win, `(() => { const r = document.querySelector('.page[data-page-number="1"]').getBoundingClientRect(); return { x: r.left + (100 / 595) * r.width, y: r.top + ((842 - (760 - ${row} * 40 + 7)) / 842) * r.height }; })()`));
+    const cardState = () => js(win, `(() => { const c = document.querySelector('.card'); return c ? { title: c.querySelector('h3').textContent, address: c.querySelector('.addr').textContent, buttons: [...c.querySelectorAll('button')].map((b) => b.textContent).join(),
+      focused: document.activeElement.textContent, role: c.getAttribute('role'), modal: c.getAttribute('aria-modal'), labelled: !!document.getElementById(c.getAttribute('aria-labelledby')) } : null; })()`);
+    const choose = async (name) => { await js(win, `[...document.querySelectorAll('.card button')].find((b) => b.textContent === ${JSON.stringify(name)}).click()`); await sleep(300); };
+    const mark = calls.length;
+    const sent = (channel) => calls.slice(mark).filter((c) => c.channel === channel).map((c) => c.args[0]);
+
+    await click(0);
+    let card = await cardState();
+    check(`${theme}: a click on a web link asks first, showing the whole address as the parser reads it`, card && card.title === 'Open this link?' && card.address === 'https://example.com/Docs?a=1#top' && card.buttons === 'Cancel,Open'
+      && card.role === 'dialog' && card.modal === 'true' && card.labelled, JSON.stringify(card));
+    check(`${theme}: nothing is opened while the card is up, and Open has the focus`, opened.length === 0 && card.focused === 'Open', JSON.stringify([opened, card]));
+    await shot(win, `workspace-link-${theme}.png`);
+    await press(win, 'Tab');
+    check(`${theme}: Tab goes round the card's two buttons and stays inside it`, (await cardState()).focused === 'Cancel');
+    await press(win, 'Tab');
+    check(`${theme}: and back to Open`, (await cardState()).focused === 'Open');
+    await press(win, 'Escape');
+    const closed = await js(win, `({ card: !!document.querySelector('.card'), inScroller: document.getElementById('scroller').contains(document.activeElement) })`);
+    check(`${theme}: Esc closes the card, opens nothing and returns the keys to the document`, !closed.card && closed.inScroller && opened.length === 0, JSON.stringify([closed, opened]));
+    await click(0);
+    await choose('Cancel');
+    check(`${theme}: Cancel closes it and opens nothing`, !(await cardState()) && opened.length === 0);
+    await click(0);
+    await choose('Open');
+    check(`${theme}: Open opens the address the card showed, once, and closes the card`, !(await cardState()) && JSON.stringify(opened) === '["https://example.com/Docs?a=1#top"]', JSON.stringify(opened));
+    check(`${theme}: the main process was asked to check the address on each of the three clicks, and to open it once`, sent('pdfws:check-link').length === 3 && sent('pdfws:check-link').every((u) => u === 'https://example.com/Docs?a=1#top')
+      && JSON.stringify(sent('pdfws:open-link')) === '["https://example.com/Docs?a=1#top"]', JSON.stringify(calls.slice(mark).map((c) => [c.channel, c.args[0]])));
+
+    await click(1);
+    card = await cardState();
+    await choose('Open');
+    check(`${theme}: a mail link asks and opens the mail address`, card && card.address === 'mailto:team@example.com' && opened.length === 2 && opened[1] === 'mailto:team@example.com', JSON.stringify([card, opened]));
+
+    await click(2);
+    check(`${theme}: a link to an ftp address shows no card and opens nothing`, !(await cardState()) && opened.length === 2 && sent('pdfws:check-link').length === 5 && await stayed(), JSON.stringify([opened.length, sent('pdfws:check-link')]));
+    for (const [row, what] of [[2, 'a file'], [3, 'a script'], [7, 'another document'], [8, 'a program']]) {
+      await clickLine(row);
+      check(`${theme}: a click where the file has a link to ${what} shows no card and opens nothing`, !(await cardState()) && opened.length === 2 && await stayed(), JSON.stringify(opened));
+    }
+    const hostile = ['file:///C:/Windows/System32/calc.exe', 'javascript:alert(1)', 'data:text/html,x', 'ms-msdt:/id PCWDiagnostic', '\\\\server\\share\\a.exe', 'ftp://example.com/x', 'tel:+60123456789'];
+    await js(win, `window.hostile = ${JSON.stringify(hostile)}.map((url) => { const a = document.createElement('a'); workspaceViewer.viewer.linkService.addLinkAttributes(a, url); document.querySelector('.well').append(a); return a; })`);
+    await js(win, `window.hostile.forEach((a) => a.click())`);
+    await sleep(500);
+    check(`${theme}: the same links made by the page for any other address show no card and open nothing`, !(await cardState()) && opened.length === 2 && await stayed(), JSON.stringify(opened));
+    await js(win, `window.hostile.forEach((a) => a.remove())`);
+
+    await click(3);
+    check(`${theme}: a link to a page goes to it`, await onPage(3));
+    await press(win, 'Left', ['alt']);
+    check(`${theme}: Alt+Left goes back to where the link was followed from`, await onPage(1));
+    await press(win, 'Right', ['alt']);
+    check(`${theme}: Alt+Right goes forward again`, await onPage(3));
+    await press(win, 'Right', ['alt']);
+    check(`${theme}: with nothing further forward Alt+Right does nothing`, (await page()) === 3);
+    await press(win, 'Left', ['alt']);
+    await press(win, 'Left', ['alt']);
+    await sleep(500);
+    check(`${theme}: with nothing further back Alt+Left does nothing, and the window stays where it is`, (await page()) === 1 && await stayed());
+
+    await click(3);
+    await onPage(3);
+    await js(win, `document.getElementById('findbtn').click()`);
+    await sleep(500);
+    await press(win, 'Left', ['alt']);
+    check(`${theme}: while the find field has the keys Alt+Left does not go back`, (await page()) === 3);
+    await js(win, `document.getElementById('findbtn').click()`);
+    await sleep(300);
+    await press(win, 'Left', ['alt']);
+    check(`${theme}: with the find bar shut it does`, await onPage(1));
+
+    await click(4);
+    check(`${theme}: a link that runs the next-page action goes to page 2`, await onPage(2));
+    await closeAndWait(win);
+  }
+  nativeTheme.themeSource = 'light';
 
   console.log('a big file costs nothing until it is read');
   {

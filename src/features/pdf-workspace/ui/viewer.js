@@ -60,6 +60,11 @@
     return pdf;
   }
 
+  async function followLink(url) {
+    const address = await window.workspaceApi.checkLink(url);
+    if (address && await window.workspaceDialogs.confirmLink(address)) window.workspaceApi.openLink(address);
+  }
+
   // A scroll bar shows while its area scrolls and for 0.9 s after, and while the pointer is over it (workspace.css).
   function restScrollbar(area) {
     let resting = null;
@@ -79,6 +84,16 @@
     const findController = new viewerLib.PDFFindController({ linkService, eventBus });
     const viewer = new viewerLib.PDFViewer({ container, viewer: viewerEl, eventBus, linkService, findController, annotationEditorMode: lib.AnnotationEditorType.DISABLE, removePageBorders: true });
     linkService.setViewer(viewer);
+    // The link never holds the address, so a click, a middle click or a drag takes the page nowhere. pdf.js shows the same for a disabled link.
+    linkService.addLinkAttributes = (link, url) => {
+      link.href = '';
+      link.title = url;
+      link.onclick = () => { followLink(url); return false; };
+    };
+    const history = new viewerLib.PDFHistory({ eventBus, linkService });
+    linkService.setHistory(history);
+    window.workspaceKeys.bind('back', () => history.back());
+    window.workspaceKeys.bind('forward', () => history.forward());
     api.viewer = viewer;
     window.workspaceComments.watch(viewer, eventBus, container);
     window.workspaceDock.watch(viewer, eventBus, container);
@@ -91,6 +106,7 @@
     restScrollbar(container);
     viewer.setDocument(pdf);
     linkService.setDocument(pdf, null);
+    history.initialize({ fingerprint: pdf.fingerprints[0], resetHistory: true });
   }
 
   const api = { loadOptions, open, restScrollbar, viewer: null };

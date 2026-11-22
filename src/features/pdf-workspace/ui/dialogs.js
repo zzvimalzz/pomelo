@@ -3,12 +3,29 @@
 (() => {
   const { el, icon } = window.pomeloUi;
   let card = null;
+  let linkCard = null;
 
-  function build() {
+  // A card over a veil in the document area, labelled by the element whose id is dialog-title.
+  function frame() {
     const box = el('div', 'card');
     box.setAttribute('role', 'dialog');
     box.setAttribute('aria-modal', 'true');
     box.setAttribute('aria-labelledby', 'dialog-title');
+    const veil = el('div', 'veil');
+    veil.append(box);
+    document.querySelector('.well').append(veil);
+    return { box, veil };
+  }
+
+  function loop(e, stops) {
+    const live = stops.filter((s) => !s.disabled);
+    const next = live[(live.indexOf(document.activeElement) + (e.shiftKey ? -1 : 1) + live.length) % live.length];
+    e.preventDefault();
+    next.focus();
+  }
+
+  function build() {
+    const { box, veil } = frame();
     const { svg } = window.pomeloWheelShapes;
     const file = svg('svg', { class: 'f', viewBox: '0 0 52 62', 'aria-hidden': 'true' });
     window.pomeloIcons.addDefs(svg, file);
@@ -49,8 +66,6 @@
     const row = el('div', 'row');
     row.append(cancel, submit);
     box.append(head, holder, room, row);
-    const veil = el('div', 'veil');
-    veil.append(box);
 
     const c = { veil, field, eye, holder, message, room, cancel, submit, pending: null, abort: null, busy: false };
     field.oninput = () => { submit.disabled = !field.value || c.busy; };
@@ -69,14 +84,8 @@
     box.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); cancel.click(); }
       else if (e.key === 'Enter' && e.target === field) { e.preventDefault(); submit.click(); }
-      else if (e.key === 'Tab') {
-        const stops = [field, eye, cancel, submit].filter((s) => !s.disabled);
-        const next = stops[(stops.indexOf(document.activeElement) + (e.shiftKey ? -1 : 1) + stops.length) % stops.length];
-        e.preventDefault();
-        next.focus();
-      }
+      else if (e.key === 'Tab') loop(e, [field, eye, cancel, submit]);
     });
-    document.querySelector('.well').append(veil);
     return c;
   }
 
@@ -118,5 +127,40 @@
     card = null;
   }
 
-  window.workspaceDialogs = { askPassword, closePassword };
+  // Resolves with true when the user chooses to open the address, false otherwise. The address is shown whole: it is what the link
+  // really opens, which the text over it may not say.
+  function confirmLink(address) {
+    if (linkCard) return Promise.resolve(false);
+    const { box, veil } = frame();
+    const badge = el('i', 'badge');
+    badge.innerHTML = icon('external');
+    const title = el('h3', '', 'Open this link?');
+    title.id = 'dialog-title';
+    const head = el('div', 'uhead');
+    head.append(badge, title);
+    const shown = el('p', 'addr', address);
+    const cancel = el('button', 'btn', 'Cancel');
+    const open = el('button', 'btn primary', 'Open');
+    const row = el('div', 'row');
+    row.append(cancel, open);
+    box.append(head, shown, row);
+    linkCard = veil;
+    return new Promise((resolve) => {
+      const done = (answer) => {
+        veil.remove();
+        linkCard = null;
+        document.getElementById('scroller').focus();
+        resolve(answer);
+      };
+      cancel.onclick = () => done(false);
+      open.onclick = () => done(true);
+      box.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); done(false); }
+        else if (e.key === 'Tab') loop(e, [cancel, open]);
+      });
+      open.focus();
+    });
+  }
+
+  window.workspaceDialogs = { askPassword, closePassword, confirmLink };
 })();
