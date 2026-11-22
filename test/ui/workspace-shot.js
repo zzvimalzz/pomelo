@@ -4,7 +4,7 @@
 // idle and after scrolling 50 pages, the comments a file holds as markers beside the page, the scroll bars, the pages panel and its outline, a password-protected
 // file, a file that is not a PDF, a file that is not there, and that the page is cut off from the network. Saves screenshots.
 //   npx electron test/ui/workspace-shot.js
-const { app, BrowserWindow, ipcMain, nativeTheme, screen } = require('electron');
+const { app, BrowserWindow, clipboard, ipcMain, nativeTheme, screen } = require('electron');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
@@ -86,6 +86,21 @@ async function makeCommentsPdf(name) {
     highlight([100, 500, 260, 520], { CA: 0.4, Contents: PDFHexString.fromText('Check this figure\nwith the team') }),
     highlight([100, 400, 260, 420], { CA: 0.4 }),
   ]));
+  const file = path.join(root, name);
+  fs.writeFileSync(file, await doc.save({ useObjectStreams: false }));
+  return file;
+}
+
+// "delivery" is on every page: with a capital on the first, plainly on the second, and twice on the third, once inside "redelivery".
+// A phrase breaks over two lines on the second.
+async function makeSearchPdf(name) {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const pages = [['Delivery of the goods', 'will happen on Monday.'], ['The quick brown', 'fox jumps over the lazy dog.', null, 'You can ask for delivery here.'], ['Delivery', 'redelivery']];
+  for (const lines of pages) {
+    const page = doc.addPage([595, 842]);
+    lines.forEach((line, i) => { if (line) page.drawText(line, { x: 80, y: 700 - i * 20, size: 14, font }); });
+  }
   const file = path.join(root, name);
   fs.writeFileSync(file, await doc.save({ useObjectStreams: false }));
   return file;
@@ -1151,6 +1166,103 @@ app.whenReady().then(async () => {
     await js(win, `document.querySelector('.thumb[data-n="3"]').click()`);
     await sleep(500);
     check('a click on a thumbnail still goes to its page', (await geo()).current === 3);
+    await closeAndWait(win);
+  }
+
+  console.log('finding text and copying it');
+  {
+    const win = await openAndWait(fresh(), await makeSearchPdf('Search.pdf'));
+    await sleep(500);
+    const bar = () => js(win, `(() => { const s = document.querySelector('.findbar'); const b = document.getElementById('findbtn'); const q = s.querySelector('input'); const hits = [...document.querySelectorAll('.textLayer .highlight')];
+      return { hidden: s.hidden, count: s.querySelector('.count').textContent, query: q.value, focused: document.activeElement === q, pressed: b.getAttribute('aria-pressed'), title: b.title, hits: hits.length, selected: hits.filter((h) => h.classList.contains('selected')).length,
+        page: workspaceViewer.viewer.currentPageNumber, opts: [...s.querySelectorAll('.opt')].map((o) => o.title + '=' + o.getAttribute('aria-pressed')).join(), inScroller: document.getElementById('scroller').contains(document.activeElement), disabled: b.disabled,
+        tips: [...s.querySelectorAll('.sm')].map((o) => o.title).join(), placeholder: q.placeholder, titleLeft: [...document.querySelector('.titleleft').children].map((c) => c.id).join() }; })()`);
+    const typeText = async (text) => {
+      for (const ch of text) for (const type of ['keyDown', 'char', 'keyUp']) win.webContents.sendInputEvent({ type, keyCode: ch });
+      await sleep(600);
+    };
+    const count = (what) => until(String(what), async () => { const c = (await bar()).count; return what instanceof RegExp ? what.test(c) : c === what; }, 8000);
+    let v = await bar();
+    check('the title row has a Find button after the panel button, ready once the pages are known, and the bar is shut', v.titleLeft === 'pagesbtn,findbtn' && v.title === 'Find (Ctrl+F)' && !v.disabled && v.hidden && v.pressed === 'false', JSON.stringify(v));
+    await press(win, 'F', ['control']);
+    v = await bar();
+    check('Ctrl+F opens the bar with the focus in its field, and the button is pressed', !v.hidden && v.focused && v.pressed === 'true' && v.placeholder === 'Find in document', JSON.stringify(v));
+    check('the bar names its buttons, Aa for Match case and W for Whole words, neither on', v.opts === 'Match case=false,Whole words=false' && v.tips === 'Previous (Shift+Enter),Next (Enter),Close (Esc)', JSON.stringify(v));
+    await typeText('delivery');
+    check('searching a word counts the hits in the whole document, 1 of 4', await count('1 of 4'), JSON.stringify(await bar()));
+    v = await bar();
+    check('the hit on the page in view is marked, and it is the current hit', v.hits >= 1 && v.selected === 1 && v.page === 1, JSON.stringify(v));
+    await shot(win, 'workspace-search.png');
+    await press(win, 'Return');
+    await count('2 of 4');
+    v = await bar();
+    check('Enter goes to the next hit, on another page', v.count === '2 of 4' && v.page === 2 && v.selected === 1, JSON.stringify(v));
+    await press(win, 'Return', ['shift']);
+    check('Shift+Enter goes back', await count('1 of 4') && (await bar()).page === 1, JSON.stringify(await bar()));
+    for (let i = 0; i < 3; i++) await press(win, 'Return');
+    await count('4 of 4');
+    v = await bar();
+    check('stepping on reaches the last hit, two on page 3', v.count === '4 of 4' && v.page === 3, JSON.stringify(v));
+    await press(win, 'Return');
+    check('and one more starts again from the first', await count('1 of 4') && (await bar()).page === 1, JSON.stringify(await bar()));
+    await js(win, `document.querySelector('.findbar .opt[title="Match case"]').click()`);
+    check('Match case leaves the two hits whose capitals are the same, and the button is on', await count('1 of 2') && (await bar()).opts === 'Match case=true,Whole words=false', JSON.stringify(await bar()));
+    await js(win, `document.querySelector('.findbar .opt[title="Match case"]').click()`);
+    await js(win, `document.querySelector('.findbar .opt[title="Whole words"]').click()`);
+    check('Whole words leaves the three hits that are words of their own', await count(/ of 3$/) && (await bar()).opts === 'Match case=false,Whole words=true', JSON.stringify(await bar()));
+    await js(win, `document.querySelector('.findbar .opt[title="Whole words"]').click()`);
+    await js(win, `document.querySelector('.findbar input').select()`);
+    await typeText('brown fox');
+    check('a phrase that runs over a line break is found, and both lines are marked', await count('1 of 1') && (await bar()).hits >= 2, JSON.stringify(await bar()));
+    await js(win, `document.querySelector('.findbar input').select()`);
+    await typeText('zzzz');
+    check('a word the file does not have says No results', await count('No results'), JSON.stringify(await bar()));
+    await js(win, `document.querySelector('.findbar input').select()`);
+    await typeText('delivery');
+    await count(/ of 4$/);
+    await press(win, 'Escape');
+    v = await bar();
+    check('Esc closes the bar, takes the marks off the page and puts the focus back in the document', v.hidden && v.hits === 0 && v.pressed === 'false' && v.inScroller, JSON.stringify(v));
+    await js(win, `document.getElementById('findbtn').click()`);
+    v = await bar();
+    check('the button opens it again with the last words selected, and finds them again', !v.hidden && v.query === 'delivery' && v.focused && await until('the marks', async () => (await bar()).hits >= 1), JSON.stringify(await bar()));
+    await js(win, `document.getElementById('findbtn').click()`);
+    check('and closes it', (await bar()).hidden);
+
+    await js(win, `workspaceViewer.viewer.currentPageNumber = 1`);
+    await sleep(800);
+    const rects = await js(win, `(() => { const spans = [...document.querySelectorAll('.page[data-page-number="1"] .textLayer span')].filter((s) => /Delivery of the goods|will happen/.test(s.textContent)).map((s) => s.getBoundingClientRect());
+      return spans.map((r) => ({ l: r.left, r: r.right, y: r.top + r.height / 2 })); })()`);
+    const mouse = (type, x, y) => win.webContents.sendInputEvent({ type, x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1, modifiers: type === 'mouseUp' ? [] : ['leftButtonDown'] });
+    const saved = await clipboard.readText();
+    await clipboard.writeText('');
+    mouse('mouseDown', rects[0].l + 1, rects[0].y);
+    for (let i = 1; i <= 8; i++) { mouse('mouseMove', rects[0].l + 1 + ((rects[1].r - rects[0].l - 3) * i) / 8, rects[0].y + ((rects[1].y - rects[0].y) * i) / 8); await sleep(30); }
+    mouse('mouseUp', rects[1].r - 2, rects[1].y);
+    await sleep(300);
+    const selected = await js(win, `getSelection().toString()`);
+    await press(win, 'C', ['control']);
+    const copied = (await clipboard.readText()).replace(/\r\n/g, '\n');
+    await clipboard.writeText(saved);
+    check('dragging over two lines and Ctrl+C copies them in reading order, one line after the other', /^Delivery of the goods\s*\n+\s*will happen on Monday\.?\s*$/.test(copied), `${JSON.stringify(copied)} selected ${JSON.stringify(selected)} ${JSON.stringify(rects)}`);
+    await closeAndWait(win);
+  }
+
+  console.log('finding in focus reading');
+  {
+    const win = await openAndWait(fresh(), await makeSearchPdf('Search focus.pdf'));
+    await sleep(500);
+    await press(win, 'F11');
+    await until('full screen', () => win.isFullScreen());
+    await sleep(500);
+    await press(win, 'F', ['control']);
+    await sleep(300);
+    const v = await js(win, `(() => { const r = document.querySelector('.findbar').getBoundingClientRect(); return { open: !document.querySelector('.findbar').hidden, top: r.top, focused: document.activeElement.tagName }; })()`);
+    check('Ctrl+F opens the bar in focus reading, below the place the title row comes to', v.open && v.top >= 50 && v.focused === 'INPUT', JSON.stringify(v));
+    await press(win, 'Escape');
+    check('the first Esc closes the bar and stays in focus reading', win.isFullScreen() && await js(win, `document.querySelector('.findbar').hidden`));
+    await press(win, 'Escape');
+    check('the next Esc leaves focus reading', await until('windowed', () => !win.isFullScreen()));
     await closeAndWait(win);
   }
 

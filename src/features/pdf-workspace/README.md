@@ -13,6 +13,7 @@ A window that reads a PDF. It opens from the tray menu (**Open a PDF…**) and f
 7. `ui/dock.js` builds the dock in the document area once pdf.js has the page count (below). `ui/focus.js` runs focus reading (below). `ui/keys.js` holds every shortcut in one table.
 8. `ui/comments-margin.js` listens for `annotationlayerrendered`, reads the page's annotations from pdf.js and draws a marker for each comment (below). It reads only the pages pdf.js has drawn, so a large file is never scanned for them.
 9. `ui/sidebar.js` runs the left panel and its Pages and Outline tabs, building a tab the first time it is shown; `ui/thumbs.js` draws the thumbnails and `ui/outline.js` builds the bookmarks (below).
+10. `ui/search.js` builds the find bar and gives pdf.js's `PDFFindController` (made in `viewer.js` and handed to the viewer) its questions (below).
 
 ## The dock
 
@@ -42,6 +43,12 @@ Nothing is built until the panel is first opened. Entries are plain buttons whos
 
 The tree is a keyboard tree: one bookmark is in the Tab order, Up and Down move between the visible ones, Right opens a closed bookmark and then goes to its first child, Left closes an open one and then goes to its parent, Enter and Space do what a click does. The keys are used up by the tree, so in focus reading they do not turn pages. Titles are text from the file and go in with `textContent` only.
 
+## Text and find
+
+The pages have pdf.js's text layer, so text can be selected with the pointer and copied with Ctrl+C; pdf.js lays the spans out in the file's reading order and puts a line break between lines, so a selection over two lines copies as two lines.
+
+The second button at the left of the title row (**Find**, Ctrl+F) opens a bar at the top middle of the document area: a field (`Find in document`), the count, **Aa** (Match case), **W** (Whole words), Previous (Shift+Enter), Next (Enter) and Close (Esc). Ctrl+F opens it from anywhere with the focus in the field and its text selected; the button is tinted while the bar is open. `search.js` does no matching of its own: every change in the field, every toggle and every Enter sends pdf.js's event bus a `find` event (the query, the two options, `highlightAll` always on and the direction) and shows what `updatefindmatchescount` and `updatefindcontrolstate` answer, as `n of m` or `No results`. pdf.js reads the text of the pages in turn, so the total grows while it works; typing is answered 250 ms after the last key. A phrase that runs over a line break is found because pdf.js matches over the page's whole text with its own rules (spaces, line ends, case, punctuation, accents). Every hit on the pages in view is marked in the accent colour (`workspace.css` sets pdf.js's `--highlight-bg-color` and `--highlight-selected-bg-color`) and the current one is stronger. Enter goes to the next hit, on whatever page it is, and starts again at the first after the last; Shift+Enter goes back. Esc, the Close button or the Find button shuts the bar, sends `findbarclose` (which removes the marks) and returns the focus to the document; opening it again with words still in the field searches for them again from the page in view. In focus reading the bar stands 56 px from the top, clear of the place the title row comes to, and Esc closes it before it leaves focus reading. The buttons do not take the focus.
+
 ## Focus reading
 
 The button at the right of the title row, or F11, asks the main process for full screen with `pdfws:focus`. The window answers with `pdfws:focus-changed` when it enters or leaves, and the page changes only then, so leaving by any other route is followed too. In focus reading the title row slides up and the dock down, a faint handle at the bottom edge hints at the dock, the zoom becomes Fit page and the zoom the user had is put back when it ends. The title row returns while the pointer is within 56 px of the top, the dock within 120 px of the edge it stands at (a dock at the top stands below the title row); the dock also stays while the focus is inside it. Esc goes through the open card, menu or field first (they use the key and mark it handled) and leaves focus reading last. The window's size and place are not stored while it is full screen.
@@ -54,9 +61,10 @@ The button at the right of the title row, or F11, asks the main process for full
 |---|---|
 | Ctrl+0, Ctrl+1 | Fit width, actual size |
 | Ctrl+= or Ctrl+plus, Ctrl+minus | Zoom in, zoom out |
+| Ctrl+F | Find |
 | F11 | Focus reading |
 | Page Down, Right, Down; Page Up, Left, Up | Next, previous page (focus reading) |
-| Esc | Close the menu, then leave focus reading |
+| Esc | Close the menu, then the find bar, then leave focus reading |
 
 ## Comments
 
@@ -75,7 +83,7 @@ The window's size, place and maximised state are saved in `pdfView.window` of `s
 | `bounds.js` | `startBounds(saved, workAreas)`: where the window opens. No Electron |
 | `workspace.window.js` | The window, its offline session, the open dialog, and the full-screen events it sends to the page |
 | `workspace.ipc.js` | `pdfws:state`, `pdfws:read`, `pdfws:unlock`, `pdfws:focus` and `pdfws:dock`; all refuse any sender but the workspace window |
-| `ui/` | `workspace.html`, `workspace.css`, `workspace.js` (start-up, title row, failure message), `viewer.js` (`loadOptions`, the transport, the password loop, the viewer), `comments-margin.js` (markers and cards), `dialogs.js` (the password card), `dock.js` (the dock, the View menu, the fold button), `dock-place.js` (the grip and the four places), `focus.js` (focus reading), `keys.js` (the shortcut table), `sidebar.js` (the left panel, its button and its tabs), `thumbs.js` (thumbnail drawing and the bitmap cache), `outline.js` (the bookmarks), `preload.js` |
+| `ui/` | `workspace.html`, `workspace.css`, `workspace.js` (start-up, title row, failure message), `viewer.js` (`loadOptions`, the transport, the password loop, the viewer), `comments-margin.js` (markers and cards), `dialogs.js` (the password card), `dock.js` (the dock, the View menu, the fold button), `dock-place.js` (the grip and the four places), `focus.js` (focus reading), `keys.js` (the shortcut table), `sidebar.js` (the left panel, its button and its tabs), `thumbs.js` (thumbnail drawing and the bitmap cache), `outline.js` (the bookmarks), `search.js` (the find bar), `preload.js` |
 
 ## Contracts
 
@@ -94,12 +102,13 @@ node test/run.js --tier=unit --only=workspace-documents,workspace-bounds,ipc,tra
 node test/run.js --tier=ui --only=workspace-shot
 ```
 
-`workspace-shot` (about 3.5 min, opens real windows: leave the mouse alone) opens PDFs drawn with pdf-lib: the window's size and place in both themes, the glass and the opaque window, the `loadOptions()` values, the network and path limits, the remembered place, a second start, a file with a note and two highlights that carry comments (markers, their cards and light, two-page view, no room beside the page, scroll bars), a file encrypted by `test/support/encrypted-pdf.js` (the password card and its eye button, a wrong password, which calls carry the password, Cancel and Unlock, five wrong passwords), the dock (its buttons and tooltips, the page box and its centring, every zoom key and button, the View menu, a fit that follows the window and a chosen zoom that does not, the point under the pointer when Ctrl and the wheel zoom, the fold button), Ctrl and the wheel with real input over the page, the dock and the title row, the dock dragged to each of the four places (the marked places, the menu beside it, the saved place, the arrow keys, a value the page may not store), focus reading (full screen, the edges, Tab, page turning, F11 and Esc, the zoom restored, the saved place unchanged), the Pages panel and its Outline tab (a file with nested, closed, markup-titled and destination-less bookmarks, folding, clicks, the arrow keys, a file with none; and the panel shut with nothing drawn, its width and the room it takes, the thumbnails' size and proportions, a click, the outline following the page, shutting and reopening, focus reading, the smallest window), a 41 MB file with 3 000 pages (bytes served to the first page, over five idle seconds and after scrolling 50 pages, then the panel walked through hundreds of pages to show the cache stops at 300), a file that is not a PDF and a file that is missing. It saves screenshots to `test/shots/`.
+`workspace-shot` (about 4 min, opens real windows: leave the mouse alone) opens PDFs drawn with pdf-lib: the window's size and place in both themes, the glass and the opaque window, the `loadOptions()` values, the network and path limits, the remembered place, a second start, a file with a note and two highlights that carry comments (markers, their cards and light, two-page view, no room beside the page, scroll bars), a file encrypted by `test/support/encrypted-pdf.js` (the password card and its eye button, a wrong password, which calls carry the password, Cancel and Unlock, five wrong passwords), the dock (its buttons and tooltips, the page box and its centring, every zoom key and button, the View menu, a fit that follows the window and a chosen zoom that does not, the point under the pointer when Ctrl and the wheel zoom, the fold button), Ctrl and the wheel with real input over the page, the dock and the title row, the dock dragged to each of the four places (the marked places, the menu beside it, the saved place, the arrow keys, a value the page may not store), focus reading (full screen, the edges, Tab, page turning, F11 and Esc, the zoom restored, the saved place unchanged), finding text (Ctrl+F and the button, the count, stepping over pages and round again, Match case, Whole words, a phrase over a line break, no results, Esc, reopening, and in focus reading) and copying two lines with real mouse input and Ctrl+C, the Pages panel and its Outline tab (a file with nested, closed, markup-titled and destination-less bookmarks, folding, clicks, the arrow keys, a file with none; and the panel shut with nothing drawn, its width and the room it takes, the thumbnails' size and proportions, a click, the outline following the page, shutting and reopening, focus reading, the smallest window), a 41 MB file with 3 000 pages (bytes served to the first page, over five idle seconds and after scrolling 50 pages, then the panel walked through hundreds of pages to show the cache stops at 300), a file that is not a PDF and a file that is missing. It saves screenshots to `test/shots/`.
 
 ## Known limits
 
 - One document per window. A second start brings the window to the front and opens nothing else.
-- Reading only: pages scroll, zoom and lay out one or two across. There is no search, tool or remembered zoom or panel state: each window starts at Fit page with the Pages panel shut.
+- Reading only: pages scroll, zoom and lay out one or two across. There is no tool or remembered zoom or panel state: each window starts at Fit page with the Pages panel shut.
+- Find reads the text layer, so a scanned page with no text has nothing to find, and the count of a very long file grows for a while as pdf.js reads page after page.
 - A bookmark that links to a web page or runs an action does nothing.
 - Comments are listed only for pages pdf.js has drawn, and cannot be edited or deleted. A reply is shown as a marker of its own.
 - Markers are rebuilt when a page is drawn again, so an open comment closes when its page is zoomed.
