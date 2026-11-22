@@ -31,11 +31,14 @@ const calls = [];
 const opened = [];
 const handle = ipcMain.handle.bind(ipcMain);
 ipcMain.handle = (channel, fn) => handle(channel, (event, ...args) => { calls.push({ channel, args }); return fn(event, ...args); });
-const setSettings = (patch) => { settings = { ...settings, ...patch }; };
+let writes = 0;
+const setSettings = (patch) => { writes++; settings = { ...settings, ...patch }; };
 
-// One workspace per scenario: the IPC handlers belong to one at a time.
-const fresh = (options = {}) => {
-  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus', 'pdfws:dock', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link']) ipcMain.removeHandler(channel);
+// One workspace per scenario: the IPC handlers belong to one at a time. A scenario starts with no remembered view unless it asks to keep it.
+const VIEW_KEYS = ['zoom', 'layout', 'sidebar', 'pageColours'];
+const fresh = ({ keepView = false, ...options } = {}) => {
+  if (!keepView && settings.pdfView && typeof settings.pdfView === 'object') settings = { ...settings, pdfView: Object.fromEntries(Object.entries(settings.pdfView).filter(([key]) => !VIEW_KEYS.includes(key))) };
+  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links']) ipcMain.removeHandler(channel);
   const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), ...options });
   workspace.registerIpc();
   return workspace;
@@ -585,8 +588,8 @@ app.whenReady().then(async () => {
     await sleep(500);
     const menu = await js(win, `(() => { const m = document.querySelector('.menu'); return { shown: !m.hidden, caps: [...m.querySelectorAll('.cap')].map((n) => n.textContent), items: [...m.querySelectorAll('.mi')].map((n) => n.firstChild.textContent),
       keys: [...m.querySelectorAll('kbd')].map((n) => n.textContent), expanded: document.querySelector('.dock .zoom').getAttribute('aria-expanded') }; })()`);
-    check(`${theme}: the zoom value opens the View menu with Zoom and Layout and no page colours`, menu.shown && menu.expanded === 'true' && menu.caps.join() === 'Zoom,Layout'
-      && menu.items.join() === 'Fit width,Fit page,Actual size,Continuous,Two pages side by side' && menu.keys.join() === 'Ctrl+0,Ctrl+1', JSON.stringify(menu));
+    check(`${theme}: the zoom value opens the View menu with Zoom, Layout and Page colour`, menu.shown && menu.expanded === 'true' && menu.caps.join() === 'Zoom,Layout,Page colour'
+      && menu.items.join() === 'Fit width,Fit page,Actual size,Continuous,Two pages side by side,Original,Sepia,Dark,Custom colours…' && menu.keys.join() === 'Ctrl+0,Ctrl+1', JSON.stringify(menu));
     await shot(win, `workspace-menu-${theme}.png`);
     await press(win, 'Escape');
     check(`${theme}: Esc closes the menu`, !(await dockState(win)).menu);
@@ -596,7 +599,7 @@ app.whenReady().then(async () => {
     d = await dockState(win);
     check(`${theme}: choosing Two pages side by side lays the pages out in pairs and closes the menu`, d.layout === 1 && !d.menu, JSON.stringify(d));
     await js(win, `document.querySelector('.dock .zoom').click()`);
-    check(`${theme}: the menu marks the layout in use`, (await js(win, `[...document.querySelectorAll('.menu .mi.on')].map((n) => n.firstChild.textContent).join()`)) === 'Two pages side by side');
+    check(`${theme}: the menu marks the layout and the page colour in use`, (await js(win, `[...document.querySelectorAll('.menu .mi.on')].map((n) => n.firstChild.textContent).join()`)) === 'Two pages side by side,Original');
     await js(win, `document.querySelector('.page canvas').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`);
     check(`${theme}: a click elsewhere closes it`, !(await dockState(win)).menu);
     await js(win, `document.querySelector('.dock .zoom').click()`);
@@ -1247,7 +1250,7 @@ app.whenReady().then(async () => {
     const typeText = (text) => typeInto(win, text);
     const count = (what) => countIs(win, what);
     let v = await bar();
-    check('the title row has a Find button after the panel button, ready once the pages are known, and the bar is shut', v.titleLeft === 'pagesbtn,findbtn' && v.title === 'Find (Ctrl+F)' && !v.disabled && v.hidden && v.pressed === 'false', JSON.stringify(v));
+    check('the title row has a Find button after the panel button, ready once the pages are known, and the bar is shut', v.titleLeft === 'pagesbtn,findbtn,linksbtn' && v.title === 'Find (Ctrl+F)' && !v.disabled && v.hidden && v.pressed === 'false', JSON.stringify(v));
     await press(win, 'F', ['control']);
     v = await bar();
     check('Ctrl+F opens the bar with the focus in its field, and the button is pressed', !v.hidden && v.focused && v.pressed === 'true' && v.placeholder === 'Find in document', JSON.stringify(v));
@@ -1645,6 +1648,288 @@ app.whenReady().then(async () => {
     const form = await js(win, `({ blend: getComputedStyle(document.querySelector('.annotationLayer')).mixBlendMode, bg: getComputedStyle(document.querySelector('.linkAnnotation a')).backgroundColor, field: document.querySelector('.textWidgetAnnotation input')?.value })`);
     check('on a page with a form field the links are not tinted and the field keeps its text', form.blend === 'normal' && form.bg === 'rgba(0, 0, 0, 0)' && form.field === 'Sam Ng', JSON.stringify(form));
     await closeAndWait(win);
+  }
+
+  console.log('page colours and the view that is remembered');
+  {
+    const plain = path.join(root, 'Plain.pdf');
+    const plainDoc = await PDFDocument.create();
+    plainDoc.addPage([595, 842]).drawText('Pomelo', { x: 60, y: 700, size: 90, font: await plainDoc.embedFont(StandardFonts.HelveticaBold) });
+    fs.writeFileSync(plain, await plainDoc.save({ useObjectStreams: false }));
+    const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const near = (a, b, tol) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
+    const look = (win) => js(win, `(() => { const c = document.querySelector('.page[data-page-number="1"] canvas'); const ctx = c.getContext('2d');
+      const paper = [...ctx.getImageData(Math.round(c.width * 0.03), Math.round(c.height * 0.03), 1, 1).data].slice(0, 3);
+      const box = ctx.getImageData(Math.round(c.width * 0.1), Math.round(c.height * 0.09), Math.round(c.width * 0.45), Math.round(c.height * 0.075));
+      let ink = paper; let far = 0;
+      for (let i = 0; i < box.data.length; i += 4) { const d = Math.abs(box.data[i] - paper[0]) + Math.abs(box.data[i + 1] - paper[1]) + Math.abs(box.data[i + 2] - paper[2]); if (d > far) { far = d; ink = [box.data[i], box.data[i + 1], box.data[i + 2]]; } }
+      return { paper, ink, dim: document.getElementById('viewer').classList.contains('dim') }; })()`);
+    const showing = async (win, paper, ink) => { await until('the colours', async () => { const l = await look(win); return near(l.paper, rgbOf(paper), 4) && near(l.ink, rgbOf(ink), 26); }, 10000); return look(win); };
+    const menuOn = async (win) => { await js(win, `document.querySelector('.dock .zoom').click()`); const on = await js(win, `[...document.querySelectorAll('.menu .mi.on')].map((n) => n.firstChild.textContent).join()`); await press(win, 'Escape'); return on; };
+    const choose = async (win, text) => { await js(win, `document.querySelector('.dock .zoom').click()`); await js(win, `[...document.querySelectorAll('.menu .mi')].find((n) => n.textContent.startsWith(${JSON.stringify(text)})).click()`); };
+    const card = (win) => js(win, `(() => { const c = document.querySelector('.card'); return c ? { title: c.querySelector('h3').textContent, note: c.querySelector('.note').textContent, labels: [...c.querySelectorAll('.kv > span')].map((n) => n.textContent).join(), groups: [...c.querySelectorAll('.swrow')].map((g) => g.children.length).join(),
+      checked: [...c.querySelectorAll('.sw[aria-checked="true"]')].map((b) => b.dataset.colour).join(), buttons: [...c.querySelectorAll('.row button')].map((b) => b.textContent).join(), focused: document.activeElement.textContent, role: c.getAttribute('role'), modal: c.getAttribute('aria-modal'), labelled: !!document.getElementById(c.getAttribute('aria-labelledby')),
+      behind: document.querySelector('.dockwrap').inert } : null; })()`);
+    const swatch = (win, colour) => js(win, `document.querySelector('.card .sw[data-colour="${colour}"]').click()`);
+    const cardButton = (win, name) => js(win, `[...document.querySelectorAll('.card .row button')].find((b) => b.textContent === ${JSON.stringify(name)}).click()`);
+
+    settings = { pdfView: { window: null } };
+    let win = await openAndWait(fresh(), plain);
+    await sleep(600);
+    let l = await look(win);
+    check('the pages keep the colours of the file until the user chooses others', near(l.paper, [255, 255, 255], 2) && near(l.ink, [0, 0, 0], 30) && !l.dim && (await menuOn(win)) === 'Continuous,Original', JSON.stringify(l));
+    await choose(win, 'Sepia');
+    l = await showing(win, '#f4ecd8', '#4b3b25');
+    check('Sepia draws the paper cream and the text brown, and the menu marks it', near(l.paper, rgbOf('#f4ecd8'), 4) && near(l.ink, rgbOf('#4b3b25'), 26) && !l.dim && (await menuOn(win)) === 'Continuous,Sepia', JSON.stringify(l));
+    await shot(win, 'workspace-sepia.png');
+    await choose(win, 'Dark');
+    l = await showing(win, '#1e1e20', '#d8d8dc');
+    check('Dark draws the paper dark and the text light', near(l.paper, rgbOf('#1e1e20'), 4) && near(l.ink, rgbOf('#d8d8dc'), 26) && l.dim && (await menuOn(win)) === 'Continuous,Dark', JSON.stringify(l));
+    await shot(win, 'workspace-dark-pages.png');
+    await sleep(600);
+    check('the choice is stored once the user has stopped choosing', settings.pdfView.pageColours === 'dark', JSON.stringify(settings.pdfView));
+
+    await choose(win, 'Custom colours');
+    await sleep(500);
+    let c = await card(win);
+    check('Custom colours… opens a card with a page and a text colour, five of each, and Apply focused', c && c.title === 'Page colours' && c.note === 'Only changes how it looks here.' && c.labels === 'Page,Text' && c.groups === '5,5' && c.checked === '#fdf6e3,#3b3b3b'
+      && c.buttons === 'Cancel,Apply' && c.focused === 'Apply' && c.role === 'dialog' && c.modal === 'true' && c.labelled && c.behind === true, JSON.stringify(c));
+    await shot(win, 'workspace-colours-card.png');
+    await js(win, `document.querySelector('.card .sw[aria-checked="true"]').focus()`);
+    await press(win, 'Right');
+    check('the arrow keys move through the swatches of a row', (await card(win)).checked === '#eef3ea,#3b3b3b' && (await js(win, `document.activeElement.dataset.colour`)) === '#eef3ea');
+    await swatch(win, '#1b3a8a');
+    await cardButton(win, 'Apply');
+    await sleep(300);
+    l = await showing(win, '#eef3ea', '#1b3a8a');
+    check('Apply draws the pages in the pair, closes the card and gives the keys back to the document', near(l.paper, rgbOf('#eef3ea'), 4) && near(l.ink, rgbOf('#1b3a8a'), 26) && !l.dim && !(await card(win)) && (await js(win, `document.activeElement.id`)) === 'scroller', JSON.stringify(l));
+    await sleep(600);
+    check('the pair is stored as #rrggbb, and the menu marks Custom colours…', JSON.stringify(settings.pdfView.pageColours) === '{"page":"#eef3ea","text":"#1b3a8a"}' && (await menuOn(win)) === 'Continuous,Custom colours…', JSON.stringify(settings.pdfView));
+    await choose(win, 'Custom colours');
+    await sleep(400);
+    c = await card(win);
+    check('the card opens on the pair in use', c.checked === '#eef3ea,#1b3a8a', JSON.stringify(c));
+    await swatch(win, '#1e1e20');
+    await press(win, 'Escape');
+    check('Esc closes the card and changes nothing', !(await card(win)) && JSON.stringify(settings.pdfView.pageColours) === '{"page":"#eef3ea","text":"#1b3a8a"}' && near((await look(win)).paper, rgbOf('#eef3ea'), 4));
+    await choose(win, 'Custom colours');
+    await sleep(400);
+    await swatch(win, '#1e1e20');
+    await cardButton(win, 'Cancel');
+    await sleep(900);
+    check('Cancel changes nothing either', !(await card(win)) && JSON.stringify(settings.pdfView.pageColours) === '{"page":"#eef3ea","text":"#1b3a8a"}' && near((await look(win)).paper, rgbOf('#eef3ea'), 4));
+    await choose(win, 'Original');
+    l = await showing(win, '#ffffff', '#000000');
+    await sleep(600);
+    check('Original gives the file its own colours back', near(l.paper, [255, 255, 255], 2) && near(l.ink, [0, 0, 0], 30) && settings.pdfView.pageColours === 'original', JSON.stringify([l, settings.pdfView]));
+
+    const before = JSON.stringify(settings.pdfView);
+    await js(win, `workspaceApi.setView({ pageColours: { page: 'red', text: '#000000' }, zoom: 'huge', layout: 'sideways', sidebar: { open: 'yes' }, window: { x: 1 }, dock: 'left', other: 1 })`);
+    check('the main process keeps nothing that is invalid and nothing that is not a view setting', JSON.stringify(settings.pdfView) === before, JSON.stringify(settings.pdfView));
+    writes = 0;
+    await js(win, `workspaceApi.setView({ pageColours: 'original' })`);
+    const same = writes;
+    await js(win, `workspaceApi.setView({ layout: 'spread' })`);
+    await js(win, `workspaceApi.setView({ layout: 'spread' })`);
+    check('a value that is already stored is not written again', same === 0 && writes === 1 && settings.pdfView.layout === 'spread', `${same} ${writes}`);
+    await closeAndWait(win);
+
+    for (const [name, pageColours, link, blend, linkText] of [['dark', 'dark', 'rgb(138, 180, 248)', 'darken', 'light blue'], ['sepia', 'sepia', 'rgb(11, 87, 208)', 'lighten', 'blue']]) {
+      settings = { pdfView: { window: null, pageColours } };
+      win = await openAndWait(fresh({ keepView: true }), await makeLinksPdf('Links.pdf'));
+      await until('the links', () => js(win, `document.querySelectorAll('.page[data-page-number="1"] .linkAnnotation a').length >= 5`));
+      await sleep(900);
+      const style = await js(win, `({ bg: getComputedStyle(document.querySelector('.page[data-page-number="1"] .linkAnnotation a')).backgroundColor, blend: getComputedStyle(document.querySelector('.page[data-page-number="1"] .annotationLayer')).mixBlendMode })`);
+      const rects = await js(win, `(() => { const r = document.querySelector('.page[data-page-number="1"]').getBoundingClientRect(); const at = (row) => ({ x: r.left + (80 / 595) * r.width, y: r.top + ((842 - (760 - row * 40 + 16)) / 842) * r.height, width: (110 / 595) * r.width, height: (20 / 842) * r.height }); return { linked: at(0), plain: at(2) }; })()`);
+      const count = async (rect) => {
+        const bytes = (await win.webContents.capturePage({ x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) })).toBitmap();
+        const found = { blueish: 0, solid: 0, grey: 0 };
+        for (let i = 0; i < bytes.length; i += 4) {
+          const [b, g, r] = [bytes[i], bytes[i + 1], bytes[i + 2]];
+          if (b > r + 50 && b > g + 15 && b > 150) found.blueish++;
+          if (b > 150 && r < 60 && g < 100) found.solid++;
+          if (name === 'dark' ? r > 150 && Math.abs(r - b) < 30 : Math.max(r, g, b) < 120) found.grey++;
+        }
+        return found;
+      };
+      const [linked, rest] = [await count(rects.linked), await count(rects.plain)];
+      check(`${name} pages: a web link is ${linkText} and its box is not filled in`, style.bg === link && style.blend === blend && linked.blueish > 100 && linked.solid === 0, JSON.stringify([style, linked]));
+      check(`${name} pages: a line with no link keeps the colour of the text`, rest.grey > 10 && rest.blueish < 40, JSON.stringify(rest));
+      await shot(win, `workspace-links-${name}.png`);
+      await closeAndWait(win);
+    }
+
+    settings = { pdfView: { window: null } };
+    win = await openAndWait(fresh(), twelve);
+    await sleep(900);
+    await press(win, '1', ['control']);
+    await press(win, '=', ['control']);
+    await choose(win, 'Two pages');
+    await choose(win, 'Dark');
+    await js(win, `document.getElementById('pagesbtn').click()`);
+    await sleep(700);
+    await js(win, `document.getElementById('taboutline').click()`);
+    await js(win, `document.getElementById('railgrip').focus()`);
+    await press(win, 'Right');
+    await press(win, 'Right');
+    await sleep(900);
+    const view = { ...settings.pdfView };
+    delete view.window;
+    check('zoom, layout, the panel and the colours are stored beside the dock and the window', view.zoom === 1.1 && view.layout === 'spread' && view.pageColours === 'dark' && JSON.stringify(view.sidebar) === '{"open":true,"tab":"outline","width":246}', JSON.stringify(settings.pdfView));
+    await closeAndWait(win);
+    const viewOf = () => JSON.stringify({ ...settings.pdfView, window: null });
+    const stored = viewOf();
+    win = await openAndWait(fresh({ keepView: true }), twelve);
+    await sleep(1500);
+    const d = await dockState(win);
+    const p = await panelState(win);
+    const o = await outlineState(win);
+    l = await look(win);
+    check('the next start opens as it was left: zoom, layout, the Outline tab at its width, the dark pages', d.zoom === '110%' && d.layout === 1 && Math.round(p.width) === 246 && p.pressed === 'true' && !p.hidden && o.checked === 'Pages=false,Outline=true' && near(l.paper, rgbOf('#1e1e20'), 4) && l.dim, JSON.stringify([d, p, o, l]));
+    check('the panel starts open, not sliding, and opening the file writes nothing', !(await js(win, `document.getElementById('rail').classList.contains('still')`)) && viewOf() === stored, JSON.stringify(settings.pdfView));
+    await shot(win, 'workspace-restored.png');
+    await closeAndWait(win);
+
+    settings = { pdfView: { window: null, zoom: 'page-width', sidebar: { open: false, tab: 'outline', width: 300 } } };
+    win = await openAndWait(fresh({ keepView: true }), twelve);
+    await sleep(900);
+    check('a fit is restored as a fit, and a shut panel stays shut', (await dockState(win)).zoom === 'Fit width' && (await panelState(win)).pressed === 'false' && Math.round((await panelState(win)).width) === 0);
+    await js(win, `document.getElementById('pagesbtn').click()`);
+    await sleep(900);
+    check('and opens on the tab and the width it was left at', (await outlineState(win)).checked === 'Pages=false,Outline=true' && Math.round((await panelState(win)).width) === 300);
+    await closeAndWait(win);
+
+    settings = { pdfView: { window: null, zoom: 'huge', layout: 'sideways', sidebar: { open: 'yes', tab: 'pages', width: 260 }, pageColours: { page: 'red', text: 'blue' } } };
+    win = await openAndWait(fresh({ keepView: true }), twelve);
+    await sleep(900);
+    const bad = await dockState(win);
+    l = await look(win);
+    check('values the settings file should not hold are ignored on the way in', bad.zoom === 'Fit page' && bad.layout === 0 && (await panelState(win)).pressed === 'false' && near(l.paper, [255, 255, 255], 2) && !l.dim, JSON.stringify([bad, l]));
+    await closeAndWait(win);
+    settings = { pdfView: { window: null } };
+  }
+
+  console.log('the Links panel');
+  {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const [first, second, third] = [doc.addPage([595, 842]), doc.addPage([595, 842]), doc.addPage([595, 842])];
+    const link = (page, y, A) => { page.drawText('Link text', { x: 80, y, size: 14, font }); return doc.context.register(doc.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [70, y - 6, 200, y + 16], Border: [0, 0, 0], F: 4, A })); };
+    const uri = (u) => ({ S: 'URI', URI: PDFString.of(u) });
+    first.node.set(PDFName.of('Annots'), doc.context.obj([link(first, 760, uri('https://example.com/docs?a=1')), link(first, 720, uri('mailto:team@example.com')), link(first, 640, uri('file:///C:/Windows/System32/calc.exe')), link(first, 600, { S: 'GoTo', D: [third.ref, 'Fit'] })]));
+    first.drawText('Read https://plain.example.org/guide/start. for more', { x: 80, y: 680, size: 14, font });
+    second.node.set(PDFName.of('Annots'), doc.context.obj([link(second, 700, uri('https://example.com/docs?a=1'))]));
+    third.node.set(PDFName.of('Annots'), doc.context.obj([link(third, 120, uri('https://far.example.net/low'))]));
+    const withLinks = path.join(root, 'Link list.pdf');
+    fs.writeFileSync(withLinks, await doc.save({ useObjectStreams: false }));
+    const ROWS = 'example.com/docs?a=1|Page 1 · 2 places/Web ; team@example.com|Page 1/Email ; plain.example.org/guide/start|Page 1/Web ; far.example.net/low|Page 3/Web';
+    const ADDRESSES = ['https://example.com/docs?a=1', 'mailto:team@example.com', 'https://plain.example.org/guide/start', 'https://far.example.net/low'];
+
+    for (const theme of ['light', 'dark']) {
+      nativeTheme.themeSource = theme;
+      opened.length = 0;
+      const win = await openAndWait(fresh(), withLinks);
+      const state = () => js(win, `(() => { const rows = [...document.querySelectorAll('.linkrow')]; const g = (id) => document.getElementById(id); const b = g('linksbtn');
+        return { rows: rows.map((r) => r.querySelector('.linkurl').textContent + '|' + r.querySelector('.linkpage').firstChild.textContent + '/' + r.querySelector('.linkpage em').textContent).join(' ; '), total: g('linktotal').textContent, scan: g('linkscan').textContent,
+          copy: g('linkcopy').textContent, copyOff: g('linkcopy').disabled, choose: g('linkchoose').hidden ? '' : g('linkchoose').textContent, width: g('linkpanel').getBoundingClientRect().width, pressed: b.getAttribute('aria-pressed'), disabled: b.disabled, title: b.title,
+          picked: rows.filter((r) => r.classList.contains('on')).length, checked: rows.filter((r) => r.querySelector('.pick').getAttribute('aria-checked') === 'true').length, empty: g('linklist').querySelector('.linkempty').hidden ? '' : g('linklist').querySelector('.linkempty').textContent,
+          current: workspaceViewer.viewer.currentPageNumber, bar: [...document.querySelector('.titleleft').children].map((c) => c.id).join(), focus: document.activeElement.id || document.activeElement.className, mark: document.querySelectorAll('.linkflash').length }; })()`);
+      const clip = async () => clipboard.readText();
+      const until2 = (what, fn) => until(what, async () => fn(await state()), 8000);
+
+      let s = await state();
+      check(`${theme}: the title row has a Links button after Find, with its tooltip, and the panel is shut`, s.bar === 'pagesbtn,findbtn,linksbtn' && s.title === 'Links in this document' && !s.disabled && s.pressed === 'false' && s.width === 0 && s.rows === '', JSON.stringify(s));
+      await js(win, `document.getElementById('linksbtn').click()`);
+      await until2('the links', (x) => x.scan === '' && x.rows !== '');
+      await sleep(500);
+      s = await state();
+      check(`${theme}: the panel opens at 300 px and lists the web and mail addresses, top to bottom, once each, with the page and the kind`, s.width === 300 && s.pressed === 'true' && s.rows === ROWS && s.total === '4 links' && s.copy === 'Copy all' && s.choose === 'Select all' && s.scan === '' && s.empty === '', JSON.stringify(s));
+      await shot(win, `workspace-linklist-${theme}.png`);
+
+      await js(win, `document.getElementById('linkcopy').click()`);
+      await sleep(400);
+      check(`${theme}: Copy all puts every address on the clipboard, one to a line, and says Copied`, (await clip()) === ADDRESSES.join('\n') && (await state()).copy === 'Copied', await clip());
+      await until2('the label back', (x) => x.copy === 'Copy all');
+      check(`${theme}: and the label goes back to Copy all`, (await state()).copy === 'Copy all');
+
+      const pick = (n) => js(win, `document.querySelectorAll('.linkrow')[${n}].querySelector('.pick').click()`);
+      await pick(1);
+      await pick(3);
+      s = await state();
+      check(`${theme}: the circle of a row selects it, the button counts the selection and Select all becomes Clear`, s.picked === 2 && s.checked === 2 && s.copy === 'Copy 2' && s.choose === 'Clear', JSON.stringify(s));
+      await js(win, `document.getElementById('linkcopy').click()`);
+      await sleep(300);
+      check(`${theme}: Copy then copies only the selected ones, in the order of the list`, (await clip()) === [ADDRESSES[1], ADDRESSES[3]].join('\n'), await clip());
+      await until2('the label back', (x) => x.copy === 'Copy 2');
+      await js(win, `document.getElementById('linkchoose').click()`);
+      s = await state();
+      check(`${theme}: Clear empties the selection`, s.picked === 0 && s.copy === 'Copy all' && s.choose === 'Select all', JSON.stringify(s));
+      await js(win, `document.getElementById('linkchoose').click()`);
+      s = await state();
+      check(`${theme}: Select all selects every row`, s.picked === 4 && s.copy === 'Copy 4', JSON.stringify(s));
+      await js(win, `document.getElementById('linkchoose').click()`);
+
+      await js(win, `document.querySelectorAll('.linkrow')[3].querySelector('.linkgo').click()`);
+      await until2('page 3', (x) => x.current === 3);
+      await until2('the mark', (x) => x.mark === 1);
+      const where = await js(win, `(() => { const m = document.querySelector('.linkflash'); const c = document.getElementById('scroller').getBoundingClientRect(); const r = m ? m.getBoundingClientRect() : null; return { shown: !!m, inside: !!r && r.top >= c.top && r.bottom <= c.bottom, onPage: !!m && !!m.closest('.page[data-page-number="3"]') }; })()`);
+      s = await state();
+      check(`${theme}: a click on a row goes to the page of the link, shows where it is and gives the keys back to the document`, where.shown && where.inside && where.onPage && s.focus === 'scroller' && s.picked === 0, JSON.stringify([where, s]));
+      await until2('the mark gone', (x) => x.mark === 0);
+      check(`${theme}: the mark fades away by itself`, (await state()).mark === 0);
+
+      await js(win, `document.querySelectorAll('.linkrow')[0].querySelector('.linkopen').click()`);
+      await sleep(400);
+      const card = await js(win, `document.querySelector('.card') ? { title: document.querySelector('.card h3').textContent, address: document.querySelector('.card .addr').textContent } : null`);
+      check(`${theme}: the arrow of a row asks first, with the address, like a link in the page`, card && card.title === 'Open this link?' && card.address === ADDRESSES[0] && opened.length === 0, JSON.stringify(card));
+      await js(win, `[...document.querySelectorAll('.card button')].find((b) => b.textContent === 'Open').click()`);
+      await sleep(400);
+      check(`${theme}: Open then opens that address and no other`, JSON.stringify(opened) === JSON.stringify([ADDRESSES[0]]), JSON.stringify(opened));
+
+      await js(win, `document.querySelectorAll('.linkrow')[0].querySelector('.linkgo').focus()`);
+      await press(win, 'Down');
+      check(`${theme}: Down moves to the next row`, (await js(win, `document.activeElement === document.querySelectorAll('.linkrow')[1].querySelector('.linkgo')`)));
+      await press(win, 'Space');
+      s = await state();
+      check(`${theme}: Space selects the row in focus and goes nowhere`, s.picked === 1 && s.current === 3 && (await js(win, `document.querySelectorAll('.linkrow')[1].classList.contains('on')`)), JSON.stringify(s));
+      await press(win, 'Enter', ['control']);
+      await sleep(400);
+      check(`${theme}: Ctrl+Enter asks to open the link in focus`, (await js(win, `document.querySelector('.card .addr')?.textContent`)) === ADDRESSES[1]);
+      await press(win, 'Escape');
+      await sleep(200);
+      await js(win, `document.querySelectorAll('.linkrow')[0].querySelector('.linkgo').focus()`);
+      await press(win, 'Escape');
+      await sleep(500);
+      s = await state();
+      check(`${theme}: Esc in the panel shuts it and returns the keys to the document`, s.width === 0 && s.pressed === 'false' && s.focus === 'scroller', JSON.stringify(s));
+      await closeAndWait(win);
+    }
+    nativeTheme.themeSource = 'light';
+
+    const win = await openAndWait(fresh(), withLinks);
+    await js(win, `document.getElementById('linksbtn').click()`);
+    await sleep(900);
+    await press(win, 'F', ['control']);
+    await typeInto(win, 'Bottom');
+    await js(win, `document.querySelector('.findbar [aria-label="Show all results"]').click()`);
+    await sleep(900);
+    const both = await js(win, `({ links: document.getElementById('linkpanel').getBoundingClientRect().width, hits: document.getElementById('hitpanel').getBoundingClientRect().width, linksBtn: document.getElementById('linksbtn').getAttribute('aria-pressed') })`);
+    check('the list of search results and the Links panel never stand together: the one that is asked for shuts the other', both.links === 0 && both.hits > 0 && both.linksBtn === 'false', JSON.stringify(both));
+    await js(win, `document.getElementById('linksbtn').click()`);
+    await sleep(900);
+    const swapped = await js(win, `({ links: document.getElementById('linkpanel').getBoundingClientRect().width, hits: document.getElementById('hitpanel').getBoundingClientRect().width })`);
+    check('and the other way round', swapped.links === 300 && swapped.hits === 0, JSON.stringify(swapped));
+    const kept = await js(win, `(async () => [await workspaceApi.copyLinks(['file:///x', 'https://a.test', 'javascript:1', 'https://a.test/', 5, null]), await workspaceApi.copyLinks('https://b.test'), await workspaceApi.copyLinks({ length: 1 })])()`);
+    check('the main process copies only addresses that may be opened, each once, and nothing for anything that is not a list', JSON.stringify(kept) === '[1,0,0]' && (await clipboard.readText()) === 'https://a.test/', JSON.stringify(kept));
+    await closeAndWait(win);
+
+    const none = await openAndWait(fresh(), small);
+    await js(none, `document.getElementById('linksbtn').click()`);
+    await until('the end of the scan', () => js(none, `document.getElementById('linkscan').textContent === ''`));
+    await sleep(500);
+    const nothing = await js(none, `({ empty: document.querySelector('.linkempty').textContent, copyOff: document.getElementById('linkcopy').disabled, choose: document.getElementById('linkchoose').hidden, rows: document.querySelectorAll('.linkrow').length, total: document.getElementById('linktotal').textContent })`);
+    check('a document with no links says so, and offers nothing to select or copy', nothing.empty === 'No links in this document' && nothing.copyOff && nothing.choose && nothing.rows === 0 && nothing.total === '', JSON.stringify(nothing));
+    await closeAndWait(none);
   }
 
   console.log('a big file costs nothing until it is read');

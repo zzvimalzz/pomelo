@@ -2,6 +2,7 @@
 // The workspace's dialogs: a card over a veil in the document area. A classic script that adds window.workspaceDialogs.
 (() => {
   const { el, icon } = window.pomeloUi;
+  const SWATCHES = { page: ['#ffffff', '#fdf6e3', '#eef3ea', '#e9eef6', '#1e1e20'], text: ['#1c1c1e', '#3b3b3b', '#4b3b25', '#1b3a8a', '#e8e8ea'] };
   let card = null;
   let linkOpen = false;
 
@@ -186,5 +187,74 @@
     });
   }
 
-  window.workspaceDialogs = { askPassword, closePassword, confirmLink, isOpen: () => !!document.querySelector('[aria-modal="true"]') };
+  // Resolves with { page, text } as #rrggbb when the user applies a pair, or null when they cancel. `current` is the pair now in use,
+  // if it is one the user chose.
+  function chooseColours(current) {
+    const { box, close } = frame();
+    const badge = el('i', 'badge');
+    badge.innerHTML = icon('eye');
+    const title = el('h3', '', 'Page colours');
+    title.id = 'dialog-title';
+    const head = el('div', 'uhead');
+    head.append(badge, title);
+    const picked = { page: current?.page ?? SWATCHES.page[1], text: current?.text ?? SWATCHES.text[1] };
+    const grid = el('div', 'kv');
+    for (const [name, label] of [['page', 'Page'], ['text', 'Text']]) {
+      const group = el('div', 'swrow');
+      group.setAttribute('role', 'radiogroup');
+      group.setAttribute('aria-label', `${label} colour`);
+      const choose = (colour) => {
+        picked[name] = colour;
+        for (const b of group.children) {
+          b.setAttribute('aria-checked', String(b.dataset.colour === colour));
+          b.tabIndex = b.dataset.colour === colour ? 0 : -1;
+        }
+      };
+      for (const colour of SWATCHES[name]) {
+        const b = el('button', 'sw');
+        b.type = 'button';
+        b.dataset.colour = colour;
+        b.title = colour;
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-label', colour);
+        b.style.background = colour;
+        b.onclick = () => choose(colour);
+        group.append(b);
+      }
+      choose(picked[name]);
+      if (!group.querySelector('[tabindex="0"]')) group.firstChild.tabIndex = 0;
+      group.addEventListener('keydown', (e) => {
+        const step = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
+        if (!step) return;
+        const all = [...group.children];
+        const next = all[(all.indexOf(document.activeElement) + step + all.length) % all.length];
+        choose(next.dataset.colour);
+        next.focus();
+        e.preventDefault();
+      });
+      grid.append(el('span', '', label), group);
+    }
+    const note = el('p', 'note', 'Only changes how it looks here.');
+    const cancel = el('button', 'btn', 'Cancel');
+    const apply = el('button', 'btn primary', 'Apply');
+    const row = el('div', 'row');
+    row.append(cancel, apply);
+    box.append(head, note, grid, row);
+    return new Promise((resolve) => {
+      const done = (answer) => {
+        close();
+        document.getElementById('scroller').focus();
+        resolve(answer);
+      };
+      cancel.onclick = () => done(null);
+      apply.onclick = () => done({ page: picked.page, text: picked.text });
+      box.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); done(null); }
+        else if (e.key === 'Tab') loop(e, [...box.querySelectorAll('button')].filter((b) => b.tabIndex === 0));
+      });
+      apply.focus();
+    });
+  }
+
+  window.workspaceDialogs = { askPassword, closePassword, confirmLink, chooseColours, isOpen: () => !!document.querySelector('[aria-modal="true"]') };
 })();

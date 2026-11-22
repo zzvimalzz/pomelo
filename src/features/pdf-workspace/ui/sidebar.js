@@ -25,8 +25,8 @@
   grip.setAttribute('aria-valuemax', String(MAX));
   grip.setAttribute('aria-valuenow', String(MIN));
 
-  function watch(pdf, viewer, eventBus, container, linkService) {
-    const thumbs = window.workspaceThumbs.create(pdf, MIN - ROOM);
+  function watch(pdf, viewer, eventBus, container, linkService, saved) {
+    const thumbs = window.workspaceThumbs.create(pdf, (saved?.width ?? MIN) - ROOM);
     const items = [];
     const visible = new Set();
     let rail = MIN;
@@ -102,6 +102,8 @@
       });
     }
 
+    const remember = () => window.workspaceViewer.remember({ sidebar: { open, tab, width: rail } });
+
     function show(name) {
       tab = name;
       for (const [id, b] of Object.entries(tabs)) b.setAttribute('aria-checked', String(id === name));
@@ -114,6 +116,7 @@
         outlined = true;
         window.workspaceOutline.fill(outlineList, pdf, linkService, container);
       }
+      remember();
     }
 
     function setOpen(on) {
@@ -124,6 +127,7 @@
         show(tab);
       } else {
         closing = setTimeout(() => { inner.hidden = true; }, SLIDE);
+        remember();
       }
       panel.classList.toggle('open', on);
       button.setAttribute('aria-pressed', String(on));
@@ -141,6 +145,7 @@
       thumbs.setWidth(rail - ROOM);
       for (const n of visible) thumbs.want(n, (image) => paint(n, image));
       mark(viewer.currentPageNumber, 'nearest');
+      remember();
     }
 
     grip.addEventListener('pointerdown', (e) => {
@@ -171,7 +176,19 @@
     button.onclick = () => setOpen(!open);
     for (const [name, b] of Object.entries(tabs)) b.onclick = () => show(name);
     button.addEventListener('mousedown', (e) => e.preventDefault());
-    eventBus.on('pagesinit', () => { button.disabled = false; });
+    if (saved) {
+      tab = saved.tab;
+      setRail(saved.width);
+    }
+    eventBus.on('pagesinit', () => {
+      button.disabled = false;
+      if (!saved?.open) return;
+      // Reading the width makes the browser apply it before the slide is switched back on, so the panel starts open.
+      panel.classList.add('still');
+      setOpen(true);
+      panel.getBoundingClientRect();
+      panel.classList.remove('still');
+    });
     eventBus.on('pagechanging', ({ pageNumber }) => mark(pageNumber, 'nearest'));
     window.workspaceViewer.restScrollbar(list);
     window.workspaceViewer.restScrollbar(outlineList);

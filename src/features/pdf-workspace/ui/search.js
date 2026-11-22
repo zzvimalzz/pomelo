@@ -106,7 +106,7 @@
     window.workspaceTicks.watch(hits, viewer, container);
     window.workspaceResults.onchange = (on) => listing.setAttribute('aria-pressed', String(on));
     listing.setAttribute('aria-pressed', 'false');
-    listing.onclick = () => window.workspaceResults.toggle();
+    listing.onclick = () => { window.workspaceLinkList.hide(); window.workspaceResults.toggle(); };
     eventBus.on('scalechanging', refresh);
     eventBus.on('spreadmodechanged', refresh);
 

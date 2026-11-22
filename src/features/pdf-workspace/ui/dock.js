@@ -7,6 +7,7 @@
   const { label, bind } = window.workspaceKeys;
   const WHEEL_STEP = 100;
   const PRESETS = { 'page-fit': 'Fit page', 'page-width': 'Fit width' };
+  const COLOURS = [['Original', 'original'], ['Sepia', 'sepia'], ['Dark', 'dark'], ['Custom colours…', 'custom']];
 
   let viewer = null;
   let menu = null;
@@ -53,6 +54,13 @@
       el('hr'),
       el('div', 'cap', 'Layout'),
       ...layouts.map(([text, mode]) => { const b = item(text, null, () => { viewer.spreadMode = mode; }); b.dataset.mode = String(mode); return b; }),
+      el('hr'),
+      el('div', 'cap', 'Page colour'),
+      ...COLOURS.map(([text, name]) => {
+        const b = item(text, null, () => (name === 'custom' ? window.workspaceColours.choose() : window.workspaceColours.set(name)));
+        b.dataset.colour = name;
+        return b;
+      }),
     );
     m.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -126,7 +134,8 @@
       const open = menuOpen();
       closeMenu();
       if (open) return;
-      for (const b of menu.querySelectorAll('.mi')) b.classList.toggle('on', b.dataset.mode === String(viewer.spreadMode));
+      const colour = window.workspaceColours.current();
+      for (const b of menu.querySelectorAll('.mi')) b.classList.toggle('on', b.dataset.mode === String(viewer.spreadMode) || b.dataset.colour === (typeof colour === 'object' ? 'custom' : colour));
       menu.hidden = false;
       zoom.setAttribute('aria-expanded', 'true');
     };

@@ -15,7 +15,7 @@
 <body>
   <div class="window">
     <header class="titlerow">
-      <div class="titleleft"><button class="ib" id="pagesbtn" type="button" aria-pressed="false" disabled></button><button class="ib" id="findbtn" type="button" aria-pressed="false" disabled></button></div>
+      <div class="titleleft"><button class="ib" id="pagesbtn" type="button" aria-pressed="false" disabled></button><button class="ib" id="findbtn" type="button" aria-pressed="false" disabled></button><button class="ib" id="linksbtn" type="button" aria-pressed="false" disabled></button></div>
       <b id="docname"></b>
       <div class="titletools"><button class="ib" id="focus" type="button"></button></div>
     </header>
@@ -35,6 +35,12 @@
         <div class="hithead"><b>Results</b><span class="total" id="hittotal"></span><button class="sm" id="hitclose" type="button"></button></div>
         <div class="scrolly" id="results"></div>
       </div></aside>
+      <aside class="panel" id="linkpanel"><div class="inner" id="linkinner" hidden>
+        <div class="hithead"><b>Links</b><span class="total" id="linktotal"></span><button class="sm" id="linkclose" type="button"></button></div>
+        <div class="linkbar"><button class="linkpick" id="linkchoose" type="button" hidden></button><button class="btn linkcopy" id="linkcopy" type="button" disabled></button></div>
+        <p class="linkscan" id="linkscan"></p>
+        <div class="scrolly" id="linklist"></div>
+      </div></aside>
     </div>
   </div>
   <script src="../../../ui-shared/dom.js"></script>
@@ -48,10 +54,12 @@
   <script src="outline.js"></script>
   <script src="sidebar.js"></script>
   <script src="dialogs.js"></script>
+  <script src="colours.js"></script>
   <script src="dock-place.js"></script>
   <script src="dock.js"></script>
   <script src="select.js"></script>
   <script src="results.js"></script>
+  <script src="linklist.js"></script>
   <script src="ticks.js"></script>
   <script src="search.js"></script>
   <script src="viewer.js"></script>
