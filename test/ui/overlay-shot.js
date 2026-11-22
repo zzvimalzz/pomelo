@@ -153,16 +153,6 @@ app.whenReady().then(async () => {
     await shot(`wheel-open-hover-${theme}.png`);
     await dragover(5, 5);
 
-    win.webContents.send('wheel:open', { info: docxInfo, targets: OPEN, wheel: 'open', droppable: false, switchable: true });
-    await sleep(900);
-    check(`${theme}: for a file that is not a PDF a drop is refused`, (await dragover(330, 205)) === 'none');
-    await sleep(200);
-    check(`${theme}: and the ring says PDF files only, then Open again when the pointer leaves`, (await look()).label === 'PDF files only' && (await page(`document.querySelectorAll('.seg.hot').length`)) === 0 && (await dragover(5, 5)) === 'none' && (await look()).label === 'Open', (await look()).label);
-    await dragover(330, 205);
-    await sleep(200);
-    await shot(`wheel-open-refused-${theme}.png`);
-    await dragover(5, 5);
-
     console.log(`${theme}: turning from one wheel to the other`);
     win.webContents.send('wheel:open', { info: pdfInfo, targets: OPEN, wheel: 'open', switchable: true });
     await sleep(900);
