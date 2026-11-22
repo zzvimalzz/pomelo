@@ -16,12 +16,10 @@ let leaving = [];          // targets turning away while the other wheel turns i
 let hot = -1;
 let picking = false;       // opened from the right-click menu: segments are clicked, not dropped on
 let wheel = 'convert';     // 'convert' or 'open': which wheel is showing
-let droppable = true;      // the files being dragged can be dropped on this wheel
 let sent = false;          // files were dropped or a segment was clicked: the main process is checking them, and the wheel waits for its answer
 
 const ICONS = { book: ['M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z', 'M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z'] };
 const OTHER = { convert: { key: 'Shift', name: 'Open' }, open: { key: 'Ctrl', name: 'Convert' } };    // what the pill names: the other wheel
-const REFUSED = 'PDF files only';
 const EASE_OUT = 'cubic-bezier(0.2, 0.9, 0.25, 1.12)';
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -87,19 +85,17 @@ function setHot(i) {
   if (i === hot) return;
   if (hot >= 0) {
     const old = targets[hot];
-    old.node.classList.remove('hot', 'refused');
+    old.node.classList.remove('hot');
     old.node.style.transform = '';
     old.labelEl.textContent = old.label;
   }
   hot = i;
   const t = hot >= 0 ? targets[hot] : null;
-  const refused = !!t && !droppable;
   if (centerName) {
-    setName(t && !refused ? (wheel === 'open' ? t.label : `to ${t.label}`) : centerText);
-    centerName.classList.toggle('to', !!t && !refused);
+    setName(t ? (wheel === 'open' ? t.label : `to ${t.label}`) : centerText);
+    centerName.classList.toggle('to', !!t);
   }
   if (!t) return;
-  if (refused) { t.node.classList.add('refused'); t.labelEl.textContent = REFUSED; return; }
   t.node.classList.add('hot');
   if (t.whole) { t.node.style.transform = 'scale(1.03)'; return; }
   const rad = (t.mid * Math.PI) / 180;
@@ -164,7 +160,6 @@ function turn(out, inn, dir) {
 api.onOpen((data) => {
   picking = data.pick;
   wheel = data.wheel || 'convert';
-  droppable = data.droppable !== false;
   stage.dataset.wheel = wheel;
   stage.classList.toggle('picking', picking);
   stage.classList.remove('open', 'closing');
@@ -182,7 +177,6 @@ api.onSwitch((data) => {
   const out = targets;
   setHot(-1);
   wheel = data.wheel;
-  droppable = data.droppable !== false;
   stage.dataset.wheel = wheel;
   targets = addTargets(data.targets);
   turn(out, targets, wheel === 'open' ? 1 : -1);
@@ -213,7 +207,7 @@ window.addEventListener('dragover', (e) => {
   const i = hitTest(e.clientX, e.clientY);
   if (!loggedOver) { loggedOver = true; api.log(`dragover at ${e.clientX},${e.clientY} segment=${i}`); }
   setHot(i);
-  e.dataTransfer.dropEffect = i >= 0 && droppable ? 'copy' : 'none';
+  e.dataTransfer.dropEffect = i >= 0 ? 'copy' : 'none';
 });
 window.addEventListener('drop', (e) => {
   e.preventDefault();
@@ -221,7 +215,7 @@ window.addEventListener('drop', (e) => {
   if (sent) return;
   const i = hitTest(e.clientX, e.clientY);
   api.log(`drop segment=${i} files=${e.dataTransfer.files.length}`);
-  if (i >= 0 && droppable && paths.length) { sent = true; api.drop(targets[i].id, paths); return; }
+  if (i >= 0 && paths.length) { sent = true; api.drop(targets[i].id, paths); return; }
   api.cancel();
   setHot(-1);
 });

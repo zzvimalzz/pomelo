@@ -34,29 +34,37 @@ const targets = [{ id: 'pdf', label: 'PDF' }, { id: 'docx', label: 'DOCX' }];
 
 (async () => {
 console.log('the conversion wheel');
-flow.onOpen(['C:\\a.docx']);
+flow.onOpen(['C:\\a.pdf']);
 let [open] = take();
-expect('a selection gets the formats, and the pill that names Shift', open[0] === 'openWheel' && open[1].ext === 'docx' && json(open[2]) === json(targets) && open[3] === null && json(open[4]) === json({ wheel: 'convert', switchable: true }), json(open));
-keys = false;
+expect('PDFs get the formats, and the pill that names Shift', open[0] === 'openWheel' && open[1].ext === 'pdf' && json(open[2]) === json(targets) && open[3] === null && json(open[4]) === json({ wheel: 'convert', switchable: true }), json(open));
 flow.onOpen(['C:\\a.docx']);
+[open] = take();
+expect('a document gets the formats and no pill, because Shift is of no use to it', open[1].ext === 'docx' && json(open[2]) === json(targets) && json(open[4]) === json({ wheel: 'convert', switchable: false }), json(open));
+flow.onOpen(['C:\\a.pdf', 'C:\\b.docx']);
+[open] = take();
+expect('a mix of a PDF and a document gets no pill either', json(open[4]) === json({ wheel: 'convert', switchable: false }), json(open[4]));
+keys = false;
+flow.onOpen(['C:\\a.pdf']);
 [open] = take();
 expect('with a helper that cannot report Shift there is no pill', json(open[4]) === json({ wheel: 'convert', switchable: false }), json(open[4]));
 keys = true;
-flow.onOpen(['C:\\a.docx'], true);
+flow.onOpen(['C:\\a.pdf'], true);
 [open] = take();
-expect('from the right-click menu the files are clicked, and there is no pill', json(open[3]) === json(['C:\\a.docx']) && open[4].switchable === false, json(open));
+expect('from the right-click menu the files are clicked, and there is no pill', json(open[3]) === json(['C:\\a.pdf']) && open[4].switchable === false, json(open));
 flow.onOpen(['C:\\a.zzz']);
 expect('nothing to convert to: no wheel, and the reason is shown', json(take()) === json([['addInfo', { title: 'nothing for 1' }]]));
 
 console.log('the Open wheel');
 flow.onOpen(['C:\\a.pdf', 'C:\\b.PDF'], false, 'open');
 [open] = take();
-expect('Shift on PDFs shows the Open wheel, which takes them', open[0] === 'openWheel' && json(open[2]) === json(OPEN) && open[3] === null && json(open[4]) === json({ wheel: 'open', droppable: true, switchable: true }), json(open));
-for (const [what, files] of [['a document', ['C:\\a.docx']], ['a mix', ['C:\\a.pdf', 'C:\\b.docx']], ['a file nothing converts', ['C:\\a.zzz']], ['a folder', ['C:\\Windows']]]) {
+expect('Shift on PDFs shows the Open wheel, which takes them', open[0] === 'openWheel' && json(open[2]) === json(OPEN) && open[3] === null && json(open[4]) === json({ wheel: 'open', switchable: true }), json(open));
+for (const [what, files] of [['a document', ['C:\\a.docx']], ['a mix', ['C:\\a.pdf', 'C:\\b.docx']]]) {
   flow.onOpen(files, false, 'open');
   [open] = take();
-  expect(`${what}: the Open wheel shows and refuses the drop`, open[0] === 'openWheel' && open[4].droppable === false && open[4].wheel === 'open', json(open));
+  expect(`Shift on ${what} shows the conversion wheel, with no pill`, open[0] === 'openWheel' && json(open[2]) === json(targets) && json(open[4]) === json({ wheel: 'convert', switchable: false }), json(open));
 }
+flow.onOpen(['C:\\a.zzz'], false, 'open');
+expect('Shift on a file nothing converts says why there is nothing to offer', json(take()) === json([['addInfo', { title: 'nothing for 1' }]]));
 
 console.log('turning the wheel');
 flow.onOpen(['C:\\a.pdf'], false, 'open'); take();
@@ -65,14 +73,16 @@ let [turn] = take();
 expect('Ctrl turns it into the conversion wheel for the same files', turn[0] === 'switchWheel' && json(turn[1]) === json(targets) && json(turn[2]) === json({ wheel: 'convert', switchable: true }), json(turn));
 flow.onSwitch('open');
 [turn] = take();
-expect('and Shift back', turn[0] === 'switchWheel' && json(turn[1]) === json(OPEN) && turn[2].droppable === true && turn[2].wheel === 'open', json(turn));
+expect('and Shift back', turn[0] === 'switchWheel' && json(turn[1]) === json(OPEN) && json(turn[2]) === json({ wheel: 'open', switchable: true }), json(turn));
 flow.onOpen(['C:\\a.zzz'], false, 'open'); take();
 flow.onSwitch('convert');
 expect('with nothing to convert to the wheel stays and the reason is shown', json(take()) === json([['addInfo', { title: 'nothing for 1' }]]));
 flow.onOpen(['C:\\a.docx']); take();
 flow.onSwitch('open');
-[turn] = take();
-expect('turning to Open on a document shows a ring that refuses it', turn[2].droppable === false, json(turn));
+expect('Shift on a document that is showing its wheel turns nothing', take().length === 0);
+flow.onOpen(['C:\\a.pdf', 'C:\\b.docx']); take();
+flow.onSwitch('open');
+expect('and neither on a mix', take().length === 0);
 
 console.log('dropping');
 await flow.onDrop(['C:\\a.pdf', 'C:\\b.PDF'], 'open');
@@ -156,7 +166,7 @@ expect('Ctrl on a file that needs a password opens the wheel too, which takes th
 await lockFlow.onOpen([PLAIN], false, 'convert');
 expect('and on one that does not', take()[0][0] === 'openWheel');
 await lockFlow.onOpen([B], false, 'open');
-expect('Shift opens the Open wheel whatever the files are', take()[0][0] === 'openWheel');
+expect('Shift on a file that needs a password shows the conversion wheel, which takes the card away', take()[0][0] === 'openWheel');
 await lockFlow.onOpen([B], true, 'convert');
 expect('and so does a pick from the right-click menu', take()[0][0] === 'openWheel');
 wheelState.asking = false;

@@ -75,10 +75,15 @@ app.whenReady().then(async () => {
   send('mu'); await sleep(900);
   check('letting go folds it away', !overlay.win.isVisible());
 
-  console.log('drag a Word file, tap Shift: the ring refuses it');
+  console.log('drag a Word file, tap Shift: the conversion wheel, with no pill');
   selection = { files: [file], explorer: true };
+  events.length = 0; wheels.length = 0;
   send('md', '500', '500'); send('mm', '520', '520'); await sleep(100); send('kd', 'shift'); await sleep(900);
-  check('the Open wheel shows, and a drop on it is refused', (await showing()) === 'open 1 1 1' && (await dropEffect(200, 80)) === 'none');
+  const pillHidden = () => page(`document.getElementById('pill').hidden`);
+  check('the conversion wheel shows, and a drop on it is taken', (await showing()).startsWith('convert ') && (await dropEffect(200, 80)) === 'copy', await showing());
+  check('and it has no pill, because Shift is of no use here', await pillHidden() === true);
+  send('kd', 'shift'); await sleep(300);
+  check('Shift again changes nothing', (await showing()).startsWith('convert ') && !events.includes('switch'));
   send('mu'); await sleep(900);
   selection = { files: [file], explorer: true };
 
