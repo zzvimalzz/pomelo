@@ -1,21 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The left panel: a thumbnail for every page with the page in view outlined, and a click goes to the page. The title row's button slides
-// it open and shut; nothing is built or drawn until it is first opened. A classic script that adds window.workspaceSidebar.
+// The left panel: a switch between the pages (a thumbnail for every page, the page in view outlined, a click goes to it) and the outline.
+// The title row's button slides it open and shut; nothing is built or drawn until a tab is first shown. A classic script that adds
+// window.workspaceSidebar.
 (() => {
   const { el, icon } = window.pomeloUi;
   const SLIDE = 350;
   const panel = document.getElementById('rail');
+  const inner = document.getElementById('railinner');
   const list = document.getElementById('thumbs');
+  const outlineList = document.getElementById('outline');
+  const tabs = { pages: document.getElementById('tabpages'), outline: document.getElementById('taboutline') };
   const button = document.getElementById('pagesbtn');
 
   button.innerHTML = icon('sidebar');
-  button.title = 'Pages';
-  button.setAttribute('aria-label', 'Pages');
+  button.title = 'Pages and outline';
+  button.setAttribute('aria-label', 'Pages and outline');
 
-  function watch(pdf, viewer, eventBus, container) {
+  function watch(pdf, viewer, eventBus, container, linkService) {
     const thumbs = window.workspaceThumbs.create(pdf);
     const items = [];
     let open = false;
+    let tab = 'pages';
+    let outlined = false;
     let current = null;
     let closing = null;
 
@@ -86,25 +92,40 @@
       });
     }
 
+    function show(name) {
+      tab = name;
+      for (const [id, b] of Object.entries(tabs)) b.setAttribute('aria-checked', String(id === name));
+      list.hidden = name !== 'pages';
+      outlineList.hidden = name !== 'outline';
+      if (name === 'pages') {
+        if (!items.length) build();
+        mark(viewer.currentPageNumber, 'center');
+      } else if (!outlined) {
+        outlined = true;
+        window.workspaceOutline.fill(outlineList, pdf, linkService, container);
+      }
+    }
+
     function setOpen(on) {
       open = on;
       clearTimeout(closing);
       if (on) {
-        if (!items.length) build();
-        list.hidden = false;
+        inner.hidden = false;
+        show(tab);
       } else {
-        closing = setTimeout(() => { list.hidden = true; }, SLIDE);
+        closing = setTimeout(() => { inner.hidden = true; }, SLIDE);
       }
       panel.classList.toggle('open', on);
       button.setAttribute('aria-pressed', String(on));
-      if (on) mark(viewer.currentPageNumber, 'center');
     }
 
     button.onclick = () => setOpen(!open);
+    for (const [name, b] of Object.entries(tabs)) b.onclick = () => show(name);
     button.addEventListener('mousedown', (e) => e.preventDefault());
     eventBus.on('pagesinit', () => { button.disabled = false; });
     eventBus.on('pagechanging', ({ pageNumber }) => mark(pageNumber, 'nearest'));
     window.workspaceViewer.restScrollbar(list);
+    window.workspaceViewer.restScrollbar(outlineList);
     api.thumbs = thumbs;
   }
 

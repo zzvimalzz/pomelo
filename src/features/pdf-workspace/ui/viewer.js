@@ -81,7 +81,7 @@
     api.viewer = viewer;
     window.workspaceComments.watch(viewer, eventBus, container);
     window.workspaceDock.watch(viewer, eventBus, container);
-    window.workspaceSidebar.watch(pdf, viewer, eventBus, container);
+    window.workspaceSidebar.watch(pdf, viewer, eventBus, container, linkService);
     eventBus.on('pagesinit', () => { viewer.currentScaleValue = 'page-fit'; });
     // A fit keeps fitting as the window changes size; a zoom the user chose stays as it is.
     new ResizeObserver(() => { const zoom = viewer.currentScaleValue; if (viewer.pagesCount && PRESETS.includes(zoom)) viewer.currentScaleValue = zoom; }).observe(container);
