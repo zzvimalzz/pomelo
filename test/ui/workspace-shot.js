@@ -584,7 +584,16 @@ app.whenReady().then(async () => {
     };
     const edges = { left: [box.l + 24, box.t + box.h / 2], right: [box.l + box.w - 24, box.t + box.h / 2], top: [box.l + box.w / 2, box.t + 24], bottom: [box.l + box.w / 2, box.t + box.h - 24] };
 
+    const pager = () => js(win, `(() => { const d = document.querySelector('.dock'); const [prev, next] = [...d.querySelectorAll('.step')]; const no = document.querySelector('.pageno'); const count = document.querySelector('.pagecount');
+      const turned = (b) => { const m = new DOMMatrixReadOnly(getComputedStyle(b.querySelector('.i')).transform); return Math.round(Math.atan2(m.b, m.a) * 180 / Math.PI); };
+      const cs = getComputedStyle(no); const inset = parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth);
+      const mid = (r) => (r.left + r.right) / 2; const dr = d.getBoundingClientRect(); const n = no.getBoundingClientRect(); const c = count.getBoundingClientRect(); const p = prev.getBoundingClientRect(); const x = next.getBoundingClientRect();
+      return { prev: turned(prev), next: turned(next), before: n.left + inset - p.right, after: x.left - c.right, noX: mid(n) - mid(dr), countX: mid(c) - mid(dr), slash: getComputedStyle(count.querySelector('.of')).display, text: count.textContent,
+        stacked: p.bottom <= n.top && n.bottom <= c.top + 1 && c.bottom <= x.top }; })()`);
+
     let v = await where();
+    let pg = await pager();
+    check('in a row the arrows point left and right and the page number sits in the middle between them', pg.prev === 0 && pg.next === 0 && Math.abs(pg.before - pg.after) < 1.5 && pg.slash !== 'none' && pg.text === '/ 12', JSON.stringify(pg));
     check('the dock starts at the bottom middle, 16 px up, in a row', v.side === 'bottom' && Math.abs(v.cx) < 2 && Math.abs(v.bottom - 16) < 2 && !v.column, JSON.stringify(v));
     check('a grip leads the dock, ahead of the page buttons, with a tooltip', (await js(win, `(() => { const g = document.querySelector('.dock').firstElementChild; return g.className === 'grip' && g.title === 'Drag to move' && g.getAttribute('aria-label') === 'Drag to move'; })()`)));
     await dragTo(...edges.left, true);
@@ -596,6 +605,8 @@ app.whenReady().then(async () => {
     v = await where();
     check('dropped near the left edge it stands at the left middle, as a column', v.side === 'left' && v.column && Math.abs(v.left - 16) < 2 && Math.abs(v.cy) < 2 && v.ghosts === 0 && !v.dragging && v.opacity === '1' && v.inside, JSON.stringify(v));
     check('and the main process was told once, with the side', JSON.stringify(calls.filter((c) => c.channel === 'pdfws:dock').map((c) => c.args)) === '[["left"]]' && settings.pdfView.dock === 'left');
+    pg = await pager();
+    check('in a column the arrows point up and down, and the page and the total are stacked in the middle without the slash', pg.prev === 90 && pg.next === 90 && pg.slash === 'none' && pg.text === '/ 12' && pg.stacked && Math.abs(pg.noX) < 1.5 && Math.abs(pg.countX) < 1.5, JSON.stringify(pg));
     await shot(win, 'workspace-dock-left.png');
 
     const menuBeside = async (side) => {
@@ -630,6 +641,11 @@ app.whenReady().then(async () => {
     await dragTo(...edges.bottom);
     v = await where();
     check('dragged back to the bottom edge it stands at the bottom middle again', v.side === 'bottom' && !v.column && Math.abs(v.bottom - 16) < 2 && Math.abs(v.cx) < 2, JSON.stringify(v));
+    await js(win, `workspaceViewer.viewer.currentPageNumber = 10`);
+    await sleep(500);
+    pg = await pager();
+    check('and with two digits the page number is still in the middle between the arrows', await js(win, `document.querySelector('.pageno').value`) === '10' && pg.prev === 0 && Math.abs(pg.before - pg.after) < 1.5, JSON.stringify(pg));
+    await js(win, `workspaceViewer.viewer.currentPageNumber = 1`);
     check('at the bottom the View menu opens above it', await menuBeside('bottom'));
     await closeMenu();
 

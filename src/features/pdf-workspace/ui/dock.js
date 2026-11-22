@@ -80,8 +80,8 @@
     grip.type = 'button';
     grip.title = 'Drag to move';
     grip.setAttribute('aria-label', 'Drag to move');
-    const previous = button('sm', 'left', 'Previous page', 'previousPage');
-    const next = button('sm', 'right', 'Next page', 'nextPage');
+    const previous = button('sm step', 'left', 'Previous page', 'previousPage');
+    const next = button('sm step', 'right', 'Next page', 'nextPage');
     const page = el('input', 'pageno');
     page.setAttribute('aria-label', 'Page');
     page.inputMode = 'numeric';
@@ -119,7 +119,10 @@
       menu.hidden = false;
       zoom.setAttribute('aria-expanded', 'true');
     };
-    const sync = () => { page.value = viewer.currentPageNumber; };
+    // The box is as wide as its digits, so the number and the total sit in the middle between the arrows whatever the page.
+    const fit = () => { page.style.width = `calc(${Math.max(page.value.length, 1)}ch + 10px)`; };
+    const sync = () => { page.value = viewer.currentPageNumber; fit(); };
+    page.oninput = fit;
     page.onfocus = () => page.select();
     page.onblur = sync;
     page.onkeydown = (e) => {
@@ -131,13 +134,12 @@
     document.addEventListener('pointerdown', (e) => { if (menuOpen() && !e.target.closest('.zoomgroup')) closeMenu(); });
 
     eventBus.on('pagesinit', () => {
-      count.textContent = `/ ${viewer.pagesCount}`;
-      page.size = String(viewer.pagesCount).length + 1;
+      count.replaceChildren(el('span', 'of', '/ '), String(viewer.pagesCount));
       sync();
       dock.hidden = false;
     });
     eventBus.on('pagechanging', ({ pageNumber }) => {
-      if (document.activeElement !== page) page.value = pageNumber;
+      if (document.activeElement !== page) { page.value = pageNumber; fit(); }
       if (focusReading() || dock.classList.contains('tuck')) showPill(`${pageNumber} / ${viewer.pagesCount}`);
     });
     eventBus.on('scalechanging', ({ scale, presetValue }) => {

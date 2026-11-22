@@ -96,13 +96,17 @@ html.solid .window { background: var(--solid); }
 .sm { width: 30px; height: 30px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
 .sm:hover { background: var(--hover); color: var(--txt); }
 .sm .i { width: 16px; height: 16px; }
-.pagebox { display: flex; align-items: center; gap: 4px; height: 30px; padding: 0 8px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.pageno { height: 24px; padding: 0; text-align: center; border: 1px solid transparent; border-radius: 6px; background: transparent; font: inherit; font-weight: 700; color: var(--txt); outline: none; }
+.pagebox { display: flex; align-items: center; gap: 0; height: 30px; padding: 0 8px 0 4px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pageno { height: 24px; padding: 0 4px; text-align: center; border: 1px solid transparent; border-radius: 6px; background: transparent; font: inherit; font-weight: 700; color: var(--txt); outline: none; }
 .pageno:hover { border-color: var(--field-line); background: var(--field); }
 .pageno:focus { border-color: var(--accent); background: var(--field); box-shadow: 0 0 0 3px var(--accent-soft); }
 .zoomgroup { position: relative; display: flex; align-items: center; gap: 2px; }
 .well[data-dock="left"] .zoomgroup, .well[data-dock="right"] .zoomgroup { align-self: stretch; flex-direction: column; }
-.well[data-dock="left"] .pagebox, .well[data-dock="right"] .pagebox { height: auto; padding: 4px 0; flex-direction: column; gap: 2px; }
+.well[data-dock="left"] .pagebox, .well[data-dock="right"] .pagebox { height: auto; padding: 4px 0; flex-direction: column; gap: 3px; }
+.well[data-dock="left"] .pagecount, .well[data-dock="right"] .pagecount { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.well[data-dock="left"] .pagecount::before, .well[data-dock="right"] .pagecount::before { content: ''; width: 16px; height: 1px; background: var(--line); }
+.well[data-dock="left"] .pagecount .of, .well[data-dock="right"] .pagecount .of { display: none; }
+.well[data-dock="left"] .step .i, .well[data-dock="right"] .step .i { transform: rotate(90deg); }
 .well[data-dock="left"] .zoom, .well[data-dock="right"] .zoom { min-width: 0; width: 64px; padding: 0; font-size: 12px; }
 .zoom { height: 30px; min-width: 54px; padding: 0 8px; border: 0; border-radius: 8px; background: none; color: var(--txt); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer; }
 .zoom:hover { background: var(--hover); }
