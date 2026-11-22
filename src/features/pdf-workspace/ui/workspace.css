@@ -124,7 +124,7 @@ body.focus:not(.reveal-dock) .dockwrap:not(:focus-within) :is(.dock, .fold) { po
 .sm:hover { background: var(--hover); color: var(--txt); }
 .sm .i { width: 16px; height: 16px; }
 .pagebox { display: flex; align-items: center; gap: 0; height: 30px; padding: 0 8px 0 4px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.pageno { height: 24px; padding: 0 4px; text-align: center; border: 1px solid transparent; border-radius: 6px; background: transparent; font: inherit; font-weight: 700; color: var(--txt); outline: none; }
+.pageno { height: 24px; padding: 0 4px 2px; text-align: center; border: 1px solid transparent; border-radius: 6px; background: transparent; font: inherit; font-weight: 700; color: var(--txt); outline: none; }
 .pageno:hover { border-color: var(--field-line); background: var(--field); }
 .pageno:focus { border-color: var(--accent); background: var(--field); box-shadow: 0 0 0 3px var(--accent-soft); }
 .zoomgroup { position: relative; display: flex; align-items: center; gap: 2px; }

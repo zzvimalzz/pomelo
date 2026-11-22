@@ -612,6 +612,19 @@ app.whenReady().then(async () => {
     let v = await where();
     let pg = await pager();
     check('in a row the arrows point left and right and the page number sits in the middle between them', pg.prev === 0 && pg.next === 0 && Math.abs(pg.before - pg.after) < 1.5 && pg.slash !== 'none' && pg.text === '/ 12', JSON.stringify(pg));
+    const ink = async (selector) => {
+      const r = await js(win, `(() => { const b = document.querySelector('${selector}').getBoundingClientRect(); return [b.left + 3, b.top, b.right - 3, b.bottom]; })()`);
+      const img = await win.webContents.capturePage();
+      const k = img.getSize().width / win.getContentSize()[0];
+      const bm = img.toBitmap();
+      const px = (x, y) => { const o = (y * img.getSize().width + x) * 4; return (bm[o] + bm[o + 1] + bm[o + 2]) / 3; };
+      const bg = px(Math.floor(r[0] * k), Math.floor(r[1] * k) + 1);
+      let top = Infinity; let bottom = -1;
+      for (let y = Math.floor(r[1] * k); y < Math.ceil(r[3] * k); y++) for (let x = Math.floor(r[0] * k); x < Math.ceil(r[2] * k); x++) if (Math.abs(px(x, y) - bg) > 70) { top = Math.min(top, y); bottom = Math.max(bottom, y); }
+      return { top: top / k, bottom: bottom / k };
+    };
+    const [digit, total] = [await ink('.pageno'), await ink('.pagecount')];
+    check('the page number and the total stand on the same line', Math.abs(digit.top - total.top) <= 1 && Math.abs(digit.bottom - total.bottom) <= 1, JSON.stringify([digit, total]));
     check('the dock starts at the bottom middle, 16 px up, in a row', v.side === 'bottom' && Math.abs(v.cx) < 2 && Math.abs(v.bottom - 16) < 2 && !v.column, JSON.stringify(v));
     check('a grip leads the dock, ahead of the page buttons, with a tooltip', (await js(win, `(() => { const g = document.querySelector('.dock').firstElementChild; return g.className === 'grip' && g.title === 'Drag to move' && g.getAttribute('aria-label') === 'Drag to move'; })()`)));
     await dragTo(...edges.left, true);
