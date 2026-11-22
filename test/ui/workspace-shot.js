@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Opens the real workspace window on PDFs drawn here: the window's size, place and look in both themes (glass and the opaque
 // window of Windows 10), the options pdf.js is given, how many bytes a 40 MB, 3 000-page file costs to show its first page, while
-// idle and after scrolling 50 pages, the comments a file holds as markers beside the page, the scroll bars, the pages panel, a password-protected
+// idle and after scrolling 50 pages, the comments a file holds as markers beside the page, the scroll bars, the pages panel and its outline, a password-protected
 // file, a file that is not a PDF, a file that is not there, and that the page is cut off from the network. Saves screenshots.
 //   npx electron test/ui/workspace-shot.js
 const { app, BrowserWindow, ipcMain, nativeTheme, screen } = require('electron');
@@ -91,6 +91,39 @@ async function makeCommentsPdf(name) {
   return file;
 }
 
+async function makeOutlinePdf(name) {
+  const doc = await PDFDocument.create();
+  for (let n = 1; n <= 5; n++) doc.addPage([595, 842]).drawText(`Outline test page ${n}`, { x: 60, y: 700, size: 22 });
+  const tree = [
+    { title: 'Chapter 1', page: 1, items: [{ title: 'Section 1.1', page: 2 }, { title: 'Section 1.2', page: 3 }] },
+    { title: 'Chapter 2', page: 4, closed: true, items: [{ title: 'Hidden child', page: 5 }] },
+    { title: '<b>Bold?</b> & more', page: 2 },
+    { title: 'Appendix' },
+  ];
+  const build = (list, parent) => {
+    const refs = list.map(() => doc.context.nextRef());
+    list.forEach((item, i) => {
+      const dict = { Title: PDFHexString.fromText(item.title), Parent: parent };
+      if (item.page) dict.Dest = [doc.getPage(item.page - 1).ref, 'Fit'];
+      if (i > 0) dict.Prev = refs[i - 1];
+      if (i < list.length - 1) dict.Next = refs[i + 1];
+      if (item.items) {
+        const kids = build(item.items, refs[i]);
+        Object.assign(dict, { First: kids.first, Last: kids.last, Count: item.closed ? -kids.count : kids.count });
+      }
+      doc.context.assign(refs[i], doc.context.obj(dict));
+    });
+    return { first: refs[0], last: refs[list.length - 1], count: list.length };
+  };
+  const outlines = doc.context.nextRef();
+  const top = build(tree, outlines);
+  doc.context.assign(outlines, doc.context.obj({ Type: 'Outlines', First: top.first, Last: top.last, Count: top.count }));
+  doc.catalog.set(PDFName.of('Outlines'), outlines);
+  const file = path.join(root, name);
+  fs.writeFileSync(file, await doc.save({ useObjectStreams: false }));
+  return file;
+}
+
 const inkOnFirstPage = (win) => js(win, `(() => { const c = document.querySelector('.page canvas'); if (!c) return -1; const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
   let dark = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 100 && d[i + 1] < 100 && d[i + 2] < 100) dark++; return dark; })()`);
 const closeAndWait = async (win) => { win.close(); await sleep(500); };
@@ -106,9 +139,15 @@ const dockState = (win) => js(win, `(() => { const d = document.querySelector('.
     menu: !d.querySelector('.menu').hidden, layout: workspaceViewer.viewer.spreadMode, full: document.body.classList.contains('focus') }; })()`);
 
 const panelState = (win) => js(win, `(() => { const p = document.getElementById('rail'); const b = document.getElementById('pagesbtn'); const w = document.querySelector('.well').getBoundingClientRect(); const items = [...document.querySelectorAll('.thumb')];
-  return { width: p.getBoundingClientRect().width, display: getComputedStyle(p).display, hidden: document.getElementById('thumbs').hidden, title: b.title, label: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'), disabled: b.disabled,
+  return { width: p.getBoundingClientRect().width, display: getComputedStyle(p).display, hidden: document.getElementById('railinner').hidden, title: b.title, label: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'), disabled: b.disabled,
     wellLeft: w.left, wellWidth: w.width, items: items.length, canvases: document.querySelectorAll('.thumb canvas').length, on: items.filter((i) => i.classList.contains('on')).map((i) => i.dataset.n).join(),
     labels: items.slice(0, 3).map((i) => i.getAttribute('aria-label')).join(), kept: window.workspaceSidebar.thumbs ? window.workspaceSidebar.thumbs.kept() : -1, current: workspaceViewer.viewer.currentPageNumber, page: document.querySelector('.pageno').value }; })()`);
+const outlineState = (win) => js(win, `(() => { const rows = [...document.querySelectorAll('#outline .orow')].filter((r) => !r.closest('[hidden]'));
+  const folds = {}; for (const r of document.querySelectorAll('#outline .orow')) if (r.parentElement.hasAttribute('aria-expanded')) folds[r.textContent] = r.parentElement.getAttribute('aria-expanded');
+  return { checked: [...document.querySelectorAll('.seg3 button')].map((b) => b.textContent + '=' + b.getAttribute('aria-checked')).join(), thumbsHidden: document.getElementById('thumbs').hidden, outlineHidden: document.getElementById('outline').hidden,
+    rows: rows.map((r) => r.textContent).join('|'), folds: JSON.stringify(folds), empty: document.querySelector('#outline .empty')?.textContent ?? '', trees: document.querySelectorAll('#outline .tree').length, markup: document.querySelectorAll('#outline b').length,
+    tabstops: document.querySelectorAll('#outline .orow[tabindex="0"]').length, focused: document.activeElement.classList.contains('orow') ? document.activeElement.textContent : document.activeElement.id, current: workspaceViewer.viewer.currentPageNumber, canvases: document.querySelectorAll('.thumb canvas').length, inScroller: document.getElementById('scroller').contains(document.activeElement) }; })()`);
+const clickRow = (win, title, part = 'span:last-child') => js(win, `[...document.querySelectorAll('#outline .orow')].find((r) => r.textContent === ${JSON.stringify(title)}).querySelector('${part}').click()`);
 const clickPagesButton = async (win) => { await js(win, `document.getElementById('pagesbtn').click()`); await sleep(900); };
 
 app.whenReady().then(async () => {
@@ -900,7 +939,7 @@ app.whenReady().then(async () => {
     const win = await openAndWait(fresh(), twelve);
     await sleep(800);
     let v = await panelState(win);
-    check(`${theme}: the title row has a Pages button, and the panel is shut with nothing built or drawn`, v.title === 'Pages' && v.label === 'Pages' && v.pressed === 'false' && !v.disabled && v.width === 0 && v.hidden && v.items === 0 && v.canvases === 0 && v.kept === 0, JSON.stringify(v));
+    check(`${theme}: the title row has a Pages button, and the panel is shut with nothing built or drawn`, v.title === 'Pages and outline' && v.label === 'Pages and outline' && v.pressed === 'false' && !v.disabled && v.width === 0 && v.hidden && v.items === 0 && v.canvases === 0 && v.kept === 0, JSON.stringify(v));
     const closedWidth = v.wellWidth;
     await clickPagesButton(win);
     v = await panelState(win);
@@ -969,6 +1008,149 @@ app.whenReady().then(async () => {
     await sleep(900);
     v = await js(win, `(() => { const w = document.querySelector('.well').getBoundingClientRect(); const s = document.getElementById('scroller'); return { wellWidth: w.width, sheet: document.querySelector('.page').getBoundingClientRect().width, scroller: s.clientWidth }; })()`);
     check('in a window of the smallest size the pages still fit beside the panel', v.wellWidth > 600 && v.sheet <= v.scroller, JSON.stringify(v));
+    await closeAndWait(win);
+  }
+
+  console.log('the outline');
+  {
+    const win = await openAndWait(fresh(), await makeOutlinePdf('Outline.pdf'));
+    await sleep(800);
+    await clickPagesButton(win);
+    let v = await outlineState(win);
+    check('the panel opens on its Pages tab, and no bookmark is read until the Outline tab is shown', v.checked === 'Pages=true,Outline=false' && !v.thumbsHidden && v.outlineHidden && v.trees === 0 && v.canvases >= 3, JSON.stringify(v));
+    await js(win, `document.getElementById('taboutline').click()`);
+    await sleep(500);
+    v = await outlineState(win);
+    check('the Outline tab shows the bookmarks, the closed one without its children, and puts the thumbnails away', v.checked === 'Pages=false,Outline=true' && v.thumbsHidden && !v.outlineHidden && v.rows === 'Chapter 1|Section 1.1|Section 1.2|Chapter 2|<b>Bold?</b> & more|Appendix', JSON.stringify(v));
+    check('a bookmark with children is open, unless the file says it is closed', v.folds === JSON.stringify({ 'Chapter 1': 'true', 'Chapter 2': 'false' }), v.folds);
+    check('a title that looks like markup is text, not an element', v.markup === 0, JSON.stringify(v));
+    await shot(win, 'workspace-outline-light.png');
+    nativeTheme.themeSource = 'dark';
+    await sleep(500);
+    await shot(win, 'workspace-outline-dark.png');
+    nativeTheme.themeSource = 'light';
+    await clickRow(win, 'Chapter 2', '.otog');
+    await sleep(300);
+    v = await outlineState(win);
+    check('the chevron opens a closed bookmark and shows its children, and goes nowhere', v.rows.includes('Chapter 2|Hidden child') && v.folds.includes('"Chapter 2":"true"') && v.current === 1, JSON.stringify(v));
+    await clickRow(win, 'Chapter 2', '.otog');
+    await sleep(300);
+    check('and closes it again', !(await outlineState(win)).rows.includes('Hidden child'));
+    await clickRow(win, 'Section 1.2');
+    await sleep(600);
+    v = await outlineState(win);
+    check('a click on a bookmark goes to its page and returns the keys to the document', v.current === 3 && v.inScroller, JSON.stringify(v));
+    await clickRow(win, 'Chapter 2', '.otog');
+    await clickRow(win, 'Hidden child');
+    await sleep(600);
+    check('a bookmark under an opened one goes to its page', (await outlineState(win)).current === 5);
+    await clickRow(win, '<b>Bold?</b> & more');
+    await sleep(600);
+    check('a title with markup in it goes to its page too', (await outlineState(win)).current === 2);
+    await js(win, `workspaceViewer.viewer.currentPageNumber = 4`);
+    await sleep(400);
+    await clickRow(win, 'Appendix');
+    await sleep(400);
+    check('a bookmark with no destination is shown and does nothing', (await outlineState(win)).current === 4);
+    await js(win, `document.querySelector('#outline .orow').focus()`);
+    v = await outlineState(win);
+    check('one bookmark is in the Tab order, and the arrow keys move between them', v.tabstops === 1 && v.focused === 'Chapter 1', JSON.stringify(v));
+    await press(win, 'Down');
+    check('Down moves to the next bookmark', (await outlineState(win)).focused === 'Section 1.1');
+    await press(win, 'Left');
+    check('Left on a child goes to its parent', (await outlineState(win)).focused === 'Chapter 1');
+    await press(win, 'Left');
+    v = await outlineState(win);
+    check('Left on an open bookmark closes it', v.folds.includes('"Chapter 1":"false"') && !v.rows.includes('Section 1.1') && v.tabstops === 1, JSON.stringify(v));
+    await press(win, 'Right');
+    check('Right opens it', (await outlineState(win)).rows.startsWith('Chapter 1|Section 1.1'));
+    await press(win, 'Right');
+    check('and Right again goes to its first child', (await outlineState(win)).focused === 'Section 1.1');
+    await press(win, 'Return');
+    await sleep(500);
+    v = await outlineState(win);
+    check('Enter goes to the bookmark page', v.current === 2 && v.inScroller, JSON.stringify(v));
+    await js(win, `document.getElementById('tabpages').click()`);
+    await sleep(600);
+    v = await outlineState(win);
+    check('the Pages tab brings the thumbnails back, drawn, and puts the outline away', v.checked === 'Pages=true,Outline=false' && !v.thumbsHidden && v.outlineHidden && v.canvases >= 3, JSON.stringify(v));
+    await js(win, `document.getElementById('taboutline').click()`);
+    await clickPagesButton(win);
+    await clickPagesButton(win);
+    v = await outlineState(win);
+    check('the tab in use is the one the panel opens on again', v.checked === 'Pages=false,Outline=true' && !v.outlineHidden && v.rows.startsWith('Chapter 1'), JSON.stringify(v));
+    await closeAndWait(win);
+
+    const bare = await openAndWait(fresh(), twelve);
+    await sleep(800);
+    await clickPagesButton(bare);
+    await js(bare, `document.getElementById('taboutline').click()`);
+    await sleep(500);
+    v = await outlineState(bare);
+    check('a document with no bookmarks says so', v.empty === 'This document has no bookmarks' && v.trees === 0, JSON.stringify(v));
+    await closeAndWait(bare);
+  }
+
+  console.log('resizing the panel');
+  {
+    const win = await openAndWait(fresh(), twelve);
+    await sleep(800);
+    await clickPagesButton(win);
+    await until('thumbnails', async () => (await panelState(win)).canvases >= 3);
+    const geo = () => js(win, `(() => { const p = document.getElementById('rail'); const g = document.getElementById('railgrip'); const gr = g.getBoundingClientRect(); const c = document.querySelector('.thumb[data-n="1"] canvas'); const w = document.querySelector('.well').getBoundingClientRect();
+      return { panel: p.getBoundingClientRect().width, gripRight: gr.right, cursor: getComputedStyle(g).cursor, now: g.getAttribute('aria-valuenow'), min: g.getAttribute('aria-valuemin'), max: g.getAttribute('aria-valuemax'), dragging: p.classList.contains('dragging'),
+        sheet: document.querySelector('.thumb[data-n="1"] .sheet').getBoundingClientRect().width, canvasW: c ? c.width : 0, wellLeft: w.left, wellWidth: w.width, current: workspaceViewer.viewer.currentPageNumber, dpr: devicePixelRatio, page: document.querySelector('.page').getBoundingClientRect().width, scroller: document.getElementById('scroller').clientWidth }; })()`);
+    const mouse = (type, x, y) => win.webContents.sendInputEvent({ type, x, y, button: 'left', clickCount: 1, modifiers: type === 'mouseUp' ? [] : ['leftButtonDown'] });
+    const grabAt = () => js(win, `(() => { const r = document.getElementById('railgrip').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 300 }; })()`);
+    const drag = async (to, release = true) => {
+      const g = await grabAt();
+      mouse('mouseDown', g.x, g.y);
+      for (let i = 1; i <= 8; i++) { mouse('mouseMove', g.x + ((to - g.x) * i) / 8, g.y); await sleep(30); }
+      if (!release) return g;
+      mouse('mouseUp', to, g.y);
+      await sleep(900);
+      return g;
+    };
+    let v = await geo();
+    check('the panel has a grip on its right edge with a resize cursor and its range, and starts at the narrowest, 214 px', v.panel === 214 && Math.abs(v.gripRight - 214) < 1 && v.cursor === 'col-resize' && v.min === '214' && v.max === '320' && v.now === '214' && Math.abs(v.sheet - 120) < 0.5, JSON.stringify(v));
+    const g = await drag(295, false);
+    v = await geo();
+    check('while the grip is dragged the panel follows the pointer at once and the sheets with it, the pictures not yet redrawn', v.dragging && Math.abs(v.panel - 300) <= 1 && Math.abs(v.sheet - 206) <= 1 && v.canvasW === Math.ceil(120 * Math.min(v.dpr, 2)), JSON.stringify(v));
+    await shot(win, 'workspace-panel-drag.png');
+    mouse('mouseUp', 295, g.y);
+    await sleep(900);
+    v = await geo();
+    check('let go, it keeps that width, the document area has the rest, and the thumbnails are drawn again at the new size', !v.dragging && Math.abs(v.panel - 300) <= 1 && Math.abs(v.wellLeft - v.panel) <= 1 && Math.abs(v.sheet - 206) <= 1 && v.canvasW === Math.ceil(206 * Math.min(v.dpr, 2)) && v.now === String(Math.round(v.panel)) && v.current === 1, JSON.stringify(v));
+    await drag(900);
+    v = await geo();
+    check('dragged far to the right it stops at 320 px, with the thumbnails at their largest', v.panel === 320 && v.now === '320' && Math.abs(v.sheet - 226) <= 1, JSON.stringify(v));
+    await shot(win, 'workspace-panel-wide.png');
+    win.setSize(900, 600);
+    await sleep(900);
+    v = await geo();
+    check('in a window of the smallest size the widest panel still leaves the pages room', v.wellWidth >= 550 && v.page <= v.scroller, JSON.stringify(v));
+    win.setSize(1200, 800);
+    await sleep(600);
+    await drag(5);
+    v = await geo();
+    check('dragged far to the left it stops at 214 px, the size it had, with the thumbnails at 120 px', v.panel === 214 && v.now === '214' && Math.abs(v.sheet - 120) <= 1 && v.canvasW === Math.ceil(120 * Math.min(v.dpr, 2)), JSON.stringify(v));
+    await js(win, `document.getElementById('railgrip').focus()`);
+    await press(win, 'Right');
+    await sleep(500);
+    check('Right on the focused grip widens it by 16 px', (await geo()).panel === 230);
+    await press(win, 'Left');
+    await press(win, 'Left');
+    await sleep(500);
+    check('Left narrows it, and never below 214 px', (await geo()).panel === 214);
+    await drag(295);
+    await clickPagesButton(win);
+    check('shut, the panel gives all its room back', (await geo()).panel === 0);
+    await clickPagesButton(win);
+    v = await geo();
+    check('and it opens again at the width it had', Math.abs(v.panel - 300) <= 1 && v.canvasW === Math.ceil(206 * Math.min(v.dpr, 2)), JSON.stringify(v));
+    await js(win, `document.querySelector('.thumb[data-n="3"]').click()`);
+    await sleep(500);
+    check('a click on a thumbnail still goes to its page', (await geo()).current === 3);
     await closeAndWait(win);
   }
 

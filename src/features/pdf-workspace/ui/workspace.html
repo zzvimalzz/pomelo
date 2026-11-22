@@ -20,7 +20,12 @@
       <div class="titletools"><button class="ib" id="focus" type="button"></button></div>
     </header>
     <div class="body">
-      <aside class="panel" id="rail"><div class="scrolly" id="thumbs" hidden></div></aside>
+      <aside class="panel" id="rail"><div class="inner" id="railinner" hidden>
+        <div class="railgrip" id="railgrip" role="separator" aria-orientation="vertical" aria-label="Resize panel" tabindex="0"></div>
+        <div class="seg3" role="radiogroup" aria-label="Panel"><button type="button" role="radio" id="tabpages" aria-checked="true">Pages</button><button type="button" role="radio" id="taboutline" aria-checked="false">Outline</button></div>
+        <div class="scrolly" id="thumbs"></div>
+        <div class="scrolly" id="outline" hidden></div>
+      </div></aside>
       <main class="well" data-dock="bottom">
         <div class="scroller" id="scroller" tabindex="-1"><div class="pdfViewer" id="viewer"></div></div>
         <p class="failure" id="failure" hidden></p>
@@ -36,6 +41,7 @@
   <script src="keys.js"></script>
   <script src="comments-margin.js"></script>
   <script src="thumbs.js"></script>
+  <script src="outline.js"></script>
   <script src="sidebar.js"></script>
   <script src="dialogs.js"></script>
   <script src="dock-place.js"></script>

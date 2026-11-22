@@ -180,7 +180,7 @@
     bind('actualSize', () => { viewer.currentScaleValue = '1'; });
     // Outside focus reading these keys keep scrolling the page as the container does itself.
     const turning = (step) => (e) => {
-      if (!focusReading() || e.target.closest('.dock')) return false;
+      if (!focusReading() || e.target.closest('.dock, .panel')) return false;
       turn(viewer.currentPageNumber + step);
     };
     bind('nextPage', turning(1));
