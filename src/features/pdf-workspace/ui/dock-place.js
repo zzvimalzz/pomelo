@@ -29,9 +29,10 @@
     const to = dock.getBoundingClientRect();
     if (!calm()) {
       const move = `translate(${from.left + from.width / 2 - to.left - to.width / 2}px, ${from.top + from.height / 2 - to.top - to.height / 2}px)`;
-      dock.animate([{ transform: move }, { transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.2, .9, .25, 1)' });
+      const glide = dock.animate([{ transform: move }, { transform: 'none' }], { duration: 480, easing: 'cubic-bezier(.22, 1, .36, 1)' });
+      dock.classList.add('placing');
+      glide.onfinish = glide.oncancel = () => dock.classList.remove('placing');
     }
-    dock.dispatchEvent(new Event('placed'));
     if (changed) window.workspaceApi.setDock(side);
   }
 
