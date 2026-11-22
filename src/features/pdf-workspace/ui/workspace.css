@@ -20,12 +20,28 @@ html.solid .window { background: var(--solid); }
 
 .titlerow { flex: none; display: grid; grid-template-columns: minmax(176px, 1fr) auto minmax(176px, 1fr); align-items: center; height: 44px; -webkit-app-region: drag; }
 .titlerow b { grid-column: 2; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.titleleft { grid-column: 1; justify-self: start; display: flex; margin-left: 10px; -webkit-app-region: no-drag; }
 .titletools { grid-column: 3; justify-self: end; display: flex; gap: 2px; margin-right: 146px; -webkit-app-region: no-drag; }
 .ib { width: 30px; height: 30px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
 .ib:hover { background: var(--hover); color: var(--txt); }
 .ib .i { width: 16px; height: 16px; }
+.ib[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); }
+.ib:disabled { opacity: .4; pointer-events: none; }
 
-.well { position: relative; flex: 1; margin: 0 8px 8px; border-radius: 10px; background: var(--well); overflow: hidden; }
+.body { flex: 1; display: flex; min-height: 0; }
+.panel { flex: none; width: 0; overflow: hidden; transition: width .32s var(--ease); }
+.panel.open { width: 214px; }
+.panel.open + .well { margin-left: 0; }
+.scrolly { box-sizing: border-box; width: 214px; height: 100%; padding: 2px 6px 8px 8px; scroll-padding: 10px 0; overflow: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color .35s; }
+.scrolly:hover, .scrolly.scrolling { scrollbar-color: var(--thumb) transparent; }
+.thumbs { display: grid; gap: 14px; padding: 12px 0; justify-items: center; }
+.thumb { display: grid; gap: 5px; justify-items: center; padding: 0; border: 0; background: none; font: inherit; font-size: 11px; color: var(--muted); cursor: pointer; }
+.thumb .sheet { display: block; border-radius: 3px; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .14); outline: 2px solid transparent; outline-offset: 3px; transition: outline-color .15s; }
+.thumb .sheet canvas { display: block; width: 100%; height: 100%; border-radius: 3px; }
+.thumb.on .sheet, .thumb:focus-visible .sheet { outline-color: var(--accent); }
+.thumb:focus-visible { outline: none; }
+.thumb.on { color: var(--accent-ink); font-weight: 700; }
+.well { position: relative; flex: 1; min-width: 0; margin: 0 8px 8px; border-radius: 10px; background: var(--well); overflow: hidden; }
 .scroller { position: absolute; inset: 6px 3px 6px 0; overflow: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color .35s; }
 .scroller:focus-visible { outline: none; }
 .scroller:hover, .scroller.scrolling { scrollbar-color: var(--thumb) transparent; }
@@ -169,6 +185,7 @@ body.focus:not(.reveal-dock) .edgehint { opacity: .5; }
 body.focus .titlerow { position: absolute; inset: 0 0 auto; z-index: 6; background: var(--bar); backdrop-filter: blur(24px); border-bottom: 1px solid var(--bar-line); transform: translateY(-100%); opacity: 0;
   transition: transform .3s var(--ease), opacity .25s; }
 body.focus.reveal-top .titlerow, body.focus .titlerow:focus-within { transform: none; opacity: 1; }
+body.focus .panel { display: none; }
 body.focus .well { margin: 0; border-radius: 0; }
 body.focus .well[data-dock="top"] .dockwrap { top: 56px; }
 body.focus .scroller { top: 0; bottom: 0; }
@@ -204,5 +221,5 @@ body.focus .scroller { top: 0; bottom: 0; }
 .fld:focus, .fld:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); outline: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .cmark, .ccard, .card, .veil, .pw.shake, .emsg, .dockwrap, .dock, .fold, .fold .i, .menu, .flash, .titlerow, .edgehint { animation: none; transition: none; }
+  .panel, .cmark, .ccard, .card, .veil, .pw.shake, .emsg, .dockwrap, .dock, .fold, .fold .i, .menu, .flash, .titlerow, .edgehint { animation: none; transition: none; }
 }

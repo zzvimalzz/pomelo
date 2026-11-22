@@ -15,14 +15,18 @@
 <body>
   <div class="window">
     <header class="titlerow">
+      <div class="titleleft"><button class="ib" id="pagesbtn" type="button" aria-pressed="false" disabled></button></div>
       <b id="docname"></b>
       <div class="titletools"><button class="ib" id="focus" type="button"></button></div>
     </header>
-    <main class="well" data-dock="bottom">
-      <div class="scroller" id="scroller" tabindex="-1"><div class="pdfViewer" id="viewer"></div></div>
-      <p class="failure" id="failure" hidden></p>
-      <div class="edgehint"></div>
-    </main>
+    <div class="body">
+      <aside class="panel" id="rail"><div class="scrolly" id="thumbs" hidden></div></aside>
+      <main class="well" data-dock="bottom">
+        <div class="scroller" id="scroller" tabindex="-1"><div class="pdfViewer" id="viewer"></div></div>
+        <p class="failure" id="failure" hidden></p>
+        <div class="edgehint"></div>
+      </main>
+    </div>
   </div>
   <script src="../../../ui-shared/dom.js"></script>
   <script src="../../../ui-shared/icons.js"></script>
@@ -31,6 +35,8 @@
   <script src="../../../ui-shared/wheel-icons.js"></script>
   <script src="keys.js"></script>
   <script src="comments-margin.js"></script>
+  <script src="thumbs.js"></script>
+  <script src="sidebar.js"></script>
   <script src="dialogs.js"></script>
   <script src="dock-place.js"></script>
   <script src="dock.js"></script>

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Opens the real workspace window on PDFs drawn here: the window's size, place and look in both themes (glass and the opaque
 // window of Windows 10), the options pdf.js is given, how many bytes a 40 MB, 3 000-page file costs to show its first page, while
-// idle and after scrolling 50 pages, the comments a file holds as markers beside the page, the scroll bars, a password-protected
+// idle and after scrolling 50 pages, the comments a file holds as markers beside the page, the scroll bars, the pages panel, a password-protected
 // file, a file that is not a PDF, a file that is not there, and that the page is cut off from the network. Saves screenshots.
 //   npx electron test/ui/workspace-shot.js
 const { app, BrowserWindow, ipcMain, nativeTheme, screen } = require('electron');
@@ -104,6 +104,12 @@ const dockState = (win) => js(win, `(() => { const d = document.querySelector('.
   return { titles: own.map((b) => b.title), page: d.querySelector('.pageno').value, count: d.querySelector('.pagecount').textContent, zoom: d.querySelector('.zoom').textContent,
     folded: d.classList.contains('folded'), opacity: getComputedStyle(d).opacity, current: workspaceViewer.viewer.currentPageNumber, scale: workspaceViewer.viewer.currentScaleValue,
     menu: !d.querySelector('.menu').hidden, layout: workspaceViewer.viewer.spreadMode, full: document.body.classList.contains('focus') }; })()`);
+
+const panelState = (win) => js(win, `(() => { const p = document.getElementById('rail'); const b = document.getElementById('pagesbtn'); const w = document.querySelector('.well').getBoundingClientRect(); const items = [...document.querySelectorAll('.thumb')];
+  return { width: p.getBoundingClientRect().width, display: getComputedStyle(p).display, hidden: document.getElementById('thumbs').hidden, title: b.title, label: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'), disabled: b.disabled,
+    wellLeft: w.left, wellWidth: w.width, items: items.length, canvases: document.querySelectorAll('.thumb canvas').length, on: items.filter((i) => i.classList.contains('on')).map((i) => i.dataset.n).join(),
+    labels: items.slice(0, 3).map((i) => i.getAttribute('aria-label')).join(), kept: window.workspaceSidebar.thumbs ? window.workspaceSidebar.thumbs.kept() : -1, current: workspaceViewer.viewer.currentPageNumber, page: document.querySelector('.pageno').value }; })()`);
+const clickPagesButton = async (win) => { await js(win, `document.getElementById('pagesbtn').click()`); await sleep(900); };
 
 app.whenReady().then(async () => {
   fs.mkdirSync(out, { recursive: true });
@@ -888,6 +894,64 @@ app.whenReady().then(async () => {
     await closeAndWait(commented);
   }
 
+  console.log('the pages panel');
+  for (const theme of ['light', 'dark']) {
+    nativeTheme.themeSource = theme;
+    const win = await openAndWait(fresh(), twelve);
+    await sleep(800);
+    let v = await panelState(win);
+    check(`${theme}: the title row has a Pages button, and the panel is shut with nothing built or drawn`, v.title === 'Pages' && v.label === 'Pages' && v.pressed === 'false' && !v.disabled && v.width === 0 && v.hidden && v.items === 0 && v.canvases === 0 && v.kept === 0, JSON.stringify(v));
+    const closedWidth = v.wellWidth;
+    await clickPagesButton(win);
+    v = await panelState(win);
+    check(`${theme}: it slides a 214 px panel in beside the pages, and the document area gives up that room`, v.width === 214 && v.pressed === 'true' && !v.hidden && Math.abs(closedWidth - v.wellWidth - 206) <= 1, JSON.stringify(v));
+    check(`${theme}: every page has an entry, named by its number, and the page in view is the one outlined`, v.items === 12 && v.labels === 'Page 1,Page 2,Page 3' && v.on === '1', JSON.stringify(v));
+    await until('thumbnails', async () => (await panelState(win)).canvases >= 3);
+    const thumb = await js(win, `(() => { const c = document.querySelector('.thumb[data-n="1"] canvas'); const r = document.querySelector('.thumb[data-n="1"] .sheet').getBoundingClientRect(); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let pink = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] < 150 && d[i + 2] < 180) pink++; return { w: c.width, h: c.height, cssW: r.width, cssH: r.height, pink, canvases: document.querySelectorAll('.thumb canvas').length, dpr: devicePixelRatio }; })()`);
+    check(`${theme}: the visible pages are drawn as thumbnails 120 px wide in the page's proportions, not all twelve at once`, thumb.pink > 20 && Math.abs(thumb.cssW - 120) < 1 && Math.abs(thumb.cssH / thumb.cssW - 842 / 595) < 0.02 && Math.abs(thumb.h / thumb.w - 842 / 595) < 0.02 && thumb.w === Math.ceil(120 * Math.min(thumb.dpr, 2)) && thumb.canvases < 12, JSON.stringify(thumb));
+    await shot(win, `workspace-pages-panel-${theme}.png`);
+    await js(win, `document.querySelector('.thumb[data-n="7"]').scrollIntoView({ block: 'center' })`);
+    await sleep(500);
+    await js(win, `document.querySelector('.thumb[data-n="7"]').click()`);
+    await sleep(500);
+    v = await panelState(win);
+    check(`${theme}: a click on a thumbnail goes to that page, outlines it and returns the keys to the document`, v.current === 7 && v.page === '7' && v.on === '7' && (await js(win, `document.activeElement.id`)) === 'scroller', JSON.stringify(v));
+    await js(win, `workspaceViewer.viewer.currentPageNumber = 11`);
+    await sleep(500);
+    v = await js(win, `(() => { const l = document.getElementById('thumbs').getBoundingClientRect(); const t = document.querySelector('.thumb[data-n="11"]').getBoundingClientRect(); return { on: document.querySelector('.thumb.on').dataset.n, inside: t.top >= l.top && t.bottom <= l.bottom, list: [l.top, l.bottom], thumb: [t.top, t.bottom] }; })()`);
+    check(`${theme}: when the document moves to another page the outline follows and the panel scrolls to keep it in view`, v.on === '11' && v.inside, JSON.stringify(v));
+    await clickPagesButton(win);
+    v = await panelState(win);
+    check(`${theme}: the button shuts it again: the room comes back, the drawn thumbnails are let go and the bitmaps are kept`, v.width === 0 && v.hidden && v.pressed === 'false' && v.canvases === 0 && v.kept >= 3 && Math.abs(v.wellWidth - closedWidth) <= 1, JSON.stringify(v));
+    await clickPagesButton(win);
+    await sleep(200);
+    v = await panelState(win);
+    check(`${theme}: opened again it shows the page in view at once, from the bitmaps it kept`, v.width === 214 && v.canvases >= 3 && v.on === '11', JSON.stringify(v));
+    await closeAndWait(win);
+  }
+  nativeTheme.themeSource = 'light';
+  {
+    const win = await openAndWait(fresh(), twelve);
+    await sleep(800);
+    await clickPagesButton(win);
+    await js(win, `document.getElementById('focus').click()`);
+    check('focus reading with the panel open', await until('full screen', () => win.isFullScreen()));
+    await sleep(900);
+    let v = await panelState(win);
+    check('in focus reading the panel is out of the way and the pages have the whole width', v.display === 'none' && v.wellLeft === 0, JSON.stringify(v));
+    await js(win, `document.getElementById('focus').click()`);
+    check('leaving focus reading', await until('windowed', () => !win.isFullScreen()));
+    await sleep(900);
+    v = await panelState(win);
+    check('brings the panel back as it was, with its thumbnails', v.width === 214 && v.display !== 'none' && v.canvases >= 3 && v.pressed === 'true', JSON.stringify(v));
+    win.setSize(900, 600);
+    await sleep(900);
+    v = await js(win, `(() => { const w = document.querySelector('.well').getBoundingClientRect(); const s = document.getElementById('scroller'); return { wellWidth: w.width, sheet: document.querySelector('.page').getBoundingClientRect().width, scroller: s.clientWidth }; })()`);
+    check('in a window of the smallest size the pages still fit beside the panel', v.wellWidth > 600 && v.sheet <= v.scroller, JSON.stringify(v));
+    await closeAndWait(win);
+  }
+
   console.log('a big file costs nothing until it is read');
   {
     const big = await makePdf('Big.pdf', 3000, { extraBytes: 40 * 1048576 });
@@ -906,6 +970,24 @@ app.whenReady().then(async () => {
     await sleep(1500);
     const scrolled = await js(win, `({ canvases: document.querySelectorAll('.page canvas').length, page: workspaceViewer.viewer.currentPageNumber })`);
     check('after scrolling 50 pages the view is at page 51, fewer than 20 pages are drawn and under 5 % of the file was read', scrolled.page === 51 && scrolled.canvases > 0 && scrolled.canvases < 20 && workspace.served() < size * 0.05, `${JSON.stringify(scrolled)} ${workspace.served()} of ${size}`);
+    await clickPagesButton(win);
+    const panel = () => js(win, `({ canvases: document.querySelectorAll('.thumb canvas').length, entries: document.querySelectorAll('.thumb').length, kept: workspaceSidebar.thumbs.kept(), pages: document.querySelectorAll('.page canvas').length })`);
+    let walk = await panel();
+    check('the panel opens on the page in view with 3 000 entries and only the few in view drawn', walk.entries === 3000 && walk.canvases > 0 && walk.canvases < 30 && walk.kept <= walk.canvases + 20, JSON.stringify(walk));
+    for (let step = 0; step < 160 && walk.kept < 300; step++) {
+      await js(win, `document.getElementById('thumbs').scrollTop += 1500`);
+      await sleep(450);
+      walk = await panel();
+    }
+    for (let step = 0; step < 10; step++) { await js(win, `document.getElementById('thumbs').scrollTop += 1500`); await sleep(450); }
+    walk = await panel();
+    check('scrolling through hundreds of pages fills the thumbnail cache to 300 and no further, with fewer than 30 drawn at a time', walk.kept === 300 && walk.canvases > 0 && walk.canvases < 30, JSON.stringify(walk));
+    check('the pages of the main view stay under 20 drawn while the panel is busy', walk.pages > 0 && walk.pages < 20, JSON.stringify(walk));
+    await js(win, `document.getElementById('thumbs').scrollTop = document.getElementById('thumbs').scrollHeight`);
+    check('the last page is drawn when the panel reaches the end', await until('the last thumbnail', () => js(win, `!!document.querySelector('.thumb[data-n="3000"] canvas')`)));
+    await js(win, `document.querySelector('.thumb[data-n="3000"]').click()`);
+    await sleep(800);
+    check('and a click on it goes to page 3 000', (await js(win, `workspaceViewer.viewer.currentPageNumber`)) === 3000);
     await closeAndWait(win);
     check('closing the window closes the file', workspace.served() === 0 && (() => { try { fs.rmSync(big); return true; } catch { return false; } })());
   }
