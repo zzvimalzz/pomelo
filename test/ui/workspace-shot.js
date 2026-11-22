@@ -1091,6 +1091,68 @@ app.whenReady().then(async () => {
     await closeAndWait(bare);
   }
 
+  console.log('resizing the panel');
+  {
+    const win = await openAndWait(fresh(), twelve);
+    await sleep(800);
+    await clickPagesButton(win);
+    await until('thumbnails', async () => (await panelState(win)).canvases >= 3);
+    const geo = () => js(win, `(() => { const p = document.getElementById('rail'); const g = document.getElementById('railgrip'); const gr = g.getBoundingClientRect(); const c = document.querySelector('.thumb[data-n="1"] canvas'); const w = document.querySelector('.well').getBoundingClientRect();
+      return { panel: p.getBoundingClientRect().width, gripRight: gr.right, cursor: getComputedStyle(g).cursor, now: g.getAttribute('aria-valuenow'), min: g.getAttribute('aria-valuemin'), max: g.getAttribute('aria-valuemax'), dragging: p.classList.contains('dragging'),
+        sheet: document.querySelector('.thumb[data-n="1"] .sheet').getBoundingClientRect().width, canvasW: c ? c.width : 0, wellLeft: w.left, wellWidth: w.width, current: workspaceViewer.viewer.currentPageNumber, dpr: devicePixelRatio, page: document.querySelector('.page').getBoundingClientRect().width, scroller: document.getElementById('scroller').clientWidth }; })()`);
+    const mouse = (type, x, y) => win.webContents.sendInputEvent({ type, x, y, button: 'left', clickCount: 1, modifiers: type === 'mouseUp' ? [] : ['leftButtonDown'] });
+    const grabAt = () => js(win, `(() => { const r = document.getElementById('railgrip').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + 300 }; })()`);
+    const drag = async (to, release = true) => {
+      const g = await grabAt();
+      mouse('mouseDown', g.x, g.y);
+      for (let i = 1; i <= 8; i++) { mouse('mouseMove', g.x + ((to - g.x) * i) / 8, g.y); await sleep(30); }
+      if (!release) return g;
+      mouse('mouseUp', to, g.y);
+      await sleep(900);
+      return g;
+    };
+    let v = await geo();
+    check('the panel has a grip on its right edge with a resize cursor and its range, and starts at the narrowest, 214 px', v.panel === 214 && Math.abs(v.gripRight - 214) < 1 && v.cursor === 'col-resize' && v.min === '214' && v.max === '320' && v.now === '214' && Math.abs(v.sheet - 120) < 0.5, JSON.stringify(v));
+    const g = await drag(295, false);
+    v = await geo();
+    check('while the grip is dragged the panel follows the pointer at once and the sheets with it, the pictures not yet redrawn', v.dragging && Math.abs(v.panel - 300) <= 1 && Math.abs(v.sheet - 206) <= 1 && v.canvasW === Math.ceil(120 * Math.min(v.dpr, 2)), JSON.stringify(v));
+    mouse('mouseUp', 295, g.y);
+    await sleep(900);
+    v = await geo();
+    check('let go, it keeps that width, the document area has the rest, and the thumbnails are drawn again at the new size', !v.dragging && Math.abs(v.panel - 300) <= 1 && Math.abs(v.wellLeft - v.panel) <= 1 && Math.abs(v.sheet - 206) <= 1 && v.canvasW === Math.ceil(206 * Math.min(v.dpr, 2)) && v.now === String(Math.round(v.panel)) && v.current === 1, JSON.stringify(v));
+    await drag(900);
+    v = await geo();
+    check('dragged far to the right it stops at 320 px, with the thumbnails at their largest', v.panel === 320 && v.now === '320' && Math.abs(v.sheet - 226) <= 1, JSON.stringify(v));
+    await shot(win, 'workspace-panel-wide.png');
+    win.setSize(900, 600);
+    await sleep(900);
+    v = await geo();
+    check('in a window of the smallest size the widest panel still leaves the pages room', v.wellWidth >= 550 && v.page <= v.scroller, JSON.stringify(v));
+    win.setSize(1200, 800);
+    await sleep(600);
+    await drag(5);
+    v = await geo();
+    check('dragged far to the left it stops at 214 px, the size it had, with the thumbnails at 120 px', v.panel === 214 && v.now === '214' && Math.abs(v.sheet - 120) <= 1 && v.canvasW === Math.ceil(120 * Math.min(v.dpr, 2)), JSON.stringify(v));
+    await js(win, `document.getElementById('railgrip').focus()`);
+    await press(win, 'Right');
+    await sleep(500);
+    check('Right on the focused grip widens it by 16 px', (await geo()).panel === 230);
+    await press(win, 'Left');
+    await press(win, 'Left');
+    await sleep(500);
+    check('Left narrows it, and never below 214 px', (await geo()).panel === 214);
+    await drag(295);
+    await clickPagesButton(win);
+    check('shut, the panel gives all its room back', (await geo()).panel === 0);
+    await clickPagesButton(win);
+    v = await geo();
+    check('and it opens again at the width it had', Math.abs(v.panel - 300) <= 1 && v.canvasW === Math.ceil(206 * Math.min(v.dpr, 2)), JSON.stringify(v));
+    await js(win, `document.querySelector('.thumb[data-n="3"]').click()`);
+    await sleep(500);
+    check('a click on a thumbnail still goes to its page', (await geo()).current === 3);
+    await closeAndWait(win);
+  }
+
   console.log('a big file costs nothing until it is read');
   {
     const big = await makePdf('Big.pdf', 3000, { extraBytes: 40 * 1048576 });

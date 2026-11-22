@@ -1,53 +1,63 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The left panel: a switch between the pages (a thumbnail for every page, the page in view outlined, a click goes to it) and the outline.
-// The title row's button slides it open and shut; nothing is built or drawn until a tab is first shown. A classic script that adds
-// window.workspaceSidebar.
+// The title row's button slides it open and shut and a grip on its right edge sets its width; nothing is built or drawn until a tab is
+// first shown. A classic script that adds window.workspaceSidebar.
 (() => {
   const { el, icon } = window.pomeloUi;
   const SLIDE = 350;
+  const MIN = 214;
+  const MAX = 320;
+  const STEP = 16;
+  // The panel's width less the thumbnail's: the room round the sheet, which is 120 px at the narrowest.
+  const ROOM = 94;
   const panel = document.getElementById('rail');
   const inner = document.getElementById('railinner');
   const list = document.getElementById('thumbs');
   const outlineList = document.getElementById('outline');
+  const grip = document.getElementById('railgrip');
   const tabs = { pages: document.getElementById('tabpages'), outline: document.getElementById('taboutline') };
   const button = document.getElementById('pagesbtn');
 
   button.innerHTML = icon('sidebar');
   button.title = 'Pages and outline';
   button.setAttribute('aria-label', 'Pages and outline');
+  grip.setAttribute('aria-valuemin', String(MIN));
+  grip.setAttribute('aria-valuemax', String(MAX));
+  grip.setAttribute('aria-valuenow', String(MIN));
 
   function watch(pdf, viewer, eventBus, container, linkService) {
-    const thumbs = window.workspaceThumbs.create(pdf);
+    const thumbs = window.workspaceThumbs.create(pdf, MIN - ROOM);
     const items = [];
+    const visible = new Set();
+    let rail = MIN;
+    let grab = 0;
     let open = false;
     let tab = 'pages';
     let outlined = false;
     let current = null;
     let closing = null;
 
-    const size = (item, ratio) => {
-      const [width, height] = window.workspaceThumbs.fit(ratio);
-      item.sheet.style.width = `${width}px`;
-      item.sheet.style.height = `${height}px`;
+    const paint = (n, { bitmap, ratio }) => {
+      const { button: b, sheet } = items[n - 1];
+      const canvas = el('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext('2d').drawImage(bitmap, 0, 0);
+      b.style.setProperty('--r', String(ratio));
+      sheet.replaceChildren(canvas);
     };
 
     const seen = new IntersectionObserver((changes) => {
       for (const { target, isIntersecting } of changes) {
         const n = Number(target.dataset.n);
-        const item = items[n - 1];
-        if (!isIntersecting) {
+        if (isIntersecting) {
+          visible.add(n);
+          thumbs.want(n, (image) => paint(n, image));
+        } else {
+          visible.delete(n);
           thumbs.drop(n);
-          item.sheet.replaceChildren();
-          continue;
+          items[n - 1].sheet.replaceChildren();
         }
-        thumbs.want(n, ({ bitmap, ratio }) => {
-          const canvas = el('canvas');
-          canvas.width = bitmap.width;
-          canvas.height = bitmap.height;
-          canvas.getContext('2d').drawImage(bitmap, 0, 0);
-          size(item, ratio);
-          item.sheet.replaceChildren(canvas);
-        });
       }
     }, { root: list, rootMargin: '300px 0px' });
 
@@ -75,7 +85,7 @@
         b.setAttribute('aria-label', `Page ${n}`);
         const item = { button: b, sheet: el('span', 'sheet') };
         const view = viewer.getPageView(n - 1).viewport;
-        size(item, view.height / view.width);
+        b.style.setProperty('--r', String(view.height / view.width));
         b.append(item.sheet, String(n));
         items.push(item);
         grid.append(b);
@@ -118,6 +128,45 @@
       panel.classList.toggle('open', on);
       button.setAttribute('aria-pressed', String(on));
     }
+
+    function setRail(px) {
+      rail = Math.min(MAX, Math.max(MIN, Math.round(px)));
+      panel.style.setProperty('--rail', `${rail}px`);
+      panel.style.setProperty('--sheet', `${rail - ROOM}px`);
+      grip.setAttribute('aria-valuenow', String(rail));
+    }
+
+    // The sheets follow the width as it is dragged; the pictures are drawn again once it is let go.
+    function settle() {
+      thumbs.setWidth(rail - ROOM);
+      for (const n of visible) thumbs.want(n, (image) => paint(n, image));
+      mark(viewer.currentPageNumber, 'nearest');
+    }
+
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      grip.setPointerCapture(e.pointerId);
+      grab = panel.getBoundingClientRect().right - e.clientX;
+      panel.classList.add('dragging');
+      e.preventDefault();
+    });
+    grip.addEventListener('pointermove', (e) => {
+      if (grip.hasPointerCapture(e.pointerId)) setRail(e.clientX + grab - panel.getBoundingClientRect().left);
+    });
+    const release = (e) => {
+      if (!grip.hasPointerCapture(e.pointerId)) return;
+      panel.classList.remove('dragging');
+      settle();
+    };
+    grip.addEventListener('pointerup', release);
+    grip.addEventListener('pointercancel', release);
+    grip.addEventListener('keydown', (e) => {
+      const step = { ArrowLeft: -STEP, ArrowRight: STEP }[e.key];
+      if (!step) return;
+      setRail(rail + step);
+      settle();
+      e.preventDefault();
+    });
 
     button.onclick = () => setOpen(!open);
     for (const [name, b] of Object.entries(tabs)) b.onclick = () => show(name);
