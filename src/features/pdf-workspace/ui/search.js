@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Find in the document: a bar at the top of the well, opened by the title row's button or Ctrl+F. pdf.js's find controller does the
-// matching, the counting and the highlighting; this sends it the question and shows what it answers, and gives the list of hits in the
-// side panel and the marks beside the scroll bar the same view of the matches. A classic script that adds window.workspaceSearch.
+// matching, the counting and the highlighting; this sends it the question and shows what it answers, and gives the list of hits in its
+// own panel and the marks beside the scroll bar the same view of the matches. A classic script that adds window.workspaceSearch.
 (() => {
   const { el, icon } = window.pomeloUi;
   const { label, bind } = window.workspaceKeys;
@@ -104,10 +104,9 @@
     }
     window.workspaceResults.watch(pdf, hits, container);
     window.workspaceTicks.watch(hits, viewer, container);
-    const side = window.workspaceSidebar;
-    side.listen(() => listing.setAttribute('aria-pressed', String(side.showing('results'))));
+    window.workspaceResults.onchange = (on) => listing.setAttribute('aria-pressed', String(on));
     listing.setAttribute('aria-pressed', 'false');
-    listing.onclick = () => side.toggle('results');
+    listing.onclick = () => window.workspaceResults.toggle();
     eventBus.on('scalechanging', refresh);
     eventBus.on('spreadmodechanged', refresh);
 
@@ -122,7 +121,6 @@
 
     function open() {
       bar.hidden = false;
-      side.offer(true);
       button.setAttribute('aria-pressed', 'true');
       input.focus();
       input.select();
@@ -130,7 +128,7 @@
     }
     function shut() {
       bar.hidden = true;
-      side.offer(false);
+      window.workspaceResults.hide();
       refresh();
       button.setAttribute('aria-pressed', 'false');
       eventBus.dispatch('findbarclose', { source: bar });

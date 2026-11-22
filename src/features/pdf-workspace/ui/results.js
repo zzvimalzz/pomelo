@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The list of hits in the side panel: one row for every hit, the page it is on and a few words round it with the hit marked. Only the
+// The list of hits in a panel of its own on the right: one row for every hit, the page it is on and a few words round it with the hit marked. Only the
 // rows in view exist, so a word that is found thirty thousand times costs the same as one that is found ten times. A classic script
 // that adds window.workspaceResults.
 (() => {
-  const { el } = window.pomeloUi;
+  const { el, icon } = window.pomeloUi;
+  const SLIDE = 350;
   const ROW = 68;
   const SPARE = 3;
   const BEFORE = 36;
@@ -14,7 +15,14 @@
   // current() and jump(n). The text is the page's own, read the way pdf.js reads it to find. Its offsets count the words of the page
   // and not the line ends, which are kept apart so that a snippet can put a space where a line ended.
   function watch(pdf, hits, container) {
+    const panel = document.getElementById('hitpanel');
+    const inner = document.getElementById('hitinner');
     const list = document.getElementById('results');
+    const total = document.getElementById('hittotal');
+    const closer = document.getElementById('hitclose');
+    closer.innerHTML = icon('close');
+    closer.title = 'Hide results';
+    closer.setAttribute('aria-label', 'Hide results');
     const space = el('div', 'rowspace');
     const note = el('p', 'empty', 'No results');
     note.hidden = true;
@@ -23,6 +31,8 @@
     const texts = new Map();
     let shownCurrent = -2;
     let none = false;
+    let open = false;
+    let closing = null;
 
     function pageText(page) {
       if (!texts.has(page)) {
@@ -80,14 +90,16 @@
     }
 
     function draw() {
-      const total = hits.count();
-      note.hidden = total > 0 || !none;
-      space.style.setProperty('height', `${total * ROW}px`);
-      if (!total) reset();
+      if (!open) return;
+      const found = hits.count();
+      total.textContent = found ? `${found} ${found === 1 ? 'result' : 'results'}` : '';
+      note.hidden = found > 0 || !none;
+      space.style.setProperty('height', `${found * ROW}px`);
+      if (!found) reset();
       const height = list.clientHeight;
       if (!height) return;
       const first = Math.max(0, Math.floor(list.scrollTop / ROW) - SPARE);
-      const last = Math.min(total - 1, Math.ceil((list.scrollTop + height) / ROW) + SPARE);
+      const last = Math.min(found - 1, Math.ceil((list.scrollTop + height) / ROW) + SPARE);
       for (const [n, row] of rows) {
         if (n < first || n > last) { row.remove(); rows.delete(n); }
       }
@@ -105,13 +117,26 @@
       shownCurrent = now;
     }
 
+    function setOpen(on) {
+      open = on;
+      clearTimeout(closing);
+      if (on) inner.hidden = false;
+      else closing = setTimeout(() => { inner.hidden = true; reset(); }, SLIDE);
+      panel.classList.toggle('open', on);
+      api.onchange(on);
+      draw();
+    }
+
+    closer.onclick = () => setOpen(false);
+    closer.addEventListener('mousedown', (e) => e.preventDefault());
     list.addEventListener('scroll', draw, { passive: true });
     new ResizeObserver(draw).observe(list);
     api.draw = (nothing = none) => { none = nothing; draw(); };
     api.reset = reset;
-    api.shown = draw;
+    api.toggle = () => { setOpen(!open); return open; };
+    api.hide = () => { if (open) setOpen(false); };
   }
 
-  const api = { watch, draw: () => {}, reset: () => {}, shown: () => {} };
+  const api = { watch, draw: () => {}, reset: () => {}, toggle: () => false, hide: () => {}, onchange: () => {} };
   window.workspaceResults = api;
 })();

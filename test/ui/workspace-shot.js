@@ -172,7 +172,7 @@ const panelState = (win) => js(win, `(() => { const p = document.getElementById(
     labels: items.slice(0, 3).map((i) => i.getAttribute('aria-label')).join(), kept: window.workspaceSidebar.thumbs ? window.workspaceSidebar.thumbs.kept() : -1, current: workspaceViewer.viewer.currentPageNumber, page: document.querySelector('.pageno').value }; })()`);
 const outlineState = (win) => js(win, `(() => { const rows = [...document.querySelectorAll('#outline .orow')].filter((r) => !r.closest('[hidden]'));
   const folds = {}; for (const r of document.querySelectorAll('#outline .orow')) if (r.parentElement.hasAttribute('aria-expanded')) folds[r.textContent] = r.parentElement.getAttribute('aria-expanded');
-  return { checked: [...document.querySelectorAll('.seg3 button')].filter((b) => !b.hidden).map((b) => b.textContent + '=' + b.getAttribute('aria-checked')).join(), thumbsHidden: document.getElementById('thumbs').hidden, outlineHidden: document.getElementById('outline').hidden,
+  return { checked: [...document.querySelectorAll('.seg3 button')].map((b) => b.textContent + '=' + b.getAttribute('aria-checked')).join(), thumbsHidden: document.getElementById('thumbs').hidden, outlineHidden: document.getElementById('outline').hidden,
     rows: rows.map((r) => r.textContent).join('|'), folds: JSON.stringify(folds), empty: document.querySelector('#outline .empty')?.textContent ?? '', trees: document.querySelectorAll('#outline .tree').length, markup: document.querySelectorAll('#outline b').length,
     tabstops: document.querySelectorAll('#outline .orow[tabindex="0"]').length, focused: document.activeElement.classList.contains('orow') ? document.activeElement.textContent : document.activeElement.id, current: workspaceViewer.viewer.currentPageNumber, canvases: document.querySelectorAll('.thumb canvas').length, inScroller: document.getElementById('scroller').contains(document.activeElement) }; })()`);
 const clickRow = (win, title, part = 'span:last-child') => js(win, `[...document.querySelectorAll('#outline .orow')].find((r) => r.textContent === ${JSON.stringify(title)}).querySelector('${part}').click()`);
@@ -1253,6 +1253,7 @@ app.whenReady().then(async () => {
     const saved = await clipboard.readText();
     await clipboard.writeText('');
     mouse('mouseDown', rects[0].l + 1, rects[0].y);
+    await sleep(100);
     for (let i = 1; i <= 8; i++) { mouse('mouseMove', rects[0].l + 1 + ((rects[1].r - rects[0].l - 3) * i) / 8, rects[0].y + ((rects[1].y - rects[0].y) * i) / 8); await sleep(30); }
     mouse('mouseUp', rects[1].r - 2, rects[1].y);
     await sleep(300);
@@ -1274,6 +1275,7 @@ app.whenReady().then(async () => {
     const [one, two] = geometry.lines;
     const drag = async (from, to) => {
       mouse('mouseDown', from[0], from[1]);
+      await sleep(100);
       for (let i = 1; i <= 10; i++) { mouse('mouseMove', from[0] + ((to[0] - from[0]) * i) / 10, from[1] + ((to[1] - from[1]) * i) / 10); await sleep(30); }
       mouse('mouseUp', to[0], to[1]);
       await sleep(300);
@@ -1292,24 +1294,26 @@ app.whenReady().then(async () => {
   {
     const win = await openAndWait(fresh(), await makeSearchPdf('Search hits.pdf'));
     await sleep(500);
-    const resultsState = () => js(win, `(() => { const rows = [...document.querySelectorAll('#results .hitrow')]; const t = document.getElementById('tabresults'); const sel = document.querySelector('.textLayer .highlight.selected');
-      return { tabHidden: t.hidden, checked: [...document.querySelectorAll('.seg3 button')].filter((b) => !b.hidden).map((b) => b.textContent + '=' + b.getAttribute('aria-checked')).join(), open: document.getElementById('rail').classList.contains('open'),
-        listHidden: document.getElementById('results').hidden, rows: rows.length, pages: rows.map((r) => r.querySelector('.pg').textContent).join(), marks: rows.map((r) => r.querySelector('mark') ? r.querySelector('mark').textContent : '').join(),
+    const resultsState = () => js(win, `(() => { const rows = [...document.querySelectorAll('#results .hitrow')]; const sel = document.querySelector('.textLayer .highlight.selected'); const hp = document.getElementById('hitpanel'); const head = document.querySelector('.hithead'); const first = document.querySelector('#results .hitrow .pg'); const x = document.getElementById('hitclose').getBoundingClientRect(); const well = document.querySelector('.well').getBoundingClientRect();
+      return { panelOpen: hp.classList.contains('open'), panelWidth: hp.getBoundingClientRect().width, panelRight: hp.getBoundingClientRect().right, win: innerWidth, listHidden: document.getElementById('hitinner').hidden, railOpen: document.getElementById('rail').classList.contains('open'), railWidth: document.getElementById('rail').getBoundingClientRect().width,
+        pagesPressed: document.getElementById('pagesbtn').getAttribute('aria-pressed'), thumbs: document.querySelectorAll('.thumb').length, tabs: [...document.querySelectorAll('.seg3 button')].map((b) => b.textContent + '=' + b.getAttribute('aria-checked')).join(),
+        title: head.querySelector('b').textContent, total: head.querySelector('.total').textContent, headHeight: head.getBoundingClientRect().height, titleLeft: head.querySelector('b').getBoundingClientRect().left, rowLeft: first ? first.getBoundingClientRect().left : -1,
+        closeRight: x.right, listRight: document.getElementById('results').getBoundingClientRect().right, closeLabel: document.getElementById('hitclose').title, wellRight: well.right, wellLeft: well.left, rows: rows.length, pages: rows.map((r) => r.querySelector('.pg').textContent).join(), marks: rows.map((r) => r.querySelector('mark') ? r.querySelector('mark').textContent : '').join(),
         snips: rows.map((r) => r.querySelector('.snip').textContent), on: rows.filter((r) => r.classList.contains('on')).map((r) => rows.indexOf(r)).join(), space: parseFloat(document.querySelector('.rowspace').style.height) || 0,
         pressed: document.querySelector('.findbar button[title="Show all results"]').getAttribute('aria-pressed'), selectedText: sel ? sel.textContent : '', selectedPage: sel && sel.closest('.page') ? sel.closest('.page').dataset.pageNumber : '' }; })()`);
     const ticks = () => js(win, `(() => { const c = document.querySelector('.ticks'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; const x = Math.floor(c.width / 2); const bands = []; let cur = null;
-      for (let y = 0; y < c.height; y++) { const i = (y * c.width + x) * 4; if (d[i + 3] > 0) { if (!cur) { cur = { from: y, to: y, current: false }; bands.push(cur); } cur.to = y; if (d[i] > 240 && d[i + 1] > 200 && d[i + 1] < 235 && d[i + 2] < 60) cur.current = true; } else cur = null; }
+      for (let y = 0; y < c.height; y++) { const i = (y * c.width + x) * 4; if (d[i + 3] > 0) { if (!cur) { cur = { from: y, to: y, current: false }; bands.push(cur); } cur.to = y; if (d[i] > 240 && d[i + 1] > 220 && d[i + 1] < 250 && d[i + 2] < 100) cur.current = true; } else cur = null; }
       return { w: c.clientWidth, h: c.clientHeight, bands: bands.map((b) => ({ from: +(b.from / c.height).toFixed(3), to: +(b.to / c.height).toFixed(3), current: b.current })) }; })()`);
     let v = await resultsState();
-    check('with no search the Results tab is not offered and the list is not shown', v.tabHidden && v.checked === 'Pages=true,Outline=false' && v.listHidden, JSON.stringify(v));
+    check('with no search there is no Results panel, and the Pages panel has only its own two tabs', !v.panelOpen && v.panelWidth === 0 && v.listHidden && v.tabs === 'Pages=true,Outline=false', JSON.stringify(v));
     await press(win, 'F', ['control']);
     await typeInto(win, 'delivery');
     await countIs(win, '1 of 4');
     v = await resultsState();
-    check('while the bar is open the panel offers a Results tab after Pages and Outline, not yet chosen', !v.tabHidden && v.checked === 'Pages=true,Outline=false,Results=false', JSON.stringify(v));
+    check('an open find bar does not open the Results panel by itself', !v.panelOpen && v.panelWidth === 0 && v.pressed === 'false', JSON.stringify(v));
     const colours = await js(win, `(() => { const all = [...document.querySelectorAll('.textLayer .highlight')]; const now = all.find((h) => h.classList.contains('selected')); const other = all.find((h) => !h.classList.contains('selected'));
       return { now: getComputedStyle(now).backgroundColor, other: getComputedStyle(other).backgroundColor, ring: getComputedStyle(now).boxShadow }; })()`);
-    check('the hit being viewed is yellow, with a ring, and the other hits stay the pink', colours.now === 'rgba(255, 221, 0, 0.5)' && colours.other === 'rgba(232, 77, 111, 0.26)' && /199, 150, 0/.test(colours.ring), JSON.stringify(colours));
+    check('the hit being viewed is a plain yellow highlight, with no ring, and the other hits stay the pink', colours.now === 'rgba(255, 235, 59, 0.6)' && colours.other === 'rgba(232, 77, 111, 0.26)' && colours.ring === 'none', JSON.stringify(colours));
     let t = { bands: [] };
     await until('the marks', async () => { t = await ticks(); return t.bands.length >= 4; });
     check('a mark for each hit stands beside the scroll bar, the first page near the top and the last near the bottom, and the hit in view is yellow', t.w === 8 && t.bands.length === 4 && t.bands[0].from < 0.2 && t.bands[3].to > 0.7 && t.bands[0].current && !t.bands[3].current, JSON.stringify(t));
@@ -1324,7 +1328,9 @@ app.whenReady().then(async () => {
     await sleep(900);
     await until('rows', async () => { const r = await resultsState(); return r.snips.length === 4 && r.snips.every(Boolean); });
     v = await resultsState();
-    check('the list button opens the panel on Results, with a row for every hit and its button pressed', v.open && !v.listHidden && v.checked === 'Pages=false,Outline=false,Results=true' && v.rows === 4 && v.pressed === 'true', JSON.stringify(v));
+    check('the list button opens a Results panel of its own on the right, 280 px wide, with a row for every hit and its button pressed', v.panelOpen && !v.listHidden && Math.abs(v.panelWidth - 280) <= 1 && Math.abs(v.panelRight - v.win) <= 1 && v.rows === 4 && v.pressed === 'true' && v.title === 'Results' && v.total === '4 results', JSON.stringify(v));
+    check('the Pages panel is not opened or built by it: it stays shut with its button off and no thumbnail drawn, and the document area gives up the room on the right only', !v.railOpen && v.railWidth === 0 && v.pagesPressed === 'false' && v.thumbs === 0 && v.wellLeft < 20 && Math.abs(v.wellRight - (v.win - 280)) <= 12, JSON.stringify(v));
+    check('the panel is laid out evenly: the heading is 30 px high and its words stand where the rows\' words do, and the close button ends where the list ends', v.headHeight === 30 && Math.abs(v.titleLeft - v.rowLeft) <= 1 && Math.abs(v.closeRight - v.listRight) <= 1 && v.closeLabel === 'Hide results', JSON.stringify(v));
     check('each row names its page and marks the hit in a few words of the text round it', v.pages === 'Page 1,Page 2,Page 3,Page 3' && v.marks === 'Delivery,delivery,Delivery,delivery' && /^Delivery of the goods/.test(v.snips[0]) && /ask for delivery here/.test(v.snips[1]) && v.snips[1].startsWith('…') && v.snips[2] === 'Delivery redelivery', JSON.stringify(v.snips));
     check('the row of the hit in view is the one marked on', v.on === '2', JSON.stringify(v));
     await shot(win, 'workspace-search-results.png');
@@ -1344,7 +1350,13 @@ app.whenReady().then(async () => {
     await js(win, `document.querySelector('.findbar button[title="Show all results"]').click()`);
     await sleep(900);
     v = await resultsState();
-    check('the list button shuts the panel again', !v.open && v.pressed === 'false', JSON.stringify(v));
+    check('the list button shuts the panel again', !v.panelOpen && v.panelWidth === 0 && v.pressed === 'false', JSON.stringify(v));
+    await js(win, `document.querySelector('.findbar button[title="Show all results"]').click()`);
+    await sleep(900);
+    await js(win, `document.getElementById('hitclose').click()`);
+    await sleep(900);
+    v = await resultsState();
+    check('the panel\'s own close button shuts it and the list button follows', !v.panelOpen && v.pressed === 'false', JSON.stringify(v));
     await js(win, `document.querySelector('.findbar button[title="Show all results"]').click()`);
     await sleep(900);
     await js(win, `document.querySelector('.findbar input').focus()`);
@@ -1352,7 +1364,7 @@ app.whenReady().then(async () => {
     await sleep(900);
     v = await resultsState();
     t = await ticks();
-    check('closing the bar takes the Results tab, the rows and the marks away and puts the panel back on Pages', v.tabHidden && v.checked === 'Pages=true,Outline=false' && v.listHidden && v.rows === 0 && t.bands.length === 0, JSON.stringify({ v, t }));
+    check('closing the bar shuts the Results panel and takes the rows and the marks away', !v.panelOpen && v.panelWidth === 0 && v.listHidden && v.rows === 0 && v.pressed === 'false' && t.bands.length === 0, JSON.stringify({ v, t }));
     await closeAndWait(win);
   }
 
@@ -1399,6 +1411,11 @@ app.whenReady().then(async () => {
     await sleep(300);
     const v = await js(win, `(() => { const r = document.querySelector('.findbar').getBoundingClientRect(); return { open: !document.querySelector('.findbar').hidden, top: r.top, focused: document.activeElement.tagName }; })()`);
     check('Ctrl+F opens the bar in focus reading, below the place the title row comes to', v.open && v.top >= 50 && v.focused === 'INPUT', JSON.stringify(v));
+    const wellBefore = await js(win, `document.querySelector('.well').getBoundingClientRect().width`);
+    await js(win, `document.querySelector('.findbar button[title="Show all results"]').click()`);
+    await sleep(800);
+    const side = await js(win, `(() => { const p = document.getElementById('hitpanel'); const r = p.getBoundingClientRect(); return { position: getComputedStyle(p).position, right: r.right, width: r.width, win: innerWidth, well: document.querySelector('.well').getBoundingClientRect().width }; })()`);
+    check('in focus reading the Results panel floats over the right edge and the pages do not move', side.position === 'absolute' && Math.abs(side.right - side.win) <= 1 && Math.abs(side.width - 280) <= 1 && side.well === wellBefore, JSON.stringify(side));
     await press(win, 'Escape');
     check('the first Esc closes the bar and stays in focus reading', win.isFullScreen() && await js(win, `document.querySelector('.findbar').hidden`));
     await press(win, 'Escape');
