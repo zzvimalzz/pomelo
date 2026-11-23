@@ -46,7 +46,7 @@
     return found.sort((a, b) => b.rect[3] - a.rect[3]);
   }
 
-  function watch(pdf, viewer, eventBus, container, follow) {
+  function watch(viewer, eventBus, container, follow) {
     const button = document.getElementById('linksbtn');
     const list = document.getElementById('linklist');
     const chooser = document.getElementById('linkchoose');
@@ -55,6 +55,8 @@
     const entries = [];
     const known = new Map();
     let started = false;
+    let shown = false;
+    let run = 0;
     let finished = false;
     let copied = null;
     let scanned = 0;
@@ -86,7 +88,7 @@
       empty.hidden = entries.length > 0;
       if (!entries.length) emptyText.textContent = finished ? 'No links in this document' : 'Looking for links…';
       const found = entries.length ? `${entries.length} ${entries.length === 1 ? 'link' : 'links'}` : '';
-      status.textContent = finished ? found : `${found}${found ? ' · ' : ''}Reading page ${Math.min(scanned + 1, pdf.numPages)} of ${pdf.numPages}`;
+      status.textContent = !started ? '' : finished ? found : `${found}${found ? ' · ' : ''}Reading page ${Math.min(scanned + 1, viewer.pagesCount)} of ${viewer.pagesCount}`;
     }
 
     function make(entry) {
@@ -135,13 +137,30 @@
     }
 
     async function scan() {
+      const pdf = viewer.pdfDocument;
+      const mine = run;
       for (let n = 1; n <= pdf.numPages; n++) {
-        for (const found of await readPage(pdf, n).catch(() => [])) add(n, found);
+        const links = await readPage(pdf, n).catch(() => []);
+        if (mine !== run) return;
+        for (const found of links) add(n, found);
         scanned = n;
         bar();
         await new Promise((resolve) => setTimeout(resolve, 0));
+        if (mine !== run) return;
       }
       finished = true;
+      bar();
+    }
+
+    function reset() {
+      run++;
+      for (const entry of entries) entry.row.remove();
+      entries.length = 0;
+      known.clear();
+      started = false;
+      finished = false;
+      scanned = 0;
+      unlight();
       bar();
     }
 
@@ -190,6 +209,7 @@
 
     // Called by side.js when the tab comes on show or goes off it.
     function show(on) {
+      shown = on;
       if (on && !started) { started = true; bar(); scan(); }
       if (!on) unlight();
     }
@@ -235,7 +255,11 @@
     for (const b of [chooser, copier, button]) b.addEventListener('mousedown', (e) => e.preventDefault());
     button.onclick = () => window.workspaceSide.toggle('links');
     window.workspaceSide.onchange((open, tab) => button.setAttribute('aria-pressed', String(open && tab === 'links')));
-    eventBus.on('pagesinit', () => { button.disabled = false; });
+    eventBus.on('pagesinit', () => {
+      button.disabled = false;
+      if (shown) { started = true; bar(); scan(); }
+    });
+    eventBus.on('pagesdestroy', () => { reset(); button.disabled = true; });
     api.show = show;
   }
 

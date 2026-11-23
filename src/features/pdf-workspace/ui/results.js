@@ -15,7 +15,7 @@
   // hits: what search.js knows of the matches: count(), locate(n) giving { page, index }, offset(page, index), length(page, index),
   // current() and jump(n). The text is the page's own, read the way pdf.js reads it to find. Its offsets count the words of the page
   // and not the line ends, which are kept apart so that a snippet can put a space where a line ended.
-  function watch(pdf, hits, container) {
+  function watch(viewer, hits, container) {
     const list = document.getElementById('results');
     const total = document.getElementById('hittotal');
     const space = el('div', 'rowspace');
@@ -29,7 +29,7 @@
 
     function pageText(page) {
       if (!texts.has(page)) {
-        texts.set(page, pdf.getPage(page + 1).then((p) => p.getTextContent({ disableNormalization: true })).then(({ items }) => {
+        texts.set(page, viewer.pdfDocument.getPage(page + 1).then((p) => p.getTextContent({ disableNormalization: true })).then(({ items }) => {
           const ends = new Set();
           let text = '';
           for (const item of items) {

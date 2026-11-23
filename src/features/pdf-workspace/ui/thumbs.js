@@ -85,15 +85,20 @@
       if (current && current.n === n && !current.cancelled) cancel(current);
     }
 
-    function setWidth(next) {
-      if (next === width) return;
-      width = next;
+    function release() {
+      waiting.clear();
       for (const { bitmap } of cache.values()) bitmap.close();
       cache.clear();
       if (current && !current.cancelled) cancel(current);
     }
 
-    return { want, drop, setWidth, kept: () => cache.size };
+    function setWidth(next) {
+      if (next === width) return;
+      width = next;
+      release();
+    }
+
+    return { want, drop, setWidth, release, kept: () => cache.size };
   }
 
   window.workspaceThumbs = { create };

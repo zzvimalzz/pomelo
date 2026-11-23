@@ -38,7 +38,7 @@ const setSettings = (patch) => { writes++; settings = { ...settings, ...patch };
 const VIEW_KEYS = ['zoom', 'layout', 'sidebar', 'pageColours'];
 const fresh = ({ keepView = false, ...options } = {}) => {
   if (!keepView && settings.pdfView && typeof settings.pdfView === 'object') settings = { ...settings, pdfView: Object.fromEntries(Object.entries(settings.pdfView).filter(([key]) => !VIEW_KEYS.includes(key))) };
-  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links']) ipcMain.removeHandler(channel);
+  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links']) ipcMain.removeHandler(channel);
   const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), ...options });
   workspace.registerIpc();
   return workspace;
@@ -301,15 +301,152 @@ app.whenReady().then(async () => {
     check('a move or resize that arrives while the window is closing leaves no timer behind to fail on a window that is gone', thrown.length === 0, thrown.join(' | '));
   }
 
-  console.log('a second start while the window is open');
+  console.log('tabs: several PDFs in one window');
   {
-    const workspace = fresh();
-    const win = await openAndWait(workspace, small);
+    const tabState = (win) => js(win, `(() => { const strip = document.getElementById('tabs'); const tabs = [...strip.querySelectorAll('.tab')]; const name = document.getElementById('docname');
+      return { strip: !strip.hidden, names: tabs.map((t) => t.firstChild.textContent).join('|'), on: tabs.filter((t) => t.classList.contains('on')).map((t) => t.firstChild.textContent).join(), selected: tabs.filter((t) => t.getAttribute('aria-selected') === 'true').length,
+        stops: tabs.filter((t) => t.tabIndex === 0).length, name: name.textContent, nameShown: !name.hidden, pages: document.querySelectorAll('.page').length, canvases: document.querySelectorAll('.page canvas').length, failure: document.getElementById('failure').hidden ? '' : document.getElementById('failure').textContent,
+        text: document.querySelector('.page[data-loaded="true"] .textLayer')?.textContent ?? '', page: workspaceViewer.viewer.currentPageNumber, zoom: workspaceViewer.viewer.currentScaleValue, scroll: document.getElementById('scroller').scrollTop, dock: !document.querySelector('.dockwrap')?.hidden }; })()`);
+    const showing = (win, text, pages) => until(`${text} on show`, async () => { const s = await tabState(win); return s.text.includes(text) && s.pages === pages; });
+    const clickTab = (win, n) => js(win, `document.querySelectorAll('#tabs .tab')[${n}].click()`);
+    const closeTab = (win, n) => js(win, `document.querySelectorAll('#tabs .tab')[${n}].querySelector('.x').click()`);
     const other = await makePdf('Other.pdf', 1);
+    const notPdf = path.join(root, 'Not a PDF.pdf');
+    fs.writeFileSync(notPdf, 'This is a text file with a .pdf name.');
+
+    settings = { ...settings, pdfRecent: [] };
+    let workspace = fresh();
+    let win = await openAndWait(workspace, small);
+    let s = await tabState(win);
+    check('one PDF shows its name and no tabs', !s.strip && s.nameShown && s.name === 'Small.pdf', JSON.stringify(s));
+
     win.minimize();
     await workspace.open([other]);
-    check('it brings the same window to the front and opens nothing else', workspace.getWindow() === win && !win.isMinimized() && BrowserWindow.getAllWindows().length === 1 && (await js(win, `document.getElementById('docname').textContent`)) === 'Small.pdf');
+    await showing(win, 'page 1 of 1', 1);
+    s = await tabState(win);
+    check('a second start brings the same window to the front and adds a tab, which is shown', workspace.getWindow() === win && !win.isMinimized() && BrowserWindow.getAllWindows().length === 1 && s.strip && s.names === 'Small.pdf|Other.pdf' && s.on === 'Other.pdf' && !s.nameShown, JSON.stringify(s));
+    check('the window is named for the tab on show, and the tab strip is one tab stop', win.getTitle() === 'Other.pdf - Pomelo' && s.selected === 1 && s.stops === 1 && s.failure === '');
+    check('the page is drawn with ink on it', (await inkOnFirstPage(win)) > 100);
+    await shot(win, 'workspace-tabs.png');
+
+    await workspace.open([small]);
+    await sleep(500);
+    s = await tabState(win);
+    check('a file that is open already is shown, not opened a second time', s.names === 'Small.pdf|Other.pdf' && s.on === 'Small.pdf' && win.getTitle() === 'Small.pdf - Pomelo', JSON.stringify(s));
+    await workspace.open([path.join(root, 'small.PDF')]);
+    await sleep(300);
+    check('whatever the case of its path', (await tabState(win)).names === 'Small.pdf|Other.pdf');
+    check('both files are in the recent list, newest first, once each', JSON.stringify(settings.pdfRecent) === JSON.stringify([other, small]), JSON.stringify(settings.pdfRecent));
+
+    console.log('tabs: a tab is left as it was');
+    await js(win, `workspaceViewer.viewer.currentScaleValue = '1.5'`);
+    await sleep(400);
+    await js(win, `workspaceViewer.viewer.currentPageNumber = 3`);
+    await sleep(400);
+    const left = await tabState(win);
+    await clickTab(win, 1);
+    await showing(win, 'page 1 of 1', 1);
+    s = await tabState(win);
+    check('another tab shows its own document and only its pages are drawn: the tab left holds none', s.pages === 1 && s.canvases <= 1 && s.on === 'Other.pdf', JSON.stringify(s));
+    await clickTab(win, 0);
+    await showing(win, 'page', 3);
+    await sleep(600);
+    s = await tabState(win);
+    check('coming back, the tab has the page, the zoom and the place it was left at', s.page === 3 && s.zoom === '1.5' && Math.abs(s.scroll - left.scroll) <= 2 && s.canvases >= 1, `${JSON.stringify(left)} ${JSON.stringify(s)}`);
+    check('and the dock shows its page count', (await js(win, `document.querySelector('.pagecount').textContent.replace(/\\s/g, '')`)) === '/3' && s.dock);
+
+    console.log('tabs: the keyboard');
+    await js(win, `document.querySelector('#tabs .tab.on').focus()`);
+    await press(win, 'Right');
+    await showing(win, 'page 1 of 1', 1);
+    s = await tabState(win);
+    check('Right moves to the next tab and shows it, and the focus stays in the strip', s.on === 'Other.pdf' && (await js(win, `document.activeElement.classList.contains('on') && document.activeElement.closest('#tabs') !== null`)));
+    await press(win, 'Home');
+    await showing(win, 'page', 3);
+    check('Home goes to the first tab', (await tabState(win)).on === 'Small.pdf');
+    await press(win, 'End');
+    await showing(win, 'page 1 of 1', 1);
+    check('End goes to the last', (await tabState(win)).on === 'Other.pdf');
+
+    console.log('tabs: a file that cannot be shown among others');
+    await workspace.open([notPdf]);
+    await until('the failure', async () => (await tabState(win)).failure !== '');
+    s = await tabState(win);
+    check('a file that is not a PDF says so in its own tab and the others are untouched', s.on === 'Not a PDF.pdf' && s.failure === 'This file is damaged or is not a PDF' && s.pages === 0 && !s.dock && s.names === 'Small.pdf|Other.pdf|Not a PDF.pdf', JSON.stringify(s));
+    await clickTab(win, 0);
+    await showing(win, 'page', 3);
+    s = await tabState(win);
+    check('and the next tab hides the failure and shows its own pages', s.failure === '' && s.on === 'Small.pdf' && s.dock);
+    await clickTab(win, 2);
+    await until('the failure again', async () => (await tabState(win)).failure !== '');
+    check('coming back to it shows the same failure', (await tabState(win)).failure === 'This file is damaged or is not a PDF');
+
+    console.log('tabs: closing');
+    const tokens = await js(win, `workspaceApi.state().then((st) => st.documents.map((d) => d.token))`);
+    check('the main process knows all three documents', tokens.length === 3);
+    await closeTab(win, 2);
+    await showing(win, 'page 1 of 1', 1);
+    s = await tabState(win);
+    check('closing the rightmost tab, which was on show, shows the one before it', s.names === 'Small.pdf|Other.pdf' && s.on === 'Other.pdf' && s.strip && s.failure === '', JSON.stringify(s));
+    check('the closed document can no longer be read, the others still can', await js(win, `Promise.all([workspaceApi.read(${JSON.stringify(tokens[2])}, 0, 10).then(() => 'read', () => 'refused'), workspaceApi.read(${JSON.stringify(tokens[1])}, 0, 10).then(() => 'read', () => 'refused')]).then((r) => r.join())`) === 'refused,read');
+    await closeTab(win, 0);
+    await sleep(500);
+    s = await tabState(win);
+    check('closing a tab that is not on show leaves the one on show, and one tab left shows its name alone', s.on === 'Other.pdf' && !s.strip && s.nameShown && s.name === 'Other.pdf' && s.pages === 1 && win.getTitle() === 'Other.pdf - Pomelo', JSON.stringify(s));
+    check('the tab closed last can no longer be read either', await js(win, `workspaceApi.read(${JSON.stringify(tokens[0])}, 0, 10).then(() => 'read', () => 'refused')`) === 'refused');
+    check('the window is still open', workspace.getWindow() === win && !win.isDestroyed());
+    await win.webContents.executeJavaScript(`workspaceApi.state().then((st) => workspaceApi.close(st.documents[0].token))`);
+    await sleep(800);
+    check('closing the last tab closes the window and the file', win.isDestroyed() && workspace.getWindow() === null && workspace.served() === 0 && BrowserWindow.getAllWindows().length === 0);
+
+    console.log('tabs: ten at most');
+    const ten = [];
+    for (let i = 1; i <= 11; i++) ten.push(await makePdf(`Ten ${String(i).padStart(2, '0')}.pdf`, 1));
+    notices.length = 0;
+    workspace = fresh();
+    win = await openAndWait(workspace, ten[0]);
+    await workspace.open(ten.slice(1, 10));
+    await sleep(600);
+    s = await tabState(win);
+    check('ten files are ten tabs and the first of the last batch is on show', s.names.split('|').length === 10 && s.on === 'Ten 02.pdf' && notices.length === 0, JSON.stringify(s));
+    check('the tab strip fits the window: its tabs share the room and none is pushed out', await js(win, `(() => { const strip = document.getElementById('tabs').getBoundingClientRect(); const row = document.querySelector('.titlerow').getBoundingClientRect(); const last = [...document.querySelectorAll('#tabs .tab')].pop().getBoundingClientRect(); return strip.right <= row.right && last.right <= strip.right + 1 && strip.left >= row.left; })()`));
+    await shot(win, 'workspace-tabs-ten.png');
+    await workspace.open([ten[10]]);
+    await sleep(400);
+    s = await tabState(win);
+    check('an eleventh is refused in the corner notice and opens no tab', s.names.split('|').length === 10 && notices.length === 1 && notices[0].title === 'Too many PDFs open' && notices[0].detail === 'Close one to open another.', JSON.stringify([s.names, notices]));
+    await closeTab(win, 0);
+    await workspace.open([ten[10]]);
+    await until('the new tab', async () => (await tabState(win)).names.includes('Ten 11.pdf'));
+    check('with one closed there is room for it', (await tabState(win)).on === 'Ten 11.pdf');
+    check('the recent list holds ten paths at most, newest first', settings.pdfRecent.length === 10 && settings.pdfRecent[0] === ten[10] && !settings.pdfRecent.includes(ten[0]), JSON.stringify(settings.pdfRecent.map((p) => path.basename(p))));
     await closeAndWait(win);
+
+    console.log('tabs: files dropped on the window');
+    workspace = fresh();
+    win = await openAndWait(workspace, small);
+    const drop = async (files, items = []) => {
+      const dbg = win.webContents.debugger;
+      if (!dbg.isAttached()) dbg.attach('1.3');
+      const data = { items, files, dragOperationsMask: 1 };
+      for (const type of ['dragEnter', 'dragOver', 'drop']) await dbg.sendCommand('Input.dispatchDragEvent', { type, x: 300, y: 300, data });
+      await sleep(900);
+    };
+    await drop([other]);
+    s = await tabState(win);
+    check('a PDF dropped on the window opens in a new tab and is shown', s.names === 'Small.pdf|Other.pdf' && s.on === 'Other.pdf' && win.getTitle() === 'Other.pdf - Pomelo', JSON.stringify(s));
+    notices.length = 0;
+    await drop([path.join(root, 'readme.txt')]);
+    check('a file that is not a PDF opens nothing and says so', (await tabState(win)).names === 'Small.pdf|Other.pdf' && notices.length === 1 && notices[0].title === 'PDF files only', JSON.stringify(notices));
+    await drop([], [{ mimeType: 'text/plain', data: 'some words' }]);
+    check('dragged text, which is no file, opens nothing and says nothing', (await tabState(win)).names === 'Small.pdf|Other.pdf' && notices.length === 1, JSON.stringify(notices));
+    check('a drop made up by the page does nothing', (await js(win, `(() => { const data = new DataTransfer(); data.items.add(new File(['x'], 'fake.pdf')); document.dispatchEvent(new DragEvent('drop', { dataTransfer: data })); return document.querySelectorAll('#tabs .tab').length; })()`)) === 2);
+    win.webContents.debugger.detach();
+    notices.length = 0;
+    await closeAndWait(win);
+
+    console.log('tabs: the Open dialog starts where the last PDF was');
+    check('the newest file in the list gives the folder', require('../../src/features/pdf-workspace/recent').startFolder(settings.pdfRecent) === root);
   }
 
   console.log('the place of the window is remembered');

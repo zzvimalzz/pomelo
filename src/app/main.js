@@ -30,10 +30,11 @@ app.on('window-all-closed', () => { /* tray app: keep running */ });
 // Explorer's right-click menu starts Pomelo once per selected file: the primary instance gathers them and opens one wheel.
 let flow;
 const convertBatch = createBatcher(400, (files) => app.whenReady().then(() => flow.onOpen(files, true)));
+const openBatch = createBatcher(400, (files) => app.whenReady().then(() => showPdf(files)));
 app.on('second-instance', (_e, argv, cwd) => {
   const files = convertPathsFromArgv(argv);
   const pdfs = openPathsFromArgv(argv, cwd);
-  if (pdfs.length) app.whenReady().then(() => showPdf(pdfs));
+  if (pdfs.length) openBatch.add(pdfs);
   else if (files.length) convertBatch.add(files);
   else openSettings();
 });
@@ -155,7 +156,7 @@ app.whenReady().then(async () => {
   const toConvert = convertPathsFromArgv(process.argv);
   if (toConvert.length) convertBatch.add(toConvert);
   const toOpen = openPathsFromArgv(process.argv, process.cwd());
-  if (toOpen.length) showPdf(toOpen);
+  if (toOpen.length) openBatch.add(toOpen);
   // started again by an in-app update: add the engines the new version expects, then say it is done
   updates.reportUpdate({
     argv: process.argv, current: app.getVersion(), notify: (m) => jobs.addInfo(m), cleanup: updates.cleanup, log, ui: downloader,

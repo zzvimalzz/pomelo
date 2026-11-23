@@ -8,18 +8,25 @@ const { passwordBuffer } = require('#shared/node/secrets');
 
 const MAX_SPAN = 4 * 1048576;
 
+const info = ({ token, name, size }) => ({ token, name, size });
+const keyOf = (file) => path.resolve(file).toLowerCase();
+
 function createDocuments() {
   const byToken = new Map();
   const passwords = new Map();
+
+  // Windows paths are not case-sensitive, so two spellings of one file are one document.
+  const find = (file) => { const doc = [...byToken.values()].find((d) => d.key === keyOf(file)); return doc ? info(doc) : null; };
+  const list = () => [...byToken.values()].map(info);
 
   async function open(file) {
     const handle = await fs.promises.open(file, 'r');
     try {
       const stat = await handle.stat();
       if (!stat.isFile()) throw Object.assign(new Error('not a file'), { code: 'ENOTFILE' });
-      const doc = { token: crypto.randomBytes(32).toString('hex'), name: path.basename(file), size: stat.size, handle, served: 0 };
+      const doc = { token: crypto.randomBytes(32).toString('hex'), name: path.basename(file), size: stat.size, handle, served: 0, key: keyOf(file) };
       byToken.set(doc.token, doc);
-      return { token: doc.token, name: doc.name, size: doc.size };
+      return info(doc);
     } catch (e) {
       await handle.close();
       throw e;
@@ -48,6 +55,15 @@ function createDocuments() {
 
   const password = (token) => passwords.get(token);
 
+  function close(token) {
+    const doc = byToken.get(token);
+    if (!doc) return;
+    doc.handle.close().catch(() => {});
+    byToken.delete(token);
+    passwords.get(token)?.fill(0);
+    passwords.delete(token);
+  }
+
   function closeAll() {
     for (const doc of byToken.values()) doc.handle.close().catch(() => {});
     byToken.clear();
@@ -57,7 +73,7 @@ function createDocuments() {
 
   const served = () => [...byToken.values()].reduce((sum, doc) => sum + doc.served, 0);
 
-  return { open, read, unlock, password, closeAll, served };
+  return { open, find, list, read, unlock, password, close, closeAll, served };
 }
 
 module.exports = { createDocuments, MAX_SPAN };

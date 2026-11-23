@@ -48,8 +48,9 @@ function create({ asset, solid, saved, onBounds }) {
   return win;
 }
 
-async function choosePdf(parent) {
-  const options = { title: 'Open a PDF', properties: ['openFile'], filters: [{ name: 'PDF files', extensions: ['pdf'] }] };
+// folder: where the dialog starts, or undefined to leave it to Windows.
+async function choosePdf(parent, folder) {
+  const options = { title: 'Open a PDF', defaultPath: folder, properties: ['openFile', 'multiSelections'], filters: [{ name: 'PDF files', extensions: ['pdf'] }] };
   const picked = await (parent ? dialog.showOpenDialog(parent, options) : dialog.showOpenDialog(options));
   return picked.canceled ? [] : picked.filePaths;
 }

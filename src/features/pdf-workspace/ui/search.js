@@ -22,7 +22,7 @@
     return b;
   }
 
-  function watch(pdf, viewer, eventBus, container) {
+  function watch(viewer, eventBus, container) {
     const bar = el('div', 'findbar');
     bar.hidden = true;
     bar.setAttribute('role', 'search');
@@ -105,7 +105,7 @@
         window.workspaceTicks.draw();
       });
     }
-    window.workspaceResults.watch(pdf, hits, container);
+    window.workspaceResults.watch(viewer, hits, container);
     window.workspaceTicks.watch(hits, viewer, container);
     window.workspaceSide.onchange((shown, tab) => listing.setAttribute('aria-pressed', String(shown && tab === 'search')));
     listing.setAttribute('aria-pressed', 'false');
@@ -157,8 +157,19 @@
     // The focus stays where it is: a click on a button here must not take the keys from the field or the document.
     for (const part of [button, bar]) part.addEventListener('mousedown', (e) => { if (e.target !== input) e.preventDefault(); });
     eventBus.on('pagesinit', () => { button.disabled = false; });
+    eventBus.on('pagesdestroy', () => {
+      if (!bar.hidden) shut();
+      input.value = '';
+      count.textContent = '';
+      starts = [];
+      total = 0;
+      now = -1;
+      state = 0;
+      window.workspaceResults.reset();
+      button.disabled = true;
+    });
 
-    bind('find', () => open());
+    bind('find', () => { if (!button.disabled) open(); });
     current = { bar, shut };
     api.reveal = () => { if (bar.hidden) open(); };
     api.conceal = () => { if (!bar.hidden) shut(); };

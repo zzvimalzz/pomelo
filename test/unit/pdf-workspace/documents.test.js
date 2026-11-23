@@ -72,6 +72,21 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   expect('a refused password changes nothing', docs.password(doc.token).toString() === 'another');
   const last = docs.password(doc.token);
 
+  console.log('several documents');
+  const tabs = createDocuments();
+  const one = await tabs.open(file);
+  const two = await tabs.open(shrinking);
+  expect('the documents are listed in the order they were opened', JSON.stringify(tabs.list().map((d) => d.name)) === '["Report.pdf","Shrinking.pdf"]');
+  expect('a document is found by its path, whatever the case or the spelling of it', tabs.find(file)?.token === one.token && tabs.find(file.toUpperCase())?.token === one.token && tabs.find(path.join(root, '.', 'Report.pdf'))?.token === one.token && tabs.find(path.join(root, 'Other.pdf')) === null);
+  tabs.unlock(one.token, 'secret');
+  const secret = tabs.password(one.token);
+  tabs.close(one.token);
+  expect('closing one document closes only that one, and forgets and overwrites its password', tabs.list().length === 1 && tabs.find(file) === null && secret.every((b) => b === 0) && tabs.password(one.token) === undefined && await fails(tabs.read(one.token, 0, 10)) && (await tabs.read(two.token, 0, 10)).length === 10);
+  tabs.close(one.token);
+  tabs.close('not a token');
+  expect('closing a document twice, or one that was never open, does nothing', tabs.list().length === 1);
+  tabs.closeAll();
+
   console.log('closing');
   docs.closeAll();
   expect('closing forgets every password and overwrites it with zeros', docs.password(doc.token) === undefined && last.every((b) => b === 0));
