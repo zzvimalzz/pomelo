@@ -28,6 +28,8 @@ window.pomeloUi.icon = (() => {
     sidebar: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
     shrink: '<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+    globe: '<circle cx="12" cy="12" r="9.5"/><path d="M12 2.5a14.5 14.5 0 0 0 0 19 14.5 14.5 0 0 0 0-19M2.5 12h19"/>',
+    mail: '<rect x="2.5" y="4.5" width="19" height="15" rx="2"/><path d="m21.5 7.5-8.5 5.4a2 2 0 0 1-2 0L2.5 7.5"/>',
     up: '<path d="m18 15-6-6-6 6"/>',
     down: '<path d="m6 9 6 6 6-6"/>',
     close: '<path d="M18 6 6 18M6 6l12 12"/>',

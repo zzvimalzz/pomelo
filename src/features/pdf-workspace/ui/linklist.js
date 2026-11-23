@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The Links tab of the panel on the right (side.js): every web and mail address in the document, one row each, found by reading the pages in
 // turn the first time the tab is shown. A row is selected with its circle, goes to the link and lights it with a click and opens it with its
-// arrow; the Copy button copies the selected addresses, one to a line. A classic script that adds window.workspaceLinkList.
+// arrow; the circle in the heading selects or clears them all and the Copy button copies the selected addresses, one to a line. A classic
+// script that adds window.workspaceLinkList.
 (() => {
   const { el, icon } = window.pomeloUi;
   const WEB = /^(?:https?:|mailto:)/i;
@@ -13,10 +14,10 @@
   function parts(url) {
     try {
       const u = new URL(url);
-      if (u.protocol === 'mailto:') return [decodeURIComponent(u.pathname), '', 'Email'];
-      return [u.host, `${u.pathname === '/' ? '' : u.pathname}${u.search}${u.hash}`, 'Web'];
+      if (u.protocol === 'mailto:') return [decodeURIComponent(u.pathname), '', 'mail'];
+      return [u.host, `${u.pathname === '/' ? '' : u.pathname}${u.search}${u.hash}`, 'globe'];
     } catch {
-      return [url, '', 'Web'];
+      return [url, '', 'globe'];
     }
   }
 
@@ -52,6 +53,7 @@
     const chooser = document.getElementById('linkchoose');
     const copier = document.getElementById('linkcopy');
     const status = document.getElementById('linkscan');
+    const progress = document.getElementById('linkprogress');
     const entries = [];
     const known = new Map();
     let started = false;
@@ -64,7 +66,7 @@
     button.innerHTML = icon('link');
     button.title = 'Links in this document';
     button.setAttribute('aria-label', 'Links in this document');
-    const empty = el('div', 'linkempty');
+    const empty = el('div', 'sideempty');
     const emptyIcon = el('i');
     emptyIcon.innerHTML = icon('link');
     const emptyText = el('p');
@@ -78,15 +80,21 @@
 
     function bar() {
       const n = picked().length;
+      const all = n > 0 && n === entries.length;
       chooser.hidden = !entries.length;
-      chooser.textContent = n ? 'Clear' : 'Select All';
+      chooser.setAttribute('aria-checked', all ? 'true' : n ? 'mixed' : 'false');
+      chooser.innerHTML = icon(n && !all ? 'minus' : 'check');
+      chooser.title = n ? 'Clear' : 'Select All';
+      chooser.setAttribute('aria-label', chooser.title);
       copier.disabled = !n;
-      if (!copier.classList.contains('done')) copier.lastChild.textContent = !n ? 'Copy' : n === entries.length ? 'Copy All' : `Copy ${n}`;
+      if (!copier.classList.contains('done')) copier.lastChild.textContent = !n ? 'Copy' : all ? 'Copy All' : `Copy ${n}`;
       list.classList.toggle('picking', n > 0);
       empty.hidden = entries.length > 0;
       if (!entries.length) emptyText.textContent = finished ? 'No links in this document' : 'Looking for links…';
-      const found = entries.length ? `${entries.length} ${entries.length === 1 ? 'link' : 'links'}` : '';
-      status.textContent = finished ? found : `${found}${found ? ' · ' : ''}Reading page ${Math.min(scanned + 1, pdf.numPages)} of ${pdf.numPages}`;
+      status.textContent = entries.length ? `${entries.length} ${entries.length === 1 ? 'link' : 'links'}` : '';
+      progress.hidden = finished;
+      progress.title = `Reading page ${Math.min(scanned + 1, pdf.numPages)} of ${pdf.numPages}`;
+      progress.style.setProperty('--done', `${(100 * scanned) / pdf.numPages}%`);
     }
 
     function make(entry) {
@@ -99,15 +107,14 @@
       pick.setAttribute('role', 'checkbox');
       pick.setAttribute('aria-checked', 'false');
       pick.setAttribute('aria-label', 'Select this link');
-      pick.innerHTML = icon('check');
+      const [host, rest, kind] = parts(entry.url);
+      pick.innerHTML = icon(kind) + icon('check');
       const go = el('button', 'linkgo');
       go.type = 'button';
       go.title = entry.url;
-      const [host, rest, kind] = parts(entry.url);
       const line = el('span', 'linkurl');
       line.append(el('b', '', host), rest);
       const sub = el('span', 'linkpage', `Page ${entry.page}`);
-      sub.append(el('em', '', kind));
       go.append(line, sub);
       const out = el('button', 'sm linkopen');
       out.type = 'button';
@@ -125,7 +132,7 @@
       const old = known.get(url);
       if (old) {
         old.count++;
-        old.sub.firstChild.textContent = `Page ${old.page} · ${old.count} places`;
+        old.sub.textContent = `Page ${old.page} · ${old.count} places`;
         return;
       }
       const entry = { url, page, rect, count: 1, selected: false, row: null, sub: null };
@@ -154,6 +161,8 @@
     function unlight() {
       lit?.remove();
       lit = null;
+      wanted?.row.classList.remove('now');
+      wanted?.row.removeAttribute('aria-current');
       wanted = null;
     }
 
@@ -184,6 +193,8 @@
     function goTo(entry) {
       unlight();
       wanted = entry;
+      entry.row.classList.add('now');
+      entry.row.setAttribute('aria-current', 'true');
       viewer.scrollPageIntoView({ pageNumber: entry.page, destArray: [null, { name: 'XYZ' }, Math.max(0, entry.rect[0] - 20), entry.rect[3] + 90, null] });
       light(entry);
     }
