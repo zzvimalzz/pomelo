@@ -26,13 +26,13 @@ html.solid .window { background: var(--solid); }
 .ib { width: 30px; height: 30px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
 .ib:hover { background: var(--hover); color: var(--txt); }
 .ib .i { width: 16px; height: 16px; }
-#pagesbtn[aria-pressed="true"], #findbtn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); }
+#pagesbtn[aria-pressed="true"], #findbtn[aria-pressed="true"], #linksbtn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-ink); }
 .ib:disabled { opacity: .4; pointer-events: none; }
 
 .body { position: relative; flex: 1; display: flex; min-height: 0; }
 .panel { flex: none; width: 0; overflow: hidden; transition: width .32s var(--ease); }
 .panel.open { width: var(--rail, 214px); }
-.panel.dragging { transition: none; }
+.panel.dragging, .panel.still { transition: none; }
 .panel.open + .well { margin-left: 0; }
 .inner { position: relative; box-sizing: border-box; display: flex; flex-direction: column; width: var(--rail, 214px); height: 100%; padding: 2px 6px 8px 8px; }
 .inner[hidden] { display: none; }
@@ -43,12 +43,43 @@ html.solid .window { background: var(--solid); }
 .seg3 { flex: none; display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--hover); }
 .seg3 button { flex: 1; height: 26px; padding: 0 9px; border: 0; border-radius: 7px; background: none; font: inherit; font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; cursor: pointer; }
 .hitrow { position: absolute; left: 0; right: 0; height: 64px; box-sizing: border-box; display: grid; align-content: start; gap: 3px; padding: 7px 8px; border: 0; border-radius: 8px; background: none; text-align: left; font: inherit; color: var(--txt); cursor: pointer; }
-#hitpanel { --rail: 280px; }
+#hitpanel { --rail: 300px; }
 #hitpanel .inner { padding-right: 8px; padding-left: 6px; }
-.hithead { flex: none; display: flex; align-items: center; gap: 8px; height: 30px; margin-bottom: 4px; padding-left: 8px; }
-.hithead b { font-size: 12px; font-weight: 700; }
+.sidehead { flex: none; display: flex; align-items: center; gap: 6px; }
+.sidehead .seg3 { flex: 1; }
+.sideview { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.sideview[hidden] { display: none; }
+.hithead { flex: none; display: flex; align-items: center; height: 28px; margin: 4px 0 2px; padding-left: 8px; }
 .hithead .total { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
-.hithead .sm { margin-left: auto; }
+.linkbar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0; padding: 0 4px 0 8px; }
+.linkpick { margin-left: -6px; padding: 5px 7px; border: 0; border-radius: 7px; background: none; font: inherit; font-size: 12px; font-weight: 650; color: var(--accent-ink); cursor: pointer; }
+.linkpick:hover { background: var(--accent-soft); }
+.linkpick[hidden] { display: none; }
+.linkcopy { margin-left: auto; height: 28px; padding: 0 12px 0 10px; gap: 6px; font-size: 12px; }
+.linkcopy i { display: inline-flex; }
+.linkcopy:disabled { border-color: var(--line); background: var(--off); color: var(--faint); opacity: 1; }
+.linkscan { flex: none; margin: 0 8px 6px; font-size: 11.5px; color: var(--faint); }
+.linkscan:empty { display: none; }
+.linkrow { display: grid; grid-template-columns: 20px minmax(0, 1fr) 26px; align-items: center; gap: 6px; padding: 5px 4px 5px 8px; border-radius: 10px; content-visibility: auto; contain-intrinsic-size: auto 52px; }
+.linkrow:hover { background: var(--hover); }
+.linkrow.on { background: var(--accent-soft); }
+.pick { width: 18px; height: 18px; padding: 0; display: grid; place-items: center; border: 1.5px solid var(--faint); border-radius: 50%; background: none; color: transparent; cursor: pointer; opacity: .7; transition: background .15s, border-color .15s, opacity .15s; }
+.linkrow:hover .pick, .picking .pick { opacity: 1; }
+.pick[aria-checked="true"] { border-color: var(--accent); background: var(--accent); color: #fff; opacity: 1; }
+.pick .i { width: 11px; height: 11px; stroke-width: 3; }
+.linkgo { min-width: 0; display: grid; gap: 3px; padding: 3px 5px; border: 0; border-radius: 7px; background: none; font: inherit; text-align: left; color: var(--txt); cursor: pointer; }
+.linkgo:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.linkurl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
+.linkurl b { font-size: 12.5px; font-weight: 650; color: var(--txt); }
+.linkpage { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--faint); }
+.linkpage em { padding: 0 6px; border-radius: 999px; background: var(--hover); font-style: normal; font-size: 10.5px; font-weight: 650; color: var(--muted); }
+.linkrow .sm { width: 26px; height: 26px; opacity: 0; }
+.linkrow:hover .sm, .linkrow:focus-within .sm { opacity: 1; }
+.linkempty { display: grid; justify-items: center; gap: 10px; padding: 44px 16px; color: var(--muted); text-align: center; font-size: 12.5px; }
+.linkempty[hidden] { display: none; }
+.linkempty i { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--hover); }
+.linkempty .i { width: 18px; height: 18px; }
+.linkhit { position: absolute; z-index: 5; border-radius: 3px; background: rgb(var(--found-now) / .6); pointer-events: none; }
 .rowspace { position: relative; }
 .hitrow:hover { background: var(--hover); }
 .hitrow.on { background: rgb(var(--found-now) / .26); }
@@ -95,6 +126,8 @@ html.solid .window { background: var(--solid); }
 .pdfViewer .page .annotationLayer .linkAnnotation:not([data-internal-link]) > a, .pdfViewer .page .annotationLayer .linkAnnotation:not(.hasBorder):not([data-internal-link]) > a:hover { background-color: var(--link, transparent); }
 .pdfViewer .page .annotationLayer .linkAnnotation.hasBorder:hover { background-color: transparent; }
 .pdfViewer .annotationLayer:not(:has(:is(.textWidgetAnnotation, .buttonWidgetAnnotation, .choiceWidgetAnnotation))) { --link: #0b57d0; mix-blend-mode: lighten; }
+/* On a dark page the text is light, so the layer darkens instead and its blue is a light one. */
+.pdfViewer.dim .annotationLayer:not(:has(:is(.textWidgetAnnotation, .buttonWidgetAnnotation, .choiceWidgetAnnotation))) { --link: #8ab4f8; mix-blend-mode: darken; }
 
 .cmarks { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .cmark { position: absolute; left: calc(100% + 10px); width: 26px; height: 24px; padding: 0; display: grid; place-items: center; border-radius: 8px; cursor: pointer; pointer-events: auto;
@@ -288,6 +321,12 @@ body.focus .scroller { top: 0; bottom: 0; }
 .emsg.on { grid-template-rows: 1fr; }
 .emsg > div { overflow: hidden; }
 .emsg p { padding-top: 8px; color: color-mix(in srgb, var(--err) 82%, #000); font-size: 12px; font-weight: 600; }
+.kv { display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: center; font-size: 12.5px; }
+.kv > span { color: var(--muted); }
+.swrow { display: flex; gap: 6px; }
+.sw { width: 26px; height: 26px; padding: 0; border: 2px solid var(--bar); border-radius: 50%; box-shadow: 0 0 0 1px var(--line); cursor: pointer; }
+.sw[aria-checked="true"] { box-shadow: 0 0 0 2px var(--accent); }
+.sw:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .card .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 .card .btn { min-width: 68px; justify-content: center; }
 .spin { width: 13px; height: 13px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .4); border-top-color: #fff; animation: rot .7s linear infinite; }
@@ -304,5 +343,5 @@ body.focus .scroller { top: 0; bottom: 0; }
 .fld:focus, .fld:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); outline: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .panel, .cmark, .ccard, .card, .veil, .tip, .pw.shake, .emsg, .dockwrap, .dock, .fold, .fold .i, .menu, .findbar, .flash, .titlerow, .edgehint { animation: none; transition: none; }
+  .panel, .cmark, .ccard, .card, .veil, .tip, .pick, .pw.shake, .emsg, .dockwrap, .dock, .fold, .fold .i, .menu, .findbar, .flash, .titlerow, .edgehint { animation: none; transition: none; }
 }

@@ -5,10 +5,12 @@ const os = require('os');
 const path = require('path');
 const { createDocuments } = require('./documents');
 const { linkTarget } = require('./links');
+const { cleanView } = require('./view');
 const { registerWorkspaceIpc } = require('./workspace.ipc');
 
 const WINDOWS_11 = 22621;
 const DOCKS = ['bottom', 'top', 'left', 'right'];
+const MAX_COPIED = 100000;
 
 const REASONS = {
   ENOENT: 'The file is no longer there.', ENOTFILE: 'This is not a file.',
@@ -26,6 +28,13 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
 
   const setView = (patch) => setSettings({ pdfView: { ...getSettings().pdfView, ...patch } });
   const dock = () => { const side = getSettings().pdfView?.dock; return DOCKS.includes(side) ? side : 'bottom'; };
+
+  // Writes only what is valid and what differs from what is stored, so a page that repeats itself does not rewrite the file.
+  function rememberView(patch) {
+    const stored = cleanView(getSettings().pdfView);
+    const changed = Object.entries(cleanView(patch)).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(stored[key]));
+    if (changed.length) setView(Object.fromEntries(changed));
+  }
 
   const focus = () => { if (win.isMinimized()) win.restore(); win.show(); win.focus(); };
 
@@ -67,14 +76,24 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     if (target) copyText(target);
   }
 
+  // Copies the addresses `linkTarget` accepts, each once, one to a line. Answers how many there were.
+  function copyLinks(urls) {
+    if (!Array.isArray(urls) || urls.length > MAX_COPIED) return 0;
+    const targets = [...new Set(urls.map((url) => linkTarget(url)).filter(Boolean))];
+    if (targets.length) copyText(targets.join('\n'));
+    return targets.length;
+  }
+
   const registerIpc = () => registerWorkspaceIpc({
     documents,
-    state: () => ({ documents: current ? [current] : [], dock: dock() }),
+    state: () => ({ documents: current ? [current] : [], dock: dock(), view: cleanView(getSettings().pdfView) }),
     setFocus: (on) => win?.setFullScreen(on),
     setDock: (side) => { if (DOCKS.includes(side)) setView({ dock: side }); },
+    setView: rememberView,
     checkLink: linkTarget,
     openLink,
     copyLink,
+    copyLinks,
     isWorkspace: (sender) => !!win && !win.isDestroyed() && win.webContents === sender,
   });
 

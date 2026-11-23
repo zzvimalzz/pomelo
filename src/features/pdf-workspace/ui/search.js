@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Find in the document: a bar at the top of the well, opened by the title row's button or Ctrl+F. pdf.js's find controller does the
-// matching, the counting and the highlighting; this sends it the question and shows what it answers, and gives the list of hits in its
-// own panel and the marks beside the scroll bar the same view of the matches. A classic script that adds window.workspaceSearch.
+// matching, the counting and the highlighting; this sends it the question and shows what it answers, and gives the list of hits in the
+// Search tab of the right-hand panel and the marks beside the scroll bar the same view of the matches. A classic script that adds window.workspaceSearch.
 (() => {
   const { el, icon } = window.pomeloUi;
   const { label, bind } = window.workspaceKeys;
@@ -45,7 +45,10 @@
 
     const on = (b) => b.getAttribute('aria-pressed') === 'true';
     const ask = (type, backwards = false) => {
-      if (type !== 'again') window.workspaceResults.reset();
+      if (type !== 'again') {
+        window.workspaceResults.reset();
+        if (input.value.trim()) window.workspaceSide.open('search');
+      }
       eventBus.dispatch('find', {
       source: bar, type, query: input.value.trim(), caseSensitive: on(matchCase), entireWord: on(wholeWords), highlightAll: true, findPrevious: backwards,
       });
@@ -104,9 +107,9 @@
     }
     window.workspaceResults.watch(pdf, hits, container);
     window.workspaceTicks.watch(hits, viewer, container);
-    window.workspaceResults.onchange = (on) => listing.setAttribute('aria-pressed', String(on));
+    window.workspaceSide.onchange((shown, tab) => listing.setAttribute('aria-pressed', String(shown && tab === 'search')));
     listing.setAttribute('aria-pressed', 'false');
-    listing.onclick = () => window.workspaceResults.toggle();
+    listing.onclick = () => window.workspaceSide.toggle('search');
     eventBus.on('scalechanging', refresh);
     eventBus.on('spreadmodechanged', refresh);
 
@@ -120,6 +123,7 @@
     eventBus.on('updatefindcontrolstate', ({ state: found, matchesCount }) => { state = found; show(matchesCount); });
 
     function open() {
+      if (window.workspaceSide.pairSearch()) return;
       bar.hidden = false;
       button.setAttribute('aria-pressed', 'true');
       input.focus();
@@ -128,7 +132,7 @@
     }
     function shut() {
       bar.hidden = true;
-      window.workspaceResults.hide();
+      window.workspaceSide.shutTab('search');
       refresh();
       button.setAttribute('aria-pressed', 'false');
       eventBus.dispatch('findbarclose', { source: bar });
@@ -156,10 +160,13 @@
 
     bind('find', () => open());
     current = { bar, shut };
+    api.reveal = () => { if (bar.hidden) open(); };
+    api.conceal = () => { if (!bar.hidden) shut(); };
   }
 
   // Bound when the page loads, ahead of focus reading's own Esc: the bar closes first.
   bind('escape', () => (current && !current.bar.hidden ? (current.shut(), true) : false));
 
-  window.workspaceSearch = { watch };
+  const api = { watch, reveal: () => {}, conceal: () => {} };
+  window.workspaceSearch = api;
 })();

@@ -33,9 +33,10 @@ const focused = [];
 const docks = [];
 const opened = [];
 const copied = [];
+const views = [];
 require(path.join(features, 'pdf-workspace', 'workspace.ipc')).registerWorkspaceIpc({
   documents: { read: (...args) => { served.push(args); return 'bytes'; }, unlock: (...args) => { unlocked.push(args); } }, state: () => ({ documents: [] }),
-  setFocus: (on) => focused.push(on), setDock: (side) => docks.push(side), checkLink: (url) => (url === 'https://ok.test/' ? url : null), openLink: (url) => opened.push(url), copyLink: (url) => copied.push(url), isWorkspace: (sender) => sender === 'the workspace page',
+  setFocus: (on) => focused.push(on), setDock: (side) => docks.push(side), setView: (patch) => views.push(patch), checkLink: (url) => (url === 'https://ok.test/' ? url : null), openLink: (url) => opened.push(url), copyLink: (url) => copied.push(url), copyLinks: (urls) => { copied.push(urls); return urls.length; }, isWorkspace: (sender) => sender === 'the workspace page',
 });
 require(path.join(features, 'engine-setup', 'engine-setup.ipc')).registerEngineSetupIpc({ installer: {}, getEngines: noop, ...quiet });
 require(path.join(features, 'updates', 'updates.ipc')).registerUpdatesIpc({ current: '0.0.0', autoCheck: {}, onChecked: noop, isPackaged: false, execPath: '', isSettingsOpen: noop, downloader: {}, stopForUpdate: noop, exit: noop, ...quiet });
@@ -67,11 +68,13 @@ for (const on of [true, false, 'yes', 1, undefined]) handlers['pdfws:focus']({ s
 expect('the workspace page can enter and leave full screen, and anything but true leaves it', JSON.stringify(focused) === '[true,false,false,false,false]', JSON.stringify(focused));
 
 // Only the workspace window's own page may ask about or open a link; what is checked and opened is decided by the functions it is given.
+expect('another page cannot change the remembered view, the workspace page can', refused(() => handlers['pdfws:view']({ sender: 'another page' }, { zoom: 1 })) && views.length === 0 && (handlers['pdfws:view']({ sender: 'the workspace page' }, { zoom: 1 }), JSON.stringify(views) === '[{"zoom":1}]'));
 expect('another page can neither check, open nor copy a link', refused(() => handlers['pdfws:check-link']({ sender: 'another page' }, 'https://ok.test/')) && refused(() => handlers['pdfws:open-link']({ sender: 'another page' }, 'https://ok.test/'))
   && refused(() => handlers['pdfws:copy-link']({ sender: 'another page' }, 'https://ok.test/')) && opened.length === 0 && copied.length === 0);
 handlers['pdfws:copy-link']({ sender: 'the workspace page' }, 'https://ok.test/');
 handlers['pdfws:open-link']({ sender: 'the workspace page' }, 'https://ok.test/');
 expect('the workspace page can check a link and open one', handlers['pdfws:check-link']({ sender: 'the workspace page' }, 'https://ok.test/') === 'https://ok.test/' && handlers['pdfws:check-link']({ sender: 'the workspace page' }, 'file:///x') === null && JSON.stringify(opened) === '["https://ok.test/"]' && JSON.stringify(copied) === '["https://ok.test/"]');
+expect('another page cannot copy a list of links, the workspace page can', refused(() => handlers['pdfws:copy-links']({ sender: 'another page' }, ['https://ok.test/'])) && copied.length === 1 && handlers['pdfws:copy-links']({ sender: 'the workspace page' }, ['a', 'b']) === 2 && JSON.stringify(copied.at(-1)) === '["a","b"]');
 
 // Only the wheel page may send a password, and only in the one shape the card uses.
 const unlockBad = [['another page', { token: 't', password: 'p', all: false }], ['the wheel page', null], ['the wheel page', { token: 1, password: 'p', all: false }], ['the wheel page', { token: 't', password: 5, all: false }], ['the wheel page', { token: 't', password: 'p', all: 'yes' }]];
@@ -100,7 +103,7 @@ const orphaned = [...handled].filter((c) => !asked.has(c));
 
 expect(`every channel a page sends has a handler (${asked.size} channels)`, missing.length === 0, missing.join(', '));
 expect('every handler answers a channel some page sends', orphaned.length === 0, orphaned.join(', '));
-expect('invoke channels are handled with handle, so the page gets an answer', ['settings:get', 'settings:set', 'wheel:unlock', 'pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus', 'pdfws:dock', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'engines:install', 'app:uninstall', 'updates:check', 'updates:download', 'updates:install'].every((c) => registered.handle.has(c)));
+expect('invoke channels are handled with handle, so the page gets an answer', ['settings:get', 'settings:set', 'wheel:unlock', 'pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'engines:install', 'app:uninstall', 'updates:check', 'updates:download', 'updates:install'].every((c) => registered.handle.has(c)));
 
 // What the main process sends to a page, with webContents.send or the sendToSettings helper, anywhere under src.
 const sent = new Set();

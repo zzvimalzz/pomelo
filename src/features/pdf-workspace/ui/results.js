@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The list of hits in a panel of its own on the right: one row for every hit, the page it is on and a few words round it with the hit marked. Only the
+// The list of hits, the Search tab of the panel on the right (side.js): one row for every hit, the page it is on and a few words round it with the hit marked. Only the
 // rows in view exist, so a word that is found thirty thousand times costs the same as one that is found ten times. A classic script
 // that adds window.workspaceResults.
 (() => {
-  const { el, icon } = window.pomeloUi;
+  const { el } = window.pomeloUi;
   const SLIDE = 350;
+  const HINT = 'Type in the search bar to see the hits here';
   const ROW = 68;
   const SPARE = 3;
   const BEFORE = 36;
@@ -15,24 +16,16 @@
   // current() and jump(n). The text is the page's own, read the way pdf.js reads it to find. Its offsets count the words of the page
   // and not the line ends, which are kept apart so that a snippet can put a space where a line ended.
   function watch(pdf, hits, container) {
-    const panel = document.getElementById('hitpanel');
-    const inner = document.getElementById('hitinner');
     const list = document.getElementById('results');
     const total = document.getElementById('hittotal');
-    const closer = document.getElementById('hitclose');
-    closer.innerHTML = icon('close');
-    closer.title = 'Hide results';
-    closer.setAttribute('aria-label', 'Hide results');
     const space = el('div', 'rowspace');
-    const note = el('p', 'empty', 'No results');
-    note.hidden = true;
+    const note = el('p', 'empty', HINT);
     list.append(note, space);
     const rows = new Map();
     const texts = new Map();
     let shownCurrent = -2;
     let none = false;
     let open = false;
-    let closing = null;
 
     function pageText(page) {
       if (!texts.has(page)) {
@@ -50,10 +43,18 @@
       return texts.get(page);
     }
 
+    // What a row shows depends on the hit it stands for. pdf.js finds page after page, so while it works a row's number is a different hit
+    // from one moment to the next, and a row is drawn again when its key changes.
+    const keyOf = (n) => {
+      const { page, index } = hits.locate(n);
+      return `${page}:${index}:${hits.offset(page, index)}:${hits.length(page, index)}`;
+    };
+
     async function fill(row, n) {
+      const key = row.key;
       const { page, index } = hits.locate(n);
       const { text, ends } = await pageText(page);
-      if (rows.get(n) !== row) return;
+      if (rows.get(n) !== row || row.key !== key) return;
       const piece = (from, to, lead = false) => {
         let out = '';
         for (let i = from; i < to; i++) out += ((i > from || lead) && ends.has(i) ? ' ' : '') + text[i];
@@ -70,15 +71,25 @@
       const b = el('button', 'hitrow');
       b.type = 'button';
       b.style.setProperty('top', `${n * ROW}px`);
-      const { page } = hits.locate(n);
       const snippet = el('span', 'snip');
-      b.append(el('span', 'pg', `Page ${page + 1}`), snippet);
+      b.pg = el('span', 'pg', `Page ${hits.locate(n).page + 1}`);
+      b.append(b.pg, snippet);
       b.snippet = snippet;
+      b.key = keyOf(n);
       b.onclick = () => { hits.jump(n); container.focus(); };
       space.append(b);
       rows.set(n, b);
       fill(b, n);
       return b;
+    }
+
+    function refresh(n, row) {
+      const key = keyOf(n);
+      if (row.key === key) return;
+      row.key = key;
+      row.pg.textContent = `Page ${hits.locate(n).page + 1}`;
+      row.snippet.replaceChildren();
+      fill(row, n);
     }
 
     function reset() {
@@ -93,7 +104,8 @@
       if (!open) return;
       const found = hits.count();
       total.textContent = found ? `${found} ${found === 1 ? 'result' : 'results'}` : '';
-      note.hidden = found > 0 || !none;
+      note.hidden = found > 0;
+      note.textContent = none ? 'No results' : HINT;
       space.style.setProperty('height', `${found * ROW}px`);
       if (!found) reset();
       const height = list.clientHeight;
@@ -106,6 +118,7 @@
       for (let n = first; n <= last; n++) if (!rows.has(n)) make(n);
       const now = hits.current();
       for (const [n, row] of rows) {
+        refresh(n, row);
         row.classList.toggle('on', n === now);
         if (n === now) row.setAttribute('aria-current', 'true'); else row.removeAttribute('aria-current');
       }
@@ -117,26 +130,19 @@
       shownCurrent = now;
     }
 
-    function setOpen(on) {
+    function show(on) {
       open = on;
-      clearTimeout(closing);
-      if (on) inner.hidden = false;
-      else closing = setTimeout(() => { inner.hidden = true; reset(); }, SLIDE);
-      panel.classList.toggle('open', on);
-      api.onchange(on);
+      if (!on) setTimeout(() => { if (!open) reset(); }, SLIDE);
       draw();
     }
 
-    closer.onclick = () => setOpen(false);
-    closer.addEventListener('mousedown', (e) => e.preventDefault());
     list.addEventListener('scroll', draw, { passive: true });
     new ResizeObserver(draw).observe(list);
     api.draw = (nothing = none) => { none = nothing; draw(); };
     api.reset = reset;
-    api.toggle = () => { setOpen(!open); return open; };
-    api.hide = () => { if (open) setOpen(false); };
+    api.show = show;
   }
 
-  const api = { watch, draw: () => {}, reset: () => {}, toggle: () => false, hide: () => {}, onchange: () => {} };
+  const api = { watch, draw: () => {}, reset: () => {}, show: () => {} };
   window.workspaceResults = api;
 })();

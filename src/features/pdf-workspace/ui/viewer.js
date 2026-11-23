@@ -4,6 +4,7 @@
 (() => {
   const SPAN = 4 * 1048576;
   const PRESETS = ['page-fit', 'page-width'];
+  const LAYOUTS = { continuous: 0, spread: 1 };
   const root = new URL('../../../../node_modules/pdfjs-dist/', location.href).href;
 
   const loading = import(`${root}build/pdf.mjs`).then(async (lib) => {
@@ -75,14 +76,24 @@
     }, { passive: true });
   }
 
+  let pending = null;
+  let sending = null;
+  function remember(patch) {
+    pending = { ...pending, ...patch };
+    clearTimeout(sending);
+    sending = setTimeout(() => { window.workspaceApi.setView(pending); pending = null; }, 300);
+  }
+
   // doc: { token, size } from the main process. The page is drawn into viewerEl, which sits in the absolutely positioned container.
-  async function open(doc, container, viewerEl) {
+  async function open(doc, container, viewerEl, view) {
     const { lib, viewerLib } = await loading;
     const pdf = await load(lib, doc);
     const eventBus = new viewerLib.EventBus();
     const linkService = new viewerLib.PDFLinkService({ eventBus });
     const findController = new viewerLib.PDFFindController({ linkService, eventBus });
-    const viewer = new viewerLib.PDFViewer({ container, viewer: viewerEl, eventBus, linkService, findController, annotationEditorMode: lib.AnnotationEditorType.DISABLE, removePageBorders: true });
+    const colours = view.pageColours ?? 'original';
+    const viewer = new viewerLib.PDFViewer({ container, viewer: viewerEl, eventBus, linkService, findController, annotationEditorMode: lib.AnnotationEditorType.DISABLE, removePageBorders: true, pageColors: window.workspaceColours.pageColors(colours) });
+    window.workspaceColours.watch(viewer, viewerEl, colours, eventBus, lib.OPS);
     linkService.setViewer(viewer);
     // The link never holds the address, so a click, a middle click or a drag takes the page nowhere. pdf.js shows the same for a disabled link.
     linkService.addLinkAttributes = (link, url) => {
@@ -97,10 +108,18 @@
     api.viewer = viewer;
     window.workspaceComments.watch(viewer, eventBus, container);
     window.workspaceDock.watch(viewer, eventBus, container);
-    window.workspaceSidebar.watch(pdf, viewer, eventBus, container, linkService);
+    window.workspaceSidebar.watch(pdf, viewer, eventBus, container, linkService, view.sidebar);
+    window.workspaceLinkList.watch(pdf, viewer, eventBus, container, followLink);
     window.workspaceSelect.watch(container);
     window.workspaceSearch.watch(pdf, viewer, eventBus, container);
-    eventBus.on('pagesinit', () => { viewer.currentScaleValue = 'page-fit'; });
+    window.workspaceSide.watch(container, { search: window.workspaceResults, links: window.workspaceLinkList });
+    // The choices are recorded only after they have been restored, so opening a file does not write what it has just read.
+    eventBus.on('pagesinit', () => {
+      viewer.spreadMode = LAYOUTS[view.layout] ?? 0;
+      viewer.currentScaleValue = String(view.zoom ?? 'page-fit');
+      eventBus.on('scalechanging', ({ scale, presetValue }) => remember({ zoom: PRESETS.includes(presetValue) ? presetValue : Math.round(scale * 1000) / 1000 }));
+      eventBus.on('spreadmodechanged', ({ mode }) => remember({ layout: Object.keys(LAYOUTS)[mode] }));
+    });
     // A fit keeps fitting as the window changes size; a zoom the user chose stays as it is.
     new ResizeObserver(() => { const zoom = viewer.currentScaleValue; if (viewer.pagesCount && PRESETS.includes(zoom)) viewer.currentScaleValue = zoom; }).observe(container);
     restScrollbar(container);
@@ -109,6 +128,6 @@
     history.initialize({ fingerprint: pdf.fingerprints[0], resetHistory: true });
   }
 
-  const api = { loadOptions, open, restScrollbar, viewer: null };
+  const api = { loadOptions, open, remember, restScrollbar, viewer: null };
   window.workspaceViewer = api;
 })();

@@ -40,6 +40,7 @@ const SUITES = [
   { name: 'workspace-documents', file: 'unit/pdf-workspace/documents.test.js', tier: 'unit' },
   { name: 'workspace-bounds', file: 'unit/pdf-workspace/bounds.test.js', tier: 'unit' },
   { name: 'workspace-links', file: 'unit/pdf-workspace/links.test.js', tier: 'unit' },
+  { name: 'workspace-view', file: 'unit/pdf-workspace/view.test.js', tier: 'unit' },
   { name: 'app-start', file: 'integration/app/start.test.js', tier: 'integration', timeout: 120 },
   { name: 'matrix', file: 'integration/conversion/matrix.test.js', tier: 'integration', electron: true, timeout: 600 },
   { name: 'edge-cases', file: 'integration/conversion/edge-cases.test.js', tier: 'integration', electron: true, timeout: 300 },
@@ -53,7 +54,7 @@ const SUITES = [
   { name: 'unlock-shot', file: 'ui/unlock-shot.js', tier: 'ui', electron: true },
   { name: 'toast-shot', file: 'ui/toast-shot.js', tier: 'ui', electron: true },
   { name: 'settings-shot', file: 'ui/settings-shot.js', tier: 'ui', electron: true },
-  { name: 'workspace-shot', file: 'ui/workspace-shot.js', tier: 'ui', electron: true, timeout: 300 },
+  { name: 'workspace-shot', file: 'ui/workspace-shot.js', tier: 'ui', electron: true, timeout: 480 },
   { name: 'downloader-shot', file: 'ui/downloader-shot.js', tier: 'ui', electron: true },
 ];
 const DEFAULT_TIMEOUT = 120;
