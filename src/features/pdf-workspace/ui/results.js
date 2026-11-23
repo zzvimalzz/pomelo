@@ -43,10 +43,18 @@
       return texts.get(page);
     }
 
+    // What a row shows depends on the hit it stands for. pdf.js finds page after page, so while it works a row's number is a different hit
+    // from one moment to the next, and a row is drawn again when its key changes.
+    const keyOf = (n) => {
+      const { page, index } = hits.locate(n);
+      return `${page}:${index}:${hits.offset(page, index)}:${hits.length(page, index)}`;
+    };
+
     async function fill(row, n) {
+      const key = row.key;
       const { page, index } = hits.locate(n);
       const { text, ends } = await pageText(page);
-      if (rows.get(n) !== row) return;
+      if (rows.get(n) !== row || row.key !== key) return;
       const piece = (from, to, lead = false) => {
         let out = '';
         for (let i = from; i < to; i++) out += ((i > from || lead) && ends.has(i) ? ' ' : '') + text[i];
@@ -63,15 +71,25 @@
       const b = el('button', 'hitrow');
       b.type = 'button';
       b.style.setProperty('top', `${n * ROW}px`);
-      const { page } = hits.locate(n);
       const snippet = el('span', 'snip');
-      b.append(el('span', 'pg', `Page ${page + 1}`), snippet);
+      b.pg = el('span', 'pg', `Page ${hits.locate(n).page + 1}`);
+      b.append(b.pg, snippet);
       b.snippet = snippet;
+      b.key = keyOf(n);
       b.onclick = () => { hits.jump(n); container.focus(); };
       space.append(b);
       rows.set(n, b);
       fill(b, n);
       return b;
+    }
+
+    function refresh(n, row) {
+      const key = keyOf(n);
+      if (row.key === key) return;
+      row.key = key;
+      row.pg.textContent = `Page ${hits.locate(n).page + 1}`;
+      row.snippet.replaceChildren();
+      fill(row, n);
     }
 
     function reset() {
@@ -100,6 +118,7 @@
       for (let n = first; n <= last; n++) if (!rows.has(n)) make(n);
       const now = hits.current();
       for (const [n, row] of rows) {
+        refresh(n, row);
         row.classList.toggle('on', n === now);
         if (n === now) row.setAttribute('aria-current', 'true'); else row.removeAttribute('aria-current');
       }

@@ -30,7 +30,8 @@
       for (const fn of listeners) fn(open, tab);
     }
 
-    // The Search tab belongs with the find bar, so asking for it, by the tab or by a search, opens the bar as well.
+    // The Search tab belongs with the find bar: asking for it, by the tab or by a search, opens the bar as well, and the Links tab closes
+    // it. The field keeps what was typed, so the Search tab brings the last search back.
     function openTab(name) {
       clearTimeout(closing);
       open = true;
@@ -38,7 +39,7 @@
       inner.hidden = false;
       panel.classList.add('open');
       render();
-      if (name === 'search') window.workspaceSearch.reveal();
+      if (name === 'search') window.workspaceSearch.reveal(); else window.workspaceSearch.conceal();
     }
 
     function shut() {
@@ -61,8 +62,13 @@
     api.open = (name) => { if (!open || tab !== name) openTab(name); };
     api.toggle = (name) => (open && tab === name ? shut() : openTab(name));
     api.shutTab = (name) => { if (open && tab === name) shut(); };
+    api.pairSearch = () => {
+      if (!open || tab !== 'links') return false;
+      openTab('search');
+      return true;
+    };
   }
 
-  const api = { watch, open: () => {}, toggle: () => {}, shutTab: () => {}, onchange: (fn) => listeners.push(fn) };
+  const api = { watch, open: () => {}, toggle: () => {}, shutTab: () => {}, pairSearch: () => false, onchange: (fn) => listeners.push(fn) };
   window.workspaceSide = api;
 })();

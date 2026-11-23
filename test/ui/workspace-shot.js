@@ -1415,6 +1415,15 @@ app.whenReady().then(async () => {
     v = await resultsState();
     t = await ticks();
     check('closing the bar shuts the Search tab and takes the rows and the marks away', !v.panelOpen && v.panelWidth === 0 && v.listHidden && v.rows === 0 && v.pressed === 'false' && t.bands.length === 0, JSON.stringify({ v, t }));
+    await press(win, 'F', ['control']);
+    await typeInto(win, 'deliv');
+    await until('rows for deliv', async () => (await resultsState()).marks === 'Deliv,deliv,Deliv,deliv');
+    v = await resultsState();
+    check('the rows show what was searched for, not the hits of the letters before', v.marks === 'Deliv,deliv,Deliv,deliv' && v.rows === 4, JSON.stringify(v));
+    await typeInto(win, 'ery');
+    await until('rows for delivery', async () => (await resultsState()).marks === 'Delivery,delivery,Delivery,delivery');
+    v = await resultsState();
+    check('and when the word is finished every row is drawn again for it', v.marks === 'Delivery,delivery,Delivery,delivery' && v.rows === 4 && v.pages === 'Page 1,Page 2,Page 3,Page 3', JSON.stringify(v));
     await closeAndWait(win);
   }
 
@@ -1915,7 +1924,7 @@ app.whenReady().then(async () => {
 
     const win = await openAndWait(fresh(), withLinks);
     const panel = () => js(win, `({ width: document.getElementById('hitpanel').getBoundingClientRect().width, tabs: [...document.querySelectorAll('#hitpanel .seg3 button')].map((t) => t.textContent + '=' + t.getAttribute('aria-checked')).join(), links: document.getElementById('linksbtn').getAttribute('aria-pressed'),
-      bar: !document.querySelector('.findbar').hidden, barFocus: document.activeElement === document.querySelector('.findbar input'), rows: document.querySelectorAll('#results .hitrow').length, linksShown: !document.getElementById('linksview').hidden, searchShown: !document.getElementById('searchview').hidden, hint: document.querySelector('#results .empty')?.textContent ?? '' })`);
+      bar: !document.querySelector('.findbar').hidden, barFocus: document.activeElement === document.querySelector('.findbar input'), rows: document.querySelectorAll('#results .hitrow').length, field: document.querySelector('.findbar input').value, selected: document.querySelector('.findbar input').selectionStart + '-' + document.querySelector('.findbar input').selectionEnd, linksShown: !document.getElementById('linksview').hidden, searchShown: !document.getElementById('searchview').hidden, hint: document.querySelector('#results .empty')?.textContent ?? '' })`);
     await js(win, `document.getElementById('linksbtn').click()`);
     await sleep(900);
     let t = await panel();
@@ -1931,16 +1940,25 @@ app.whenReady().then(async () => {
     await js(win, `document.getElementById('tablinks').click()`);
     await sleep(900);
     t = await panel();
-    check('the Links tab shows the links and the find bar stays on', t.tabs === 'Search=false,Links=true' && t.linksShown && t.bar && t.links === 'true', JSON.stringify(t));
-    await js(win, `document.querySelector('.findbar input').focus()`);
-    await typeInto(win, 's');
+    check('the Links tab shows the links and closes the find bar, which keeps what was typed', t.tabs === 'Search=false,Links=true' && t.linksShown && !t.bar && t.links === 'true' && t.field === 'Link', JSON.stringify(t));
+    await js(win, `document.getElementById('tabsearch').click()`);
     await sleep(900);
     t = await panel();
-    check('a new search while the Links tab is up brings the Search tab back', t.tabs === 'Search=true,Links=false' && t.searchShown && t.links === 'false', JSON.stringify(t));
+    check('the Search tab brings the bar back with the last search in it, all selected, and its hits listed', t.tabs === 'Search=true,Links=false' && t.bar && t.barFocus && t.field === 'Link' && t.selected === '0-4' && t.rows > 1 && t.links === 'false', JSON.stringify(t));
+    await typeInto(win, 'Read');
+    await sleep(900);
+    t = await panel();
+    check('typing straight away replaces the text and the list follows', t.field === 'Read' && t.rows === 1, JSON.stringify(t));
+    await js(win, `document.getElementById('tablinks').click()`);
+    await sleep(900);
+    await press(win, 'F', ['control']);
+    await sleep(900);
+    t = await panel();
+    check('Ctrl+F while the Links tab is up opens the bar and brings the Search tab with it', t.tabs === 'Search=true,Links=false' && t.bar && t.field === 'Read' && t.rows === 1, JSON.stringify(t));
     await js(win, `document.getElementById('linksbtn').click()`);
     await sleep(500);
     t = await panel();
-    check('the Links button on another tab switches to Links', t.tabs === 'Search=false,Links=true' && t.width === 300, JSON.stringify(t));
+    check('the Links button on another tab switches to Links and closes the bar', t.tabs === 'Search=false,Links=true' && t.width === 300 && !t.bar, JSON.stringify(t));
     await js(win, `document.getElementById('linksbtn').click()`);
     await sleep(900);
     check('and pressed again it shuts the panel', (await panel()).width === 0);

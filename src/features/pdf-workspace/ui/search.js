@@ -123,6 +123,7 @@
     eventBus.on('updatefindcontrolstate', ({ state: found, matchesCount }) => { state = found; show(matchesCount); });
 
     function open() {
+      if (window.workspaceSide.pairSearch()) return;
       bar.hidden = false;
       button.setAttribute('aria-pressed', 'true');
       input.focus();
@@ -160,11 +161,12 @@
     bind('find', () => open());
     current = { bar, shut };
     api.reveal = () => { if (bar.hidden) open(); };
+    api.conceal = () => { if (!bar.hidden) shut(); };
   }
 
   // Bound when the page loads, ahead of focus reading's own Esc: the bar closes first.
   bind('escape', () => (current && !current.bar.hidden ? (current.shut(), true) : false));
 
-  const api = { watch, reveal: () => {} };
+  const api = { watch, reveal: () => {}, conceal: () => {} };
   window.workspaceSearch = api;
 })();
