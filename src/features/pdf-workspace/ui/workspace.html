@@ -38,12 +38,11 @@
           <button class="sm" id="hitclose" type="button"></button>
         </div>
         <div class="sideview" id="searchview">
-          <div class="hithead"><span class="total" id="hittotal"></span></div>
+          <div class="viewhead"><span class="total" id="hittotal"></span></div>
           <div class="scrolly" id="results"></div>
         </div>
         <div class="sideview" id="linksview" hidden>
-          <div class="linkbar"><button class="linkpick" id="linkchoose" type="button" hidden></button><button class="btn primary linkcopy" id="linkcopy" type="button" disabled></button></div>
-          <p class="linkscan" id="linkscan"></p>
+          <div class="viewhead"><button class="pick" id="linkchoose" type="button" role="checkbox" aria-checked="false" hidden></button><span class="total" id="linkscan"></span><button class="btn primary linkcopy" id="linkcopy" type="button" disabled></button><i class="scanline" id="linkprogress" hidden></i></div>
           <div class="scrolly" id="linklist"></div>
         </div>
       </div></aside>

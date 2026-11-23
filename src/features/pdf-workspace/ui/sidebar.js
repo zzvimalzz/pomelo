@@ -107,6 +107,9 @@
     const remember = () => window.workspaceViewer.remember({ sidebar: { open, tab, width: rail } });
 
     function show(name) {
+      const order = Object.keys(tabs);
+      if (open && name !== tab) panel.dataset.turn = order.indexOf(name) > order.indexOf(tab) ? 'next' : 'prev';
+      else delete panel.dataset.turn;
       tab = name;
       for (const [id, b] of Object.entries(tabs)) b.setAttribute('aria-checked', String(id === name));
       list.hidden = name !== 'pages';
