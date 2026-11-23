@@ -57,12 +57,14 @@
     // pdf.js keeps the place of every match on the controller, page by page and in order, and has no call to go to a given one, so the
     // list and the marks read what it keeps and a click on a row sets the match it would have stepped to. The version is pinned.
     let starts = [];
+    let pages = [];
     let total = 0;
     let now = -1;
     let state = 0;
     const finder = viewer.findController;
     const hits = {
       count: () => total,
+      pages: () => pages,
       current: () => now,
       locate(n) {
         let low = 0;
@@ -95,12 +97,15 @@
       requestAnimationFrame(() => {
         queued = false;
         starts = [];
+        pages = [];
         total = 0;
         for (let page = 0; page < viewer.pagesCount; page++) {
+          const found = finder.pageMatches[page]?.length ?? 0;
           starts.push(total);
-          total += finder.pageMatches[page]?.length ?? 0;
+          if (found) pages.push({ page, first: total, count: found });
+          total += found;
         }
-        if (bar.hidden) total = 0;
+        if (bar.hidden) { total = 0; pages = []; }
         window.workspaceResults.draw(state === NOT_FOUND && !!input.value.trim());
         window.workspaceTicks.draw();
       });

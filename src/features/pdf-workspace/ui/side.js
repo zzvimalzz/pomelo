@@ -34,6 +34,9 @@
     // it. The field keeps what was typed, so the Search tab brings the last search back.
     function openTab(name) {
       clearTimeout(closing);
+      const order = Object.keys(tabs);
+      if (open && name !== tab) panel.dataset.turn = order.indexOf(name) > order.indexOf(tab) ? 'next' : 'prev';
+      else delete panel.dataset.turn;
       open = true;
       tab = name;
       inner.hidden = false;

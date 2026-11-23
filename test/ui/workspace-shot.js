@@ -1345,12 +1345,12 @@ app.whenReady().then(async () => {
   {
     const win = await openAndWait(fresh(), await makeSearchPdf('Search hits.pdf'));
     await sleep(500);
-    const resultsState = () => js(win, `(() => { const rows = [...document.querySelectorAll('#results .hitrow')]; const sel = document.querySelector('.textLayer .highlight.selected'); const hp = document.getElementById('hitpanel'); const head = document.querySelector('.hithead'); const first = document.querySelector('#results .hitrow .pg'); const x = document.getElementById('hitclose').getBoundingClientRect(); const well = document.querySelector('.well').getBoundingClientRect();
+    const resultsState = () => js(win, `(() => { const rows = [...document.querySelectorAll('#results .hitrow')]; const sel = document.querySelector('.textLayer .highlight.selected'); const hp = document.getElementById('hitpanel'); const head = document.querySelector('.viewhead'); const first = document.querySelector('#results .hitrow .snip'); const x = document.getElementById('hitclose').getBoundingClientRect(); const well = document.querySelector('.well').getBoundingClientRect();
       return { panelOpen: hp.classList.contains('open'), panelWidth: hp.getBoundingClientRect().width, panelRight: hp.getBoundingClientRect().right, win: innerWidth, listHidden: document.getElementById('hitinner').hidden, railOpen: document.getElementById('rail').classList.contains('open'), railWidth: document.getElementById('rail').getBoundingClientRect().width,
         pagesPressed: document.getElementById('pagesbtn').getAttribute('aria-pressed'), thumbs: document.querySelectorAll('.thumb').length, tabs: [...document.querySelectorAll('#rail .seg3 button')].map((b) => b.textContent + '=' + b.getAttribute('aria-checked')).join(),
         side: [...document.querySelectorAll('#hitpanel .seg3 button')].map((b) => b.textContent + '=' + b.getAttribute('aria-checked')).join(), total: head.querySelector('.total').textContent, headHeight: head.getBoundingClientRect().height, titleLeft: head.querySelector('.total').getBoundingClientRect().left, rowLeft: first ? first.getBoundingClientRect().left : -1,
         closeRight: x.right, listRight: document.getElementById('results').getBoundingClientRect().right, closeLabel: document.getElementById('hitclose').title, wellRight: well.right, wellLeft: well.left, rows: rows.length, pages: rows.map((r) => r.querySelector('.pg').textContent).join(), marks: rows.map((r) => r.querySelector('mark') ? r.querySelector('mark').textContent : '').join(),
-        snips: rows.map((r) => r.querySelector('.snip').textContent), on: rows.filter((r) => r.classList.contains('on')).map((r) => rows.indexOf(r)).join(), space: parseFloat(document.querySelector('.rowspace').style.height) || 0,
+        heads: [...document.querySelectorAll('#results .hitpage')].map((h) => h.firstChild.textContent + '=' + h.lastChild.textContent).join(), snips: rows.map((r) => r.querySelector('.snip').textContent), on: rows.filter((r) => r.classList.contains('on')).map((r) => rows.indexOf(r)).join(), space: parseFloat(document.querySelector('.rowspace').style.height) || 0,
         pressed: document.querySelector('.findbar button[title="Show all results"]').getAttribute('aria-pressed'), selectedText: sel ? sel.textContent : '', selectedPage: sel && sel.closest('.page') ? sel.closest('.page').dataset.pageNumber : '' }; })()`);
     const ticks = () => js(win, `(() => { const c = document.querySelector('.ticks'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; const x = Math.floor(c.width / 2); const bands = []; let cur = null;
       for (let y = 0; y < c.height; y++) { const i = (y * c.width + x) * 4; if (d[i + 3] > 0) { if (!cur) { cur = { from: y, to: y, current: false }; bands.push(cur); } cur.to = y; if (d[i] > 240 && d[i + 1] > 220 && d[i + 1] < 250 && d[i + 2] < 100) cur.current = true; } else cur = null; }
@@ -1380,8 +1380,9 @@ app.whenReady().then(async () => {
     v = await resultsState();
     check('the panel stands on the right, 300 px wide, as the Search and Links tabs', v.panelOpen && Math.abs(v.panelWidth - 300) <= 1 && Math.abs(v.panelRight - v.win) <= 1 && v.side === 'Search=true,Links=false' && v.total === '4 results', JSON.stringify(v));
     check('the Pages panel is not opened or built by it: it stays shut with its button off and no thumbnail drawn, and the document area gives up the room on the right only', !v.railOpen && v.railWidth === 0 && v.pagesPressed === 'false' && v.thumbs === 0 && v.wellLeft < 20 && Math.abs(v.wellRight - (v.win - 300)) <= 12, JSON.stringify(v));
-    check('the panel is laid out evenly: the count stands where the rows\' words do, and the close button ends where the list ends', v.headHeight === 28 && Math.abs(v.titleLeft - v.rowLeft) <= 1 && Math.abs(v.closeRight - v.listRight) <= 1 && v.closeLabel === 'Hide panel', JSON.stringify(v));
-    check('each row names its page and marks the hit in a few words of the text round it', v.pages === 'Page 1,Page 2,Page 3,Page 3' && v.marks === 'Delivery,delivery,Delivery,delivery' && /^Delivery of the goods/.test(v.snips[0]) && /ask for delivery here/.test(v.snips[1]) && v.snips[1].startsWith('…') && v.snips[2] === 'Delivery redelivery', JSON.stringify(v.snips));
+    check('the panel is laid out evenly: the count stands where the rows\' words do, and the close button ends where the list ends', v.headHeight === 32 && Math.abs(v.titleLeft - v.rowLeft) <= 1 && Math.abs(v.closeRight - v.listRight) <= 1 && v.closeLabel === 'Hide panel', JSON.stringify(v));
+    check('the hits stand under a heading for each page with its count', v.heads === 'Page 1=1,Page 2=1,Page 3=2', JSON.stringify(v));
+    check('each row names its page to a screen reader and marks the hit in a few words of the text round it', v.pages === 'Page 1,Page 2,Page 3,Page 3' && v.marks === 'Delivery,delivery,Delivery,delivery' && /^Delivery of the goods/.test(v.snips[0]) && /ask for delivery here/.test(v.snips[1]) && v.snips[1].startsWith('…') && v.snips[2] === 'Delivery redelivery', JSON.stringify(v.snips));
     check('the row of the hit in view is the one marked on', v.on === '2', JSON.stringify(v));
     await shot(win, 'workspace-search-results.png');
     await js(win, `document.querySelectorAll('#results .hitrow')[3].click()`);
@@ -1438,10 +1439,10 @@ app.whenReady().then(async () => {
     const rowsNow = () => js(win, `(() => { const l = document.getElementById('results'); const rows = [...l.querySelectorAll('.hitrow')]; return { rows: rows.length, space: parseFloat(document.querySelector('.rowspace').style.height), top: l.scrollTop, height: l.clientHeight,
       first: rows.length ? rows[0].querySelector('.pg').textContent : '', last: rows.length ? rows[rows.length - 1].querySelector('.pg').textContent : '', empty: rows.filter((r) => !r.querySelector('mark')).length }; })()`);
     let v = await rowsNow();
-    check('480 hits are one list as tall as 480 rows, with only the rows in view built', v.space === 480 * 68 && v.rows > 5 && v.rows < 30, JSON.stringify(v));
-    await js(win, `document.getElementById('results').scrollTop = 100 * 68`);
+    check('480 hits on 2 pages are one list as tall as 2 page headings and 480 rows, with only the rows in view built', v.space === 2 * 30 + 480 * 52 && v.rows > 5 && v.rows < 30, JSON.stringify(v));
+    await js(win, `document.getElementById('results').scrollTop = 30 + 100 * 52`);
     await sleep(600);
-    await js(win, `[...document.querySelectorAll('#results .hitrow')].find((r) => r.style.top === '6800px').click()`);
+    await js(win, `[...document.querySelectorAll('#results .hitrow')].find((r) => r.style.top === '5230px').click()`);
     await countIs(win, '101 of 480');
     await sleep(1000);
     const clear = await js(win, `(() => { const bar = document.querySelector('.findbar').getBoundingClientRect(); const hit = document.querySelector('.textLayer .highlight.selected').getBoundingClientRect(); const s = document.getElementById('scroller').getBoundingClientRect();
@@ -1829,7 +1830,7 @@ app.whenReady().then(async () => {
     third.node.set(PDFName.of('Annots'), doc.context.obj([link(third, 120, uri('https://far.example.net/low'))]));
     const withLinks = path.join(root, 'Link list.pdf');
     fs.writeFileSync(withLinks, await doc.save({ useObjectStreams: false }));
-    const ROWS = 'example.com/docs?a=1|Page 1 · 2 places/Web ; team@example.com|Page 1/Email ; plain.example.org/guide/start|Page 1/Web ; far.example.net/low|Page 3/Web';
+    const ROWS = 'example.com/docs?a=1|Page 1 · 2 places ; team@example.com|Page 1 ; plain.example.org/guide/start|Page 1 ; far.example.net/low|Page 3';
     const ADDRESSES = ['https://example.com/docs?a=1', 'mailto:team@example.com', 'https://plain.example.org/guide/start', 'https://far.example.net/low'];
 
     for (const theme of ['light', 'dark']) {
@@ -1837,10 +1838,11 @@ app.whenReady().then(async () => {
       opened.length = 0;
       const win = await openAndWait(fresh(), withLinks);
       const state = () => js(win, `(() => { const rows = [...document.querySelectorAll('.linkrow')]; const g = (id) => document.getElementById(id); const b = g('linksbtn');
-        return { rows: rows.map((r) => r.querySelector('.linkurl').textContent + '|' + r.querySelector('.linkpage').firstChild.textContent + '/' + r.querySelector('.linkpage em').textContent).join(' ; '), scan: g('linkscan').textContent,
-          copy: g('linkcopy').textContent, copyOff: g('linkcopy').disabled, choose: g('linkchoose').hidden ? '' : g('linkchoose').textContent, width: g('hitpanel').getBoundingClientRect().width, tabs: [...document.querySelectorAll('#hitpanel .seg3 button')].map((t) => t.textContent + '=' + t.getAttribute('aria-checked')).join(), pressed: b.getAttribute('aria-pressed'), disabled: b.disabled, title: b.title,
-          picked: rows.filter((r) => r.classList.contains('on')).length, checked: rows.filter((r) => r.querySelector('.pick').getAttribute('aria-checked') === 'true').length, empty: g('linklist').querySelector('.linkempty').hidden ? '' : g('linklist').querySelector('.linkempty').textContent,
-          current: workspaceViewer.viewer.currentPageNumber, bar: [...document.querySelector('.titleleft').children].map((c) => c.id).join(), focus: document.activeElement.id || document.activeElement.className, mark: document.querySelectorAll('.linkhit').length }; })()`);
+        return { rows: rows.map((r) => r.querySelector('.linkurl').textContent + '|' + r.querySelector('.linkpage').textContent).join(' ; '), scan: g('linkscan').textContent,
+          copy: g('linkcopy').textContent, copyOff: g('linkcopy').disabled, choose: g('linkchoose').hidden ? '' : g('linkchoose').title, all: g('linkchoose').getAttribute('aria-checked'), width: g('hitpanel').getBoundingClientRect().width, tabs: [...document.querySelectorAll('#hitpanel .seg3 button')].map((t) => t.textContent + '=' + t.getAttribute('aria-checked')).join(), pressed: b.getAttribute('aria-pressed'), disabled: b.disabled, title: b.title,
+          picked: rows.filter((r) => r.classList.contains('on')).length, checked: rows.filter((r) => r.querySelector('.pick').getAttribute('aria-checked') === 'true').length, empty: g('linklist').querySelector('.sideempty').hidden ? '' : g('linklist').querySelector('.sideempty').textContent,
+          current: workspaceViewer.viewer.currentPageNumber, bar: [...document.querySelector('.titleleft').children].map((c) => c.id).join(), focus: document.activeElement.id || document.activeElement.className, mark: document.querySelectorAll('.linkhit').length,
+          kinds: rows.map((r) => (r.querySelector('.pick svg rect') ? 'mail' : 'web')).join(), now: rows.findIndex((r) => r.classList.contains('now') && r.getAttribute('aria-current') === 'true'), scanning: !g('linkprogress').hidden }; })()`);
       const clip = async () => clipboard.readText();
       const until2 = (what, fn) => until(what, async () => fn(await state()), 8000);
 
@@ -1850,13 +1852,13 @@ app.whenReady().then(async () => {
       await until2('the links', (x) => x.scan === '4 links' && x.rows !== '');
       await sleep(500);
       s = await state();
-      check(`${theme}: the button opens the panel on its Links tab at 300 px, with the addresses listed top to bottom, once each, with the page and the kind`, s.width === 300 && s.pressed === 'true' && s.tabs === 'Search=false,Links=true' && s.rows === ROWS && s.scan === '4 links' && s.choose === 'Select All' && s.empty === '', JSON.stringify(s));
+      check(`${theme}: the button opens the panel on its Links tab at 300 px, with the addresses listed top to bottom, once each, with the page and an icon for the kind`, s.width === 300 && s.pressed === 'true' && s.tabs === 'Search=false,Links=true' && s.rows === ROWS && s.kinds === 'web,mail,web,web' && s.scan === '4 links' && !s.scanning && s.choose === 'Select All' && s.all === 'false' && s.empty === '' && s.now === -1, JSON.stringify(s));
       check(`${theme}: Copy is there but off, since nothing is selected`, s.copy === 'Copy' && s.copyOff, JSON.stringify(s));
       await shot(win, `workspace-linklist-${theme}.png`);
 
       await js(win, `document.getElementById('linkchoose').click()`);
       s = await state();
-      check(`${theme}: Select All selects every row, turns into Clear and Copy becomes Copy All`, s.picked === 4 && s.checked === 4 && s.choose === 'Clear' && s.copy === 'Copy All' && !s.copyOff, JSON.stringify(s));
+      check(`${theme}: the circle in the heading selects every row, is filled, offers Clear and Copy becomes Copy All`, s.all === 'true' && s.picked === 4 && s.checked === 4 && s.choose === 'Clear' && s.copy === 'Copy All' && !s.copyOff, JSON.stringify(s));
       await js(win, `document.getElementById('linkcopy').click()`);
       await sleep(400);
       check(`${theme}: Copy All puts every address on the clipboard, one to a line, and says Copied`, (await clip()) === ADDRESSES.join('\n') && (await state()).copy === 'Copied', await clip());
@@ -1870,7 +1872,7 @@ app.whenReady().then(async () => {
       await pick(1);
       await pick(3);
       s = await state();
-      check(`${theme}: the circle of a row selects it, the button counts the selection and Select All becomes Clear`, s.picked === 2 && s.checked === 2 && s.copy === 'Copy 2' && !s.copyOff && s.choose === 'Clear', JSON.stringify(s));
+      check(`${theme}: the circle of a row selects it, the button counts the selection and the heading's circle shows a part selection`, s.all === 'mixed' && s.picked === 2 && s.checked === 2 && s.copy === 'Copy 2' && !s.copyOff && s.choose === 'Clear', JSON.stringify(s));
       await js(win, `document.getElementById('linkcopy').click()`);
       await sleep(300);
       check(`${theme}: Copy then copies only the selected ones, in the order of the list`, (await clip()) === [ADDRESSES[1], ADDRESSES[3]].join('\n'), await clip());
@@ -1886,7 +1888,7 @@ app.whenReady().then(async () => {
       await until2('the mark', (x) => x.mark === 1);
       const where = await js(win, `(() => { const m = document.querySelector('.linkhit'); const c = document.getElementById('scroller').getBoundingClientRect(); const r = m ? m.getBoundingClientRect() : null; return { shown: !!m, inside: !!r && r.top >= c.top && r.bottom <= c.bottom, onPage: !!m && !!m.closest('.page[data-page-number="3"]'), colour: m ? getComputedStyle(m).backgroundColor : '' }; })()`);
       s = await state();
-      check(`${theme}: a click on a row goes to the page of the link, lights the link in the yellow of a search hit and gives the keys back to the document`, where.shown && where.inside && where.onPage && where.colour === 'rgba(255, 235, 59, 0.6)' && s.focus === 'scroller' && s.picked === 0, JSON.stringify([where, s]));
+      check(`${theme}: a click on a row goes to the page of the link, lights the link in the yellow of a search hit, marks the row as the current one and gives the keys back to the document`, s.now === 3 && where.shown && where.inside && where.onPage && where.colour === 'rgba(255, 235, 59, 0.6)' && s.focus === 'scroller' && s.picked === 0, JSON.stringify([where, s]));
       await sleep(2500);
       check(`${theme}: the link stays lit`, (await state()).mark === 1);
       await js(win, `document.querySelectorAll('.linkrow')[0].querySelector('.linkgo').click()`);
@@ -1917,14 +1919,14 @@ app.whenReady().then(async () => {
       await press(win, 'Escape');
       await sleep(500);
       s = await state();
-      check(`${theme}: Esc in the panel shuts it, takes the light off the link and returns the keys to the document`, s.width === 0 && s.pressed === 'false' && s.focus === 'scroller' && s.mark === 0, JSON.stringify(s));
+      check(`${theme}: Esc in the panel shuts it, takes the light off the link and returns the keys to the document`, s.width === 0 && s.pressed === 'false' && s.focus === 'scroller' && s.mark === 0 && s.now === -1, JSON.stringify(s));
       await closeAndWait(win);
     }
     nativeTheme.themeSource = 'light';
 
     const win = await openAndWait(fresh(), withLinks);
     const panel = () => js(win, `({ width: document.getElementById('hitpanel').getBoundingClientRect().width, tabs: [...document.querySelectorAll('#hitpanel .seg3 button')].map((t) => t.textContent + '=' + t.getAttribute('aria-checked')).join(), links: document.getElementById('linksbtn').getAttribute('aria-pressed'),
-      bar: !document.querySelector('.findbar').hidden, barFocus: document.activeElement === document.querySelector('.findbar input'), rows: document.querySelectorAll('#results .hitrow').length, field: document.querySelector('.findbar input').value, selected: document.querySelector('.findbar input').selectionStart + '-' + document.querySelector('.findbar input').selectionEnd, linksShown: !document.getElementById('linksview').hidden, searchShown: !document.getElementById('searchview').hidden, hint: document.querySelector('#results .empty')?.textContent ?? '' })`);
+      bar: !document.querySelector('.findbar').hidden, barFocus: document.activeElement === document.querySelector('.findbar input'), rows: document.querySelectorAll('#results .hitrow').length, field: document.querySelector('.findbar input').value, selected: document.querySelector('.findbar input').selectionStart + '-' + document.querySelector('.findbar input').selectionEnd, linksShown: !document.getElementById('linksview').hidden, searchShown: !document.getElementById('searchview').hidden, hint: document.querySelector('#results .sideempty')?.textContent ?? '' })`);
     await js(win, `document.getElementById('linksbtn').click()`);
     await sleep(900);
     let t = await panel();
@@ -1982,9 +1984,9 @@ app.whenReady().then(async () => {
 
     const none = await openAndWait(fresh(), small);
     await js(none, `document.getElementById('linksbtn').click()`);
-    await until('the end of the scan', () => js(none, `document.getElementById('linkscan').textContent === '' && !!document.querySelector('.linkempty') && document.querySelector('.linkempty').textContent === 'No links in this document'`));
+    await until('the end of the scan', () => js(none, `document.getElementById('linkscan').textContent === '' && !!document.querySelector('#linklist .sideempty') && document.querySelector('#linklist .sideempty').textContent === 'No links in this document'`));
     await sleep(500);
-    const nothing = await js(none, `({ empty: document.querySelector('.linkempty').textContent, copyOff: document.getElementById('linkcopy').disabled, choose: document.getElementById('linkchoose').hidden, rows: document.querySelectorAll('.linkrow').length, status: document.getElementById('linkscan').textContent })`);
+    const nothing = await js(none, `({ empty: document.querySelector('#linklist .sideempty').textContent, copyOff: document.getElementById('linkcopy').disabled, choose: document.getElementById('linkchoose').hidden, rows: document.querySelectorAll('.linkrow').length, status: document.getElementById('linkscan').textContent })`);
     check('a document with no links says so, and offers nothing to select or copy', nothing.empty === 'No links in this document' && nothing.copyOff && nothing.choose && nothing.rows === 0 && nothing.status === '', JSON.stringify(nothing));
     await closeAndWait(none);
   }
