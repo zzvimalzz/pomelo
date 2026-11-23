@@ -46,9 +46,9 @@ const readReg = (file) => fs.readFileSync(file).subarray(2).toString('utf16le');
   const exe = 'C:\\Users\\Zoë\\AppData\\Local\\Programs\\Pomelo\\Pomelo.exe';
   const calls = [];
   let written = '';
-  const run = (known) => async (cmd, args) => {
+  const run = (known, tail = '|2|open') => async (cmd, args) => {
     calls.push(args[0]);
-    if (args[0] === 'query') return known ? { code: 0, out: `    PomeloMenu    REG_SZ    0.2.0|"${exe}" "--convert=%1"|2\r\n` } : { code: 1, out: '' };
+    if (args[0] === 'query') return known ? { code: 0, out: `    PomeloMenu    REG_SZ    0.2.0|"${exe}" "--convert=%1"${tail}\r\n` } : { code: 1, out: '' };
     written = readReg(args[1]);
     return { code: 0, out: '' };
   };
@@ -59,9 +59,14 @@ const readReg = (file) => fs.readFileSync(file).subarray(2).toString('utf16le');
   expect('with the text of the menu entry', written.includes('@="Convert with Pomelo"'));
   expect('the command passes the selected file and keeps the quotes and an accented user name', written.includes('@="\\"C:\\\\Users\\\\Zoë\\\\AppData\\\\Local\\\\Programs\\\\Pomelo\\\\Pomelo.exe\\" \\"--convert=%1\\""'), written.split('\r\n').find((l) => l.includes('--convert')));
   expect('the file starts with the registry header', written.startsWith('Windows Registry Editor Version 5.00'));
+  const openKey = (ext, name) => `[HKEY_CURRENT_USER\\Software\\Classes\\SystemFileAssociations\\.${ext}\\shell\\${name}]`;
+  expect('PDFs alone get Open in Pomelo, which starts the same program with --open', written.includes(openKey('pdf', 'PomeloOpen')) && written.includes('@="Open in Pomelo"') && written.includes('--open=%1') && !written.includes(openKey('docx', 'PomeloOpen')) && !written.includes('Directory\\shell\\PomeloOpen'));
   calls.length = 0;
   const again = await installShellMenu({ exe, version: '0.2.0', exts: ['docx', 'png'], run: run(true) });
   expect('a start that finds them already there writes nothing', again === false && calls.join() === 'query', calls.join());
+  calls.length = 0;
+  const before = await installShellMenu({ exe, version: '0.2.0', exts: ['docx', 'png'], run: run(true, '|2') });
+  expect('a menu written before the Open entry existed is written again, even for the same version', before === true && calls.join() === 'query,import');
   calls.length = 0;
   const newer = await installShellMenu({ exe, version: '0.3.0', exts: ['docx', 'png'], run: run(true) });
   expect('a new version writes them again', newer === true && calls.join() === 'query,import');
@@ -70,7 +75,7 @@ const readReg = (file) => fs.readFileSync(file).subarray(2).toString('utf16le');
   expect('run from source, the command carries the app folder', written.includes('@="\\"C:\\\\electron\\\\electron.exe\\" \\"C:\\\\src\\\\pomelo\\" \\"--convert=%1\\""'), written.split('\r\n').find((l) => l.includes('--convert')));
   calls.length = 0;
   await removeShellMenu({ exts: ['docx', 'png'], run: run(true) });
-  expect('removing deletes every key it wrote', written.includes('[-HKEY_CURRENT_USER\\Software\\Classes\\SystemFileAssociations\\.docx\\shell\\Pomelo]') && written.includes('[-HKEY_CURRENT_USER\\Software\\Classes\\Directory\\shell\\Pomelo]') && !written.includes('--convert'));
+  expect('removing deletes every key it wrote', written.includes('[-HKEY_CURRENT_USER\\Software\\Classes\\SystemFileAssociations\\.docx\\shell\\Pomelo]') && written.includes('[-HKEY_CURRENT_USER\\Software\\Classes\\Directory\\shell\\Pomelo]') && written.includes(`[-${openKey('pdf', 'PomeloOpen').slice(1)}`) && !written.includes('--convert'));
 
   finish();
 })().catch((e) => { console.error(e); finish(1); });

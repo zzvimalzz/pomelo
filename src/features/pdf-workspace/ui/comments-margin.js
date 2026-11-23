@@ -113,6 +113,7 @@
       layout(pageNumber, pages.get(pageNumber));
     }
 
+    eventBus.on('pagesdestroy', () => { close(); pages.clear(); });
     eventBus.on('annotationlayerrendered', build);
     eventBus.on('scalechanging', layoutAll);
     eventBus.on('spreadmodechanged', layoutAll);

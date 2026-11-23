@@ -25,8 +25,9 @@
   grip.setAttribute('aria-valuemax', String(MAX));
   grip.setAttribute('aria-valuenow', String(MIN));
 
-  function watch(pdf, viewer, eventBus, container, linkService, saved) {
-    const thumbs = window.workspaceThumbs.create(pdf, (saved?.width ?? MIN) - ROOM);
+  function watch(viewer, eventBus, container, linkService, saved) {
+    let thumbs = null;
+    let first = true;
     const items = [];
     const visible = new Set();
     let rail = MIN;
@@ -50,6 +51,7 @@
     const seen = new IntersectionObserver((changes) => {
       for (const { target, isIntersecting } of changes) {
         const n = Number(target.dataset.n);
+        if (!items[n - 1]) continue;
         if (isIntersecting) {
           visible.add(n);
           thumbs.want(n, (image) => paint(n, image));
@@ -117,7 +119,7 @@
         mark(viewer.currentPageNumber, 'center');
       } else if (!outlined) {
         outlined = true;
-        window.workspaceOutline.fill(outlineList, pdf, linkService, container);
+        window.workspaceOutline.fill(outlineList, viewer.pdfDocument, linkService, container);
       }
       remember();
     }
@@ -145,7 +147,7 @@
 
     // The sheets follow the width as it is dragged; the pictures are drawn again once it is let go.
     function settle() {
-      thumbs.setWidth(rail - ROOM);
+      thumbs?.setWidth(rail - ROOM);
       for (const n of visible) thumbs.want(n, (image) => paint(n, image));
       mark(viewer.currentPageNumber, 'nearest');
       remember();
@@ -184,18 +186,35 @@
       setRail(saved.width);
     }
     eventBus.on('pagesinit', () => {
+      thumbs = window.workspaceThumbs.create(viewer.pdfDocument, rail - ROOM);
+      api.thumbs = thumbs;
       button.disabled = false;
-      if (!saved?.open) return;
-      // Reading the width makes the browser apply it before the slide is switched back on, so the panel starts open.
-      panel.classList.add('still');
-      setOpen(true);
-      panel.getBoundingClientRect();
-      panel.classList.remove('still');
+      if (open) show(tab);
+      else if (first && saved?.open) {
+        // Reading the width makes the browser apply it before the slide is switched back on, so the panel starts open.
+        panel.classList.add('still');
+        setOpen(true);
+        panel.getBoundingClientRect();
+        panel.classList.remove('still');
+      }
+      first = false;
+    });
+    eventBus.on('pagesdestroy', () => {
+      thumbs?.release();
+      thumbs = null;
+      api.thumbs = null;
+      seen.disconnect();
+      items.length = 0;
+      visible.clear();
+      current = null;
+      outlined = false;
+      list.replaceChildren();
+      outlineList.replaceChildren();
+      button.disabled = true;
     });
     eventBus.on('pagechanging', ({ pageNumber }) => mark(pageNumber, 'nearest'));
     window.workspaceViewer.restScrollbar(list);
     window.workspaceViewer.restScrollbar(outlineList);
-    api.thumbs = thumbs;
   }
 
   const api = { watch, thumbs: null };

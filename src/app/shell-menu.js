@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// "Convert with Pomelo" in Explorer's right-click menu. Registered for the current user only (no administrator rights), once for each
+// "Convert with Pomelo" in Explorer's right-click menu, and "Open in Pomelo" for PDFs. Registered for the current user only (no administrator rights), once for each
 // format Pomelo reads and once for folders. Explorer starts `Pomelo.exe "--convert=<file>"` for every selected file, so the files
 // of one selection arrive as several starts a moment apart and are gathered into one batch.
 const fs = require('fs');
@@ -10,13 +10,14 @@ const { withTempFile } = require('#shared/node/fs');
 const CLASSES = 'HKEY_CURRENT_USER\\Software\\Classes';
 const keyOf = (ext) => `${CLASSES}\\SystemFileAssociations\\.${ext}\\shell\\Pomelo`;
 const FOLDER_KEY = `${CLASSES}\\Directory\\shell\\Pomelo`;
+const OPEN_KEY = `${CLASSES}\\SystemFileAssociations\\.pdf\\shell\\PomeloOpen`;
 const CONVERT = '--convert=';
 const OPEN = '--open=';
 const regString =(s) => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
-function addLines(key, exe, command, mark) {
+function addLines(key, exe, command, mark, text = 'Convert with Pomelo') {
   return [
-    `[${key}]`, `@=${regString('Convert with Pomelo')}`, `"Icon"=${regString(`"${exe}",0`)}`, `"PomeloMenu"=${regString(mark)}`, '',
+    `[${key}]`, `@=${regString(text)}`, `"Icon"=${regString(`"${exe}",0`)}`, `"PomeloMenu"=${regString(mark)}`, '',
     `[${key}\\command]`, `@=${regString(command)}`, '',
   ];
 }
@@ -36,15 +37,16 @@ function importReg(lines, run) {
 // second start to the running Pomelo, which would separate `--convert` from the path after it.
 async function installShellMenu({ exe, launch = [], version, exts, run = runStatus }) {
   const command = [...[exe, ...launch].map((part) => `"${part}"`), '"--convert=%1"'].join(' ');
-  const mark = `${version}|${command}|${exts.length}`;
+  const open = command.replace(CONVERT, OPEN);
+  const mark = `${version}|${command}|${exts.length}|open`;
   const current = await run('reg', ['query', FOLDER_KEY, '/v', 'PomeloMenu'], { timeout: 10000 });
   if (current.code === 0 && current.out.includes(mark)) return false;
-  const lines = [...exts.flatMap((ext) => addLines(keyOf(ext), exe, command, mark)), ...addLines(FOLDER_KEY, exe, command, mark)];
+  const lines = [...exts.flatMap((ext) => addLines(keyOf(ext), exe, command, mark)), ...addLines(FOLDER_KEY, exe, command, mark), ...addLines(OPEN_KEY, exe, open, mark, 'Open in Pomelo')];
   return (await importReg(lines, run)).code === 0;
 }
 
 async function removeShellMenu({ exts, run = runStatus }) {
-  await importReg([...exts.map((ext) => `[-${keyOf(ext)}]`), `[-${FOLDER_KEY}]`], run);
+  await importReg([...exts.map((ext) => `[-${keyOf(ext)}]`), `[-${FOLDER_KEY}]`, `[-${OPEN_KEY}]`], run);
 }
 
 // The file or folder a `--convert=<path>` start was asked to convert: [] when there is none or it is not a path that exists.

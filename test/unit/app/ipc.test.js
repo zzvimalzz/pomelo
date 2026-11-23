@@ -34,8 +34,10 @@ const docks = [];
 const opened = [];
 const copied = [];
 const views = [];
+const closed = [];
+const dropped = [];
 require(path.join(features, 'pdf-workspace', 'workspace.ipc')).registerWorkspaceIpc({
-  documents: { read: (...args) => { served.push(args); return 'bytes'; }, unlock: (...args) => { unlocked.push(args); } }, state: () => ({ documents: [] }),
+  documents: { read: (...args) => { served.push(args); return 'bytes'; }, unlock: (...args) => { unlocked.push(args); } }, state: () => ({ documents: [] }), closeDocument: (token) => closed.push(token), openDropped: (paths) => dropped.push(paths),
   setFocus: (on) => focused.push(on), setDock: (side) => docks.push(side), setView: (patch) => views.push(patch), checkLink: (url) => (url === 'https://ok.test/' ? url : null), openLink: (url) => opened.push(url), copyLink: (url) => copied.push(url), copyLinks: (urls) => { copied.push(urls); return urls.length; }, isWorkspace: (sender) => sender === 'the workspace page',
 });
 require(path.join(features, 'engine-setup', 'engine-setup.ipc')).registerEngineSetupIpc({ installer: {}, getEngines: noop, ...quiet });
@@ -58,6 +60,10 @@ expect('another page is refused the document state, the bytes and the password',
 expect('the workspace page is answered', handlers['pdfws:read']({ sender: 'the workspace page' }, 'token', 0, 10) === 'bytes' && JSON.stringify(served) === '[["token",0,10]]' && handlers['pdfws:state']({ sender: 'the workspace page' }).documents.length === 0);
 handlers['pdfws:unlock']({ sender: 'the workspace page' }, 'token', 'secret');
 expect('the workspace page can give the password of its document', JSON.stringify(unlocked) === '[["token","secret"]]');
+
+// Only the workspace window's own page may close a tab or hand over a drop.
+expect('another page cannot close a document or open files, the workspace page can', refused(() => handlers['pdfws:close']({ sender: 'another page' }, 'token')) && refused(() => handlers['pdfws:drop']({ sender: 'another page' }, ['C:/a.pdf'])) && closed.length === 0 && dropped.length === 0
+  && (handlers['pdfws:close']({ sender: 'the workspace page' }, 'token'), handlers['pdfws:drop']({ sender: 'the workspace page' }, ['C:/a.pdf']), JSON.stringify(closed) === '["token"]' && JSON.stringify(dropped) === '[["C:/a.pdf"]]'), JSON.stringify([closed, dropped]));
 
 // Only the workspace window's own page may move the dock; the value is checked where the setting is kept.
 expect('another page cannot move the dock, the workspace page can', refused(() => handlers['pdfws:dock']({ sender: 'another page' }, 'left')) && docks.length === 0 && (handlers['pdfws:dock']({ sender: 'the workspace page' }, 'left'), JSON.stringify(docks) === '["left"]'));

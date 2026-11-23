@@ -78,20 +78,27 @@
 
   let pending = null;
   let sending = null;
+  let saved = {};
   function remember(patch) {
+    Object.assign(saved, patch);
     pending = { ...pending, ...patch };
     clearTimeout(sending);
     sending = setTimeout(() => { window.workspaceApi.setView(pending); pending = null; }, 300);
   }
 
-  // doc: { token, size } from the main process. The page is drawn into viewerEl, which sits in the absolutely positioned container.
-  async function open(doc, container, viewerEl, view) {
+  // One viewer serves every tab. The page of the tab on show is set into it, and each module below keeps its own state in step
+  // through pdf.js's pagesdestroy and pagesinit. view: the remembered view the main process sent.
+  let session = null;
+  let restore = {};
+  let restoring = false;
+
+  async function start(container, viewerEl, view) {
     const { lib, viewerLib } = await loading;
-    const pdf = await load(lib, doc);
+    saved = { ...view };
     const eventBus = new viewerLib.EventBus();
     const linkService = new viewerLib.PDFLinkService({ eventBus });
     const findController = new viewerLib.PDFFindController({ linkService, eventBus });
-    const colours = view.pageColours ?? 'original';
+    const colours = saved.pageColours ?? 'original';
     const viewer = new viewerLib.PDFViewer({ container, viewer: viewerEl, eventBus, linkService, findController, annotationEditorMode: lib.AnnotationEditorType.DISABLE, removePageBorders: true, pageColors: window.workspaceColours.pageColors(colours) });
     window.workspaceColours.watch(viewer, viewerEl, colours, eventBus, lib.OPS);
     linkService.setViewer(viewer);
@@ -108,26 +115,48 @@
     api.viewer = viewer;
     window.workspaceComments.watch(viewer, eventBus, container);
     window.workspaceDock.watch(viewer, eventBus, container);
-    window.workspaceSidebar.watch(pdf, viewer, eventBus, container, linkService, view.sidebar);
-    window.workspaceLinkList.watch(pdf, viewer, eventBus, container, followLink);
+    window.workspaceSidebar.watch(viewer, eventBus, container, linkService, saved.sidebar);
+    window.workspaceLinkList.watch(viewer, eventBus, container, followLink);
     window.workspaceSelect.watch(container);
-    window.workspaceSearch.watch(pdf, viewer, eventBus, container);
+    window.workspaceSearch.watch(viewer, eventBus, container);
     window.workspaceSide.watch(container, { search: window.workspaceResults, links: window.workspaceLinkList });
-    // The choices are recorded only after they have been restored, so opening a file does not write what it has just read.
+    // The choices are recorded only after they have been restored, so showing a file does not write what it has just read.
     eventBus.on('pagesinit', () => {
-      viewer.spreadMode = LAYOUTS[view.layout] ?? 0;
-      viewer.currentScaleValue = String(view.zoom ?? 'page-fit');
-      eventBus.on('scalechanging', ({ scale, presetValue }) => remember({ zoom: PRESETS.includes(presetValue) ? presetValue : Math.round(scale * 1000) / 1000 }));
-      eventBus.on('spreadmodechanged', ({ mode }) => remember({ layout: Object.keys(LAYOUTS)[mode] }));
+      restoring = true;
+      viewer.spreadMode = LAYOUTS[restore.layout ?? saved.layout] ?? 0;
+      viewer.currentScaleValue = String(restore.zoom ?? saved.zoom ?? 'page-fit');
+      container.scrollTop = restore.top ?? 0;
+      restoring = false;
     });
+    eventBus.on('scalechanging', ({ scale, presetValue }) => { if (!restoring) remember({ zoom: PRESETS.includes(presetValue) ? presetValue : Math.round(scale * 1000) / 1000 }); });
+    eventBus.on('spreadmodechanged', ({ mode }) => { if (!restoring) remember({ layout: Object.keys(LAYOUTS)[mode] }); });
     // A fit keeps fitting as the window changes size; a zoom the user chose stays as it is.
     new ResizeObserver(() => { const zoom = viewer.currentScaleValue; if (viewer.pagesCount && PRESETS.includes(zoom)) viewer.currentScaleValue = zoom; }).observe(container);
     restScrollbar(container);
+    session = { viewer, linkService, history, container };
+  }
+
+  const openDocument = async (doc) => load((await loading).lib, doc);
+
+  function where() {
+    const { viewer, container } = session;
+    return { zoom: viewer.currentScaleValue, layout: Object.keys(LAYOUTS)[viewer.spreadMode], top: container.scrollTop };
+  }
+
+  // pdf: the document of the tab. tabView: { zoom, layout, top } it was left in, empty for a tab not shown before.
+  function show(pdf, tabView) {
+    const { viewer, linkService, history } = session;
+    restore = tabView;
     viewer.setDocument(pdf);
     linkService.setDocument(pdf, null);
     history.initialize({ fingerprint: pdf.fingerprints[0], resetHistory: true });
   }
 
-  const api = { loadOptions, open, remember, restScrollbar, viewer: null };
+  function clear() {
+    session.viewer.setDocument(null);
+    session.linkService.setDocument(null, null);
+  }
+
+  const api = { loadOptions, start, openDocument, show, clear, where, remember, restScrollbar, viewer: null };
   window.workspaceViewer = api;
 })();

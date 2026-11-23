@@ -158,6 +158,7 @@
       sync();
       wrap.hidden = false;
     });
+    eventBus.on('pagesdestroy', () => { closeMenu(); wrap.hidden = true; });
     eventBus.on('pagechanging', ({ pageNumber }) => {
       if (document.activeElement !== page) { page.value = pageNumber; fit(); }
       if (focusReading() || folded) showPill(`${pageNumber} / ${viewer.pagesCount}`);

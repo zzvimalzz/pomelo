@@ -79,6 +79,7 @@
       const fn = list.fnArray[i];
       return pictures.has(fn) || state.has(fn) || (fn === ops.constructPath && list.argsArray[i][0] === ops.endPath);
     };
+    eventBus.on('pagesdestroy', () => { layers.clear(); versions.clear(); });
     eventBus.on('pagerendered', ({ pageNumber, cssTransform }) => { if (!cssTransform) protect(pageNumber); });
     eventBus.on('scalechanging', () => {
       for (const [n, layer] of layers) {

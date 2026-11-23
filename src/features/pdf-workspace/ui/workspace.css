@@ -19,8 +19,19 @@ html, body { height: 100%; margin: 0; overflow: hidden; background: transparent;
 .window { position: relative; display: flex; flex-direction: column; height: 100%; background: var(--plate); }
 html.solid .window { background: var(--solid); }
 
-.titlerow { flex: none; display: grid; grid-template-columns: minmax(176px, 1fr) auto minmax(176px, 1fr); align-items: center; height: 44px; -webkit-app-region: drag; }
+.titlerow { flex: none; display: grid; grid-template-columns: minmax(188px, 1fr) auto minmax(188px, 1fr); align-items: center; height: 44px; -webkit-app-region: drag; }
 .titlerow b { grid-column: 2; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tabs { grid-column: 2; display: flex; gap: 4px; min-width: 0; max-width: 100%; padding: 3px; border-radius: 10px; background: var(--hover); -webkit-app-region: no-drag; }
+.tab { position: relative; display: flex; align-items: center; gap: 6px; flex: 0 1 200px; min-width: 40px; height: 28px; padding: 0 6px 0 11px; border-radius: 7px; color: var(--muted); font-weight: 600; font-size: 12px; cursor: default; }
+.tab + .tab::before { content: ""; position: absolute; left: -2.5px; top: 8px; bottom: 8px; width: 1px; background: var(--muted); opacity: .35; }
+.tab.on::before, .tab.on + .tab::before { opacity: 0; }
+.tab span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab.on { background: var(--bar); color: var(--txt); box-shadow: 0 1px 2px rgba(0, 0, 0, .1); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tab .x { flex: none; width: 18px; height: 18px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 5px; background: none; color: inherit; opacity: 0; cursor: pointer; }
+.tab:hover .x, .tab.on .x, .tab:focus-visible .x { opacity: .6; }
+.tab .x:hover { background: var(--hover); opacity: 1; }
+.tab .x .i { width: 12px; height: 12px; }
 .titleleft { grid-column: 1; justify-self: start; display: flex; gap: 2px; margin-left: 10px; -webkit-app-region: no-drag; }
 .titletools { grid-column: 3; justify-self: end; display: flex; gap: 2px; margin-right: 146px; -webkit-app-region: no-drag; }
 .ib { width: 30px; height: 30px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
@@ -75,6 +86,7 @@ html.solid .window { background: var(--solid); }
 .linkrow:hover { background: var(--hover); }
 .linkrow.on { background: var(--accent-soft); }
 .hitrow.on, .linkrow.now { background: var(--bar); box-shadow: 0 0 0 1px var(--bar-line), 0 1px 3px rgba(0, 0, 0, .1); }
+@media (prefers-color-scheme: dark) { .hitrow.on, .linkrow.now { background: rgba(255, 255, 255, .14); box-shadow: 0 0 0 1.5px var(--accent); } }
 .pick { width: 18px; height: 18px; padding: 0; display: grid; place-items: center; border: 1.5px solid var(--faint); border-radius: 50%; background: none; color: transparent; cursor: pointer; transition: background .15s, border-color .15s; }
 .pick .i { width: 11px; height: 11px; stroke-width: 3; }
 /* A row's circle shows what kind of address it is until the row is pointed at or a selection is under way. */

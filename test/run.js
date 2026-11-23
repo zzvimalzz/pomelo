@@ -41,6 +41,7 @@ const SUITES = [
   { name: 'workspace-bounds', file: 'unit/pdf-workspace/bounds.test.js', tier: 'unit' },
   { name: 'workspace-links', file: 'unit/pdf-workspace/links.test.js', tier: 'unit' },
   { name: 'workspace-view', file: 'unit/pdf-workspace/view.test.js', tier: 'unit' },
+  { name: 'workspace-recent', file: 'unit/pdf-workspace/recent.test.js', tier: 'unit' },
   { name: 'app-start', file: 'integration/app/start.test.js', tier: 'integration', timeout: 120 },
   { name: 'matrix', file: 'integration/conversion/matrix.test.js', tier: 'integration', electron: true, timeout: 600 },
   { name: 'edge-cases', file: 'integration/conversion/edge-cases.test.js', tier: 'integration', electron: true, timeout: 300 },
