@@ -86,6 +86,7 @@ html.solid .window { background: var(--solid); }
 .linkrow:hover { background: var(--hover); }
 .linkrow.on { background: var(--accent-soft); }
 .hitrow.on, .linkrow.now { background: var(--bar); box-shadow: 0 0 0 1px var(--bar-line), 0 1px 3px rgba(0, 0, 0, .1); }
+@media (prefers-color-scheme: dark) { .hitrow.on, .linkrow.now { background: rgba(255, 255, 255, .14); box-shadow: 0 0 0 1.5px var(--accent); } }
 .pick { width: 18px; height: 18px; padding: 0; display: grid; place-items: center; border: 1.5px solid var(--faint); border-radius: 50%; background: none; color: transparent; cursor: pointer; transition: background .15s, border-color .15s; }
 .pick .i { width: 11px; height: 11px; stroke-width: 3; }
 /* A row's circle shows what kind of address it is until the row is pointed at or a selection is under way. */

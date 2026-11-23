@@ -1529,6 +1529,13 @@ app.whenReady().then(async () => {
     await sleep(800);
     v = await resultsState();
     check('a click on a row goes to that hit: its page, its text marked in yellow and the count', v.selectedPage === '3' && v.selectedText === 'delivery' && v.on === '3' && (await barState(win)).page === 3, JSON.stringify(v));
+    nativeTheme.themeSource = 'dark';
+    await sleep(400);
+    const darkRow = await js(win, `(() => { const on = getComputedStyle(document.querySelector('#results .hitrow.on')); const off = getComputedStyle([...document.querySelectorAll('#results .hitrow')].find((r) => !r.classList.contains('on'))); return { on: on.backgroundColor, off: off.backgroundColor, ring: on.boxShadow }; })()`);
+    await shot(win, 'workspace-search-current-dark.png');
+    nativeTheme.themeSource = 'light';
+    await sleep(400);
+    check('in the dark the row of the hit in view has a lighter surface than the others and a ring in the accent colour', darkRow.on !== darkRow.off && darkRow.ring.includes('rgb(232, 77, 111)'), JSON.stringify(darkRow));
     await js(win, `document.querySelectorAll('#results .hitrow')[0].click()`);
     await countIs(win, '1 of 4');
     await sleep(800);
@@ -2028,6 +2035,11 @@ app.whenReady().then(async () => {
       const where = await js(win, `(() => { const m = document.querySelector('.linkhit'); const c = document.getElementById('scroller').getBoundingClientRect(); const r = m ? m.getBoundingClientRect() : null; return { shown: !!m, inside: !!r && r.top >= c.top && r.bottom <= c.bottom, onPage: !!m && !!m.closest('.page[data-page-number="3"]'), colour: m ? getComputedStyle(m).backgroundColor : '' }; })()`);
       s = await state();
       check(`${theme}: a click on a row goes to the page of the link, lights the link in the yellow of a search hit, marks the row as the current one and gives the keys back to the document`, s.now === 3 && where.shown && where.inside && where.onPage && where.colour === 'rgba(255, 235, 59, 0.6)' && s.focus === 'scroller' && s.picked === 0, JSON.stringify([where, s]));
+      await js(win, `document.querySelectorAll('.linkrow').forEach((r, i) => { if (i < 3) r.classList.add('on'); })`);
+      const look = await js(win, `(() => { const rows = [...document.querySelectorAll('.linkrow')]; const css = (r) => getComputedStyle(r); const now = css(rows[3]); const other = css(rows[1]); return { now: now.backgroundColor, other: other.backgroundColor, ring: now.boxShadow, otherRing: other.boxShadow, otherOn: rows[1].classList.contains('on') }; })()`);
+      check(`${theme}: the current row stands out from the selected ones, by its surface and in the dark also by a ring in the accent colour`, look.otherOn && look.now !== look.other && (theme === 'light' || (look.ring.includes('rgb(232, 77, 111)') && look.otherRing === 'none')), JSON.stringify(look));
+      await shot(win, `workspace-linklist-current-${theme}.png`);
+      await js(win, `document.querySelectorAll('.linkrow').forEach((r, i) => { if (i < 3) r.classList.remove('on'); })`);
       await sleep(2500);
       check(`${theme}: the link stays lit`, (await state()).mark === 1);
       await js(win, `document.querySelectorAll('.linkrow')[0].querySelector('.linkgo').click()`);
