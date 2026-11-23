@@ -410,6 +410,8 @@ app.whenReady().then(async () => {
     s = await tabState(win);
     check('ten files are ten tabs and the first of the last batch is on show', s.names.split('|').length === 10 && s.on === 'Ten 02.pdf' && notices.length === 0, JSON.stringify(s));
     check('the tab strip fits the window: its tabs share the room and none is pushed out', await js(win, `(() => { const strip = document.getElementById('tabs').getBoundingClientRect(); const row = document.querySelector('.titlerow').getBoundingClientRect(); const last = [...document.querySelectorAll('#tabs .tab')].pop().getBoundingClientRect(); return strip.right <= row.right && last.right <= strip.right + 1 && strip.left >= row.left; })()`));
+    check('a thin line stands between neighbouring tabs, and none beside the tab on show', await js(win, `(() => { const o = [...document.querySelectorAll('#tabs .tab')].map((t) => { const c = getComputedStyle(t, '::before'); return c.content === 'none' ? 'none' : c.opacity + ':' + c.width; }); return o.join(' '); })()`) === 'none 0:1px 0:1px 0.35:1px 0.35:1px 0.35:1px 0.35:1px 0.35:1px 0.35:1px 0.35:1px');
+    check('the tabs end at least 12 px before the Focus reading button', await js(win, `document.getElementById('focus').getBoundingClientRect().left - document.getElementById('tabs').getBoundingClientRect().right >= 12`));
     await shot(win, 'workspace-tabs-ten.png');
     await workspace.open([ten[10]]);
     await sleep(400);
