@@ -112,6 +112,7 @@
     window.workspaceLinkList.watch(pdf, viewer, eventBus, container, followLink);
     window.workspaceSelect.watch(container);
     window.workspaceSearch.watch(pdf, viewer, eventBus, container);
+    window.workspaceSide.watch(container, { search: window.workspaceResults, links: window.workspaceLinkList });
     // The choices are recorded only after they have been restored, so opening a file does not write what it has just read.
     eventBus.on('pagesinit', () => {
       viewer.spreadMode = LAYOUTS[view.layout] ?? 0;

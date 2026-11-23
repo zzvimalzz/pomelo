@@ -32,14 +32,19 @@
         <div class="edgehint"></div>
       </main>
       <aside class="panel" id="hitpanel"><div class="inner" id="hitinner" hidden>
-        <div class="hithead"><b>Results</b><span class="total" id="hittotal"></span><button class="sm" id="hitclose" type="button"></button></div>
-        <div class="scrolly" id="results"></div>
-      </div></aside>
-      <aside class="panel" id="linkpanel"><div class="inner" id="linkinner" hidden>
-        <div class="hithead"><b>Links</b><span class="total" id="linktotal"></span><button class="sm" id="linkclose" type="button"></button></div>
-        <div class="linkbar"><button class="linkpick" id="linkchoose" type="button" hidden></button><button class="btn linkcopy" id="linkcopy" type="button" disabled></button></div>
-        <p class="linkscan" id="linkscan"></p>
-        <div class="scrolly" id="linklist"></div>
+        <div class="sidehead">
+          <div class="seg3" role="radiogroup" aria-label="Panel"><button type="button" role="radio" id="tabsearch" aria-checked="true">Search</button><button type="button" role="radio" id="tablinks" aria-checked="false">Links</button></div>
+          <button class="sm" id="hitclose" type="button"></button>
+        </div>
+        <div class="sideview" id="searchview">
+          <div class="hithead"><span class="total" id="hittotal"></span></div>
+          <div class="scrolly" id="results"></div>
+        </div>
+        <div class="sideview" id="linksview" hidden>
+          <div class="linkbar"><button class="linkpick" id="linkchoose" type="button" hidden></button><button class="btn primary linkcopy" id="linkcopy" type="button" disabled></button></div>
+          <p class="linkscan" id="linkscan"></p>
+          <div class="scrolly" id="linklist"></div>
+        </div>
       </div></aside>
     </div>
   </div>
@@ -58,6 +63,7 @@
   <script src="dock-place.js"></script>
   <script src="dock.js"></script>
   <script src="select.js"></script>
+  <script src="side.js"></script>
   <script src="results.js"></script>
   <script src="linklist.js"></script>
   <script src="ticks.js"></script>

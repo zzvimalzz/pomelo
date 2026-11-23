@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The Links panel on the right: every web and mail address in the document, one row each, found by reading the pages in turn the first time
-// the panel is opened. A row is selected with its circle, goes to the link with a click and opens it with its arrow; the header copies all the
-// addresses or only the selected ones, one to a line. A classic script that adds window.workspaceLinkList.
+// The Links tab of the panel on the right (side.js): every web and mail address in the document, one row each, found by reading the pages in
+// turn the first time the tab is shown. A row is selected with its circle, goes to the link and lights it with a click and opens it with its
+// arrow; the Copy button copies the selected addresses, one to a line. A classic script that adds window.workspaceLinkList.
 (() => {
   const { el, icon } = window.pomeloUi;
-  const SLIDE = 350;
   const WEB = /^(?:https?:|mailto:)/i;
   const TEXT_URL = /https?:\/\/[^\s<>"]+/gi;
   const TRAILING = /[.,;:!?)\]}'"]+$/;
@@ -49,29 +48,22 @@
 
   function watch(pdf, viewer, eventBus, container, follow) {
     const button = document.getElementById('linksbtn');
-    const panel = document.getElementById('linkpanel');
-    const inner = document.getElementById('linkinner');
     const list = document.getElementById('linklist');
-    const total = document.getElementById('linktotal');
-    const closer = document.getElementById('linkclose');
     const chooser = document.getElementById('linkchoose');
     const copier = document.getElementById('linkcopy');
-    const scanning = document.getElementById('linkscan');
+    const status = document.getElementById('linkscan');
     const entries = [];
     const known = new Map();
-    let open = false;
     let started = false;
     let finished = false;
-    let closing = null;
     let copied = null;
     let scanned = 0;
+    let lit = null;
+    let wanted = null;
 
     button.innerHTML = icon('link');
     button.title = 'Links in this document';
     button.setAttribute('aria-label', 'Links in this document');
-    closer.innerHTML = icon('close');
-    closer.title = 'Hide links';
-    closer.setAttribute('aria-label', 'Hide links');
     const empty = el('div', 'linkempty');
     const emptyIcon = el('i');
     emptyIcon.innerHTML = icon('link');
@@ -86,15 +78,15 @@
 
     function bar() {
       const n = picked().length;
-      total.textContent = entries.length ? `${entries.length} ${entries.length === 1 ? 'link' : 'links'}` : '';
       chooser.hidden = !entries.length;
-      chooser.textContent = n ? 'Clear' : 'Select all';
-      copier.disabled = !entries.length;
-      if (!copier.classList.contains('done')) copier.lastChild.textContent = n ? `Copy ${n}` : 'Copy all';
+      chooser.textContent = n ? 'Clear' : 'Select All';
+      copier.disabled = !n;
+      if (!copier.classList.contains('done')) copier.lastChild.textContent = !n ? 'Copy' : n === entries.length ? 'Copy All' : `Copy ${n}`;
       list.classList.toggle('picking', n > 0);
       empty.hidden = entries.length > 0;
       if (!entries.length) emptyText.textContent = finished ? 'No links in this document' : 'Looking for links…';
-      scanning.textContent = finished ? '' : `Reading page ${Math.min(scanned + 1, pdf.numPages)} of ${pdf.numPages}`;
+      const found = entries.length ? `${entries.length} ${entries.length === 1 ? 'link' : 'links'}` : '';
+      status.textContent = finished ? found : `${found}${found ? ' · ' : ''}Reading page ${Math.min(scanned + 1, pdf.numPages)} of ${pdf.numPages}`;
     }
 
     function make(entry) {
@@ -159,52 +151,51 @@
       entry.row.querySelector('.pick').setAttribute('aria-checked', String(on));
     }
 
-    // pdf.js clears what it did not put in a page when it draws the page, so the ring waits for a page that is not drawn yet.
-    function flash(entry) {
+    function unlight() {
+      lit?.remove();
+      lit = null;
+      wanted = null;
+    }
+
+    // The link is lit in the yellow of the hit being looked at in a search, and stays so until another is chosen or the panel shuts.
+    // pdf.js clears what it did not put in a page when it draws the page, so a page that is not drawn yet is lit once it is.
+    function light(entry) {
       const view = viewer.getPageView(entry.page - 1);
-      if (view.renderingState === FINISHED) { ring(entry, view); return; }
+      if (view.renderingState === FINISHED) { paint(entry, view); return; }
       const rendered = ({ pageNumber }) => {
         if (pageNumber !== entry.page) return;
         eventBus.off('pagerendered', rendered);
-        ring(entry, view);
+        if (wanted === entry) paint(entry, view);
       };
       eventBus.on('pagerendered', rendered);
     }
 
-    function ring(entry, view) {
+    function paint(entry, view) {
       const [x1, y1] = view.viewport.convertToViewportPoint(entry.rect[0], entry.rect[1]);
       const [x2, y2] = view.viewport.convertToViewportPoint(entry.rect[2], entry.rect[3]);
-      const mark = el('div', 'linkflash');
-      mark.style.setProperty('left', `${Math.min(x1, x2) - 5}px`);
-      mark.style.setProperty('top', `${Math.min(y1, y2) - 4}px`);
-      mark.style.setProperty('width', `${Math.abs(x2 - x1) + 10}px`);
-      mark.style.setProperty('height', `${Math.abs(y2 - y1) + 8}px`);
-      view.div.append(mark);
-      setTimeout(() => mark.remove(), 1700);
+      lit = el('div', 'linkhit');
+      lit.style.setProperty('left', `${Math.min(x1, x2)}px`);
+      lit.style.setProperty('top', `${Math.min(y1, y2)}px`);
+      lit.style.setProperty('width', `${Math.abs(x2 - x1)}px`);
+      lit.style.setProperty('height', `${Math.abs(y2 - y1)}px`);
+      view.div.append(lit);
     }
 
-    function show(entry) {
+    function goTo(entry) {
+      unlight();
+      wanted = entry;
       viewer.scrollPageIntoView({ pageNumber: entry.page, destArray: [null, { name: 'XYZ' }, Math.max(0, entry.rect[0] - 20), entry.rect[3] + 90, null] });
-      flash(entry);
+      light(entry);
     }
 
-    function setOpen(on) {
-      open = on;
-      clearTimeout(closing);
-      if (on) {
-        window.workspaceResults.hide();
-        inner.hidden = false;
-        if (!started) { started = true; bar(); scan(); }
-      } else {
-        closing = setTimeout(() => { inner.hidden = true; }, SLIDE);
-      }
-      panel.classList.toggle('open', on);
-      button.setAttribute('aria-pressed', String(on));
+    // Called by side.js when the tab comes on show or goes off it.
+    function show(on) {
+      if (on && !started) { started = true; bar(); scan(); }
+      if (!on) unlight();
     }
 
     async function copy() {
-      const chosen = picked();
-      const count = await window.workspaceApi.copyLinks((chosen.length ? chosen : entries).map((e) => e.url));
+      const count = await window.workspaceApi.copyLinks(picked().map((e) => e.url));
       if (!count) return;
       copier.classList.add('done');
       copier.firstChild.innerHTML = icon('check');
@@ -219,7 +210,7 @@
       if (!row) return;
       if (e.target.closest('.pick')) { select(row.entry, !row.entry.selected); bar(); }
       else if (e.target.closest('.linkopen')) follow(row.entry.url);
-      else if (e.target.closest('.linkgo')) { show(row.entry); container.focus(); }
+      else if (e.target.closest('.linkgo')) { goTo(row.entry); container.focus(); }
     });
     list.addEventListener('mousedown', (e) => e.preventDefault());
     list.addEventListener('keydown', (e) => {
@@ -241,19 +232,13 @@
       bar();
     };
     copier.onclick = copy;
-    for (const b of [closer, chooser, copier, button]) b.addEventListener('mousedown', (e) => e.preventDefault());
-    closer.onclick = () => setOpen(false);
-    button.onclick = () => setOpen(!open);
+    for (const b of [chooser, copier, button]) b.addEventListener('mousedown', (e) => e.preventDefault());
+    button.onclick = () => window.workspaceSide.toggle('links');
+    window.workspaceSide.onchange((open, tab) => button.setAttribute('aria-pressed', String(open && tab === 'links')));
     eventBus.on('pagesinit', () => { button.disabled = false; });
-    window.workspaceKeys.bind('escape', () => {
-      if (!open || !panel.contains(document.activeElement)) return false;
-      setOpen(false);
-      container.focus();
-      return true;
-    });
-    api.hide = () => { if (open) setOpen(false); };
+    api.show = show;
   }
 
-  const api = { watch, hide: () => {} };
+  const api = { watch, show: () => {} };
   window.workspaceLinkList = api;
 })();
