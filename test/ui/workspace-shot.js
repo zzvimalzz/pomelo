@@ -4,12 +4,12 @@
 // idle and after scrolling 50 pages, the comments a file holds as markers beside the page, the scroll bars, the pages panel and its outline, a password-protected
 // file, a file that is not a PDF, a file that is not there, and that the page is cut off from the network. Saves screenshots.
 //   npx electron test/ui/workspace-shot.js
-const { app, BrowserWindow, clipboard, ipcMain, nativeTheme, screen } = require('electron');
+const { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme, screen } = require('electron');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { PDFDocument, PDFName, PDFRawStream, PDFString, PDFHexString, StandardFonts, rgb } = require('pdf-lib');
+const { PDFDocument, PDFName, PDFRawStream, PDFString, PDFHexString, StandardFonts, clip, endPath, popGraphicsState, pushGraphicsState, rectangle, rgb } = require('pdf-lib');
 const { createWorkspace } = require('../../src/features/pdf-workspace');
 const { expect: check, failed } = require('../support/expect');
 const { encryptedPdf } = require('../support/encrypted-pdf');
@@ -1674,7 +1674,7 @@ app.whenReady().then(async () => {
     const showing = async (win, paper, ink) => { await until('the colours', async () => { const l = await look(win); return near(l.paper, rgbOf(paper), 4) && near(l.ink, rgbOf(ink), 26); }, 10000); return look(win); };
     const menuOn = async (win) => { await js(win, `document.querySelector('.dock .zoom').click()`); const on = await js(win, `[...document.querySelectorAll('.menu .mi.on')].map((n) => n.firstChild.textContent).join()`); await press(win, 'Escape'); return on; };
     const choose = async (win, text) => { await js(win, `document.querySelector('.dock .zoom').click()`); await js(win, `[...document.querySelectorAll('.menu .mi')].find((n) => n.textContent.startsWith(${JSON.stringify(text)})).click()`); };
-    const card = (win) => js(win, `(() => { const c = document.querySelector('.card'); return c ? { title: c.querySelector('h3').textContent, note: c.querySelector('.note').textContent, labels: [...c.querySelectorAll('.kv > span')].map((n) => n.textContent).join(), groups: [...c.querySelectorAll('.swrow')].map((g) => g.children.length).join(),
+    const card = (win) => js(win, `(() => { const c = document.querySelector('.card'); return c ? { title: c.querySelector('h3').textContent, note: c.querySelector('.note')?.textContent ?? '', labels: [...c.querySelectorAll('.kv > span')].map((n) => n.textContent).join(), groups: [...c.querySelectorAll('.swrow')].map((g) => g.children.length).join(),
       checked: [...c.querySelectorAll('.sw[aria-checked="true"]')].map((b) => b.dataset.colour).join(), buttons: [...c.querySelectorAll('.row button')].map((b) => b.textContent).join(), focused: document.activeElement.textContent, role: c.getAttribute('role'), modal: c.getAttribute('aria-modal'), labelled: !!document.getElementById(c.getAttribute('aria-labelledby')),
       behind: document.querySelector('.dockwrap').inert } : null; })()`);
     const swatch = (win, colour) => js(win, `document.querySelector('.card .sw[data-colour="${colour}"]').click()`);
@@ -1699,7 +1699,7 @@ app.whenReady().then(async () => {
     await choose(win, 'Custom colours');
     await sleep(500);
     let c = await card(win);
-    check('Custom colours… opens a card with a page and a text colour, five of each, and Apply focused', c && c.title === 'Page colours' && c.note === 'Only changes how it looks here.' && c.labels === 'Page,Text' && c.groups === '5,5' && c.checked === '#fdf6e3,#3b3b3b'
+    check('Custom colours… opens a card with a page and a text colour, five of each, and Apply focused', c && c.title === 'Page colours' && !c.note && c.labels === 'Page,Text' && c.groups === '5,5' && c.checked === '#fdf6e3,#3b3b3b'
       && c.buttons === 'Cancel,Apply' && c.focused === 'Apply' && c.role === 'dialog' && c.modal === 'true' && c.labelled && c.behind === true, JSON.stringify(c));
     await shot(win, 'workspace-colours-card.png');
     await js(win, `document.querySelector('.card .sw[aria-checked="true"]').focus()`);
@@ -1987,6 +1987,64 @@ app.whenReady().then(async () => {
     const nothing = await js(none, `({ empty: document.querySelector('.linkempty').textContent, copyOff: document.getElementById('linkcopy').disabled, choose: document.getElementById('linkchoose').hidden, rows: document.querySelectorAll('.linkrow').length, status: document.getElementById('linkscan').textContent })`);
     check('a document with no links says so, and offers nothing to select or copy', nothing.empty === 'No links in this document' && nothing.copyOff && nothing.choose && nothing.rows === 0 && nothing.status === '', JSON.stringify(nothing));
     await closeAndWait(none);
+  }
+
+  console.log('pictures keep their own colours on coloured pages');
+  {
+    const bitmap = (opaqueHalf) => {
+      const buffer = Buffer.alloc(60 * 60 * 4);
+      for (let y = 0; y < 60; y++) for (let x = 0; x < 60; x++) buffer.set(!opaqueHalf || x < 30 ? [0, 160, 0, 255] : [0, 0, 0, 0], (y * 60 + x) * 4);
+      return nativeImage.createFromBitmap(buffer, { width: 60, height: 60 }).toPNG();
+    };
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.HelveticaBold);
+    const page = doc.addPage([595, 842]);
+    page.drawText('Pomelo', { x: 60, y: 760, size: 40, font });
+    page.drawImage(await doc.embedPng(bitmap(true)), { x: 100, y: 500, width: 120, height: 120 });
+    page.drawText('Hi', { x: 110, y: 540, size: 30, font });
+    page.pushOperators(pushGraphicsState(), rectangle(300, 500, 40, 120), clip(), endPath());
+    page.drawImage(await doc.embedPng(bitmap(false)), { x: 300, y: 500, width: 120, height: 120 });
+    page.pushOperators(popGraphicsState());
+    const file = path.join(root, 'Pictures.pdf');
+    fs.writeFileSync(file, await doc.save({ useObjectStreams: false }));
+    const near = (a, b, tol) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
+    const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const GREEN = [0, 160, 0];
+    const pdfPoint = (x, y) => `(() => { const r = document.querySelector('.page[data-page-number="1"]').getBoundingClientRect(); return { x: Math.round(r.left + (${x} / 595) * r.width), y: Math.round(r.top + ((842 - ${y}) / 842) * r.height) }; })()`;
+    const win = await openAndWait(fresh({ keepView: true }), file);
+    const sample = async (x, y) => {
+      const at = await js(win, pdfPoint(x, y));
+      const bytes = (await win.webContents.capturePage({ x: at.x, y: at.y, width: 1, height: 1 })).toBitmap();
+      return [bytes[2], bytes[1], bytes[0]];
+    };
+    const layerCount = () => js(win, `document.querySelectorAll('.page[data-page-number="1"] .canvasWrapper canvas').length`);
+    const dark = async (x0, y0, x1, y1) => {
+      const a = await js(win, pdfPoint(x0, y1));
+      const b = await js(win, pdfPoint(x1, y0));
+      const bytes = (await win.webContents.capturePage({ x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y })).toBitmap();
+      let n = 0;
+      for (let i = 0; i < bytes.length; i += 4) if (bytes[i] < 50 && bytes[i + 1] < 50 && bytes[i + 2] < 50) n++;
+      return n;
+    };
+    const choose = async (text) => { await js(win, `document.querySelector('.dock .zoom').click()`); await js(win, `[...document.querySelectorAll('.menu .mi')].find((n) => n.textContent.startsWith(${JSON.stringify(text)})).click()`); };
+    await sleep(700);
+    check('with the file\'s own colours there is one layer, the page as drawn', (await layerCount()) === 1 && near(await sample(200, 580), [255, 255, 255], 3) && near(await sample(130, 600), GREEN, 16));
+    for (const [name, paperHex] of [['Sepia', '#f4ecd8'], ['Dark', '#1e1e20']]) {
+      await choose(name);
+      await until(`${name} layer`, async () => (await layerCount()) === 2 && near(await sample(500, 300), rgbOf(paperHex), 8), 15000);
+      await sleep(500);
+      const s = { picture: await sample(130, 600), seeThrough: await sample(200, 580), cropped: await sample(320, 560), outside: await sample(380, 560), paper: await sample(500, 300), textOnPicture: await dark(105, 535, 150, 575) };
+      check(`${name}: a picture stays in its own colours, over a page that is recoloured`, near(s.picture, GREEN, 18) && near(s.cropped, GREEN, 18) && near(s.paper, rgbOf(paperHex), 8) && (await layerCount()) === 2, JSON.stringify(s));
+      check(`${name}: the see-through part of a picture shows the paper of the page, not white, and a picture cut by a clip is cut`, near(s.seeThrough, rgbOf(paperHex), 8) && near(s.outside, rgbOf(paperHex), 8), JSON.stringify(s));
+      check(`${name}: text that stands over a picture is kept as the file has it`, s.textOnPicture > 15, JSON.stringify(s));
+      await shot(win, `workspace-pictures-${name.toLowerCase()}.png`);
+    }
+    await choose('Original');
+    await until('the layer gone', async () => (await layerCount()) === 1, 15000);
+    await sleep(500);
+    check('Original takes the layer away and the picture is as it was', (await layerCount()) === 1 && near(await sample(130, 600), GREEN, 16) && near(await sample(200, 580), [255, 255, 255], 3));
+    await closeAndWait(win);
+    settings = { pdfView: { window: null } };
   }
 
   console.log('a big file costs nothing until it is read');

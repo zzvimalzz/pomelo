@@ -321,7 +321,6 @@ body.focus .scroller { top: 0; bottom: 0; }
 .emsg.on { grid-template-rows: 1fr; }
 .emsg > div { overflow: hidden; }
 .emsg p { padding-top: 8px; color: color-mix(in srgb, var(--err) 82%, #000); font-size: 12px; font-weight: 600; }
-.note { margin: -4px 0 14px; color: var(--muted); font-size: 12.5px; }
 .kv { display: grid; grid-template-columns: 40px 1fr; gap: 10px; align-items: center; font-size: 12.5px; }
 .kv > span { color: var(--muted); }
 .swrow { display: flex; gap: 6px; }

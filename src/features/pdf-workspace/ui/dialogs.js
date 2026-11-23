@@ -234,12 +234,11 @@
       });
       grid.append(el('span', '', label), group);
     }
-    const note = el('p', 'note', 'Only changes how it looks here.');
     const cancel = el('button', 'btn', 'Cancel');
     const apply = el('button', 'btn primary', 'Apply');
     const row = el('div', 'row');
     row.append(cancel, apply);
-    box.append(head, note, grid, row);
+    box.append(head, grid, row);
     return new Promise((resolve) => {
       const done = (answer) => {
         close();

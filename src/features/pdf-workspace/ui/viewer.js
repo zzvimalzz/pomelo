@@ -93,7 +93,7 @@
     const findController = new viewerLib.PDFFindController({ linkService, eventBus });
     const colours = view.pageColours ?? 'original';
     const viewer = new viewerLib.PDFViewer({ container, viewer: viewerEl, eventBus, linkService, findController, annotationEditorMode: lib.AnnotationEditorType.DISABLE, removePageBorders: true, pageColors: window.workspaceColours.pageColors(colours) });
-    window.workspaceColours.watch(viewer, viewerEl, colours);
+    window.workspaceColours.watch(viewer, viewerEl, colours, eventBus, lib.OPS);
     linkService.setViewer(viewer);
     // The link never holds the address, so a click, a middle click or a drag takes the page nowhere. pdf.js shows the same for a disabled link.
     linkService.addLinkAttributes = (link, url) => {
