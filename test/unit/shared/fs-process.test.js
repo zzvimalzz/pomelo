@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // shared/node/fs.js and process.js: temp files and folders clean up after themselves, text decodes whatever its encoding, and the
 // two runners keep their promises (runCapture rejects with a useful line, runStatus never throws).
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { withTempFile, withTempDir, makeTempDir, sweepTempDirs, readText, dirBytes, removeDirReliably } = require('../../../src/shared/node/fs');
+const { withTempFile, withTempDir, makeTempDir, sweepTempDirs, readText, dirBytes, removeDirReliably, fileIdentity, replaceFile } = require('../../../src/shared/node/fs');
 const { runCapture, runStatus, lastMeaningfulLine, parsePercent, killAll } = require('../../../src/shared/node/process');
 const { expect } = require('../../support/expect');
 const finish = require('../../support/finish');
@@ -119,6 +120,75 @@ const rejection = async (p) => { try { await p; return null; } catch (e) { retur
     const closed = await runCapture(...node("process.stdin.resume(); process.stdin.on('end', () => console.log('stdin closed'));", { timeout: 20000 }));
     expect("without input a program's stdin is closed, so one that waits for it stops waiting", closed.trim() === 'stdin closed' && Date.now() - t1 < 10000, `${Date.now() - t1} ms`);
     killAll();
+  }
+
+  console.log('replacing a file');
+  {
+    const dir = tmp.dir('replace');
+    const pdf = (text) => Buffer.from(`%PDF-1.4
+${text}
+%%EOF
+`);
+    const target = path.join(dir, 'Report.pdf');
+    const next = path.join(dir, 'next.pdf');
+    const listing = () => fs.readdirSync(dir).sort().join('|');
+    const reset = () => { fs.rmSync(target, { force: true }); fs.writeFileSync(target, pdf('old')); fs.writeFileSync(next, pdf('new new')); return fileIdentity(target); };
+
+    let expected = await reset();
+    const done = await replaceFile(next, target, expected);
+    expect('a file is replaced by the new bytes, and the new identity is given', fs.readFileSync(target).equals(pdf('new new')) && done.identity.size === pdf('new new').length && done.identity.ino && !done.stop, JSON.stringify(done));
+    expect('the new bytes are kept in the source, and no temporary file is left', fs.readFileSync(next).equals(pdf('new new')) && listing() === 'Report.pdf|next.pdf', listing());
+
+    expected = await reset();
+    fs.appendFileSync(target, 'x');
+    let before = fs.readFileSync(target);
+    expect('a file another program changed is not replaced', (await replaceFile(next, target, expected)).stop === 'changed' && fs.readFileSync(target).equals(before) && listing() === 'Report.pdf|next.pdf');
+    expected = await reset();
+    fs.rmSync(target);
+    expect('and neither is one that is gone', (await replaceFile(next, target, expected)).stop === 'changed' && !fs.existsSync(target));
+    const created = await replaceFile(next, target, null);
+    expect('with nothing expected the file is made', fs.readFileSync(target).equals(pdf('new new')) && !created.stop && listing() === 'Report.pdf|next.pdf');
+    expect('and a file that is there already is not overwritten', (await replaceFile(next, target, null)).stop === 'changed');
+
+    expected = await reset();
+    fs.chmodSync(target, 0o444);
+    expect('a read-only file is not replaced', (await replaceFile(next, target, expected)).stop === 'read-only' && fs.readFileSync(target).equals(pdf('old')));
+    fs.chmodSync(target, 0o666);
+
+    expected = await reset();
+    const realStatfs = fs.promises.statfs;
+    fs.promises.statfs = async () => ({ bavail: 10, bsize: 4096 });
+    const full = await replaceFile(next, target, expected);
+    fs.promises.statfs = realStatfs;
+    expect('a full drive stops it before anything is written', full.stop === 'no-space' && fs.readFileSync(target).equals(pdf('old')) && listing() === 'Report.pdf|next.pdf');
+
+    expected = await reset();
+    fs.writeFileSync(next, Buffer.from('%PDF-1.4\nno end'));
+    const broken = await rejection(replaceFile(next, target, expected));
+    expect('a copy that does not end like a PDF is refused and leaves the file and the folder as they were', !!broken && fs.readFileSync(target).equals(pdf('old')) && listing() === 'Report.pdf|next.pdf', broken?.message);
+
+    expected = await reset();
+    const handle = fs.openSync(target, 'r');
+    const whileOpen = await replaceFile(next, target, expected);
+    const seen = Buffer.alloc(pdf('old').length);
+    fs.readSync(handle, seen, 0, seen.length, 0);
+    fs.closeSync(handle);
+    expect('a file this program holds open is replaced, and the open handle still reads the old bytes', !whileOpen.stop && fs.readFileSync(target).equals(pdf('new new')) && seen.equals(pdf('old')), JSON.stringify(whileOpen));
+
+    expected = await reset();
+    fs.writeFileSync(`${target}:Zone.Identifier`, '[ZoneTransfer]\r\nZoneId=3\r\n');
+    await replaceFile(next, target, expected);
+    expect('the mark of a downloaded file survives', fs.readFileSync(`${target}:Zone.Identifier`, 'utf8').includes('ZoneId=3'));
+
+    expected = await reset();
+    const holder = spawn('powershell', ['-NoProfile', '-Command', `$f = [IO.File]::Open($env:POMELO_HOLD, 'Open', 'Read', 'Read'); Write-Host READY; Start-Sleep 60`], { env: { ...process.env, POMELO_HOLD: target }, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+    await new Promise((resolve) => holder.stdout.on('data', (d) => { if (String(d).includes('READY')) resolve(); }));
+    const started = Date.now();
+    const locked = await replaceFile(next, target, expected);
+    const took = Date.now() - started;
+    holder.kill();
+    expect('a file another program holds without sharing is not replaced, and that is known within 3 s', locked.stop === 'locked' && took < 3000 && fs.readFileSync(target).equals(pdf('old')) && listing() === 'Report.pdf|next.pdf', `${locked.stop} ${took} ms ${listing()}`);
+    await new Promise((resolve) => holder.on('exit', resolve));
   }
 
   console.log('passwords from a page');

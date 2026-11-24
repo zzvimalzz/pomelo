@@ -45,7 +45,7 @@ const firstRun = !fs.existsSync(settingsFile);         // checked before the sto
 const settings = createStore(settingsFile);
 const workspace = createWorkspace({
   asset, getSettings: () => settings.get(), setSettings: (patch) => settings.set(patch), notify: (message) => jobs?.addInfo(message), log,
-  openExternal: (url) => shell.openExternal(url), copyText: (text) => clipboard.writeText(text),
+  openExternal: (url) => shell.openExternal(url), copyText: (text) => clipboard.writeText(text), uniquePath: conversion.uniquePath,
 });
 const showPdf = (paths) => workspace.open(paths).catch((e) => log('PDF window failed:', e.message));
 const installer = engineSetup.createInstaller({ redetect: () => conversion.detectEngines() });
@@ -125,6 +125,7 @@ app.whenReady().then(async () => {
   });
 
   workspace.registerIpc();
+  workspace.sweepSessions();
   const setup = engineSetup.registerEngineSetupIpc({ installer, getEngines: conversion.getEngines, sendToSettings, log });
   let justUpdated = updates.updatedStart(process.argv, app.getVersion());      // Settings says so the first time it opens, not every time
   registerSettingsIpc({

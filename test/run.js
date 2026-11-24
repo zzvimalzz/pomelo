@@ -38,6 +38,7 @@ const SUITES = [
   { name: 'fs-process', file: 'unit/shared/fs-process.test.js', tier: 'unit' },
   { name: 'text', file: 'unit/shared/text.test.js', tier: 'unit' },
   { name: 'workspace-documents', file: 'unit/pdf-workspace/documents.test.js', tier: 'unit' },
+  { name: 'workspace-revisions', file: 'unit/pdf-workspace/revisions.test.js', tier: 'unit' },
   { name: 'workspace-bounds', file: 'unit/pdf-workspace/bounds.test.js', tier: 'unit' },
   { name: 'workspace-links', file: 'unit/pdf-workspace/links.test.js', tier: 'unit' },
   { name: 'workspace-view', file: 'unit/pdf-workspace/view.test.js', tier: 'unit' },

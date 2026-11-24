@@ -55,4 +55,9 @@ async function choosePdf(parent, folder) {
   return picked.canceled ? [] : picked.filePaths;
 }
 
-module.exports = { create, choosePdf };
+async function chooseSavePath(parent, file) {
+  const picked = await dialog.showSaveDialog(parent, { title: 'Save a copy', defaultPath: file, filters: [{ name: 'PDF files', extensions: ['pdf'] }] });
+  return picked.canceled ? null : picked.filePath;
+}
+
+module.exports = { create, choosePdf, chooseSavePath };

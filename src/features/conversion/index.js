@@ -7,6 +7,7 @@ const { detectEngines, getEngines } = require('./engines/registry');
 const { plansFor, canConvert } = require('./routing/plans');
 const { convertFile } = require('./routing/run-plan');
 const lock = require('./engine-kit/lock');
+const { uniquePath } = require('./engine-kit/outputs');
 
 // Every extension Pomelo can read (spellings like .jpeg included), for the right-click menu. Folders are registered on their own.
 const sourceExts = [...Object.keys(TARGET_ORDER).filter((e) => e !== 'folder'), ...Object.keys(ALIASES)];
@@ -21,4 +22,4 @@ const checkPassword = (file, password) => lock.verify(file, extOf(file), passwor
 // extensions that start slowly (LibreOffice) or are pictures.
 const timingFormats = { extOf, kinds: { office: new Set(Object.values(OFFICE).flat()), picture: new Set(extsInGroup('image')) } };
 
-module.exports = { detectEngines, getEngines, targetsFor, canConvert, convertFile, probeLocked, checkPassword, plansFor, explainNoTargets, extOf, groupOf, labelOf, timingFormats, sourceExts };
+module.exports = { uniquePath, detectEngines, getEngines, targetsFor, canConvert, convertFile, probeLocked, checkPassword, plansFor, explainNoTargets, extOf, groupOf, labelOf, timingFormats, sourceExts };

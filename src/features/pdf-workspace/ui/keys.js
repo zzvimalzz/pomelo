@@ -11,6 +11,8 @@
     previousPage: { keys: ['PageUp', 'ArrowLeft', 'ArrowUp'], label: 'Page Up' },
     focusReading: { keys: ['F11'], label: 'F11' },
     find: { keys: ['Ctrl+f', 'Ctrl+F'], label: 'Ctrl+F' },
+    saveCopy: { keys: ['Ctrl+Shift+S'], label: 'Ctrl+Shift+S' },
+    save: { keys: ['Ctrl+s', 'Ctrl+S'], label: 'Ctrl+S' },
     back: { keys: ['Alt+ArrowLeft'], label: 'Alt+Left' },
     forward: { keys: ['Alt+ArrowRight'], label: 'Alt+Right' },
     escape: { keys: ['Escape'], label: 'Esc' },
@@ -19,8 +21,9 @@
 
   const label = (id) => TABLE[id].label;
   const matches = (e, combo) => {
-    const [, modifier, key] = /^(?:(Ctrl|Alt)\+)?(.+)$/.exec(combo);
-    return e.ctrlKey === (modifier === 'Ctrl') && e.altKey === (modifier === 'Alt') && !e.metaKey && e.key === key;
+    const [, modifiers, key] = /^((?:(?:Ctrl|Alt|Shift)\+)*)(.+)$/.exec(combo);
+    const wants = (modifier) => modifiers.includes(`${modifier}+`);
+    return e.ctrlKey === wants('Ctrl') && e.altKey === wants('Alt') && (!wants('Shift') || e.shiftKey) && !e.metaKey && e.key === key;
   };
   const typing = (e) => e.target.closest('input, textarea, [contenteditable="true"]');
 

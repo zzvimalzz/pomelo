@@ -21,7 +21,7 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   console.log('opening');
   const doc = await docs.open(file);
   const second = await docs.open(file);
-  expect('a document has a name and a size, and its token is 32 random bytes in hex', doc.name === 'Report.pdf' && doc.size === content.length && /^[0-9a-f]{64}$/.test(doc.token) && Object.keys(doc).sort().join() === 'name,size,token', JSON.stringify(Object.keys(doc)));
+  expect('a document has a name and a size, and its token is 32 random bytes in hex', doc.name === 'Report.pdf' && doc.size === content.length && /^[0-9a-f]{64}$/.test(doc.token) && Object.keys(doc).sort().join() === 'dirty,name,size,token', JSON.stringify(Object.keys(doc)));
   expect('every open gets its own token', doc.token !== second.token);
   expect('a file that is not there is refused with its reason', await docs.open(path.join(root, 'nope.pdf')).then(() => '', (e) => e.code) === 'ENOENT');
   expect('a folder is refused', await fails(docs.open(root)));
@@ -64,7 +64,7 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   docs.unlock(doc.token, 'Pw-é1');
   const stored = docs.password(doc.token);
   expect('the password is kept in memory as UTF-8, under the document\'s token only', stored.toString('utf8') === 'Pw-é1' && docs.password(second.token) === undefined);
-  expect('the document record carries no password', !JSON.stringify(doc).includes('Pw-') && Object.keys(doc).sort().join() === 'name,size,token');
+  expect('the document record carries no password', !JSON.stringify(doc).includes('Pw-') && Object.keys(doc).sort().join() === 'dirty,name,size,token');
   docs.unlock(doc.token, 'another');
   expect('a new password replaces the old one, which is overwritten with zeros', docs.password(doc.token).toString() === 'another' && stored.every((b) => b === 0));
   const refusedPasswords = { 'an unknown token': ['0'.repeat(64), 'x'], 'no password': [doc.token, undefined], 'an empty password': [doc.token, ''], 'a password that is not text': [doc.token, 12], 'a password of 4097 characters': [doc.token, 'x'.repeat(4097)] };

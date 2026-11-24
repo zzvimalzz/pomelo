@@ -3,7 +3,7 @@
 // PDF is opened, so a Pomelo that never opens one pays nothing for it.
 const os = require('os');
 const path = require('path');
-const { createDocuments } = require('./documents');
+const { createDocuments, sweepSessions } = require('./documents');
 const { linkTarget } = require('./links');
 const { addRecent, startFolder } = require('./recent');
 const { cleanView } = require('./view');
@@ -14,6 +14,13 @@ const DOCKS = ['bottom', 'top', 'left', 'right'];
 const MAX_COPIED = 100000;
 const MAX_TABS = 10;
 
+const WHY_NOT_SAVED = {
+  locked: ({ name }) => `${name} is open in another program. Close it there, or save a copy.`,
+  'read-only': ({ name }) => `${name} is read-only. Save a copy instead.`,
+  'no-space': ({ name, drive }) => `There is not enough free space on ${drive} to save ${name}.`,
+  'too-large': () => 'Saving changes to a file this large needs the PDF engine.',
+};
+
 const REASONS = {
   ENOENT: 'The file is no longer there.', ENOTFILE: 'This is not a file.',
   EACCES: "Windows won't let Pomelo read this file.", EPERM: "Windows won't let Pomelo read this file.", EBUSY: "Windows won't let Pomelo read this file.",
@@ -21,11 +28,12 @@ const REASONS = {
 
 // asset(name): path of a file shipped in assets/. getSettings(), setSettings(patch): the stored settings. notify({ title, detail }): the
 // notice in the corner of the screen. log(...). openExternal(url): open an address with the program Windows has for it, as a promise.
-// copyText(text): put text on the clipboard. solid: draw an opaque window; by default only before Windows 11.
-function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
+// copyText(text): put text on the clipboard. uniquePath(dir, base, ext): a path that does not exist yet. solid: draw an opaque window; by default only before Windows 11.
+function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, uniquePath, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
   const documents = createDocuments();
   let win = null;
   let queue = Promise.resolve();
+  let leaving = false;
 
   const setView = (patch) => setSettings({ pdfView: { ...getSettings().pdfView, ...patch } });
   const dock = () => { const side = getSettings().pdfView?.dock; return DOCKS.includes(side) ? side : 'bottom'; };
@@ -71,7 +79,13 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
         asset, solid, saved: getSettings().pdfView?.window,
         onBounds: (bounds) => setView({ window: bounds }),
       });
-      win.on('closed', () => { win = null; documents.closeAll(); });
+      // The page asks about each document with changes before it lets the window go.
+      win.on('close', (e) => {
+        if (leaving || !documents.list().some((d) => d.dirty)) return;
+        e.preventDefault();
+        win.webContents.send('pdfws:closing');
+      });
+      win.on('closed', () => { win = null; leaving = false; documents.closeAll(); });
     }
   }
 
@@ -89,6 +103,26 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
   function closeDocument(token) {
     documents.close(token);
     if (!documents.list().length) win?.close();
+  }
+
+  // Tells the page a document's new state (`reload`: its pages must be read again), and when a save stopped says why, once, in the
+  // corner of the screen and gives the page only the reason.
+  async function revised(pending, reload) {
+    const result = await pending;
+    if (!result) return null;
+    if (result.info) { win?.webContents.send('pdfws:changed', { ...result.info, reload }); return result; }
+    const why = WHY_NOT_SAVED[result.stop]?.(result);
+    if (why) notify({ title: "Can't save", detail: why });
+    return { stop: result.stop };
+  }
+
+  async function saveAs(token) {
+    const file = documents.fileOf(token);
+    const suggested = uniquePath(path.dirname(file), `${path.basename(file, path.extname(file))} (edited)`, 'pdf');
+    const target = await require('./workspace.window').chooseSavePath(win, suggested);
+    if (!target) return { stop: 'cancelled' };
+    const same = path.resolve(target).toLowerCase() === path.resolve(file).toLowerCase();
+    return revised(same ? documents.save(token) : documents.saveCopy(token, target), false);
   }
 
   function openLink(url) {
@@ -114,6 +148,13 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     state: () => ({ documents: documents.list(), dock: dock(), view: cleanView(getSettings().pdfView) }),
     closeDocument,
     openDropped,
+    putRevision: (token, bytes) => revised(documents.putRevision(token, bytes), false),
+    undo: (token) => revised(documents.undo(token), true),
+    redo: (token) => revised(documents.redo(token), true),
+    save: (token) => revised(documents.save(token), false),
+    saveAs,
+    reload: (token) => revised(documents.reload(token), true),
+    closeWindow: () => { leaving = true; win?.close(); },
     setFocus: (on) => win?.setFullScreen(on),
     setDock: (side) => { if (DOCKS.includes(side)) setView({ dock: side }); },
     setView: rememberView,
@@ -124,7 +165,7 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     isWorkspace: (sender) => !!win && !win.isDestroyed() && win.webContents === sender,
   });
 
-  return { open, openDialog, registerIpc, closeAll: documents.closeAll, served: documents.served, getWindow: () => win };
+  return { open, openDialog, registerIpc, sweepSessions, closeAll: documents.closeAll, served: documents.served, getWindow: () => win };
 }
 
 module.exports = { createWorkspace };
