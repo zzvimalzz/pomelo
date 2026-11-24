@@ -77,6 +77,7 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   fs.writeFileSync(pdf, '%PDF-1.7 the original');
   const runs = [];
   let mode = 'copy';
+  let said = '';
   const runPdfTool = async (script, args, options) => {
     const [source, target, listFile] = args;
     runs.push({ script, source, target, list: fs.readFileSync(listFile, 'utf8'), secrets: options.secrets, signal: options.signal });
@@ -84,6 +85,7 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
     if (mode === 'wait') await new Promise((resolve) => options.signal.addEventListener('abort', resolve));
     if (options.signal.aborted) { fs.writeFileSync(target, 'half'); throw Object.assign(new Error('Cancelled'), { name: 'CancelledError' }); }
     fs.writeFileSync(target, `${fs.readFileSync(source, 'utf8')} +1`);
+    return said;
   };
   const edits = createDocuments({ runPdfTool });
   const edited = await edits.open(pdf);
@@ -100,6 +102,18 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   edits.unlock(edited.token, 'Pw-é1');
   await edits.apply(edited.token, rotate);
   expect('the password goes to the helper as a secret, and is in neither the list nor the arguments', JSON.stringify(runs[2].secrets) === '{"password":"Pw-é1"}' && !runs[2].list.includes('Pw-') && runs.every((run) => !run.source.includes('Pw-')));
+  const text = [{ op: 'meta.set', title: 'T', author: '', subject: '', keywords: '' }];
+  const appended = '{"saved": "incremental"}';
+  said = appended;
+  const kept = (await edits.apply(edited.token, text)).reload;
+  said = '{"saved": "full"}';
+  const rewrittenText = (await edits.apply(edited.token, text)).reload;
+  said = appended;
+  const mixed = (await edits.apply(edited.token, [...text, ...rotate])).reload;
+  const turned = (await edits.apply(edited.token, rotate)).reload;
+  said = '';
+  expect('a change to the information alone, appended to the file, keeps the pages as they are', kept === false);
+  expect('a full save of it, a change to pages and a mix of both all ask for the pages to be read again', rewrittenText === true && mixed === true && turned === true, JSON.stringify([rewrittenText, mixed, turned]));
   const runsBefore = runs.length;
   const refusedLists = { 'an unknown change': [{ op: 'pages.shred', pages: [1] }], 'a key it does not take': [{ op: 'pages.delete', pages: [1], password: 'x' }], 'no list': undefined };
   for (const [what, list] of Object.entries(refusedLists)) expect(`${what} is refused before the helper starts`, (() => { try { edits.apply(edited.token, list); return false; } catch { return true; } })());
@@ -136,7 +150,7 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   const renamed = await gamma.rename(alpha.token, 'Gamma');
   expect('a file is renamed on disk, keeps its extension and its content, and the document follows it', renamed.info.name === 'Gamma.pdf' && !fs.existsSync(alphaFile) && fs.readFileSync(path.join(sub, 'Gamma.pdf'), 'utf8') === '%PDF-1.7 alpha %%EOF' && gamma.find(path.join(sub, 'Gamma.pdf'))?.token === alpha.token && gamma.find(alphaFile) === null);
   expect('the renamed document still reads, and keeps its token', (await gamma.read(alpha.token, 0, 8)).toString() === '%PDF-1.7' && renamed.info.token === alpha.token);
-  expect('the folder and the time of the last change are given, never the path', JSON.stringify(Object.keys(await gamma.details(alpha.token))) === '["folder","modified"]' && (await gamma.details(alpha.token)).folder === 'Reports › 2026' && typeof (await gamma.details(alpha.token)).modified === 'number');
+  expect('the folder and the time of the last change are given, never the path', JSON.stringify(Object.keys(await gamma.details(alpha.token))) === '["folders","modified"]' && (await gamma.details(alpha.token)).folders.join('|') === 'Reports|2026' && typeof (await gamma.details(alpha.token)).modified === 'number');
   const untouched = () => ['Beta.pdf', 'Delta.pdf', 'Gamma.pdf'].map((n) => fs.readFileSync(path.join(sub, n), 'utf8')).join();
   const others = untouched();
   expect('a name another open tab has is refused', (await gamma.rename(alpha.token, 'beta')).stop === 'open');
@@ -189,6 +203,32 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   await informed.apply(subject.token, [{ op: 'pages.rotate', pages: [1], by: 90 }]);
   await informed.facts(subject.token);
   expect('a password goes to the helper as a secret and is in no argument', JSON.stringify(asked.at(-1).secrets) === '{"password":"Pw-é1"}' && !JSON.stringify(asked.at(-1).args).includes('Pw-'));
+  const described = createDocuments({
+    runPdfTool: async (script, args) => {
+      if (script === 'pdf_info.py') { fs.writeFileSync(args[1], JSON.stringify({ information: { title: 'Old', author: 'A', subject: '', keywords: '', created: null } })); return ''; }
+      fs.writeFileSync(args[1], `${fs.readFileSync(args[0], 'utf8')} +1`);
+      return '{"saved": "incremental"}';
+    },
+  });
+  const book = await described.open(make('Book.pdf', '%PDF-1.7 book'));
+  const titled = (title) => described.apply(book.token, [{ op: 'meta.set', title, author: 'A', subject: '', keywords: '' }]).then((r) => r.info.dirty);
+  const unread = [await titled('New'), await titled('Old')].join();
+  await described.facts(book.token);
+  await described.undo(book.token);
+  await described.undo(book.token);
+  await described.facts(book.token);
+  const changed = await titled('New');
+  const back = await titled('Old');
+  expect('a Title changed and then typed back as it was leaves nothing to save', changed === true && back === false, JSON.stringify([changed, back]));
+  expect('until the engine has read the information of the file, a change typed back still counts as a change', unread === 'true,true', unread);
+  expect('going back to the changed Title has something to save again, and forward has not', (await described.undo(book.token)).info.dirty === true && (await described.redo(book.token)).info.dirty === false);
+  await titled('Saved');
+  await described.save(book.token);
+  const afterSave = [await titled('Old'), await titled('Saved')];
+  expect('after a save, the text that was saved is the one that leaves nothing to save', afterSave.join() === 'true,false', afterSave.join());
+  await described.apply(book.token, [{ op: 'pages.rotate', pages: [1], by: 90 }]);
+  expect('a change to the pages is never taken for the saved file, whatever the information says', (await titled('Saved')) === true);
+  await described.closeAll();
   const noEngine = createDocuments({ runPdfTool: () => Promise.reject(Object.assign(new Error('The PDF engine is not installed'), { code: 'NO_ENGINE' })) });
   const without = await noEngine.open(make('None.pdf', '%PDF-1.7 none'));
   expect('without the engine the question is rejected with its code', await noEngine.facts(without.token).then(() => '', (e) => e.code) === 'NO_ENGINE');

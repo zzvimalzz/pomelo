@@ -5,6 +5,7 @@
 (() => {
   const { el, icon } = window.pomeloUi;
   const strip = document.getElementById('tabs');
+  const FADE = 24;
   let on = { select: () => {}, close: () => {} };
 
   // docs: [{ token, name, dirty }] in order, active: the token on show. The strip is hidden while there is only one. A name is followed
@@ -34,7 +35,26 @@
       tab.append(cross);
       return tab;
     }));
-    if (focused) strip.querySelector('.on')?.focus();
+    if (focused) strip.querySelector('.on')?.focus({ preventScroll: true });
+    reveal();
+  }
+
+  // When the tabs no longer fit at their narrowest the strip scrolls. The tab on show is kept clear of the faded edges, which mark
+  // the side that has more.
+  function reveal() {
+    const tab = strip.querySelector('.on');
+    if (tab) {
+      const box = strip.getBoundingClientRect();
+      const at = tab.getBoundingClientRect();
+      if (at.left < box.left + FADE) strip.scrollLeft -= box.left + FADE - at.left;
+      else if (at.right > box.right - FADE) strip.scrollLeft += at.right - box.right + FADE;
+    }
+    edges();
+  }
+
+  function edges() {
+    strip.classList.toggle('more-left', strip.scrollLeft > 1);
+    strip.classList.toggle('more-right', strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1);
   }
 
   const tokenOf = (e) => e.target.closest('.tab')?.dataset.token;
@@ -45,6 +65,13 @@
   });
   // A click on a tab must not take the keys from the document.
   strip.addEventListener('mousedown', (e) => e.preventDefault());
+  strip.addEventListener('scroll', edges);
+  strip.addEventListener('wheel', (e) => {
+    if (strip.scrollWidth <= strip.clientWidth || e.deltaX) return;
+    strip.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
+  new ResizeObserver(reveal).observe(strip);
   strip.addEventListener('keydown', (e) => {
     const tabs = [...strip.children];
     const here = tabs.findIndex((t) => t === e.target.closest('.tab'));

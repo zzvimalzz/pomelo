@@ -23,6 +23,7 @@ const IN_USE = new Set(['EBUSY', 'EPERM', 'EACCES']);
 const badName = (name) => !name || name.length > 200 || /[\\/:*?"<>|]/.test(name) || [...name].some((c) => c < ' ') || /[. ]$/.test(name) || DEVICE_NAME.test(name);
 const info = (doc) => ({ token: doc.token, name: doc.name, size: doc.revisions.current().size, dirty: doc.revisions.dirty() });
 const keyOf = (file) => path.resolve(file).toLowerCase();
+const metaOf = (values) => JSON.stringify(['title', 'author', 'subject', 'keywords'].map((key) => values[key] ?? ''));
 const driveOf = (where) => path.parse(path.resolve(where)).root.replace(/\\$/, '');
 const freeBytes = async (dir) => { const f = await fs.promises.statfs(dir); return f.bavail * f.bsize; };
 
@@ -117,9 +118,9 @@ function createDocuments({ runPdfTool } = {}) {
     return { free, where };
   }
 
-  async function adopt(doc, file, size, free) {
+  async function adopt(doc, file, size, free, same = {}) {
     const handle = await fs.promises.open(file, 'r');
-    await doc.revisions.push({ file, handle, size, owned: true, refs: 0 }, Math.min(Math.max(MIN_BUDGET, 4 * doc.originalSize), free / 2));
+    await doc.revisions.push({ file, handle, size, owned: true, refs: 0, ...same },Math.min(Math.max(MIN_BUDGET, 4 * doc.originalSize), free / 2));
     return { info: info(doc) };
   }
 
@@ -154,13 +155,16 @@ function createDocuments({ runPdfTool } = {}) {
     return serial(doc, async () => {
       const room = await prepare(doc, 2 * doc.revisions.current().size + FREE_MARGIN);
       if (room.stop) return room;
-      const source = doc.revisions.current().file;
+      const from = doc.revisions.current();
+      const source = from.file;
+      const metaOnly = list.every((op) => op.op === 'meta.set');
       const out = path.join(doc.session, `revision-${++doc.count}.pdf`);
       const listFile = path.join(doc.session, `ops-${doc.count}.json`);
       try {
         await fs.promises.writeFile(listFile, JSON.stringify({ version: 1, ops: list }));
-        await runPdfTool('pdf_edit.py', [source, out, listFile], { src: source, signal: doc.stop.signal, secrets: secretsOf(token) });
-        return await adopt(doc, out, (await fs.promises.stat(out)).size, room.free);
+        const said = await runPdfTool('pdf_edit.py', [source, out, listFile], { src: source, signal: doc.stop.signal, secrets: secretsOf(token) });
+        const made = await adopt(doc, out, (await fs.promises.stat(out)).size, room.free, metaOnly ? { base: from.base ?? from, meta: metaOf(list.at(-1)) } : {});
+        return { ...made, reload: !(metaOnly && /"saved": "incremental"/.test(said)) };
       } catch (e) {
         await fs.promises.rm(out, { force: true });
         throw e;
@@ -181,6 +185,7 @@ function createDocuments({ runPdfTool } = {}) {
           await runPdfTool('pdf_info.py', [rev.file, out, 'properties'], { src: rev.file, signal: doc.stop.signal, secrets: secretsOf(token) });
           return JSON.parse(await fs.promises.readFile(out, 'utf8'));
         });
+        if (data.information) rev.meta ??= metaOf(data.information);
         doc.facts = { rev, data };
       }
       return doc.facts.data;
@@ -192,7 +197,7 @@ function createDocuments({ runPdfTool } = {}) {
     const doc = get(token);
     const folders = path.dirname(doc.file).split(path.sep).filter(Boolean);
     const stat = await fs.promises.stat(doc.file).catch(() => null);
-    return { folder: folders.slice(-2).join(' › '), modified: stat ? stat.mtimeMs : null };
+    return { folders: folders.slice(-2), modified: stat ? stat.mtimeMs : null };
   }
 
   // Renames the file on disk, keeping its extension. `name` is the new name without it. Resolves { info } or { stop }: 'invalid',

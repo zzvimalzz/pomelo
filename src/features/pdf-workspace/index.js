@@ -106,12 +106,12 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     if (!documents.list().length) win?.close();
   }
 
-  // Tells the page a document's new state (`reload`: its pages must be read again), and when a save stopped says why, once, in the
-  // corner of the screen and gives the page only the reason.
+  // Tells the page a document's new state (`reload`: its pages must be read again; a result can say it itself), and when a save stopped says
+  // why, once, in the corner of the screen and gives the page only the reason.
   async function revised(pending, reload) {
     const result = await pending;
     if (!result) return null;
-    if (result.info) { win?.webContents.send('pdfws:changed', { ...result.info, reload }); return result; }
+    if (result.info) { win?.webContents.send('pdfws:changed', { ...result.info, reload: result.reload ?? reload }); return result; }
     const why = WHY_NOT_SAVED[result.stop]?.(result);
     if (why) notify({ title: "Can't save", detail: why });
     return { stop: result.stop };

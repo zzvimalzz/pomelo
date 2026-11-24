@@ -22,6 +22,7 @@
   const body = document.getElementById('docbody');
   const closer = document.getElementById('docclose');
   const button = document.getElementById('docbtn');
+  const loading = document.getElementById('docloading');
   const api = window.workspaceApi;
   let tab = null;
   let open = false;
@@ -61,8 +62,12 @@
     input.spellcheck = false;
     input.maxLength = 200;
     input.setAttribute('aria-label', 'File name');
+    const go = el('button', '', 'Rename');
+    go.type = 'button';
+    go.hidden = true;
     const field = el('div', 'namefld');
-    field.append(input, el('span', '', ext));
+    field.append(input, el('span', '', ext), go);
+    const typedName = () => input.value.replace(/\.pdf$/i, '').trim();
     const hint = el('p', 'hintline');
     hint.setAttribute('role', 'status');
     const say = (text, bad) => {
@@ -72,39 +77,51 @@
       clearTimeout(say.timer);
       if (!bad) say.timer = setTimeout(() => say(''), 1600);
     };
-    input.addEventListener('input', () => say(''));
-    input.addEventListener('keydown', async (e) => {
-      if (e.key === 'Escape') { input.value = base; say(''); input.blur(); e.preventDefault(); return; }
-      if (e.key !== 'Enter') return;
-      e.preventDefault();
-      const typed = input.value.replace(/\.pdf$/i, '').trim();
+    async function rename() {
+      const typed = typedName();
       if (typed === base) { input.blur(); return; }
       justRenamed = true;
       const result = await api.rename(doc.token, typed);
       if (result?.info) { input.blur(); return; }
       justRenamed = false;
       say(RENAME_STOPS[result?.stop] ?? "Couldn't rename the file", true);
+    }
+    input.addEventListener('input', () => { say(''); go.hidden = typedName() === base; });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { input.value = base; go.hidden = true; say(''); input.blur(); e.preventDefault(); return; }
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      rename();
     });
+    go.onclick = rename;
     if (justRenamed) { justRenamed = false; say('Renamed'); }
     const show = el('button', 'pillbtn', 'Show');
     show.type = 'button';
     show.onclick = () => api.showInFolder(doc.token);
-    const folder = el('span', 'folder', details?.folder ?? '');
-    folder.title = details?.folder ?? '';
+    const folders = details?.folders ?? [];
+    const folder = el('span', 'folder', folders.join(' › '));
+    folder.title = folder.textContent;
     const where = el('span', 'where');
     where.append(folder, show);
     const modified = details?.modified ? moment(details.modified) : null;
     const section = card('File', field, hint, facts([['Location', where], ['Size', size(doc.size)], ['Modified', modified ?? 'Unknown']]));
     section.input = input;
+    // A place too long for its three lines would lose the folder that holds the file, so the outer folder then gets one line and the
+    // inner one the other two. Measured once the card is in the panel.
+    section.fitPlace = () => {
+      if (folders.length < 2 || folder.scrollHeight <= folder.clientHeight + 1) return;
+      folder.classList.add('split');
+      folder.replaceChildren(el('span', '', `${folders[0]} › `), el('span', '', folders[1]));
+    };
     return section;
   }
 
-  function descriptionCard(doc, info, editable) {
+  function descriptionCard(doc, values, editable) {
     const inputs = {};
     const read = () => Object.fromEntries(FIELDS.map(([key]) => [key, inputs[key].value]));
     const rows = FIELDS.map(([key, label]) => {
-      const value = info[key[0].toUpperCase() + key.slice(1)] ?? '';
-      if (!editable) return [label, value || 'Not set'];
+      const value = values[key] ?? '';
+      if (!editable) return [label, value || el('span', 'unset', 'Not set')];
       const input = el('input', 'fld');
       input.value = value;
       input.maxLength = 1000;
@@ -115,12 +132,18 @@
     });
     if (editable) {
       let saved = read();
-      for (const input of Object.values(inputs)) {
+      for (const [key, input] of Object.entries(inputs)) {
+        input.addEventListener('keydown', (e) => {
+          if (e.key !== 'Escape') return;
+          input.value = saved[key];
+          input.blur();
+          e.preventDefault();
+        });
         input.addEventListener('change', async () => {
           const now = read();
-          const result = await api.apply(doc.token, [{ op: 'meta.set', ...now }]);
+          const result = await api.apply(doc.token, [{ op: 'meta.set', ...now }]).catch(() => null);
           if (result?.info) { saved = now; return; }
-          for (const [key] of FIELDS) inputs[key].value = saved[key];
+          for (const [name] of FIELDS) if (inputs[name].value === now[name]) inputs[name].value = saved[name];
         });
       }
     }
@@ -181,22 +204,44 @@
     ];
   }
 
+  // The engine's facts and the document's own information, asked for again only when the pages or the revision changed.
+  function load(t) {
+    if (t.loaded?.pdf !== t.pdf || t.loaded.size !== t.doc.size) {
+      const promise = Promise.all([api.properties(t.doc.token), t.pdf.getMetadata()]).catch(() => null);
+      t.loaded = { pdf: t.pdf, size: t.doc.size, promise };
+    }
+    return t.loaded.promise;
+  }
+
   async function render(rename) {
     if (!open || !tab) return;
     const mine = ++turn;
     const { doc, pdf } = tab;
-    const loaded = Promise.all([api.properties(doc.token), pdf.getMetadata()]);
-    loaded.catch(() => {});
-    const details = await api.details(doc.token).catch(() => null);
+    const slow = setTimeout(() => { if (mine === turn) loading.hidden = false; }, 300);
+    const [loaded, details] = await Promise.all([load(tab), api.details(doc.token).catch(() => null)]);
+    clearTimeout(slow);
     if (mine !== turn) return;
+    loading.hidden = true;
     const file = fileCard(doc, details);
-    body.replaceChildren(file);
+    const cards = [file];
+    if (loaded) {
+      const [props, { info }] = loaded;
+      const values = props.facts ? props.facts.information : Object.fromEntries(FIELDS.map(([key]) => [key, info[key[0].toUpperCase() + key.slice(1)]]));
+      const editable = !!props.facts;
+      const kept = body.children[1];
+      const same = kept?.token === doc.token && kept.pdf === pdf && kept.editable === editable;
+      const description = same ? kept : Object.assign(descriptionCard(doc, values, editable), { token: doc.token, pdf, editable });
+      cards.push(description, ...(editable ? factCards(props.facts) : []));
+    }
+    // Moving a node blurs it, so a Description card that is kept stays where it is and only the cards round it change: a change made
+    // in one field must not take the focus or the half typed text from the next.
+    if (cards[1] && cards[1] === body.children[1]) {
+      body.children[0].replaceWith(file);
+      while (cards[1].nextSibling) cards[1].nextSibling.remove();
+      cards[1].after(...cards.slice(2));
+    } else body.replaceChildren(...cards);
+    file.fitPlace();
     if (rename) { file.input.focus(); file.input.select(); }
-    let result;
-    try { result = await loaded; } catch { return; }
-    if (mine !== turn) return;
-    const [props, { info }] = result;
-    body.append(descriptionCard(doc, info, !!props.facts), ...(props.facts ? factCards(props.facts) : []));
   }
 
   function setOpen(on, rename) {
@@ -210,6 +255,7 @@
       render(rename);
     } else {
       turn++;
+      loading.hidden = true;
       closing = setTimeout(() => { inner.hidden = true; body.replaceChildren(); }, SLIDE);
     }
     panel.classList.toggle('open', on);
@@ -221,7 +267,8 @@
     tab = next;
     button.disabled = !next;
     if (next && open) render();
-    else if (!next) { turn++; body.replaceChildren(); }
+    else if (next) load(next);
+    else { turn++; loading.hidden = true; body.replaceChildren(); }
   }
 
   button.onclick = () => setOpen(!open);
