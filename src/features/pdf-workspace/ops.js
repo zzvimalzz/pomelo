@@ -7,7 +7,10 @@ const MAX_PAGE = 1000000;
 
 const isPages = (v) => Array.isArray(v) && v.length > 0 && v.length <= MAX_PAGE && v.every((p) => Number.isInteger(p) && p >= 1 && p <= MAX_PAGE) && new Set(v).size === v.length;
 
+const isText = (v) => typeof v === 'string' && v.length <= 1000 && !v.includes('\0');
+
 const OPS = {
+  'meta.set': { kind: 'direct', keys: { title: isText, author: isText, subject: isText, keywords: isText } },
   'pages.rotate': { kind: 'direct', keys: { pages: isPages, by: (v) => v === 90 || v === 180 || v === 270 } },
   'pages.delete': { kind: 'rewrite', keys: { pages: isPages } },
 };

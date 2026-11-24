@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { fileIdentity, sameFile, replaceFile, makeTempDir, sweepTempDirs, removeDirReliably } = require('#shared/node/fs');
+const { fileIdentity, sameFile, replaceFile, makeTempDir, sweepTempDirs, removeDirReliably, withTempFile } = require('#shared/node/fs');
 const { passwordBuffer } = require('#shared/node/secrets');
 const { check } = require('./ops');
 const { createRevisions } = require('./revisions');
@@ -17,7 +17,10 @@ const SESSION_TAG = 'pdfws';
 const FREE_MARGIN = 64 * 1048576;
 const MIN_BUDGET = 2 * 1024 ** 3;
 const CHANGED = { stop: 'changed' };
+const DEVICE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+const IN_USE = new Set(['EBUSY', 'EPERM', 'EACCES']);
 
+const badName = (name) => !name || name.length > 200 || /[\\/:*?"<>|]/.test(name) || [...name].some((c) => c < ' ') || /[. ]$/.test(name) || DEVICE_NAME.test(name);
 const info = (doc) => ({ token: doc.token, name: doc.name, size: doc.revisions.current().size, dirty: doc.revisions.dirty() });
 const keyOf = (file) => path.resolve(file).toLowerCase();
 const driveOf = (where) => path.parse(path.resolve(where)).root.replace(/\\$/, '');
@@ -154,10 +157,9 @@ function createDocuments({ runPdfTool } = {}) {
       const source = doc.revisions.current().file;
       const out = path.join(doc.session, `revision-${++doc.count}.pdf`);
       const listFile = path.join(doc.session, `ops-${doc.count}.json`);
-      const secret = passwords.get(token);
       try {
         await fs.promises.writeFile(listFile, JSON.stringify({ version: 1, ops: list }));
-        await runPdfTool('pdf_edit.py', [source, out, listFile], { src: source, signal: doc.stop.signal, secrets: secret && { password: secret.toString('utf8') } });
+        await runPdfTool('pdf_edit.py', [source, out, listFile], { src: source, signal: doc.stop.signal, secrets: secretsOf(token) });
         return await adopt(doc, out, (await fs.promises.stat(out)).size, room.free);
       } catch (e) {
         await fs.promises.rm(out, { force: true });
@@ -165,6 +167,58 @@ function createDocuments({ runPdfTool } = {}) {
       } finally {
         await fs.promises.rm(listFile, { force: true });
       }
+    });
+  }
+
+  // What the PDF engine reports about the revision on show: a helper run on that file, kept until the revision changes. An unchanged
+  // document has no copy yet, so the helper reads the file itself, which keeps Pomelo's own rename and save waiting its turn.
+  function facts(token) {
+    const doc = get(token);
+    return serial(doc, async () => {
+      const rev = doc.revisions.current();
+      if (doc.facts?.rev !== rev) {
+        const data = await withTempFile('json', async (out) => {
+          await runPdfTool('pdf_info.py', [rev.file, out, 'properties'], { src: rev.file, signal: doc.stop.signal, secrets: secretsOf(token) });
+          return JSON.parse(await fs.promises.readFile(out, 'utf8'));
+        });
+        doc.facts = { rev, data };
+      }
+      return doc.facts.data;
+    });
+  }
+
+  // Where the file is, as the last two folders, and when it was last changed on disk. The page never gets a path.
+  async function details(token) {
+    const doc = get(token);
+    const folders = path.dirname(doc.file).split(path.sep).filter(Boolean);
+    const stat = await fs.promises.stat(doc.file).catch(() => null);
+    return { folder: folders.slice(-2).join(' › '), modified: stat ? stat.mtimeMs : null };
+  }
+
+  // Renames the file on disk, keeping its extension. `name` is the new name without it. Resolves { info } or { stop }: 'invalid',
+  // 'open' (another tab has that file), 'exists' (a file is there already), 'in-use' (Windows would not) or 'changed'. A file is never replaced.
+  function rename(token, name) {
+    const doc = get(token);
+    const base = typeof name === 'string' ? name.trim() : '';
+    if (badName(base)) return Promise.resolve({ stop: 'invalid' });
+    const target = path.join(path.dirname(doc.file), base + path.extname(doc.file));
+    const key = keyOf(target);
+    if (target === doc.file) return Promise.resolve({ info: info(doc) });
+    if ([...byToken.values()].some((other) => other !== doc && other.key === key)) return Promise.resolve({ stop: 'open' });
+    return serial(doc, async () => {
+      if (key !== doc.key && (await fs.promises.lstat(target).then(() => true, () => false))) return { stop: 'exists' };
+      try {
+        await fs.promises.rename(doc.file, target);
+      } catch (e) {
+        if (e.code === 'ENOENT') return CHANGED;
+        if (IN_USE.has(e.code)) return { stop: 'in-use' };
+        throw e;
+      }
+      if (!doc.session) doc.revisions.current().file = target;
+      doc.file = target;
+      doc.name = path.basename(target);
+      doc.key = key;
+      return { info: info(doc) };
     });
   }
 
@@ -212,6 +266,7 @@ function createDocuments({ runPdfTool } = {}) {
   }
 
   const password = (token) => passwords.get(token);
+  const secretsOf = (token) => { const secret = passwords.get(token); return secret && { password: secret.toString('utf8') }; };
   const fileOf = (token) => get(token).file;
 
   async function end(doc) {
@@ -240,7 +295,7 @@ function createDocuments({ runPdfTool } = {}) {
 
   const served = () => [...byToken.values()].reduce((sum, doc) => sum + doc.served, 0);
 
-  return { open, find, list, read, unlock, password, fileOf, putRevision, apply, undo, redo, save, saveCopy, reload, close, closeAll, served };
+  return { open, find, list, read, unlock, password, fileOf, putRevision, apply, facts, details, rename, undo, redo, save, saveCopy, reload, close, closeAll, served };
 }
 
 const sweepSessions = () => sweepTempDirs(SESSION_TAG, 24 * 3600 * 1000);

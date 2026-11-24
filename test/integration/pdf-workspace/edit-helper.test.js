@@ -41,6 +41,37 @@ const look = (file, password = '') => JSON.parse(python([
   'print(json.dumps({"locked": locked, "encryption": d.metadata["encryption"], "repaired": d.is_repaired, "rotations": [p.rotation for p in d], "texts": [p.get_text().strip() for p in d], "contents": [p.read_contents().hex() for p in d]}))',
 ].join('\n'), file, password));
 
+const SIGN = String.raw`import json, sys, pymupdf
+
+def sign(path, name, signer, extra_sig="", extra_field="", certify=False, empty=False):
+    doc = pymupdf.open(path)
+    page = doc[0]
+    sig, field = doc.get_new_xref(), doc.get_new_xref()
+    value = ""
+    if not empty:
+        doc.update_object(sig, "<</Type/Sig/Filter/Adobe.PPKLite/SubFilter/adbe.pkcs7.detached/ByteRange[0 1000000000 1000000001 1000000002]/Contents<%s>/M(D:20261121053000Z)/Name(%s)%s>>" % ("0" * 400, signer, extra_sig))
+        value = "/V %d 0 R" % sig
+    doc.update_object(field, "<</Type/Annot/Subtype/Widget/FT/Sig/T(%s)/F 132/Rect[50 50 200 100]%s/P %d 0 R%s>>" % (name, value, page.xref, extra_field))
+    annots = doc.xref_get_key(page.xref, "Annots")
+    doc.xref_set_key(page.xref, "Annots", (annots[1][:-1] + " %d 0 R]" % field) if annots[0] == "array" else "[%d 0 R]" % field)
+    cat = doc.pdf_catalog()
+    fields = doc.xref_get_key(cat, "AcroForm/Fields")
+    doc.xref_set_key(cat, "AcroForm/Fields", (fields[1][:-1] + " %d 0 R]" % field) if fields[0] == "array" else "[%d 0 R]" % field)
+    doc.xref_set_key(cat, "AcroForm/SigFlags", "3")
+    if certify:
+        doc.xref_set_key(cat, "Perms", "<</DocMDP %d 0 R>>" % sig)
+    doc.saveIncr()
+    doc.close()
+    if empty:
+        return
+    data = bytearray(open(path, "rb").read())
+    start = data.rindex(b"/Contents<") + len(b"/Contents")
+    end = data.index(b">", start) + 1
+    old = b"[0 1000000000 1000000001 1000000002]"
+    at = data.rindex(old)
+    data[at:at + len(old)] = b"[0 %010d %010d %010d]" % (start, end, len(data) - end)
+    open(path, "wb").write(bytes(data))
+`;
 const list = (...ops) => { const file = at(`ops-${crypto.randomBytes(4).toString('hex')}.json`); fs.writeFileSync(file, JSON.stringify({ version: 1, ops })); return file; };
 const rotate = (pages, by = 90) => ({ op: 'pages.rotate', pages, by });
 const remove = (pages) => ({ op: 'pages.delete', pages });
@@ -146,6 +177,87 @@ const bytes = fs.readFileSync(draw);
   expect('a protected file opens with the password and says how it is protected', factsOfLocked.pageCount === 3 && /AES/.test(factsOfLocked.encryption), JSON.stringify(factsOfLocked));
   expect('without the password it says why not, and writes nothing', (await reason(info(locked, at('facts-none.json')))).includes('password-protected') && !fs.existsSync(at('facts-none.json')));
   expect('an unknown question is refused', (await reason(conversion.runPdfTool('pdf_info.py', [draw, at('what.json'), 'everything'], { src: draw }))).includes('unknown request') && !fs.existsSync(at('what.json')));
+
+  console.log('the document information');
+  const informed = at('informed.pdf');
+  python('import pymupdf, sys\nd = pymupdf.open()\nd.new_page().insert_text((72, 100), "INFOMARK words")\nd.set_metadata({"title": "Old title", "author": "Somebody", "creator": "Word", "producer": "Print to PDF", "creationDate": "D:20260303094200+08\'00\'"})\nd.save(sys.argv[1], expand=255)', informed);
+  const meta = (file, password = '') => JSON.parse(python('import json, sys, pymupdf\nd = pymupdf.open(sys.argv[1])\nif d.needs_pass: d.authenticate(sys.argv[2])\nprint(json.dumps(d.metadata))', file, password));
+  const information = (title, author, subject, keywords) => ({ op: 'meta.set', title, author, subject, keywords });
+  const informedBytes = fs.readFileSync(informed);
+  const retitled = at('retitled.pdf');
+  const retitledSaid = await tool(informed, retitled, list(information('Café 日本', '', 'Results', 'a, b')));
+  const kept = meta(retitled);
+  expect('the four texts are set, an empty one removes its entry and the other entries stay', kept.title === 'Café 日本' && kept.author === '' && kept.subject === 'Results' && kept.keywords === 'a, b' && kept.creator === 'Word' && kept.producer === 'Print to PDF' && kept.creationDate === "D:20260303094200+08'00'", JSON.stringify(kept));
+  expect('it is appended to the file and the pages are untouched', /^\{"saved": "incremental"\}$/m.test(retitledSaid) && fs.readFileSync(retitled).subarray(0, informedBytes.length).equals(informedBytes) && look(retitled).contents[0] === look(informed).contents[0]);
+  const longest = at('longest.pdf');
+  await tool(informed, longest, list(information('x'.repeat(1000), '', '', '')));
+  expect('a title of 1000 characters is kept whole', meta(longest).title.length === 1000);
+  for (const [what, op, why] of [['a title over 1000 characters', information('x'.repeat(1001), '', '', ''), 'title is text of at most 1000 characters'], ['an author that is not text', information('', 5, '', ''), 'author is text of at most 1000 characters'], ['a missing keyword text', { op: 'meta.set', title: '', author: '', subject: '' }, 'meta.set takes author, keywords, subject, title'], ['a key it does not take', { ...information('', '', '', ''), producer: 'x' }, 'meta.set takes author, keywords, subject, title']]) {
+    const out = at(`meta-${crypto.randomBytes(3).toString('hex')}.pdf`);
+    const message = await reason(tool(informed, out, list(op)));
+    expect(`${what} is refused with a reason and nothing is written`, message.includes(why) && !fs.existsSync(out), message);
+  }
+  const retitledLocked = at('locked-retitled.pdf');
+  await tool(locked, retitledLocked, list(information('Secret title', '', '', '')), { password: PASSWORD });
+  expect('a protected file with new information still needs its password', look(retitledLocked).locked === true && meta(retitledLocked, PASSWORD).title === 'Secret title');
+
+  console.log('more facts about a file');
+  const more = await info(informed, at('facts-informed.json'));
+  expect('the information comes with its dates as ISO text and the program that made the file', more.information.title === 'Old title' && more.information.author === 'Somebody' && more.information.creator === 'Word' && more.information.producer === 'Print to PDF' && more.information.created === '2026-03-03T09:42:00+08:00' && more.information.modified === null && more.needsPassword === false, JSON.stringify(more.information));
+  expect('a file with no form has no signature fields', more.signatures.fields.length === 0 && more.signatures.certification === null && more.signatures.changedAfterSigning === false);
+  expect('a standard font is not embedded', JSON.stringify(more.fonts) === '[{"name":"Helvetica","embedded":false}]', JSON.stringify(more.fonts));
+  const embedded = at('embedded.pdf');
+  python('import pymupdf, sys\nd = pymupdf.open()\npage = d.new_page()\npage.insert_font(fontname="Droid", fontbuffer=pymupdf.Font("cjk").buffer)\npage.insert_text((72, 100), "EMBEDMARK", fontname="Droid")\npage.insert_text((72, 140), "second font")\nd.subset_fonts()\nd.save(sys.argv[1])', embedded);
+  const fonts = (await info(embedded, at('facts-embedded.json'))).fonts;
+  expect('an embedded font is told from a standard one, and a subset prefix is not part of the name', fonts.length === 2 && fonts.find((f) => f.name === 'Helvetica').embedded === false && fonts.find((f) => f.name !== 'Helvetica').embedded === true && fonts.every((f) => !/^[A-Z]{6}\+/.test(f.name)), JSON.stringify(fonts));
+  const many = at('many.pdf');
+  python('import pymupdf, sys\nd = pymupdf.open()\nfor i in range(40):\n    d.new_page().insert_text((72, 100), "page %d" % i, fontname="helv" if i % 2 else "tiro")\nd.save(sys.argv[1])', many);
+  expect('a font used on many pages is listed once', JSON.stringify((await info(many, at('facts-many.json'))).fonts.map((f) => f.name)) === '["Helvetica","Times-Roman"]');
+  expect('a protected file says its password is needed to open it', (await info(locked, at('facts-locked2.json'), { password: PASSWORD })).needsPassword === true);
+
+  console.log('what a file says about its signatures');
+  const form = at('form.pdf');
+  python('import pymupdf, sys\nd = pymupdf.open()\npage = d.new_page()\npage.insert_text((72, 100), "SIGNMARK")\nw = pymupdf.Widget()\nw.field_type = pymupdf.PDF_WIDGET_TYPE_TEXT\nw.field_name = "name"\nw.rect = pymupdf.Rect(50, 200, 200, 220)\npage.add_widget(w)\nd.save(sys.argv[1])', form);
+  const signed = (name, steps) => {
+    const out = at(`${name}.pdf`);
+    fs.copyFileSync(form, out);
+    python(`${SIGN}\n${steps}`, out);
+    return out;
+  };
+  const signatures = async (file) => (await info(file, at(`sig-${crypto.randomBytes(3).toString('hex')}.json`))).signatures;
+  const certified = (level) => `/Reference[<</Type/SigRef/TransformMethod/DocMDP/TransformParams<</Type/TransformParams${level ? `/P ${level}` : ''}/V/1.2>>>>]`;
+  const approval = signed('approval', 'sign(sys.argv[1], "Sig1", "Test Signer")');
+  const one = await signatures(approval);
+  expect('a signed field says who the file claims signed it, when, and with what filter', one.fields.length === 1 && one.fields[0].name === 'Sig1' && one.fields[0].signed === true && one.fields[0].signer === 'Test Signer' && one.fields[0].time === '2026-11-21T05:30:00+00:00' && one.fields[0].filter === 'adbe.pkcs7.detached', JSON.stringify(one));
+  expect('the signed part ends where the file ended, and nothing follows it', one.fields[0].intact === true && one.changedAfterSigning === false && one.certification === null);
+  for (const level of [1, 2, 3]) {
+    const file = signed(`certified-${level}`, `sign(sys.argv[1], "Sig1", "Test Signer", extra_sig='${certified(level)}', certify=True)`);
+    expect(`a certification that allows level ${level} says so`, (await signatures(file)).certification === level);
+  }
+  expect('a certification with no level given means form filling and signing', (await signatures(signed('certified-default', 'sign(sys.argv[1], "Sig1", "Test Signer", certify=True)'))).certification === 2);
+  const lock = (extra) => signed(`lock-${crypto.randomBytes(3).toString('hex')}`, `sign(sys.argv[1], "Sig1", "Test Signer", extra_field='/Lock<</Type/SigFieldLock/Action/${extra}>>')`);
+  expect('a lock on named fields says which', JSON.stringify((await signatures(lock('Include/Fields[(name)(city)]'))).fields[0].lock) === '{"action":"Include","fields":["name","city"]}');
+  expect('a lock on every field and one on every field but some', JSON.stringify((await signatures(lock('All'))).fields[0].lock) === '{"action":"All","fields":[]}' && JSON.stringify((await signatures(lock('Exclude/Fields[(name)]'))).fields[0].lock) === '{"action":"Exclude","fields":["name"]}');
+  const empty = await signatures(signed('empty', 'sign(sys.argv[1], "Sig1", "", empty=True)'));
+  expect('a signature field nobody has signed is told from a signed one', empty.fields.length === 1 && empty.fields[0].signed === false && empty.fields[0].name === 'Sig1' && !('signer' in empty.fields[0]));
+  const pair = signed('pair', 'sign(sys.argv[1], "Sig1", "First Signer")\nsign(sys.argv[1], "Sig2", "Second Signer")');
+  const both = await signatures(pair);
+  expect('two signatures in two revisions are both signed, and the first is not called changed because the second follows it', both.fields.length === 2 && both.fields.every((f) => f.signed && f.intact) && both.fields[0].signer === 'First Signer' && both.fields[1].signer === 'Second Signer' && both.changedAfterSigning === false, JSON.stringify(both));
+  const filled = at('filled.pdf');
+  fs.copyFileSync(pair, filled);
+  python('import pymupdf, sys\nd = pymupdf.open(sys.argv[1])\nd.set_metadata({"title": "after"})\nd.saveIncr()', filled);
+  const changed = await signatures(filled);
+  expect('a change added after the last signature is reported, and the signed parts are still where they were', changed.changedAfterSigning === true && changed.fields.every((f) => f.intact), JSON.stringify(changed));
+  const rewritten = at('rewritten.pdf');
+  python('import pymupdf, sys\nd = pymupdf.open(sys.argv[1])\nd.save(sys.argv[2], garbage=4, deflate=True)', approval, rewritten);
+  expect('a file written out whole no longer ends its signed part at the end of the file', (await signatures(rewritten)).fields.every((f) => f.intact === false));
+  const damaged = at('damaged.pdf');
+  fs.writeFileSync(damaged, Buffer.concat([fs.readFileSync(approval), Buffer.from('\njunk after the file\n')]));
+  expect('bytes after the signed part are reported as a change', (await signatures(damaged)).changedAfterSigning === true);
+  expect('no fact says a signature is valid or checked', !JSON.stringify([one, both, changed]).match(/valid|verified/i));
+  const asSigned = at('approval-incremental.pdf');
+  await tool(approval, asSigned, list(rotate([1])));
+  expect('a change made by the helper to a signed file is added after the signed part', (await signatures(asSigned)).changedAfterSigning === true && (await signatures(asSigned)).fields[0].intact === true);
 
   console.log('stopping');
   const stopped = at('stopped.pdf');

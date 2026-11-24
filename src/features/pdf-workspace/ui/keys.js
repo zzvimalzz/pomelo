@@ -11,6 +11,7 @@
     previousPage: { keys: ['PageUp', 'ArrowLeft', 'ArrowUp'], label: 'Page Up' },
     focusReading: { keys: ['F11'], label: 'F11' },
     find: { keys: ['Ctrl+f', 'Ctrl+F'], label: 'Ctrl+F' },
+    documentPanel: { keys: ['Ctrl+d', 'Ctrl+D'], label: 'Ctrl+D' },
     saveCopy: { keys: ['Ctrl+Shift+S'], label: 'Ctrl+Shift+S' },
     save: { keys: ['Ctrl+s', 'Ctrl+S'], label: 'Ctrl+S' },
     back: { keys: ['Alt+ArrowLeft'], label: 'Alt+Left' },

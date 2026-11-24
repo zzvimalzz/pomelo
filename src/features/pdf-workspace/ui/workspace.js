@@ -28,6 +28,7 @@
 
   function showFailure(tab) {
     viewer.clear();
+    window.workspaceProperties.show(null);
     failure.textContent = tab.error === 'locked' ? 'This file is password-protected' : 'This file is damaged or is not a PDF';
     if (tab.error === 'locked') {
       const unlock = window.pomeloUi.el('button', 'btn primary', 'Unlock');
@@ -50,6 +51,7 @@
   function put(tab) {
     viewer.show(tab.pdf, tab.left);
     tab.shown = true;
+    window.workspaceProperties.show(tab);
   }
 
   async function display(tab) {
@@ -73,6 +75,11 @@
     if (mine === turn) put(tab);
   }
 
+  function showName(tab) {
+    name.textContent = tab.doc.name;
+    document.title = `${tab.doc.name} - Pomelo`;
+  }
+
   function activate(tab) {
     if (tab === active) return;
     if (active?.shown) {
@@ -80,9 +87,9 @@
       active.shown = false;
     }
     active = tab;
-    name.textContent = tab.doc.name;
-    document.title = `${tab.doc.name} - Pomelo`;
+    showName(tab);
     savedNote.classList.remove('on');
+    window.workspaceProperties.show(null);
     drawTabs();
     display(tab);
   }
@@ -143,6 +150,7 @@
   }
 
   window.workspaceTabs.bind({ select: (token) => activate(find(token)), close: closeTab });
+  name.onclick = () => window.workspaceProperties.open();
   saveButton.title = `Save (${window.workspaceKeys.label('save')})`;
   saveButton.onclick = () => active && save(active);
   window.workspaceKeys.bind('save', () => { if (!active?.doc.dirty) return false; save(active); });
@@ -152,8 +160,10 @@
     const tab = find(doc.token);
     if (!tab) return;
     tab.doc = doc;
+    if (tab === active) showName(tab);
     drawTabs();
     if (reload) reopen(tab);
+    else if (tab === active && tab.shown) window.workspaceProperties.show(tab);
   });
 
   // The window was asked to close while a document has changes: each of those is asked about in turn, and the window goes only when

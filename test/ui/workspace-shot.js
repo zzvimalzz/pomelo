@@ -11,7 +11,7 @@ const os = require('os');
 const path = require('path');
 const { PDFDocument, PDFName, PDFRawStream, PDFString, PDFHexString, StandardFonts, clip, endPath, popGraphicsState, pushGraphicsState, rectangle, rgb } = require('pdf-lib');
 const { createWorkspace } = require('../../src/features/pdf-workspace');
-const { uniquePath } = require('../../src/features/conversion');
+const { uniquePath, runPdfTool, detectEngines } = require('../../src/features/conversion');
 const { expect: check, failed } = require('../support/expect');
 const { encryptedPdf } = require('../support/encrypted-pdf');
 const finish = require('../support/finish');
@@ -30,6 +30,7 @@ const notices = [];
 const errors = [];
 const calls = [];
 const opened = [];
+const shown = [];
 const handle = ipcMain.handle.bind(ipcMain);
 ipcMain.handle = (channel, fn) => handle(channel, (event, ...args) => { calls.push({ channel, args }); return fn(event, ...args); });
 let writes = 0;
@@ -39,8 +40,8 @@ const setSettings = (patch) => { writes++; settings = { ...settings, ...patch };
 const VIEW_KEYS = ['zoom', 'layout', 'sidebar', 'pageColours'];
 const fresh = ({ keepView = false, ...options } = {}) => {
   if (!keepView && settings.pdfView && typeof settings.pdfView === 'object') settings = { ...settings, pdfView: Object.fromEntries(Object.entries(settings.pdfView).filter(([key]) => !VIEW_KEYS.includes(key))) };
-  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'pdfws:put-revision', 'pdfws:apply', 'pdfws:undo', 'pdfws:redo', 'pdfws:save', 'pdfws:save-as', 'pdfws:reload', 'pdfws:close-window']) ipcMain.removeHandler(channel);
-  const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), uniquePath, ...options });
+  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'pdfws:put-revision', 'pdfws:apply', 'pdfws:undo', 'pdfws:redo', 'pdfws:save', 'pdfws:save-as', 'pdfws:reload', 'pdfws:close-window', 'pdfws:properties', 'pdfws:details', 'pdfws:rename', 'pdfws:show']) ipcMain.removeHandler(channel);
+  const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), uniquePath, runPdfTool, showInFolder: (file) => shown.push(file), ...options });
   workspace.registerIpc();
   return workspace;
 };
@@ -2347,6 +2348,117 @@ app.whenReady().then(async () => {
     check('and a click on it goes to page 3 000', (await js(win, `workspaceViewer.viewer.currentPageNumber`)) === 3000);
     await closeAndWait(win);
     check('closing the window closes the file', workspace.served() === 0 && (() => { try { fs.rmSync(big); return true; } catch { return false; } })());
+  }
+
+  console.log('the Document panel');
+  {
+    const engine = !!detectEngines().pdf;
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    doc.addPage([595, 842]).drawText('Document panel page', { x: 60, y: 700, size: 22, font });
+    doc.setTitle('Annual report');
+    doc.setAuthor('Mina Okafor');
+    doc.setCreator('Writer');
+    const named = path.join(root, 'Report one.pdf');
+    fs.writeFileSync(named, await doc.save({ useObjectStreams: false }));
+    fs.copyFileSync(named, path.join(root, 'Report two.pdf'));
+    const CARDS = engine ? 'File,Description,Document,Security,Fonts' : 'File,Description';
+
+    for (const theme of ['light', 'dark']) {
+      nativeTheme.themeSource = theme;
+      const win = await openAndWait(fresh(), named);
+      const state = () => js(win, `(() => { const g = (id) => document.getElementById(id); const p = g('docpanel'); const b = g('docbtn'); const cards = [...g('docbody').querySelectorAll('section')];
+        const card = (title) => cards.find((c) => c.querySelector('h4').textContent === title);
+        const facts = (title) => { const s = card(title); return s ? [...s.querySelectorAll('.facts > span')].map((x) => x.textContent).join('|') : null; };
+        const name = g('docbody').querySelector('.namefld input');
+        return { width: p.getBoundingClientRect().width, pressed: b.getAttribute('aria-pressed'), disabled: b.disabled, title: b.title, head: p.querySelector('h3').textContent, cards: cards.map((c) => c.querySelector('h4').textContent).join(),
+          nameValue: name ? name.value : null, ext: name ? name.parentElement.querySelector('span').textContent : null, nameFocused: !!name && document.activeElement === name,
+          file: facts('File'), description: facts('Description'), document: facts('Document'), security: facts('Security'), fonts: card('Fonts') ? card('Fonts').querySelector('summary').textContent : null,
+          fields: [...g('docbody').querySelectorAll('.fld')].map((i) => i.getAttribute('aria-label') + '=' + i.value).join(), other: g('hitpanel').getBoundingClientRect().width, show: [...g('docbody').querySelectorAll('.pillbtn')].map((x) => x.textContent).join() }; })()`);
+      let s = await state();
+      check(`${theme}: the title row has a Document info button with its key in the tooltip, and the panel is shut`, s.pressed === 'false' && !s.disabled && s.title === 'Document info (Ctrl+D)' && s.width === 0 && s.cards === '', JSON.stringify(s));
+      await js(win, `document.getElementById('docbtn').click()`);
+      await until('the cards', async () => (await state()).cards === CARDS);
+      await sleep(500);
+      s = await state();
+      check(`${theme}: the button opens a panel headed Document, 312 px wide, with ${CARDS.replace(/,/g, ', ')}`, s.width === 312 && s.pressed === 'true' && s.head === 'Document' && s.cards === CARDS, JSON.stringify(s));
+      check(`${theme}: the File card has the name without its extension, the extension beside it, the place, the size, the date and Show`, s.nameValue === 'Report one' && s.ext === '.pdf' && s.file.startsWith('Location|') && s.file.includes('|Size|') && s.file.includes('|Modified|') && s.show === 'Show', JSON.stringify(s));
+      check(`${theme}: the Description card holds the four texts of the file as fields`, s.fields === 'Title=Annual report,Author=Mina Okafor,Subject=,Keywords=' && s.description === 'Title|Author|Subject|Keywords', JSON.stringify([s.fields, s.description]));
+      if (engine) {
+        const parts = s.document.split('|');
+        check(`${theme}: the Document card says the pages, the paper, the version and who made it`, parts[0] === 'Pages' && parts[1] === '1' && parts[3] === 'A4 · 210 × 297 mm' && parts[4] === 'PDF version' && /^\d\.\d$/.test(parts[5]) && parts[7].endsWith('Writer'), JSON.stringify(s.document));
+        check(`${theme}: the Security card says there is no password, nothing is held back and there are no signatures, and the Fonts card counts the fonts`, s.security === 'Password|None|Permissions|Everything allowed|Signatures|None' && /^1 font, /.test(s.fonts), JSON.stringify([s.security, s.fonts]));
+      }
+      await shot(win, `workspace-document-${theme}.png`);
+
+      await js(win, `document.getElementById('linksbtn').click()`);
+      await sleep(600);
+      s = await state();
+      check(`${theme}: opening Links shuts the Document panel, so two panels never share the right edge`, s.pressed === 'false' && s.width === 0 && s.other === 300, JSON.stringify(s));
+      await js(win, `document.getElementById('linksbtn').click()`);
+      await sleep(600);
+      await press(win, 'D', ['control']);
+      await until('the panel by key', async () => (await state()).width === 312);
+      check(`${theme}: Ctrl+D opens the panel`, (await state()).pressed === 'true');
+      await press(win, 'D', ['control']);
+      await sleep(500);
+      s = await state();
+      check(`${theme}: and the same key shuts it`, s.pressed === 'false' && s.width === 0, JSON.stringify(s));
+
+      await js(win, `document.getElementById('docname').click()`);
+      await until('the name field', async () => (await state()).nameFocused);
+      s = await state();
+      check(`${theme}: a click on the file name opens the panel with the name ready to type over`, s.pressed === 'true' && s.nameFocused && s.nameValue === 'Report one', JSON.stringify(s));
+      await closeAndWait(win);
+    }
+
+    nativeTheme.themeSource = 'light';
+    const win = await openAndWait(fresh(), named);
+    const typeName = async (text) => {
+      await js(win, `(() => { const i = document.querySelector('#docbody .namefld input'); i.focus(); i.select(); })()`);
+      await js(win, `document.execCommand('insertText', false, ${JSON.stringify(text)})`);
+      await press(win, 'Return');
+    };
+    const hint = () => js(win, `document.querySelector('#docbody .hintline') ? document.querySelector('#docbody .hintline').textContent : ''`);
+    const shownName = () => js(win, `document.getElementById('docname').textContent`);
+    await js(win, `document.getElementById('docbtn').click()`);
+    await until('the name field', () => js(win, `!!document.querySelector('#docbody .namefld input')`));
+    await typeName('Report two');
+    await sleep(300);
+    check('a name another file has is refused in words and nothing is renamed', (await hint()) === 'A file with that name is already there' && fs.existsSync(named) && (await shownName()) === 'Report one.pdf', await hint());
+    await typeName('bad:name');
+    await sleep(300);
+    check('a name Windows cannot hold is refused in words', (await hint()) === "That name can't be used" && fs.existsSync(named), await hint());
+    await typeName('Report final');
+    await until('the new name', async () => (await shownName()) === 'Report final.pdf');
+    await sleep(500);
+    const renamed = await js(win, `({ title: document.title, field: document.querySelector('#docbody .namefld input').value, said: document.querySelector('#docbody .hintline').textContent })`);
+    check('a new name renames the file, the title row and the window, and the panel says Renamed', fs.existsSync(path.join(root, 'Report final.pdf')) && !fs.existsSync(named) && renamed.title === 'Report final.pdf - Pomelo' && renamed.field === 'Report final' && renamed.said === 'Renamed', JSON.stringify(renamed));
+    await js(win, `document.querySelector('#docbody .pillbtn').click()`);
+    await sleep(300);
+    check('Show asks Explorer for the renamed file and no other', shown.length === 1 && shown[0] === path.join(root, 'Report final.pdf'), JSON.stringify(shown));
+    check('no message about the panel carries a path', calls.filter((c) => /^pdfws:(properties|details|rename|show)$/.test(c.channel)).every((c) => c.args.every((a) => typeof a !== 'string' || !a.includes(root))));
+
+    if (engine) {
+      await until('the fields', () => js(win, `!!document.querySelector('#docbody .fld')`));
+      await js(win, `(() => { const i = document.querySelector('#docbody .fld'); i.focus(); i.select(); })()`);
+      await js(win, `document.execCommand('insertText', false, 'Quarterly report')`);
+      await press(win, 'Tab');
+      await until('the unsaved mark', async () => (await js(win, `!document.getElementById('docdot').hidden`)), 15000);
+      const edited = await js(win, `({ dot: !document.getElementById('docdot').hidden, save: !document.getElementById('savebtn').hidden, title: document.querySelector('#docbody .fld').value })`);
+      check('a changed Title is a change to the document: the unsaved mark and Save show, and the field keeps what was typed', edited.dot && edited.save && edited.title === 'Quarterly report', JSON.stringify(edited));
+      await shot(win, 'workspace-document-edited.png');
+    }
+    await js(win, `document.getElementById('docclose').click()`);
+    await sleep(500);
+    check('the close button in the panel shuts it', (await js(win, `document.getElementById('docbtn').getAttribute('aria-pressed')`)) === 'false');
+    win.close();
+    await sleep(500);
+    if (engine) {
+      check('closing with the changed Title asks first', await js(win, `!!document.querySelector('.card') && document.querySelector('.card h3').textContent === 'Save changes to Report final.pdf?'`));
+      await js(win, `[...document.querySelectorAll('.card button')].find((b) => b.textContent === "Don't save").click()`);
+      await sleep(500);
+    }
   }
 
   console.log('a file that cannot be shown');
