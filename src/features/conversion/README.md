@@ -45,6 +45,7 @@ Engines and what they do:
 ## Contracts
 
 - The Python helpers' arguments, the `POMELO_PROGRESS` lines, `OK` and exit codes 1, 2 and 3 (`runHelper` and the scripts in `python/`).
+- `runPdfTool(script, args, { src, onProgress, signal, secrets })` (`index.js`) runs `python/pdf_edit.py` or `pdf_info.py` with the PDF engine for the PDF window, outside a conversion. It rejects with `The PDF engine is not installed` (code `NO_ENGINE`) when there is none, and with `CancelledError` when `signal` aborts, which kills the process. `secrets` is written to the helper's standard input as one line of JSON (`{}` when there is none) and never goes in an argument or the environment.
 - `settings:get` returns the engines map with the keys above.
 - Error messages shown to the user (tests assert on them).
 

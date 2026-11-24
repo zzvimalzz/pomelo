@@ -15,6 +15,9 @@ An entry point is run with `python -W ignore <script> <arguments>`. Libraries ar
 | `pdf_to_tables.py` | entry | The tables of a PDF as JSON for the Excel writer: `<in.pdf> <out.json>` |
 | `pdf_to_layout.py` | entry | Text with exact positions, plus background pictures, for the PowerPoint writer: `<in.pdf> <out folder>` |
 | `unlock.py` | entry | A PDF or Office file that has a password: `probe <in>` prints `LOCKED` or `OPEN` (for the pre-2007 Office files); `open <in> [<out>]` reads the password as the first line of standard input and writes the file without it to `<out>`, or only checks it. Exit 4 means a wrong password (stderr says `POMELO_LOCK wrong`) and 5 a protection it cannot open or a damaged file |
+| `pdf_edit.py` | entry | Applies a list of changes to a PDF and writes the next version: `<in.pdf> <out.pdf> <ops.json>`. `<in.pdf>` is never changed. When every change only edits an object in place or adds to the file, `<out.pdf>` is `<in.pdf>` with the changes appended; otherwise, or when the file had to be repaired to open, it is written whole. Prints `{"saved": "incremental"}` or `{"saved": "full"}`, then `OK`. Nothing is left at `<out.pdf>` when it fails |
+| `pdf_info.py` | entry | Facts about a PDF as JSON: `<in.pdf> <out.json> properties` gives the page count and sizes, the PDF version, the document information, whether it is tagged, the encryption and what the permissions allow |
+| `pdf_ops/` | library | What `pdf_edit.py` and `pdf_info.py` share: the table of operations (`__init__.py`: `pages.rotate`, kind `direct`, and `pages.delete`, kind `rewrite`, in `pages.py`), the check of a list, the one place that saves, and the line of secrets on standard input |
 | `image_to_heic.py` | entry | An image to HEIC: `<in image> <out.heic>` |
 | `helper.py` | library | `require()`, `progress()`, `exit_no_text()` and `run_pdf_job()` |
 | `pdf_ocr.py` | library | Reads scanned pages with RapidOCR (the PP-OCR models its package ships, so nothing is downloaded) into a temporary PDF with real text; the faint show-through of the other side of a sheet is not written, and a line slanted against the others (a stamp) is written invisibly |
@@ -42,6 +45,7 @@ The Node side depends on these (`test/integration/python/cli-contract.test.js` c
 - `POMELO_PROGRESS <0..1>` lines on stdout while it works, and `OK` at the end.
 - On failure, one line on stderr and an exit code: 1 failed, 2 a component is not installed, 3 the PDF has no text to convert.
 - `unlock.py` adds exit codes 4 and 5 and takes the password on standard input, never as an argument.
+- `pdf_edit.py` and `pdf_info.py` read one line of standard input first, unless it is a terminal: a JSON object with the `password` of the PDF to open, at most 64 KiB. Nothing secret goes in an argument, the environment, `ops.json` or a file, and a reason that would repeat one prints `***` instead. The operations list is `{"version": 1, "ops": [...]}`; a page number is counted in the document as the operations before it left it. A save always keeps the encryption of the file it started from, and refuses to leave a protected file without its password. A full save uses `garbage=1`: it drops what a deleted page no longer refers to and leaves every other page's content as it was. `garbage=4` on its own took 17 minutes on a file of 10 000 small pages, and deflating images that are stored raw took 86 seconds on 95 MB.
 - The messages for a password-protected, a damaged and a page-less PDF, and for a scan when OCR is not installed. The tests assert on them.
 
 ## Testing

@@ -77,6 +77,25 @@ console.log('which text becomes editable text on a PowerPoint slide');
   expect('text with curly quotes and a dash is written as editable text, not left in the picture', texts.includes('\u201cQuoted text\u201d') && texts.includes('\u2014'), texts || `${r.code} ${lastLine(r)}`);
 }
 
+console.log('the PDF editing helpers');
+{
+  const ops = out('ops.json');
+  fs.writeFileSync(ops, '{"version":1,"ops":[{"op":"pages.rotate","pages":[1],"by":90}]}');
+  const editing = [
+    { script: 'pdf_edit.py', args: (src, n) => [src, out(`${n}.pdf`), ops], made: (n) => out(`${n}.pdf`), progress: true },
+    { script: 'pdf_info.py', args: (src, n) => [src, out(`${n}.json`), 'properties'], made: (n) => out(`${n}.json`), progress: false },
+  ];
+  for (const c of editing) {
+    console.log(c.script);
+    let r = run(py, c.script, c.args(missing, `${c.script}-missing`));
+    expect('a missing file fails with exit 1 and a reason, and nothing is written', r.code === 1 && lastLine(r) === DAMAGED && !fs.existsSync(c.made(`${c.script}-missing`)), `${r.code} ${lastLine(r)}`);
+    r = run(py, c.script, c.args(broken, `${c.script}-broken`));
+    expect('a damaged PDF fails with exit 1 and says so', r.code === 1 && lastLine(r) === DAMAGED && !r.out.includes('OK'), `${r.code} ${lastLine(r)}`);
+    r = run(py, c.script, c.args(withText, `${c.script}-text`));
+    expect('a PDF succeeds: exit 0, OK, the output exists', r.code === 0 && /^OK$/m.test(r.out) && fs.existsSync(c.made(`${c.script}-text`)) && /POMELO_PROGRESS [01]\.\d{3}/.test(r.out) === c.progress, `${r.code} ${lastLine(r)}`);
+  }
+}
+
 console.log('HEIC');
 const heicPython = findPython('pillow_heif, PIL');
 if (!heicPython) console.log('  pillow-heif not installed: skipped');
@@ -96,6 +115,8 @@ console.log('a Python without the packages');
   else {
     const r = run(bare, 'pdf_to_text.py', [withText, out('bare.txt'), 'txt']);
     expect('exit 2 and "PyMuPDF is not available"', r.code === 2 && /^PyMuPDF is not available/.test(lastLine(r)), `${r.code} ${lastLine(r)}`);
+    const e = run(bare, 'pdf_edit.py', [withText, out('bare-edit.pdf'), out('ops.json')]);
+    expect('the editing helper says "The PDF engine is not available" and writes nothing', e.code === 2 && /^The PDF engine is not available/.test(lastLine(e)) && !fs.existsSync(out('bare-edit.pdf')), `${e.code} ${lastLine(e)}`);
     const d = run(bare, 'pdf_to_docx.py', [withText, out('bare.docx')]);
     expect('the Word helper says "The PDF engine is not available"', d.code === 2 && /^The PDF engine is not available/.test(lastLine(d)), `${d.code} ${lastLine(d)}`);
   }

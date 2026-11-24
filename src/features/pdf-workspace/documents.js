@@ -8,6 +8,7 @@ const os = require('os');
 const path = require('path');
 const { fileIdentity, sameFile, replaceFile, makeTempDir, sweepTempDirs, removeDirReliably } = require('#shared/node/fs');
 const { passwordBuffer } = require('#shared/node/secrets');
+const { check } = require('./ops');
 const { createRevisions } = require('./revisions');
 
 const MAX_SPAN = 4 * 1048576;
@@ -22,7 +23,8 @@ const keyOf = (file) => path.resolve(file).toLowerCase();
 const driveOf = (where) => path.parse(path.resolve(where)).root.replace(/\\$/, '');
 const freeBytes = async (dir) => { const f = await fs.promises.statfs(dir); return f.bavail * f.bsize; };
 
-function createDocuments() {
+// runPdfTool(script, args, { src, signal, secrets }): runs a PDF editing helper (the app hands in the conversion feature's).
+function createDocuments({ runPdfTool } = {}) {
   const byToken = new Map();
   const passwords = new Map();
 
@@ -59,7 +61,7 @@ function createDocuments() {
   }
 
   async function open(file) {
-    const doc = { token: crypto.randomBytes(32).toString('hex'), name: path.basename(file), file, served: 0, key: keyOf(file), turn: Promise.resolve() };
+    const doc = { token: crypto.randomBytes(32).toString('hex'), name: path.basename(file), file, served: 0, key: keyOf(file), turn: Promise.resolve(), stop: new AbortController() };
     await load(doc);
     byToken.set(doc.token, doc);
     return info(doc);
@@ -101,6 +103,23 @@ function createDocuments() {
     }
   }
 
+  // Makes room for the next revision: checks the free space and, for the first change, takes the snapshot. Resolves { free, where } or
+  // { stop } with 'no-space' or 'changed'.
+  async function prepare(doc, need) {
+    const first = !doc.session;
+    const where = first ? os.tmpdir() : doc.session;
+    const free = await freeBytes(where);
+    if (free < need + (first ? doc.originalSize : 0)) return stopped(doc, 'no-space', where);
+    if (first && (await snapshot(doc))) return stopped(doc, 'changed', doc.file);
+    return { free, where };
+  }
+
+  async function adopt(doc, file, size, free) {
+    const handle = await fs.promises.open(file, 'r');
+    await doc.revisions.push({ file, handle, size, owned: true, refs: 0 }, Math.min(Math.max(MIN_BUDGET, 4 * doc.originalSize), free / 2));
+    return { info: info(doc) };
+  }
+
   // The whole file as pdf.js saved it, which becomes the next revision. Resolves the document's new state, or { stop } with
   // 'too-large', 'changed' or 'no-space', with the file's name and the drive that is full.
   function putRevision(token, bytes) {
@@ -109,22 +128,43 @@ function createDocuments() {
     if (!(data instanceof Uint8Array) || !data.length || !Buffer.from(data.buffer, data.byteOffset, Math.min(data.length, 1024)).includes('%PDF-')) throw new Error('not a PDF');
     if (data.length > NO_ENGINE_SAVE_LIMIT) return Promise.resolve(stopped(doc, 'too-large', doc.file));
     return serial(doc, async () => {
-      const first = !doc.session;
-      const where = first ? os.tmpdir() : doc.session;
-      const free = await freeBytes(where);
-      if (free < data.length + FREE_MARGIN + (first ? doc.originalSize : 0)) return stopped(doc, 'no-space', where);
-      if (first && (await snapshot(doc))) return stopped(doc, 'changed', doc.file);
+      const room = await prepare(doc, data.length + FREE_MARGIN);
+      if (room.stop) return room;
       const file = path.join(doc.session, `revision-${++doc.count}.pdf`);
       try {
         await fs.promises.writeFile(file, data, { flag: 'wx' });
       } catch (e) {
         await fs.promises.rm(file, { force: true });
-        if (e.code === 'ENOSPC') return stopped(doc, 'no-space', where);
+        if (e.code === 'ENOSPC') return stopped(doc, 'no-space', room.where);
         throw e;
       }
-      const handle = await fs.promises.open(file, 'r');
-      await doc.revisions.push({ file, handle, size: data.length, owned: true, refs: 0 }, Math.min(Math.max(MIN_BUDGET, 4 * doc.originalSize), free / 2));
-      return { info: info(doc) };
+      return adopt(doc, file, data.length, room.free);
+    });
+  }
+
+  // A checked list of changes that the PDF engine makes to the revision on show; the result is the next revision. The helper reads and
+  // writes only files in the session folder, and the password reaches it on its standard input. Closing the document stops it. Throws
+  // for a list that is not allowed; otherwise resolves like putRevision, and rejects with the helper's reason when it fails.
+  function apply(token, ops) {
+    const doc = get(token);
+    const list = check(ops);
+    return serial(doc, async () => {
+      const room = await prepare(doc, 2 * doc.revisions.current().size + FREE_MARGIN);
+      if (room.stop) return room;
+      const source = doc.revisions.current().file;
+      const out = path.join(doc.session, `revision-${++doc.count}.pdf`);
+      const listFile = path.join(doc.session, `ops-${doc.count}.json`);
+      const secret = passwords.get(token);
+      try {
+        await fs.promises.writeFile(listFile, JSON.stringify({ version: 1, ops: list }));
+        await runPdfTool('pdf_edit.py', [source, out, listFile], { src: source, signal: doc.stop.signal, secrets: secret && { password: secret.toString('utf8') } });
+        return await adopt(doc, out, (await fs.promises.stat(out)).size, room.free);
+      } catch (e) {
+        await fs.promises.rm(out, { force: true });
+        throw e;
+      } finally {
+        await fs.promises.rm(listFile, { force: true });
+      }
     });
   }
 
@@ -184,13 +224,14 @@ function createDocuments() {
     const doc = byToken.get(token);
     if (!doc) return Promise.resolve();
     byToken.delete(token);
+    doc.stop.abort();
     passwords.get(token)?.fill(0);
     passwords.delete(token);
     return doc.turn.then(() => end(doc));
   }
 
   function closeAll() {
-    const ending = [...byToken.values()].map((doc) => doc.turn.then(() => end(doc)));
+    const ending = [...byToken.values()].map((doc) => { doc.stop.abort(); return doc.turn.then(() => end(doc)); });
     byToken.clear();
     for (const secret of passwords.values()) secret.fill(0);
     passwords.clear();
@@ -199,7 +240,7 @@ function createDocuments() {
 
   const served = () => [...byToken.values()].reduce((sum, doc) => sum + doc.served, 0);
 
-  return { open, find, list, read, unlock, password, fileOf, putRevision, undo, redo, save, saveCopy, reload, close, closeAll, served };
+  return { open, find, list, read, unlock, password, fileOf, putRevision, apply, undo, redo, save, saveCopy, reload, close, closeAll, served };
 }
 
 const sweepSessions = () => sweepTempDirs(SESSION_TAG, 24 * 3600 * 1000);
