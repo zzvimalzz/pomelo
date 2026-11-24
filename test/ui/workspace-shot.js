@@ -2139,8 +2139,8 @@ app.whenReady().then(async () => {
     await js(none, `document.getElementById('linksbtn').click()`);
     await until('the end of the scan', () => js(none, `document.getElementById('linkscan').textContent === '' && !!document.querySelector('#linklist .sideempty') && document.querySelector('#linklist .sideempty').textContent === 'No links in this document'`));
     await sleep(500);
-    const nothing = await js(none, `({ empty: document.querySelector('#linklist .sideempty').textContent, copyOff: document.getElementById('linkcopy').disabled, choose: document.getElementById('linkchoose').hidden, rows: document.querySelectorAll('.linkrow').length, status: document.getElementById('linkscan').textContent })`);
-    check('a document with no links says so, and offers nothing to select or copy', nothing.empty === 'No links in this document' && nothing.copyOff && nothing.choose && nothing.rows === 0 && nothing.status === '', JSON.stringify(nothing));
+    const nothing = await js(none, `({ empty: document.querySelector('#linklist .sideempty').textContent, copyHidden: document.getElementById('linkcopy').hidden || getComputedStyle(document.getElementById('linkcopy')).display === 'none', choose: document.getElementById('linkchoose').hidden, rows: document.querySelectorAll('.linkrow').length, status: document.getElementById('linkscan').textContent })`);
+    check('a document with no links says so, and shows nothing to select or copy', nothing.empty === 'No links in this document' && nothing.copyHidden && nothing.choose && nothing.rows === 0 && nothing.status === '', JSON.stringify(nothing));
     await closeAndWait(none);
   }
 
@@ -2389,6 +2389,8 @@ app.whenReady().then(async () => {
         check(`${theme}: the Document card says the pages, the paper, the version and who made it`, parts[0] === 'Pages' && parts[1] === '1' && parts[3] === 'A4 · 210 × 297 mm' && parts[4] === 'PDF version' && /^\d\.\d$/.test(parts[5]) && parts[7].endsWith('Writer'), JSON.stringify(s.document));
         check(`${theme}: the Security card says there is no password, nothing is held back and there are no signatures, and the Fonts card counts the fonts`, s.security === 'Password|None|Permissions|Everything allowed|Signatures|None' && /^1 font, /.test(s.fonts), JSON.stringify([s.security, s.fonts]));
       }
+      const grid = await js(win, `(() => { const cards = [...document.querySelectorAll('#docbody section')]; const rows = []; let lefts = new Set(); for (const c of cards) { const cells = [...c.querySelectorAll('.facts > *')]; for (let i = 0; i + 1 < cells.length; i += 2) { const a = cells[i].getBoundingClientRect(); const b = cells[i + 1].getBoundingClientRect(); rows.push(Math.abs(a.top - b.top)); lefts.add(Math.round(b.left)); } } const field = document.querySelector('#docbody .namefld').getBoundingClientRect(); const next = document.querySelector('#docbody .facts').getBoundingClientRect(); return { worst: Math.max(...rows), lefts: [...lefts], gap: Math.round(next.top - field.bottom) }; })()`);
+      check(`${theme}: in every card a label is level with its value, every value starts at the same left edge, and the name field has 10 px of air below it`, grid.worst < 1 && grid.lefts.length === 1 && grid.gap === 10, JSON.stringify(grid));
       await shot(win, `workspace-document-${theme}.png`);
 
       await js(win, `document.getElementById('linksbtn').click()`);
@@ -2459,6 +2461,23 @@ app.whenReady().then(async () => {
       await js(win, `[...document.querySelectorAll('.card button')].find((b) => b.textContent === "Don't save").click()`);
       await sleep(500);
     }
+
+    const deep = path.join(root, 'Computer Science Coursework 2026 Semester Two', 'Assignment submissions and marked feedback from the tutors');
+    fs.mkdirSync(deep, { recursive: true });
+    const longPlace = path.join(deep, 'Report two.pdf');
+    fs.copyFileSync(path.join(root, 'Report two.pdf'), longPlace);
+    for (const theme of ['light', 'dark']) {
+      nativeTheme.themeSource = theme;
+      const far = await openAndWait(fresh(), longPlace);
+      await js(far, `document.getElementById('docbtn').click()`);
+      await until('the folder', () => js(far, `!!document.querySelector('#docbody .folder') && document.querySelector('#docbody .folder').textContent !== ''`));
+      await sleep(500);
+      const place = await js(far, `(() => { const f = document.querySelector('#docbody .folder').getBoundingClientRect(); const b = document.querySelector('#docbody .pillbtn').getBoundingClientRect(); const panel = document.getElementById('docpanel').getBoundingClientRect(); const row = document.querySelector('#docbody .where').getBoundingClientRect(); const label = document.querySelector('#docbody .facts > span').getBoundingClientRect(); return { height: Math.round(f.height), button: Math.round(b.height), inside: b.right <= panel.right && f.right <= b.left, level: Math.abs(label.top - row.top) < 1, full: document.querySelector('#docbody .folder').title }; })()`);
+      check(`${theme}: a long place wraps beside Show, stops at three lines and keeps its label level with the first line`, place.height <= 68 && place.height > 28 && place.button === 24 && place.inside && place.level && place.full.includes('Assignment submissions and marked feedback'), JSON.stringify(place));
+      await shot(far, `workspace-document-long-place-${theme}.png`);
+      await closeAndWait(far);
+    }
+    nativeTheme.themeSource = 'light';
   }
 
   console.log('a file that cannot be shown');

@@ -88,6 +88,7 @@
       chooser.innerHTML = icon(n && !all ? 'minus' : 'check');
       chooser.title = n ? 'Clear' : 'Select All';
       chooser.setAttribute('aria-label', chooser.title);
+      copier.hidden = !entries.length;
       copier.disabled = !n;
       if (!copier.classList.contains('done')) copier.lastChild.textContent = !n ? 'Copy' : all ? 'Copy All' : `Copy ${n}`;
       list.classList.toggle('picking', n > 0);

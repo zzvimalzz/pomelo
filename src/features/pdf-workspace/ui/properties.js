@@ -89,8 +89,10 @@
     const show = el('button', 'pillbtn', 'Show');
     show.type = 'button';
     show.onclick = () => api.showInFolder(doc.token);
+    const folder = el('span', 'folder', details?.folder ?? '');
+    folder.title = details?.folder ?? '';
     const where = el('span', 'where');
-    where.append(el('span', 'folder', details?.folder ?? ''), show);
+    where.append(folder, show);
     const modified = details?.modified ? moment(details.modified) : null;
     const section = card('File', field, hint, facts([['Location', where], ['Size', size(doc.size)], ['Modified', modified ?? 'Unknown']]));
     section.input = input;
