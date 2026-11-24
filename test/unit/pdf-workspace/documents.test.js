@@ -72,6 +72,56 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   expect('a refused password changes nothing', docs.password(doc.token).toString() === 'another');
   const last = docs.password(doc.token);
 
+  console.log('changes made by the PDF engine');
+  const pdf = path.join(root, 'Edited.pdf');
+  fs.writeFileSync(pdf, '%PDF-1.7 the original');
+  const runs = [];
+  let mode = 'copy';
+  const runPdfTool = async (script, args, options) => {
+    const [source, target, listFile] = args;
+    runs.push({ script, source, target, list: fs.readFileSync(listFile, 'utf8'), secrets: options.secrets, signal: options.signal });
+    if (mode === 'fail') { fs.writeFileSync(target, 'half'); throw new Error('This file is damaged or is not a PDF'); }
+    if (mode === 'wait') await new Promise((resolve) => options.signal.addEventListener('abort', resolve));
+    if (options.signal.aborted) { fs.writeFileSync(target, 'half'); throw Object.assign(new Error('Cancelled'), { name: 'CancelledError' }); }
+    fs.writeFileSync(target, `${fs.readFileSync(source, 'utf8')} +1`);
+  };
+  const edits = createDocuments({ runPdfTool });
+  const edited = await edits.open(pdf);
+  const rotate = [{ op: 'pages.rotate', pages: [2], by: 90 }];
+  const result = await edits.apply(edited.token, rotate);
+  const session = path.dirname(runs[0].source);
+  expect('the first change copies the file into a session folder, and the helper never sees the user\'s file', result.info.dirty && runs[0].script === 'pdf_edit.py' && runs[0].source !== pdf && runs[0].target.startsWith(session) && fs.readFileSync(pdf, 'utf8') === '%PDF-1.7 the original');
+  expect('the helper gets the list as the schema keeps it, and the new revision is what it wrote', runs[0].list === '{"version":1,"ops":[{"op":"pages.rotate","pages":[2],"by":90}]}' && result.info.size === '%PDF-1.7 the original +1'.length && (await edits.read(edited.token, 0, 8)).toString() === '%PDF-1.7');
+  expect('no list file is left in the session folder', fs.readdirSync(session).every((name) => !name.startsWith('ops-')), fs.readdirSync(session).join());
+  await edits.apply(edited.token, rotate);
+  expect('the next change starts from the revision on show', runs[1].source === runs[0].target);
+  expect('undo steps back one change at a time', (await edits.undo(edited.token)).info.size === result.info.size && (await edits.undo(edited.token)).info.size === '%PDF-1.7 the original'.length && !(await edits.undo(edited.token)));
+  expect('a document with no password gives the helper no secret', runs[0].secrets === undefined);
+  edits.unlock(edited.token, 'Pw-é1');
+  await edits.apply(edited.token, rotate);
+  expect('the password goes to the helper as a secret, and is in neither the list nor the arguments', JSON.stringify(runs[2].secrets) === '{"password":"Pw-é1"}' && !runs[2].list.includes('Pw-') && runs.every((run) => !run.source.includes('Pw-')));
+  const runsBefore = runs.length;
+  const refusedLists = { 'an unknown change': [{ op: 'pages.shred', pages: [1] }], 'a key it does not take': [{ op: 'pages.delete', pages: [1], password: 'x' }], 'no list': undefined };
+  for (const [what, list] of Object.entries(refusedLists)) expect(`${what} is refused before the helper starts`, (() => { try { edits.apply(edited.token, list); return false; } catch { return true; } })());
+  expect('and so is an unknown document', (() => { try { edits.apply('0'.repeat(64), rotate); return false; } catch { return true; } })() && runs.length === runsBefore);
+  const sizeBefore = edits.list()[0].size;
+  mode = 'fail';
+  const revisionsBefore = fs.readdirSync(session).sort().join();
+  expect('a helper that fails rejects with its reason, and leaves no half-written revision', await edits.apply(edited.token, rotate).then(() => '', (e) => e.message) === 'This file is damaged or is not a PDF' && fs.readdirSync(session).sort().join() === revisionsBefore, fs.readdirSync(session).join());
+  expect('the document is as it was after a failure', edits.list()[0].size === sizeBefore);
+  mode = 'wait';
+  const pending = edits.apply(edited.token, rotate).then(() => 'done', (e) => e.name);
+  while (runs.length < runsBefore + 2) await new Promise((resolve) => setTimeout(resolve, 10));
+  const running = runs.at(-1);
+  await edits.close(edited.token);
+  expect('closing a document stops the helper that is changing it, and removes its folder', await pending === 'CancelledError' && running.signal.aborted && !fs.existsSync(session));
+  expect('and its password is gone', edits.password(edited.token) === undefined);
+  const late = await edits.open(pdf);
+  const waiting = edits.apply(late.token, rotate).then(() => 'done', (e) => e.name);
+  while (runs.length < runsBefore + 3) await new Promise((resolve) => setTimeout(resolve, 10));
+  await edits.closeAll();
+  expect('quitting stops a helper that is still changing a document', await waiting === 'CancelledError' && runs.at(-1).signal.aborted);
+
   console.log('several documents');
   const tabs = createDocuments();
   const one = await tabs.open(file);

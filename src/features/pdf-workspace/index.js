@@ -28,9 +28,10 @@ const REASONS = {
 
 // asset(name): path of a file shipped in assets/. getSettings(), setSettings(patch): the stored settings. notify({ title, detail }): the
 // notice in the corner of the screen. log(...). openExternal(url): open an address with the program Windows has for it, as a promise.
-// copyText(text): put text on the clipboard. uniquePath(dir, base, ext): a path that does not exist yet. solid: draw an opaque window; by default only before Windows 11.
-function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, uniquePath, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
-  const documents = createDocuments();
+// copyText(text): put text on the clipboard. uniquePath(dir, base, ext): a path that does not exist yet. runPdfTool(script, args, { src, signal, secrets }): run a
+// PDF editing helper with the PDF engine. solid: draw an opaque window; by default only before Windows 11.
+function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, uniquePath, runPdfTool, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
+  const documents = createDocuments({ runPdfTool });
   let win = null;
   let queue = Promise.resolve();
   let leaving = false;
@@ -116,6 +117,16 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     return { stop: result.stop };
   }
 
+  // A helper that failed says why in the corner of the screen, in its own one line; a file system error would name a temp path, so it
+  // gets a fixed sentence. A missing engine and a stop are the page's to explain, so it gets only the reason.
+  function applyFailed(e) {
+    if (e.code === 'NO_ENGINE') return { stop: 'no-engine' };
+    if (e.name === 'CancelledError') return { stop: 'cancelled' };
+    log('PDF change failed:', e.code || e.message);
+    notify({ title: "Can't make this change", detail: e.code ? 'The new version could not be written.' : e.message });
+    return { stop: 'failed' };
+  }
+
   async function saveAs(token) {
     const file = documents.fileOf(token);
     const suggested = uniquePath(path.dirname(file), `${path.basename(file, path.extname(file))} (edited)`, 'pdf');
@@ -149,6 +160,7 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     closeDocument,
     openDropped,
     putRevision: (token, bytes) => revised(documents.putRevision(token, bytes), false),
+    apply: (token, ops) => revised(documents.apply(token, ops).catch(applyFailed), true),
     undo: (token) => revised(documents.undo(token), true),
     redo: (token) => revised(documents.redo(token), true),
     save: (token) => revised(documents.save(token), false),

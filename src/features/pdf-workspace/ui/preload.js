@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('workspaceApi', {
   unlock: (token, password) => ipcRenderer.invoke('pdfws:unlock', token, password),
   close: (token) => ipcRenderer.invoke('pdfws:close', token),
   putRevision: (token, bytes) => ipcRenderer.invoke('pdfws:put-revision', token, bytes),
+  apply: (token, ops) => ipcRenderer.invoke('pdfws:apply', token, ops),
   undo: (token) => ipcRenderer.invoke('pdfws:undo', token),
   redo: (token) => ipcRenderer.invoke('pdfws:redo', token),
   save: (token) => ipcRenderer.invoke('pdfws:save', token),

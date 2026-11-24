@@ -1,0 +1,103 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""What pdf_edit.py and pdf_info.py share: the one line of secrets on standard input, opening a document with its password, the table
+of operations with the way each is saved, and the one place that writes a file.
+
+A password never comes in an argument, the environment or a file, and every reason printed has it replaced by ***.
+"""
+import inspect
+import json
+import sys
+
+import pymupdf
+
+import helper
+from . import pages
+
+SECRET_KEYS = ("password",)
+MAX_SECRETS = 64 * 1024
+INCREMENTAL = ("fill", "annotate", "direct", "new")
+
+OPS = {
+    "pages.rotate": ("direct", pages.rotate),
+    "pages.delete": ("rewrite", pages.delete),
+}
+
+
+def read_secrets():
+    """The first line of standard input as a dict, unless a person is typing at it. A caller that has no secret sends {} or nothing."""
+    if sys.stdin is None or sys.stdin.isatty():
+        return {}
+    line = sys.stdin.buffer.readline(MAX_SECRETS + 1)
+    if len(line) > MAX_SECRETS:
+        raise ValueError("the request is too large")
+    if not line.strip():
+        return {}
+    try:
+        secrets = json.loads(line.decode("utf-8"))
+    except ValueError:
+        raise ValueError("the request is not valid")
+    if not isinstance(secrets, dict) or any(k not in SECRET_KEYS or not isinstance(v, str) for k, v in secrets.items()):
+        raise ValueError("the request is not valid")
+    return secrets
+
+
+def fail(exc, secrets):
+    reason = helper.reason(exc)
+    for value in secrets.values():
+        if value:
+            reason = reason.replace(value, "***")
+    sys.stderr.write(reason + "\n")
+    sys.exit(1)
+
+
+def open_doc(path, password):
+    doc = pymupdf.open(path)
+    if doc.needs_pass and not (password and doc.authenticate(password)):
+        doc.close()
+        raise ValueError("this PDF is password-protected")
+    return doc
+
+
+def load(path):
+    """The operations of an ops.json file, checked: known names, only the keys each takes, all of them present."""
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict) or set(data) != {"version", "ops"} or data["version"] != 1 or not isinstance(data["ops"], list) or not data["ops"]:
+        raise ValueError("the list of changes is not valid")
+    for op in data["ops"]:
+        name = op.get("op") if isinstance(op, dict) else None
+        if name not in OPS:
+            raise ValueError("unknown change %s" % json.dumps(name)[:40])
+        takes = set(inspect.signature(OPS[name][1]).parameters) - {"doc"}
+        if set(op) - {"op"} != takes:
+            raise ValueError("%s takes %s" % (name, ", ".join(sorted(takes))))
+    return data["ops"]
+
+
+def incremental(ops):
+    return all(OPS[op["op"]][0] in INCREMENTAL for op in ops)
+
+
+def apply(doc, ops, progress):
+    for i, op in enumerate(ops):
+        try:
+            OPS[op["op"]][1](doc, **{k: v for k, v in op.items() if k != "op"})
+        except ValueError as e:
+            raise ValueError("%s: %s" % (op["op"], e))
+        progress((i + 1) / len(ops))
+
+
+def save(doc, dst, in_place):
+    """in_place: `doc` was opened from `dst` and its changes are appended. Otherwise the whole file is written to `dst`. PyMuPDF's
+    save() decrypts unless told to keep the encryption, so a protected file would come out open; this refuses to leave one like that.
+    garbage=1 drops what nothing refers to any more, which is what a deleted page needs, and leaves every other page alone."""
+    was_encrypted = doc.is_encrypted
+    if in_place:
+        doc.saveIncr()
+    else:
+        doc.save(dst, garbage=1, encryption=pymupdf.PDF_ENCRYPT_KEEP)
+    doc.close()
+    if was_encrypted:
+        with pymupdf.open(dst) as saved:
+            if not saved.is_encrypted:
+                raise ValueError("the changed file would have lost its password")
