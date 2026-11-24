@@ -2383,7 +2383,7 @@ app.whenReady().then(async () => {
       s = await state();
       check(`${theme}: the button opens a panel headed Document, 312 px wide, with ${CARDS.replace(/,/g, ', ')}`, s.width === 312 && s.pressed === 'true' && s.head === 'Document' && s.cards === CARDS, JSON.stringify(s));
       check(`${theme}: the File card has the name without its extension, the extension beside it, the place, the size, the date and Show`, s.nameValue === 'Report one' && s.ext === '.pdf' && s.file.startsWith('Location|') && s.file.includes('|Size|') && s.file.includes('|Modified|') && s.show === 'Show', JSON.stringify(s));
-      check(`${theme}: the Description card holds the four texts of the file as fields`, s.fields === 'Title=Annual report,Author=Mina Okafor,Subject=,Keywords=' && s.description === 'Title|Author|Subject|Keywords', JSON.stringify([s.fields, s.description]));
+      check(`${theme}: the Description card holds the four texts of the file, as fields to type in with the engine and as plain text without it`, engine ? s.fields === 'Title=Annual report,Author=Mina Okafor,Subject=,Keywords=' && s.description === 'Title|Author|Subject|Keywords' : s.fields === '' && s.description === 'Title|Annual report|Author|Mina Okafor|Subject|Not set|Keywords|Not set', JSON.stringify([s.fields, s.description]));
       if (engine) {
         const parts = s.document.split('|');
         check(`${theme}: the Document card says the pages, the paper, the version and who made it`, parts[0] === 'Pages' && parts[1] === '1' && parts[3] === 'A4 · 210 × 297 mm' && parts[4] === 'PDF version' && /^\d\.\d$/.test(parts[5]) && parts[7].endsWith('Writer'), JSON.stringify(s.document));
