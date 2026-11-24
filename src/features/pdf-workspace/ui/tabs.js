@@ -7,11 +7,12 @@
   const strip = document.getElementById('tabs');
   let on = { select: () => {}, close: () => {} };
 
-  // docs: [{ token, name }] in order, active: the token on show. The strip is hidden while there is only one.
+  // docs: [{ token, name, dirty }] in order, active: the token on show. The strip is hidden while there is only one. A name is followed
+  // by a dot while its document has changes that are not saved.
   function render(docs, active) {
     const focused = strip.contains(document.activeElement);
     strip.hidden = docs.length < 2;
-    strip.replaceChildren(...docs.map(({ token, name }) => {
+    strip.replaceChildren(...docs.map(({ token, name, dirty }) => {
       const tab = el('div', token === active ? 'tab on' : 'tab');
       tab.dataset.token = token;
       tab.setAttribute('role', 'tab');
@@ -24,7 +25,13 @@
       cross.title = 'Close';
       cross.setAttribute('aria-label', `Close ${name}`);
       cross.innerHTML = icon('close');
-      tab.append(el('span', '', name), cross);
+      tab.append(el('span', '', name));
+      if (dirty) {
+        const dot = el('i', 'dot');
+        dot.title = 'Unsaved changes';
+        tab.append(dot);
+      }
+      tab.append(cross);
       return tab;
     }));
     if (focused) strip.querySelector('.on')?.focus();

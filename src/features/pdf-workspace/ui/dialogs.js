@@ -187,6 +187,35 @@
     });
   }
 
+  // Asks a question with its answers as buttons, drawn left to right with the last one as the main one. title and detail are text.
+  // Resolves with the value of the button chosen, or null on Esc.
+  function choose(title, detail, buttons) {
+    const { box, close } = frame();
+    const heading = el('h3', '', title);
+    heading.id = 'dialog-title';
+    const head = el('div', 'uhead');
+    head.append(heading);
+    box.append(head);
+    if (detail) box.append(el('p', 'note', detail));
+    const row = el('div', 'row');
+    const made = buttons.map(({ label, primary }) => el('button', primary ? 'btn primary' : 'btn', label));
+    row.append(...made);
+    box.append(row);
+    return new Promise((resolve) => {
+      const done = (answer) => {
+        close();
+        document.getElementById('scroller').focus();
+        resolve(answer);
+      };
+      made.forEach((button, i) => { button.onclick = () => done(buttons[i].value); });
+      box.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); done(null); }
+        else if (e.key === 'Tab') loop(e, made);
+      });
+      made[made.length - 1].focus();
+    });
+  }
+
   // Resolves with { page, text } as #rrggbb when the user applies a pair, or null when they cancel. `current` is the pair now in use,
   // if it is one the user chose.
   function chooseColours(current) {
@@ -255,5 +284,5 @@
     });
   }
 
-  window.workspaceDialogs = { askPassword, closePassword, confirmLink, chooseColours, isOpen: () => !!document.querySelector('[aria-modal="true"]') };
+  window.workspaceDialogs = { askPassword, closePassword, confirmLink, choose, chooseColours, isOpen: () => !!document.querySelector('[aria-modal="true"]') };
 })();

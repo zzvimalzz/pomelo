@@ -4,13 +4,14 @@
 // idle and after scrolling 50 pages, the comments a file holds as markers beside the page, the scroll bars, the pages panel and its outline, a password-protected
 // file, a file that is not a PDF, a file that is not there, and that the page is cut off from the network. Saves screenshots.
 //   npx electron test/ui/workspace-shot.js
-const { app, BrowserWindow, clipboard, ipcMain, nativeImage, nativeTheme, screen } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, nativeTheme, screen } = require('electron');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { PDFDocument, PDFName, PDFRawStream, PDFString, PDFHexString, StandardFonts, clip, endPath, popGraphicsState, pushGraphicsState, rectangle, rgb } = require('pdf-lib');
 const { createWorkspace } = require('../../src/features/pdf-workspace');
+const { uniquePath } = require('../../src/features/conversion');
 const { expect: check, failed } = require('../support/expect');
 const { encryptedPdf } = require('../support/encrypted-pdf');
 const finish = require('../support/finish');
@@ -38,8 +39,8 @@ const setSettings = (patch) => { writes++; settings = { ...settings, ...patch };
 const VIEW_KEYS = ['zoom', 'layout', 'sidebar', 'pageColours'];
 const fresh = ({ keepView = false, ...options } = {}) => {
   if (!keepView && settings.pdfView && typeof settings.pdfView === 'object') settings = { ...settings, pdfView: Object.fromEntries(Object.entries(settings.pdfView).filter(([key]) => !VIEW_KEYS.includes(key))) };
-  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links']) ipcMain.removeHandler(channel);
-  const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), ...options });
+  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'pdfws:put-revision', 'pdfws:undo', 'pdfws:redo', 'pdfws:save', 'pdfws:save-as', 'pdfws:reload', 'pdfws:close-window']) ipcMain.removeHandler(channel);
+  const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), uniquePath, ...options });
   workspace.registerIpc();
   return workspace;
 };
@@ -278,7 +279,7 @@ app.whenReady().then(async () => {
     check('the window session cancels a request to the web', /ERR_BLOCKED_BY_CLIENT/.test(refusal), refusal);
     check('the page cannot fetch the web either', (await js(win, `fetch('https://pomelo-offline-check.invalid/').then(() => 'answered', () => 'refused')`)) === 'refused');
     const state = await js(win, `workspaceApi.state().then((s) => JSON.stringify(s))`);
-    check('the page is given a token, a name and a size, and no path', Object.keys(JSON.parse(state).documents[0]).sort().join() === 'name,size,token' && !state.includes(root.replace(/\\/g, '\\\\')) && !/[A-Za-z]:\\\\/.test(state), state);
+    check('the page is given a token, a name and a size, and no path', Object.keys(JSON.parse(state).documents[0]).sort().join() === 'dirty,name,size,token' && !state.includes(root.replace(/\\/g, '\\\\')) && !/[A-Za-z]:\\\\/.test(state), state);
     check('the page cannot read with a token it was not given', (await js(win, `workspaceApi.read('0'.repeat(64), 0, 10).then(() => 'read', () => 'refused')`)) === 'refused');
     check('the page cannot read more than 4 MiB in one call', (await js(win, `workspaceApi.state().then((s) => workspaceApi.read(s.documents[0].token, 0, 4 * 1048576 + 1)).then(() => 'read', () => 'refused')`)) === 'refused');
     await closeAndWait(win);
@@ -305,7 +306,7 @@ app.whenReady().then(async () => {
   {
     const tabState = (win) => js(win, `(() => { const strip = document.getElementById('tabs'); const tabs = [...strip.querySelectorAll('.tab')]; const name = document.getElementById('docname');
       return { strip: !strip.hidden, names: tabs.map((t) => t.firstChild.textContent).join('|'), on: tabs.filter((t) => t.classList.contains('on')).map((t) => t.firstChild.textContent).join(), selected: tabs.filter((t) => t.getAttribute('aria-selected') === 'true').length,
-        stops: tabs.filter((t) => t.tabIndex === 0).length, name: name.textContent, nameShown: !name.hidden, pages: document.querySelectorAll('.page').length, canvases: document.querySelectorAll('.page canvas').length, failure: document.getElementById('failure').hidden ? '' : document.getElementById('failure').textContent,
+        stops: tabs.filter((t) => t.tabIndex === 0).length, name: name.textContent, nameShown: !document.getElementById('nameline').hidden, pages: document.querySelectorAll('.page').length, canvases: document.querySelectorAll('.page canvas').length, failure: document.getElementById('failure').hidden ? '' : document.getElementById('failure').textContent,
         text: document.querySelector('.page[data-loaded="true"] .textLayer')?.textContent ?? '', page: workspaceViewer.viewer.currentPageNumber, zoom: workspaceViewer.viewer.currentScaleValue, scroll: document.getElementById('scroller').scrollTop, dock: !document.querySelector('.dockwrap')?.hidden }; })()`);
     const showing = (win, text, pages) => until(`${text} on show`, async () => { const s = await tabState(win); return s.text.includes(text) && s.pages === pages; });
     const clickTab = (win, n) => js(win, `document.querySelectorAll('#tabs .tab')[${n}].click()`);
@@ -2198,6 +2199,114 @@ app.whenReady().then(async () => {
     check('Original takes the layer away and the picture is as it was', (await layerCount()) === 1 && near(await sample(130, 600), GREEN, 16) && near(await sample(200, 580), [255, 255, 255], 3));
     await closeAndWait(win);
     settings = { pdfView: { window: null } };
+  }
+
+  console.log('saving: changes, the Save button and the questions about them');
+  for (const theme of ['light', 'dark']) {
+    nativeTheme.themeSource = theme;
+    const file = await makePdf(`Save-${theme}.pdf`, 2);
+    const original = fs.readFileSync(file);
+    const edited = Buffer.concat([original, Buffer.from('\n% edited\n%%EOF\n')]);
+    const editedAgain = Buffer.concat([edited, Buffer.from('% edited again\n%%EOF\n')]);
+    const win = await openAndWait(fresh(), file);
+    const token = (await js(win, `workspaceApi.state()`)).documents[0].token;
+    const put = (bytes) => js(win, `workspaceApi.putRevision(${JSON.stringify(token)}, Uint8Array.from(atob(${JSON.stringify(bytes.toString('base64'))}), (c) => c.charCodeAt(0)))`);
+    const state = () => js(win, `({ dot: !document.getElementById('docdot').hidden, button: !document.getElementById('savebtn').hidden, title: document.getElementById('savebtn').title, saved: document.getElementById('docsaved').classList.contains('on') ? document.getElementById('docsaved').textContent : '',
+      card: document.querySelector('.veil h3')?.textContent ?? '', buttons: [...document.querySelectorAll('.veil .row button')].map((b) => b.textContent).join(), note: document.querySelector('.veil .note')?.textContent ?? '', pages: document.querySelectorAll('.page canvas').length })`);
+    let st = await state();
+    check(`${theme}: a document with no changes shows no dot and no Save button`, !st.dot && !st.button && st.card === '', JSON.stringify(st));
+
+    await put(edited);
+    await until('the Save button', async () => (await state()).button);
+    st = await state();
+    check(`${theme}: a change shows the dot after the name and the Save button, and the file on disk is as it was`, st.dot && st.button && st.title === 'Save (Ctrl+S)' && fs.readFileSync(file).equals(original), JSON.stringify(st));
+
+    await press(win, 's', ['control']);
+    await until('the question', async () => (await state()).card !== '');
+    st = await state();
+    check(`${theme}: the first Save over a file asks once whether to replace it`, st.card === 'Replace the original?' && st.buttons === 'Cancel,Save a copy,Replace' && st.note === `Save over Save-${theme}.pdf, or keep it as it is and save a copy.` && fs.readFileSync(file).equals(original), JSON.stringify(st));
+    await shot(win, `workspace-replace-${theme}.png`);
+    await press(win, 'Escape');
+    st = await state();
+    check(`${theme}: Esc answers no: nothing is written and the changes are still there`, st.card === '' && st.dot && fs.readFileSync(file).equals(original), JSON.stringify(st));
+
+    await press(win, 's', ['control']);
+    await until('the question', async () => (await state()).card !== '');
+    await js(win, `[...document.querySelectorAll('.veil .row button')].find((b) => b.textContent === 'Replace').click()`);
+    await until('the save', async () => !(await state()).button);
+    st = await state();
+    check(`${theme}: Replace saves over the file, the dot and the button go and Saved shows`, fs.readFileSync(file).equals(edited) && !st.dot && !st.button && st.saved === 'Saved' && st.card === '', JSON.stringify(st));
+    await shot(win, `workspace-saved-${theme}.png`);
+    check(`${theme}: no program is left holding a temporary file`, fs.readdirSync(root).filter((n) => n.endsWith('.tmp')).length === 0);
+
+    await put(editedAgain);
+    await until('the Save button', async () => (await state()).button);
+    await press(win, 's', ['control']);
+    await until('the save', async () => !(await state()).button);
+    check(`${theme}: the second Save does not ask again`, fs.readFileSync(file).equals(editedAgain) && (await state()).card === '');
+
+    const undone = await js(win, `workspaceApi.undo(${JSON.stringify(token)})`);
+    await until('the page drawn again', async () => (await state()).pages > 0 && (await state()).button);
+    st = await state();
+    check(`${theme}: undo gives back the earlier version, is a change to save, and the pages are drawn again`, undone.info.size === edited.length && st.button && st.pages > 0, JSON.stringify([undone, st]));
+    await js(win, `workspaceApi.redo(${JSON.stringify(token)})`);
+    await until('nothing to save and the pages drawn', async () => { const now = await state(); return !now.button && now.pages > 0; });
+
+    const copy = path.join(root, `Copy-${theme}.pdf`);
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: copy });
+    await put(edited);
+    await until('the Save button', async () => (await state()).button);
+    await press(win, 'S', ['control', 'shift']);
+    await until('the copy', async () => fs.existsSync(copy));
+    st = await state();
+    check(`${theme}: Ctrl+Shift+S writes a copy, leaves the file as it was and keeps the changes`, fs.readFileSync(copy).equals(edited) && fs.readFileSync(file).equals(editedAgain) && st.dot && st.button, JSON.stringify(st));
+
+    win.close();
+    await until('the question', async () => !win.isDestroyed() && (await state()).card !== '');
+    st = await state();
+    check(`${theme}: closing the window with changes asks first, and the window stays`, !win.isDestroyed() && st.card === `Save changes to Save-${theme}.pdf?` && st.buttons === "Cancel,Don't save,Save", JSON.stringify(st));
+    await shot(win, `workspace-close-${theme}.png`);
+    await press(win, 'Escape');
+    check(`${theme}: Esc cancels, nothing is closed and nothing is written`, !win.isDestroyed() && (await state()).dot && fs.readFileSync(file).equals(editedAgain));
+    win.close();
+    await until('the question', async () => (await state()).card !== '');
+    await js(win, `[...document.querySelectorAll('.veil .row button')].find((b) => b.textContent === "Don't save").click()`);
+    await until('the window gone', () => win.isDestroyed());
+    check(`${theme}: Don't save closes the window and leaves the file as it was`, win.isDestroyed() && fs.readFileSync(file).equals(editedAgain) && BrowserWindow.getAllWindows().length === 0);
+  }
+
+  {
+    const file = await makePdf('Save-and-close.pdf', 1);
+    const original = fs.readFileSync(file);
+    const edited = Buffer.concat([original, Buffer.from('\n% edited\n%%EOF\n')]);
+    const win = await openAndWait(fresh(), file);
+    const token = (await js(win, `workspaceApi.state()`)).documents[0].token;
+    await js(win, `workspaceApi.putRevision(${JSON.stringify(token)}, Uint8Array.from(atob(${JSON.stringify(edited.toString('base64'))}), (c) => c.charCodeAt(0)))`);
+    win.close();
+    await until('the question', () => js(win, `!!document.querySelector('.veil h3')`));
+    await js(win, `[...document.querySelectorAll('.veil .row button')].find((b) => b.textContent === 'Save').click()`);
+    await until('the replace question', () => js(win, `document.querySelector('.veil h3')?.textContent === 'Replace the original?'`));
+    await js(win, `[...document.querySelectorAll('.veil .row button')].find((b) => b.textContent === 'Replace').click()`);
+    await until('the window gone', () => win.isDestroyed());
+    check('Save in the question about closing saves the file and then closes the window', win.isDestroyed() && fs.readFileSync(file).equals(edited));
+
+    const other = await makePdf('Changed-elsewhere.pdf', 1);
+    const copyOf = fs.readFileSync(other);
+    const second = await openAndWait(fresh(), other);
+    const key = (await js(second, `workspaceApi.state()`)).documents[0].token;
+    await js(second, `workspaceApi.putRevision(${JSON.stringify(key)}, Uint8Array.from(atob(${JSON.stringify(Buffer.concat([copyOf, Buffer.from('\n% mine\n%%EOF\n')]).toString('base64'))}), (c) => c.charCodeAt(0)))`);
+    const theirs = Buffer.concat([copyOf, Buffer.from('\n% theirs, written by another program\n%%EOF\n')]);
+    fs.writeFileSync(other, theirs);
+    await press(second, 's', ['control']);
+    await until('the question', () => js(second, `!!document.querySelector('.veil h3')`));
+    await js(second, `[...document.querySelectorAll('.veil .row button')].find((b) => b.textContent === 'Replace').click()`);
+    await until('the changed question', () => js(second, `document.querySelector('.veil h3')?.textContent.endsWith('changed by another program.')`));
+    const ask = await js(second, `({ title: document.querySelector('.veil h3').textContent, buttons: [...document.querySelectorAll('.veil .row button')].map((b) => b.textContent).join() })`);
+    check('a file another program changed is not saved over: the page says so and offers Cancel, Reload and Save a copy', ask.title === 'Changed-elsewhere.pdf was changed by another program.' && ask.buttons === 'Cancel,Reload,Save a copy' && fs.readFileSync(other).equals(theirs), JSON.stringify(ask));
+    await js(second, `[...document.querySelectorAll('.veil .row button')].find((b) => b.textContent === 'Reload').click()`);
+    await until('the change gone', async () => !(await js(second, `!document.getElementById('savebtn').hidden`)));
+    check('Reload forgets the changes and the file is as the other program left it', fs.readFileSync(other).equals(theirs) && !(await js(second, `!document.getElementById('savebtn').hidden`)));
+    await closeAndWait(second);
   }
 
   console.log('a big file costs nothing until it is read');

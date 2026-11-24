@@ -36,8 +36,11 @@ const copied = [];
 const views = [];
 const closed = [];
 const dropped = [];
+const revisions = [];
 require(path.join(features, 'pdf-workspace', 'workspace.ipc')).registerWorkspaceIpc({
   documents: { read: (...args) => { served.push(args); return 'bytes'; }, unlock: (...args) => { unlocked.push(args); } }, state: () => ({ documents: [] }), closeDocument: (token) => closed.push(token), openDropped: (paths) => dropped.push(paths),
+  putRevision: (...args) => { revisions.push(['put', ...args]); return { info: {} }; }, undo: (token) => revisions.push(['undo', token]), redo: (token) => revisions.push(['redo', token]), save: (token) => revisions.push(['save', token]),
+  saveAs: (token) => revisions.push(['save-as', token]), reload: (token) => revisions.push(['reload', token]), closeWindow: () => revisions.push(['close-window']),
   setFocus: (on) => focused.push(on), setDock: (side) => docks.push(side), setView: (patch) => views.push(patch), checkLink: (url) => (url === 'https://ok.test/' ? url : null), openLink: (url) => opened.push(url), copyLink: (url) => copied.push(url), copyLinks: (urls) => { copied.push(urls); return urls.length; }, isWorkspace: (sender) => sender === 'the workspace page',
 });
 require(path.join(features, 'engine-setup', 'engine-setup.ipc')).registerEngineSetupIpc({ installer: {}, getEngines: noop, ...quiet });
@@ -82,6 +85,12 @@ handlers['pdfws:open-link']({ sender: 'the workspace page' }, 'https://ok.test/'
 expect('the workspace page can check a link and open one', handlers['pdfws:check-link']({ sender: 'the workspace page' }, 'https://ok.test/') === 'https://ok.test/' && handlers['pdfws:check-link']({ sender: 'the workspace page' }, 'file:///x') === null && JSON.stringify(opened) === '["https://ok.test/"]' && JSON.stringify(copied) === '["https://ok.test/"]');
 expect('another page cannot copy a list of links, the workspace page can', refused(() => handlers['pdfws:copy-links']({ sender: 'another page' }, ['https://ok.test/'])) && copied.length === 1 && handlers['pdfws:copy-links']({ sender: 'the workspace page' }, ['a', 'b']) === 2 && JSON.stringify(copied.at(-1)) === '["a","b"]');
 
+// Only the workspace window's own page may change a document's revisions, save it or close the window.
+const revisionCalls = [['put-revision', 'token', new Uint8Array(4)], ['undo', 'token'], ['redo', 'token'], ['save', 'token'], ['save-as', 'token'], ['reload', 'token'], ['close-window']];
+expect('another page cannot put a revision, step through them, save, reload or close the window', revisionCalls.every(([channel, ...args]) => refused(() => handlers[`pdfws:${channel}`]({ sender: 'another page' }, ...args))) && revisions.length === 0);
+for (const [channel, ...args] of revisionCalls) handlers[`pdfws:${channel}`]({ sender: 'the workspace page' }, ...args);
+expect('the workspace page can', JSON.stringify(revisions.map((r) => r[0])) === '["put","undo","redo","save","save-as","reload","close-window"]' && revisions[0][1] === 'token' && revisions[0][2].length === 4, JSON.stringify(revisions));
+
 // Only the wheel page may send a password, and only in the one shape the card uses.
 const unlockBad = [['another page', { token: 't', password: 'p', all: false }], ['the wheel page', null], ['the wheel page', { token: 1, password: 'p', all: false }], ['the wheel page', { token: 't', password: 5, all: false }], ['the wheel page', { token: 't', password: 'p', all: 'yes' }]];
 expect('the password channel refuses another page and anything but a token, a string and a flag', unlockBad.every(([sender, request]) => refused(() => handlers['wheel:unlock']({ sender }, request))) && unlockRequests.length === 0);
@@ -109,7 +118,7 @@ const orphaned = [...handled].filter((c) => !asked.has(c));
 
 expect(`every channel a page sends has a handler (${asked.size} channels)`, missing.length === 0, missing.join(', '));
 expect('every handler answers a channel some page sends', orphaned.length === 0, orphaned.join(', '));
-expect('invoke channels are handled with handle, so the page gets an answer', ['settings:get', 'settings:set', 'wheel:unlock', 'pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'engines:install', 'app:uninstall', 'updates:check', 'updates:download', 'updates:install'].every((c) => registered.handle.has(c)));
+expect('invoke channels are handled with handle, so the page gets an answer', ['settings:get', 'settings:set', 'wheel:unlock', 'pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'pdfws:put-revision', 'pdfws:undo', 'pdfws:redo', 'pdfws:save', 'pdfws:save-as', 'pdfws:reload', 'pdfws:close-window', 'engines:install', 'app:uninstall', 'updates:check', 'updates:download', 'updates:install'].every((c) => registered.handle.has(c)));
 
 // What the main process sends to a page, with webContents.send or the sendToSettings helper, anywhere under src.
 const sent = new Set();

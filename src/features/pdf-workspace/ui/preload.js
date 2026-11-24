@@ -6,6 +6,13 @@ contextBridge.exposeInMainWorld('workspaceApi', {
   read: (token, begin, end) => ipcRenderer.invoke('pdfws:read', token, begin, end),
   unlock: (token, password) => ipcRenderer.invoke('pdfws:unlock', token, password),
   close: (token) => ipcRenderer.invoke('pdfws:close', token),
+  putRevision: (token, bytes) => ipcRenderer.invoke('pdfws:put-revision', token, bytes),
+  undo: (token) => ipcRenderer.invoke('pdfws:undo', token),
+  redo: (token) => ipcRenderer.invoke('pdfws:redo', token),
+  save: (token) => ipcRenderer.invoke('pdfws:save', token),
+  saveAs: (token) => ipcRenderer.invoke('pdfws:save-as', token),
+  reload: (token) => ipcRenderer.invoke('pdfws:reload', token),
+  closeWindow: () => ipcRenderer.invoke('pdfws:close-window'),
   setDock: (side) => ipcRenderer.invoke('pdfws:dock', side),
   setView: (patch) => ipcRenderer.invoke('pdfws:view', patch),
   focus: (on) => ipcRenderer.invoke('pdfws:focus', on),
@@ -14,6 +21,8 @@ contextBridge.exposeInMainWorld('workspaceApi', {
   copyLink: (url) => ipcRenderer.invoke('pdfws:copy-link', url),
   copyLinks: (urls) => ipcRenderer.invoke('pdfws:copy-links', urls),
   onFocus: (cb) => ipcRenderer.on('pdfws:focus-changed', (_e, on) => cb(on)),
+  onChanged: (cb) => ipcRenderer.on('pdfws:changed', (_e, document) => cb(document)),
+  onClosing: (cb) => ipcRenderer.on('pdfws:closing', () => cb()),
   onOpened: (cb) => ipcRenderer.on('pdfws:opened', (_e, documents) => cb(documents)),
 });
 

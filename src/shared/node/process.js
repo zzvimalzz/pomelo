@@ -77,12 +77,12 @@ function runCapture(cmd, args, { timeout = 180000, cwd, env, onLine, signal, inp
 }
 
 // verbatim: the arguments are passed exactly as written (msiexec wants TARGETDIR="C:\a path" with its own quotes).
-// onLine gets each line of output that has text or a progress bar's numbers.
-function runStatus(cmd, args, { onLine, timeout = 45 * 60 * 1000, verbatim = false } = {}) {
+// onLine gets each line of output that has text or a progress bar's numbers. env: extra environment variables for the child.
+function runStatus(cmd, args, { onLine, timeout = 45 * 60 * 1000, verbatim = false, env } = {}) {
   return new Promise((resolve) => {
     let out = '';
     let child;
-    try { child = track(spawn(cmd, args, { windowsHide: true, windowsVerbatimArguments: verbatim })); } catch (e) { return resolve({ code: -1, out: e.message }); }
+    try { child = track(spawn(cmd, args, { windowsHide: true, windowsVerbatimArguments: verbatim, env: env && { ...process.env, ...env } })); } catch (e) { return resolve({ code: -1, out: e.message }); }
     const timer = setTimeout(() => child.kill(), timeout);
     const feed = (d) => {
       const text = d.toString();

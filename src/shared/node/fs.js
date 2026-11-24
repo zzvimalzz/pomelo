@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// File helpers shared by every part of the app: temp paths that clean up after themselves, text decoding, folder sizes and removal.
+// File helpers shared by every part of the app: temp paths that clean up after themselves, text decoding, folder sizes and removal,
+// and replacing a file the way Windows allows.
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { runStatus } = require('./process');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -81,4 +84,58 @@ async function removeDirReliably(dir) {
   return false;
 }
 
-module.exports = { sleep, withTempFile, withTempDir, makeTempDir, sweepTempDirs, readText, dirBytes, removeDirReliably };
+// Which file a path is now, as far as Windows can say: the NTFS file index, the size and the time of the last change.
+async function fileIdentity(file) {
+  const st = await fs.promises.stat(file, { bigint: true });
+  return { ino: String(st.ino), size: Number(st.size), mtimeMs: Number(st.mtimeMs) };
+}
+
+const sameFile = (a, b) => a.ino === b.ino && a.size === b.size && a.mtimeMs === b.mtimeMs;
+
+const POWERSHELL = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+// The paths travel in the environment, never in the command text. Exit 3 is a sharing violation, which is worth another try.
+const REPLACE = "try { [IO.File]::Replace($env:POMELO_FROM, $env:POMELO_TO, [NullString]::Value) } catch [IO.IOException] { exit 3 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }";
+const RETRY_MS = [50, 100, 200];
+const FREE_MARGIN = 64 * 1048576;
+
+// Puts the bytes of src where target is. `expected` is the identity target had when the caller last looked, or null when nothing
+// may be there yet. Resolves { identity } of the new file, or { stop } with why nothing was changed: 'changed' (another program
+// replaced target, or made it), 'read-only', 'no-space' or 'locked' (another program holds target open without letting go of it).
+// A rename over the target fails with EPERM while any handle on it is open, Pomelo's own included, so an existing target goes
+// through ReplaceFileW, which also keeps its permissions, creation time and Zone.Identifier stream.
+async function replaceFile(src, target, expected) {
+  let now = null;
+  try { now = await fileIdentity(target); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  if (expected ? !now || !sameFile(now, expected) : now) return { stop: 'changed' };
+  if (now) { try { await fs.promises.access(target, fs.constants.W_OK); } catch { return { stop: 'read-only' }; } }
+  const size = (await fs.promises.stat(src)).size;
+  const free = await fs.promises.statfs(path.dirname(target));
+  if (free.bavail * free.bsize < size + FREE_MARGIN) return { stop: 'no-space' };
+
+  const temp = path.join(path.dirname(target), `.${path.basename(target)}.pomelo-${crypto.randomBytes(4).toString('hex')}.tmp`);
+  try {
+    await fs.promises.copyFile(src, temp, fs.constants.COPYFILE_EXCL);
+    const handle = await fs.promises.open(temp, 'r+');
+    try {
+      await handle.sync();
+      const tail = Buffer.alloc(Math.min(size, 1024));
+      await handle.read(tail, 0, tail.length, size - tail.length);
+      if ((await handle.stat()).size !== size || !tail.includes('%%EOF')) throw new Error('The copy to save is incomplete');
+    } finally { await handle.close(); }
+    if (!now) await fs.promises.rename(temp, target);
+    else {
+      for (let attempt = 0; ; attempt++) {
+        const { code, out } = await runStatus(POWERSHELL, ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', REPLACE], { env: { POMELO_FROM: temp, POMELO_TO: target } });
+        if (code === 0) break;
+        if (code !== 3) throw new Error(out.trim() || 'Windows would not replace the file');
+        if (attempt === RETRY_MS.length) return { stop: 'locked' };
+        await sleep(RETRY_MS[attempt]);
+      }
+    }
+    return { identity: await fileIdentity(target) };
+  } finally {
+    fs.rmSync(temp, { force: true });
+  }
+}
+
+module.exports = { sleep, withTempFile, withTempDir, makeTempDir, sweepTempDirs, readText, dirBytes, removeDirReliably, fileIdentity, sameFile, replaceFile };
