@@ -125,7 +125,7 @@ async function replaceFile(src, target, expected) {
     if (!now) await fs.promises.rename(temp, target);
     else {
       for (let attempt = 0; ; attempt++) {
-        const { code, out } = await runStatus(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command', REPLACE], { env: { POMELO_FROM: temp, POMELO_TO: target } });
+        const { code, out } = await runStatus(POWERSHELL, ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', REPLACE], { env: { POMELO_FROM: temp, POMELO_TO: target } });
         if (code === 0) break;
         if (code !== 3) throw new Error(out.trim() || 'Windows would not replace the file');
         if (attempt === RETRY_MS.length) return { stop: 'locked' };
