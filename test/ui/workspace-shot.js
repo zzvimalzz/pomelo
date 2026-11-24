@@ -11,7 +11,7 @@ const os = require('os');
 const path = require('path');
 const { PDFDocument, PDFName, PDFRawStream, PDFString, PDFHexString, StandardFonts, clip, endPath, popGraphicsState, pushGraphicsState, rectangle, rgb } = require('pdf-lib');
 const { createWorkspace } = require('../../src/features/pdf-workspace');
-const { uniquePath } = require('../../src/features/conversion');
+const { uniquePath, runPdfTool, detectEngines } = require('../../src/features/conversion');
 const { expect: check, failed } = require('../support/expect');
 const { encryptedPdf } = require('../support/encrypted-pdf');
 const finish = require('../support/finish');
@@ -30,6 +30,7 @@ const notices = [];
 const errors = [];
 const calls = [];
 const opened = [];
+const shown = [];
 const handle = ipcMain.handle.bind(ipcMain);
 ipcMain.handle = (channel, fn) => handle(channel, (event, ...args) => { calls.push({ channel, args }); return fn(event, ...args); });
 let writes = 0;
@@ -39,8 +40,8 @@ const setSettings = (patch) => { writes++; settings = { ...settings, ...patch };
 const VIEW_KEYS = ['zoom', 'layout', 'sidebar', 'pageColours'];
 const fresh = ({ keepView = false, ...options } = {}) => {
   if (!keepView && settings.pdfView && typeof settings.pdfView === 'object') settings = { ...settings, pdfView: Object.fromEntries(Object.entries(settings.pdfView).filter(([key]) => !VIEW_KEYS.includes(key))) };
-  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'pdfws:put-revision', 'pdfws:apply', 'pdfws:undo', 'pdfws:redo', 'pdfws:save', 'pdfws:save-as', 'pdfws:reload', 'pdfws:close-window']) ipcMain.removeHandler(channel);
-  const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), uniquePath, ...options });
+  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'pdfws:put-revision', 'pdfws:apply', 'pdfws:undo', 'pdfws:redo', 'pdfws:save', 'pdfws:save-as', 'pdfws:reload', 'pdfws:close-window', 'pdfws:properties', 'pdfws:details', 'pdfws:rename', 'pdfws:show']) ipcMain.removeHandler(channel);
+  const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), uniquePath, runPdfTool, showInFolder: (file) => shown.push(file), ...options });
   workspace.registerIpc();
   return workspace;
 };
@@ -410,10 +411,30 @@ app.whenReady().then(async () => {
     await sleep(600);
     s = await tabState(win);
     check('ten files are ten tabs and the first of the last batch is on show', s.names.split('|').length === 10 && s.on === 'Ten 02.pdf' && notices.length === 0, JSON.stringify(s));
-    check('the tab strip fits the window: its tabs share the room and none is pushed out', await js(win, `(() => { const strip = document.getElementById('tabs').getBoundingClientRect(); const row = document.querySelector('.titlerow').getBoundingClientRect(); const last = [...document.querySelectorAll('#tabs .tab')].pop().getBoundingClientRect(); return strip.right <= row.right && last.right <= strip.right + 1 && strip.left >= row.left; })()`));
+    win.setSize(1000, 700);
+    await sleep(500);
+    const room = () => js(win, `(() => { const strip = document.getElementById('tabs'); const box = strip.getBoundingClientRect(); const on = strip.querySelector('.on').getBoundingClientRect(); const right = [...document.querySelectorAll('.titletools > :not([hidden])')][0].getBoundingClientRect(); const left = [...document.querySelectorAll('.titleleft > *')].pop().getBoundingClientRect();
+      return { tabs: [...strip.children].map((t) => Math.round(t.getBoundingClientRect().width)), names: Math.min(...[...strip.querySelectorAll('.tab span')].map((n) => Math.round(n.getBoundingClientRect().width))), before: Math.round(box.left - left.right), after: Math.round(right.left - box.right), scrolls: strip.scrollWidth > strip.clientWidth, onInView: on.left >= box.left + (strip.classList.contains('more-left') ? 24 : 0) - 1 && on.right <= box.right - (strip.classList.contains('more-right') ? 24 : 0) + 1, fade: ['more-left', 'more-right'].filter((c) => strip.classList.contains(c)).join() }; })()`);
+    let r = await room();
+    check('at 1 000 px ten tabs keep 96 px each, with room for about a dozen letters of the name, and the strip scrolls instead of squeezing them (they were 52 px with 11 px of name)', r.tabs.every((w) => w >= 96) && r.names >= 50 && r.scrolls, JSON.stringify(r));
+    check('the strip keeps 12 px from the buttons on both sides, and fades on the side that has more tabs', r.before >= 12 && r.after >= 12 && r.fade === 'more-right' && r.onInView, JSON.stringify(r));
     check('a thin line stands between neighbouring tabs, and none beside the tab on show', await js(win, `(() => { const o = [...document.querySelectorAll('#tabs .tab')].map((t) => { const c = getComputedStyle(t, '::before'); return c.content === 'none' ? 'none' : c.opacity + ':' + c.width; }); return o.join(' '); })()`) === 'none 0:1px 0:1px 0.35:1px 0.35:1px 0.35:1px 0.35:1px 0.35:1px 0.35:1px 0.35:1px');
-    check('the tabs end at least 12 px before the Focus reading button', await js(win, `document.getElementById('focus').getBoundingClientRect().left - document.getElementById('tabs').getBoundingClientRect().right >= 12`));
     await shot(win, 'workspace-tabs-ten.png');
+    await js(win, `document.getElementById('savebtn').hidden = false`);
+    await js(win, `(() => { for (const at of ['.titleleft', '.titletools']) { const b = document.createElement('button'); b.className = 'ib extra'; document.querySelector(at).prepend(b); } })()`);
+    await sleep(300);
+    r = await room();
+    check('with Save showing and a button more on each side, the strip still keeps 12 px from them and the tabs keep their 96 px', r.tabs.every((w) => w >= 96) && r.before >= 12 && r.after >= 12, JSON.stringify(r));
+    await shot(win, 'workspace-tabs-ten-save.png');
+    await js(win, `(() => { document.getElementById('savebtn').hidden = true; for (const b of document.querySelectorAll('.extra')) b.remove(); })()`);
+    await clickTab(win, 9);
+    await sleep(500);
+    r = await room();
+    check('choosing the last tab scrolls it into view, clear of the fade, which moves to the left', r.onInView && r.fade === 'more-left', JSON.stringify(r));
+    const wheelAt = await js(win, `(() => { const b = document.getElementById('tabs').getBoundingClientRect(); return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), from: document.getElementById('tabs').scrollLeft }; })()`);
+    win.webContents.sendInputEvent({ type: 'mouseWheel', x: wheelAt.x, y: wheelAt.y, deltaX: 0, deltaY: 120, wheelTicksY: 1 });
+    await sleep(400);
+    check('the mouse wheel scrolls the strip sideways', (await js(win, `document.getElementById('tabs').scrollLeft`)) < wheelAt.from, JSON.stringify(wheelAt));
     await workspace.open([ten[10]]);
     await sleep(400);
     s = await tabState(win);
@@ -2138,8 +2159,8 @@ app.whenReady().then(async () => {
     await js(none, `document.getElementById('linksbtn').click()`);
     await until('the end of the scan', () => js(none, `document.getElementById('linkscan').textContent === '' && !!document.querySelector('#linklist .sideempty') && document.querySelector('#linklist .sideempty').textContent === 'No links in this document'`));
     await sleep(500);
-    const nothing = await js(none, `({ empty: document.querySelector('#linklist .sideempty').textContent, copyOff: document.getElementById('linkcopy').disabled, choose: document.getElementById('linkchoose').hidden, rows: document.querySelectorAll('.linkrow').length, status: document.getElementById('linkscan').textContent })`);
-    check('a document with no links says so, and offers nothing to select or copy', nothing.empty === 'No links in this document' && nothing.copyOff && nothing.choose && nothing.rows === 0 && nothing.status === '', JSON.stringify(nothing));
+    const nothing = await js(none, `({ empty: document.querySelector('#linklist .sideempty').textContent, copyHidden: document.getElementById('linkcopy').hidden || getComputedStyle(document.getElementById('linkcopy')).display === 'none', choose: document.getElementById('linkchoose').hidden, rows: document.querySelectorAll('.linkrow').length, status: document.getElementById('linkscan').textContent })`);
+    check('a document with no links says so, and shows nothing to select or copy', nothing.empty === 'No links in this document' && nothing.copyHidden && nothing.choose && nothing.rows === 0 && nothing.status === '', JSON.stringify(nothing));
     await closeAndWait(none);
   }
 
@@ -2347,6 +2368,216 @@ app.whenReady().then(async () => {
     check('and a click on it goes to page 3 000', (await js(win, `workspaceViewer.viewer.currentPageNumber`)) === 3000);
     await closeAndWait(win);
     check('closing the window closes the file', workspace.served() === 0 && (() => { try { fs.rmSync(big); return true; } catch { return false; } })());
+  }
+
+  console.log('the Document panel');
+  {
+    const engine = !!detectEngines().pdf;
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    doc.addPage([595, 842]).drawText('Document panel page', { x: 60, y: 700, size: 22, font });
+    doc.setTitle('Annual report');
+    doc.setAuthor('Mina Okafor');
+    doc.setCreator('Writer');
+    const named = path.join(root, 'Report one.pdf');
+    fs.writeFileSync(named, await doc.save({ useObjectStreams: false }));
+    fs.copyFileSync(named, path.join(root, 'Report two.pdf'));
+    const CARDS = engine ? 'File,Description,Document,Security,Fonts' : 'File,Description';
+
+    for (const theme of ['light', 'dark']) {
+      nativeTheme.themeSource = theme;
+      const win = await openAndWait(fresh(), named);
+      const state = () => js(win, `(() => { const g = (id) => document.getElementById(id); const p = g('docpanel'); const b = g('docbtn'); const cards = [...g('docbody').querySelectorAll('section')];
+        const card = (title) => cards.find((c) => c.querySelector('h4').textContent === title);
+        const facts = (title) => { const s = card(title); return s ? [...s.querySelectorAll('.facts > span')].map((x) => x.textContent).join('|') : null; };
+        const name = g('docbody').querySelector('.namefld input');
+        return { width: p.getBoundingClientRect().width, pressed: b.getAttribute('aria-pressed'), disabled: b.disabled, title: b.title, head: p.querySelector('h3').textContent, cards: cards.map((c) => c.querySelector('h4').textContent).join(),
+          nameValue: name ? name.value : null, ext: name ? name.parentElement.querySelector('span').textContent : null, nameFocused: !!name && document.activeElement === name,
+          file: facts('File'), description: facts('Description'), document: facts('Document'), security: facts('Security'), fonts: card('Fonts') ? card('Fonts').querySelector('summary').textContent : null,
+          fields: [...g('docbody').querySelectorAll('.fld')].map((i) => i.getAttribute('aria-label') + '=' + i.value).join(), other: g('hitpanel').getBoundingClientRect().width, show: [...g('docbody').querySelectorAll('.pillbtn')].map((x) => x.textContent).join() }; })()`);
+      let s = await state();
+      check(`${theme}: the title row has a Document info button with its key in the tooltip, and the panel is shut`, s.pressed === 'false' && !s.disabled && s.title === 'Document info (Ctrl+D)' && s.width === 0 && s.cards === '', JSON.stringify(s));
+      await js(win, `window.seen = new Set(); new MutationObserver(() => window.seen.add(document.getElementById('docbody').children.length)).observe(document.getElementById('docbody'), { childList: true })`);
+      await js(win, `document.getElementById('docbtn').click()`);
+      await until('the cards', async () => (await state()).cards === CARDS);
+      await sleep(500);
+      s = await state();
+      check(`${theme}: the button opens a panel headed Document, 312 px wide, with ${CARDS.replace(/,/g, ', ')}`, s.width === 312 && s.pressed === 'true' && s.head === 'Document' && s.cards === CARDS, JSON.stringify(s));
+      check(`${theme}: the File card has the name without its extension, the extension beside it, the place, the size, the date and Show`, s.nameValue === 'Report one' && s.ext === '.pdf' && s.file.startsWith('Location|') && s.file.includes('|Size|') && s.file.includes('|Modified|') && s.show === 'Show', JSON.stringify(s));
+      check(`${theme}: the Description card holds the four texts of the file, as fields to type in with the engine and as plain text without it`, engine ? s.fields === 'Title=Annual report,Author=Mina Okafor,Subject=,Keywords=' && s.description === 'Title|Author|Subject|Keywords' : s.fields === '' && s.description === 'Title|Annual report|Author|Mina Okafor|Subject|Not set|Keywords|Not set', JSON.stringify([s.fields, s.description]));
+      if (engine) {
+        const parts = s.document.split('|');
+        check(`${theme}: the Document card says the pages, the paper, the version and who made it`, parts[0] === 'Pages' && parts[1] === '1' && parts[3] === 'A4 · 210 × 297 mm' && parts[4] === 'PDF version' && /^\d\.\d$/.test(parts[5]) && parts[7].endsWith('Writer'), JSON.stringify(s.document));
+        check(`${theme}: the Security card says there is no password, nothing is held back and there are no signatures, and the Fonts card counts the fonts`, s.security === 'Password|None|Permissions|Everything allowed|Signatures|None' && /^1 font, /.test(s.fonts), JSON.stringify([s.security, s.fonts]));
+      }
+      const grid = await js(win, `(() => { const cards = [...document.querySelectorAll('#docbody section')]; const rows = []; let lefts = new Set(); for (const c of cards) { const cells = [...c.querySelectorAll('.facts > *')]; for (let i = 0; i + 1 < cells.length; i += 2) { const a = cells[i].getBoundingClientRect(); const b = cells[i + 1].getBoundingClientRect(); rows.push(Math.abs(a.top - b.top)); const cs = getComputedStyle(cells[i + 1]); lefts.add(Math.round(cells[i + 1].matches('.fld') ? b.left + parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth) : b.left)); } } const field = document.querySelector('#docbody .namefld').getBoundingClientRect(); const next = document.querySelector('#docbody .facts').getBoundingClientRect(); return { worst: Math.max(...rows), lefts: [...lefts], gap: Math.round(next.top - field.bottom) }; })()`);
+      check(`${theme}: in every card a label is level with its value, every value starts at the same left edge, the text in a Description field too, and the name field has 10 px of air below it`, grid.worst < 1 && grid.lefts.length === 1 && grid.gap === 10, JSON.stringify(grid));
+      const ink = await js(win, `(() => { const c = (q) => { const e = document.querySelector(q); return e ? getComputedStyle(e) : null; }; return { heading: c('#docbody section > h4').color, ext: c('#docbody .namefld span').color, nameEdge: c('#docbody .namefld').borderBottomColor, fieldEdge: c('#docbody .fld')?.borderBottomColor ?? null, fieldSide: c('#docbody .fld')?.borderLeftColor ?? null, unset: [...document.querySelectorAll('#docbody .unset')].map((e) => getComputedStyle(e).color) }; })()`);
+      const muted = theme === 'light' ? 'rgba(0, 0, 0, 0.64)' : 'rgba(255, 255, 255, 0.76)';
+      const edge = theme === 'light' ? 'rgba(0, 0, 0, 0.44)' : 'rgba(255, 255, 255, 0.4)';
+      check(`${theme}: card headings and the .pdf beside the name are the muted text (measured 6.6:1 light, 8.0:1 dark on the card, where the faint text was 4.0:1 and 5.1:1)`, ink.heading === muted && ink.ext === muted, JSON.stringify(ink));
+      check(`${theme}: the name field and the Description fields have a darker bottom edge, at least 3:1 against the field and the card (measured 3.1:1 light and dark, where the line all round was 1.4:1 and 1.65:1), and keep the faint line on their other sides`, ink.nameEdge === edge && (engine ? ink.fieldEdge === edge && ink.fieldSide !== edge : ink.fieldEdge === null), JSON.stringify(ink));
+      check(`${theme}: without the engine an empty entry says Not set in the muted text, not in the colour of a value`, engine ? ink.unset.length === 0 : ink.unset.length === 2 && ink.unset.every((c) => c === muted), JSON.stringify(ink));
+      const seen = await js(win, `[...window.seen]`);
+      check(`${theme}: the cards arrive together, never one and then the rest`, seen.length > 0 && seen.every((n) => n === 0 || n === CARDS.split(',').length), JSON.stringify(seen));
+      await shot(win, `workspace-document-${theme}.png`);
+
+      await js(win, `document.getElementById('linksbtn').click()`);
+      await sleep(600);
+      s = await state();
+      check(`${theme}: opening Links shuts the Document panel, so two panels never share the right edge`, s.pressed === 'false' && s.width === 0 && s.other === 300, JSON.stringify(s));
+      await js(win, `document.getElementById('linksbtn').click()`);
+      await sleep(600);
+      await press(win, 'D', ['control']);
+      await until('the panel by key', async () => (await state()).width === 312);
+      check(`${theme}: Ctrl+D opens the panel`, (await state()).pressed === 'true');
+      await press(win, 'D', ['control']);
+      await sleep(500);
+      s = await state();
+      check(`${theme}: and the same key shuts it`, s.pressed === 'false' && s.width === 0, JSON.stringify(s));
+
+      await js(win, `document.getElementById('docname').click()`);
+      await until('the name field', async () => (await state()).nameFocused);
+      s = await state();
+      check(`${theme}: a click on the file name opens the panel with the name ready to type over`, s.pressed === 'true' && s.nameFocused && s.nameValue === 'Report one', JSON.stringify(s));
+      const go = () => js(win, `(() => { const b = document.querySelector('#docbody .namefld button'); const c = getComputedStyle(b); return { shown: !b.hidden, text: b.textContent, colour: c.color, height: b.getBoundingClientRect().height, name: document.querySelector('#docbody .namefld input').value }; })()`);
+      const before = await go();
+      await js(win, `document.execCommand('insertText', false, 'Report one draft')`);
+      const typed = await go();
+      check(`${theme}: a Rename button shows in the name field only once the name differs, its text at 4.7:1 on its tint in light and 5.9:1 in dark (the accent ink alone was 3.7:1 there)`, !before.shown && typed.shown && typed.text === 'Rename' && typed.height === 24 && typed.colour === (theme === 'light' ? 'rgb(194, 43, 79)' : 'color(srgb 1 0.790196 0.839216)'), JSON.stringify([before, typed]));
+      await shot(win, `workspace-document-rename-${theme}.png`);
+      await press(win, 'Escape');
+      await sleep(200);
+      const dropped = await go();
+      check(`${theme}: Esc puts the name back and hides Rename`, !dropped.shown && dropped.name === 'Report one', JSON.stringify(dropped));
+      await closeAndWait(win);
+    }
+
+    nativeTheme.themeSource = 'light';
+    const ws = fresh();
+    const win = await openAndWait(ws, named);
+    const typeName = async (text) => {
+      await js(win, `(() => { const i = document.querySelector('#docbody .namefld input'); i.focus(); i.select(); })()`);
+      await js(win, `document.execCommand('insertText', false, ${JSON.stringify(text)})`);
+      await press(win, 'Return');
+    };
+    const hint = () => js(win, `document.querySelector('#docbody .hintline') ? document.querySelector('#docbody .hintline').textContent : ''`);
+    const shownName = () => js(win, `document.getElementById('docname').textContent`);
+    await js(win, `document.getElementById('docbtn').click()`);
+    await until('the name field', () => js(win, `!!document.querySelector('#docbody .namefld input')`));
+    await typeName('Report two');
+    await sleep(300);
+    check('a name another file has is refused in words and nothing is renamed', (await hint()) === 'A file with that name is already there' && fs.existsSync(named) && (await shownName()) === 'Report one.pdf', await hint());
+    await typeName('bad:name');
+    await sleep(300);
+    check('a name Windows cannot hold is refused in words', (await hint()) === "That name can't be used" && fs.existsSync(named), await hint());
+    await js(win, `(() => { const i = document.querySelector('#docbody .namefld input'); i.focus(); i.select(); })()`);
+    await js(win, `document.execCommand('insertText', false, 'Report middle')`);
+    await js(win, `document.querySelector('#docbody .namefld input').blur()`);
+    await sleep(300);
+    check('a typed name stays in the field when the field is left without Enter, with Rename still showing', await js(win, `document.querySelector('#docbody .namefld input').value === 'Report middle' && !document.querySelector('#docbody .namefld button').hidden`) && fs.existsSync(named));
+    await js(win, `document.querySelector('#docbody .namefld button').click()`);
+    await until('the name from the button', async () => (await shownName()) === 'Report middle.pdf');
+    check('the Rename button renames the file', fs.existsSync(path.join(root, 'Report middle.pdf')) && !fs.existsSync(named));
+    await sleep(300);
+    await typeName('Report final');
+    await until('the new name', async () => (await shownName()) === 'Report final.pdf');
+    await sleep(500);
+    const renamed = await js(win, `({ title: document.title, field: document.querySelector('#docbody .namefld input').value, said: document.querySelector('#docbody .hintline').textContent })`);
+    check('a new name renames the file, the title row and the window, and the panel says Renamed', fs.existsSync(path.join(root, 'Report final.pdf')) && !fs.existsSync(named) && renamed.title === 'Report final.pdf - Pomelo' && renamed.field === 'Report final' && renamed.said === 'Renamed', JSON.stringify(renamed));
+    await js(win, `document.querySelector('#docbody .pillbtn').click()`);
+    await sleep(300);
+    check('Show asks Explorer for the renamed file and no other', shown.length === 1 && shown[0] === path.join(root, 'Report final.pdf'), JSON.stringify(shown));
+    check('no message about the panel carries a path', calls.filter((c) => /^pdfws:(properties|details|rename|show)$/.test(c.channel)).every((c) => c.args.every((a) => typeof a !== 'string' || !a.includes(root))));
+
+    if (engine) {
+      await until('the fields', () => js(win, `!!document.querySelector('#docbody .fld')`));
+      await js(win, `window.keptPage = document.querySelector(".page"); window.keptPdf = workspaceViewer.viewer.pdfDocument; 0`);
+      await js(win, `(() => { const i = document.querySelector('#docbody .fld'); i.focus(); i.select(); })()`);
+      await js(win, `document.execCommand('insertText', false, 'Quarterly report')`);
+      await press(win, 'Tab');
+      await js(win, `window.author = document.querySelectorAll('#docbody .fld')[1]; document.execCommand('insertText', false, 'Mina Okafor Lee')`);
+      await until('the unsaved mark', async () => (await js(win, `!document.getElementById('docdot').hidden`)), 15000);
+      await sleep(800);
+      const edited = await js(win, `({ dot: !document.getElementById('docdot').hidden, save: !document.getElementById('savebtn').hidden, title: document.querySelector('#docbody .fld').value, author: window.author.value, kept: document.querySelectorAll('#docbody .fld')[1] === window.author, focused: document.activeElement === window.author })`);
+      check('a changed Title is a change to the document: the unsaved mark and Save show, and the field keeps what was typed', edited.dot && edited.save && edited.title === 'Quarterly report', JSON.stringify(edited));
+      check('text typed in the next field while the change is made stays there, and so does the focus', edited.author === 'Mina Okafor Lee' && edited.kept && edited.focused, JSON.stringify(edited));
+      check('the pages are not read again for it: the same page and the same document are still on show', await js(win, `document.querySelector('.page') === window.keptPage && workspaceViewer.viewer.pdfDocument === window.keptPdf`));
+      await shot(win, 'workspace-document-edited.png');
+      await press(win, 'Escape');
+      await sleep(300);
+      const backed = await js(win, `({ author: window.author.value, focused: document.activeElement === window.author, open: document.getElementById('docbtn').getAttribute('aria-pressed') })`);
+      check('Esc in a Description field puts back its saved text and leaves the field, and the panel stays open', backed.author === 'Mina Okafor' && !backed.focused && backed.open === 'true', JSON.stringify(backed));
+      await js(win, `(() => { const i = document.querySelector('#docbody .fld'); i.focus(); i.select(); })()`);
+      await js(win, `document.execCommand('insertText', false, 'Annual report')`);
+      await press(win, 'Tab');
+      await until('no unsaved mark', async () => (await js(win, `document.getElementById('docdot').hidden`)), 15000);
+      const reverted = await js(win, `({ save: !document.getElementById('savebtn').hidden, title: document.querySelector('#docbody .fld').value })`);
+      check('typing the Title back as the file had it leaves nothing to save: the mark and Save go', !reverted.save && reverted.title === 'Annual report', JSON.stringify(reverted));
+
+      await ws.open([path.join(root, 'Report two.pdf')]);
+      await until('the second tab', () => js(win, `document.querySelectorAll('#tabs .tab').length === 2`));
+      await js(win, `document.querySelectorAll('#tabs .tab')[0].click()`);
+      await until('the first tab\'s fields', () => js(win, `document.querySelectorAll('#docbody .fld').length === 4 && document.querySelector('#docbody .namefld input').value === 'Report final'`));
+      await js(win, `(() => { const i = document.querySelectorAll('#docbody .fld')[2]; i.focus(); i.select(); })()`);
+      await js(win, `document.execCommand('insertText', false, 'Plans')`);
+      await press(win, 'Tab');
+      await js(win, `document.querySelectorAll('#tabs .tab')[1].click()`);
+      await sleep(3000);
+      const other = await js(win, `({ cards: [...document.querySelectorAll('#docbody section h4')].map((h) => h.textContent).join(), name: document.querySelector('#docbody .namefld input')?.value })`);
+      check('changing tab while a change is made shows the other document\'s cards, all of them', other.cards === CARDS && other.name === 'Report two', JSON.stringify(other));
+      await js(win, `document.querySelectorAll('#tabs .tab')[0].click()`);
+      await until('the first tab again', () => js(win, `document.querySelectorAll('#docbody .fld').length === 4 && document.querySelector('#docbody .namefld input').value === 'Report final'`));
+      check('and the change was made', (await js(win, `document.querySelectorAll('#docbody .fld')[2].value`)) === 'Plans');
+    }
+    await js(win, `document.getElementById('docclose').click()`);
+    await sleep(500);
+    check('the close button in the panel shuts it', (await js(win, `document.getElementById('docbtn').getAttribute('aria-pressed')`)) === 'false');
+    win.close();
+    await sleep(500);
+    if (engine) {
+      check('closing with the changed Subject asks first', await js(win, `!!document.querySelector('.card') && document.querySelector('.card h3').textContent === 'Save changes to Report final.pdf?'`));
+      await js(win, `[...document.querySelectorAll('.card button')].find((b) => b.textContent === "Don't save").click()`);
+      await sleep(500);
+    }
+
+    const deep = path.join(root, 'Computer Science Coursework 2026 Semester Two', 'Assignment submissions and marked feedback from the tutors');
+    fs.mkdirSync(deep, { recursive: true });
+    const longPlace = path.join(deep, 'Report two.pdf');
+    fs.copyFileSync(path.join(root, 'Report two.pdf'), longPlace);
+    for (const theme of ['light', 'dark']) {
+      nativeTheme.themeSource = theme;
+      const far = await openAndWait(fresh(), longPlace);
+      await js(far, `document.getElementById('docbtn').click()`);
+      await until('the folder', () => js(far, `!!document.querySelector('#docbody .folder') && document.querySelector('#docbody .folder').textContent !== ''`));
+      await sleep(500);
+      const place = await js(far, `(() => { const f = document.querySelector('#docbody .folder').getBoundingClientRect(); const b = document.querySelector('#docbody .pillbtn').getBoundingClientRect(); const panel = document.getElementById('docpanel').getBoundingClientRect(); const row = document.querySelector('#docbody .where').getBoundingClientRect(); const label = document.querySelector('#docbody .facts > span').getBoundingClientRect(); return { height: Math.round(f.height), button: Math.round(b.height), inside: b.right <= panel.right && f.right <= b.left, level: Math.abs(label.top - row.top) < 1, full: document.querySelector('#docbody .folder').title, text: document.querySelector('#docbody .folder').textContent, lines: [...document.querySelectorAll('#docbody .folder > span')].map((s) => Math.round(s.getBoundingClientRect().height / 20)) }; })()`);
+      check(`${theme}: a long place wraps beside Show, stops at three lines and keeps its label level with the first line`, place.height <= 68 && place.height > 28 && place.button === 24 && place.inside && place.level, JSON.stringify(place));
+      check(`${theme}: the outer folder takes one line and the folder that holds the file the other two, so a long outer folder can no longer hide it, and the tooltip has both`, place.lines.join() === '1,2' && place.text === 'Computer Science Coursework 2026 Semester Two › Assignment submissions and marked feedback from the tutors' && place.full === place.text, JSON.stringify(place));
+      await shot(far, `workspace-document-long-place-${theme}.png`);
+      await closeAndWait(far);
+    }
+    nativeTheme.themeSource = 'light';
+
+    const slowly = fresh({ runPdfTool: async (script, ...rest) => { if (script === 'pdf_info.py') await sleep(3000); return runPdfTool(script, ...rest); } });
+    const slow = await openAndWait(slowly, path.join(root, 'Report two.pdf'));
+    await js(slow, `document.getElementById('docbtn').click()`);
+    await sleep(700);
+    const waiting = await js(slow, `({ line: !document.getElementById('docloading').hidden, moving: getComputedStyle(document.getElementById('docloading'), '::after').animationName, cards: document.querySelectorAll('#docbody section').length })`);
+    check('while a slow engine is asked about the document, a moving line under the heading says the panel is loading (it stayed blank for 2.2 s)', waiting.line && waiting.moving === 'scan' && waiting.cards === 0, JSON.stringify(waiting));
+    await shot(slow, 'workspace-document-loading.png');
+    await until('the cards after a slow engine', () => js(slow, `[...document.querySelectorAll('#docbody section h4')].map((h) => h.textContent).join() === ${JSON.stringify(CARDS)}`), 15000);
+    check('and the line goes once the cards are in', await js(slow, `document.getElementById('docloading').hidden`));
+    await closeAndWait(slow);
+
+    const fit = await openAndWait(fresh(), path.join(root, 'Report two.pdf'));
+    await press(fit, '0', ['control']);
+    await sleep(800);
+    await js(fit, `window.renders = 0; workspaceViewer.viewer.eventBus.on('pagerendered', () => window.renders++); document.getElementById('docbtn').click()`);
+    await sleep(1200);
+    const drawn = await js(fit, `({ renders: window.renders, zoom: workspaceViewer.viewer.currentScaleValue })`);
+    check('at Fit width the page is drawn again once the panel has slid in, not on every frame of the slide (it was 21 times)', drawn.zoom === 'page-width' && drawn.renders >= 1 && drawn.renders <= 2, JSON.stringify(drawn));
+    await closeAndWait(fit);
   }
 
   console.log('a file that cannot be shown');

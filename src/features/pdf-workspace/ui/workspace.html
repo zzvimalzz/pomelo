@@ -16,9 +16,9 @@
   <div class="window">
     <header class="titlerow">
       <div class="titleleft"><button class="ib" id="pagesbtn" type="button" aria-pressed="false" disabled></button><button class="ib" id="findbtn" type="button" aria-pressed="false" disabled></button><button class="ib" id="linksbtn" type="button" aria-pressed="false" disabled></button></div>
-      <div class="nameline" id="nameline"><b id="docname"></b><i class="dot" id="docdot" title="Unsaved changes" hidden></i><small id="docsaved" role="status"></small></div>
+      <div class="nameline" id="nameline"><button class="namebtn" id="docname" type="button" title="Rename or see details"></button><i class="dot" id="docdot" title="Unsaved changes" hidden></i><small id="docsaved" role="status"></small></div>
       <div class="tabs" id="tabs" role="tablist" aria-label="Documents" hidden></div>
-      <div class="titletools"><button class="btn primary" id="savebtn" type="button" hidden>Save</button><button class="ib" id="focus" type="button"></button></div>
+      <div class="titletools"><button class="btn primary" id="savebtn" type="button" hidden>Save</button><button class="ib" id="docbtn" type="button" aria-pressed="false" disabled></button><button class="ib" id="focus" type="button"></button></div>
     </header>
     <div class="body">
       <aside class="panel" id="rail"><div class="inner" id="railinner" hidden>
@@ -32,6 +32,10 @@
         <p class="failure" id="failure" hidden></p>
         <div class="edgehint"></div>
       </main>
+      <aside class="panel" id="docpanel" aria-label="Document"><div class="inner" id="docinner" hidden>
+        <div class="sidehead"><h3>Document</h3><button class="sm" id="docclose" type="button"></button><i class="scanline busy" id="docloading" hidden></i></div>
+        <div class="scrolly" id="docbody"></div>
+      </div></aside>
       <aside class="panel" id="hitpanel"><div class="inner" id="hitinner" hidden>
         <div class="sidehead">
           <div class="seg3" role="radiogroup" aria-label="Panel"><button type="button" role="radio" id="tabsearch" aria-checked="true">Search</button><button type="button" role="radio" id="tablinks" aria-checked="false">Links</button></div>
@@ -70,6 +74,7 @@
   <script src="ticks.js"></script>
   <script src="search.js"></script>
   <script src="viewer.js"></script>
+  <script src="properties.js"></script>
   <script src="focus.js"></script>
   <script src="workspace.js"></script>
 </body>

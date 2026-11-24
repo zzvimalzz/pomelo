@@ -22,7 +22,10 @@ function createRevisions(first) {
   const release = (rev) => { if (--rev.refs === 0 && rev.retired) close(rev); };
 
   const current = () => list[at];
-  const dirty = () => list[at] !== saved;
+  // A revision made from another by changes to the document information alone holds the same document again once that information
+  // is back as it was: `base` is the revision it was made from, `meta` its information as text (both set by documents.js).
+  const same = (a, b) => a === b || (!!a.meta && a.meta === b.meta && (a.base ?? a) === (b.base ?? b));
+  const dirty = () => !same(list[at], saved);
 
   function undo() { return at > 0 ? list[--at] : null; }
   function redo() { return at < list.length - 1 ? list[++at] : null; }
@@ -41,6 +44,7 @@ function createRevisions(first) {
 
   function replaceFirst(rev) {
     const old = list[0];
+    rev.meta ??= old.meta;
     list[0] = rev;
     if (saved === old) saved = rev;
     return retire(old);

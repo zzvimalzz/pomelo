@@ -77,6 +77,7 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   fs.writeFileSync(pdf, '%PDF-1.7 the original');
   const runs = [];
   let mode = 'copy';
+  let said = '';
   const runPdfTool = async (script, args, options) => {
     const [source, target, listFile] = args;
     runs.push({ script, source, target, list: fs.readFileSync(listFile, 'utf8'), secrets: options.secrets, signal: options.signal });
@@ -84,6 +85,7 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
     if (mode === 'wait') await new Promise((resolve) => options.signal.addEventListener('abort', resolve));
     if (options.signal.aborted) { fs.writeFileSync(target, 'half'); throw Object.assign(new Error('Cancelled'), { name: 'CancelledError' }); }
     fs.writeFileSync(target, `${fs.readFileSync(source, 'utf8')} +1`);
+    return said;
   };
   const edits = createDocuments({ runPdfTool });
   const edited = await edits.open(pdf);
@@ -100,6 +102,18 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   edits.unlock(edited.token, 'Pw-é1');
   await edits.apply(edited.token, rotate);
   expect('the password goes to the helper as a secret, and is in neither the list nor the arguments', JSON.stringify(runs[2].secrets) === '{"password":"Pw-é1"}' && !runs[2].list.includes('Pw-') && runs.every((run) => !run.source.includes('Pw-')));
+  const text = [{ op: 'meta.set', title: 'T', author: '', subject: '', keywords: '' }];
+  const appended = '{"saved": "incremental"}';
+  said = appended;
+  const kept = (await edits.apply(edited.token, text)).reload;
+  said = '{"saved": "full"}';
+  const rewrittenText = (await edits.apply(edited.token, text)).reload;
+  said = appended;
+  const mixed = (await edits.apply(edited.token, [...text, ...rotate])).reload;
+  const turned = (await edits.apply(edited.token, rotate)).reload;
+  said = '';
+  expect('a change to the information alone, appended to the file, keeps the pages as they are', kept === false);
+  expect('a full save of it, a change to pages and a mix of both all ask for the pages to be read again', rewrittenText === true && mixed === true && turned === true, JSON.stringify([rewrittenText, mixed, turned]));
   const runsBefore = runs.length;
   const refusedLists = { 'an unknown change': [{ op: 'pages.shred', pages: [1] }], 'a key it does not take': [{ op: 'pages.delete', pages: [1], password: 'x' }], 'no list': undefined };
   for (const [what, list] of Object.entries(refusedLists)) expect(`${what} is refused before the helper starts`, (() => { try { edits.apply(edited.token, list); return false; } catch { return true; } })());
@@ -121,6 +135,110 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   while (runs.length < runsBefore + 3) await new Promise((resolve) => setTimeout(resolve, 10));
   await edits.closeAll();
   expect('quitting stops a helper that is still changing a document', await waiting === 'CancelledError' && runs.at(-1).signal.aborted);
+
+  console.log('renaming');
+  const named = tmpDir('ws-rename');
+  const sub = path.join(named, 'Reports', '2026');
+  fs.mkdirSync(sub, { recursive: true });
+  const make = (name, text) => { const p = path.join(sub, name); fs.writeFileSync(p, `${text} %%EOF`); return p; };
+  const alphaFile = make('Alpha.pdf', '%PDF-1.7 alpha');
+  make('Beta.pdf', '%PDF-1.7 beta');
+  make('Delta.pdf', '%PDF-1.7 delta');
+  const gamma = createDocuments({ runPdfTool });
+  const alpha = await gamma.open(alphaFile);
+  await gamma.open(path.join(sub, 'Beta.pdf'));
+  const renamed = await gamma.rename(alpha.token, 'Gamma');
+  expect('a file is renamed on disk, keeps its extension and its content, and the document follows it', renamed.info.name === 'Gamma.pdf' && !fs.existsSync(alphaFile) && fs.readFileSync(path.join(sub, 'Gamma.pdf'), 'utf8') === '%PDF-1.7 alpha %%EOF' && gamma.find(path.join(sub, 'Gamma.pdf'))?.token === alpha.token && gamma.find(alphaFile) === null);
+  expect('the renamed document still reads, and keeps its token', (await gamma.read(alpha.token, 0, 8)).toString() === '%PDF-1.7' && renamed.info.token === alpha.token);
+  expect('the folder and the time of the last change are given, never the path', JSON.stringify(Object.keys(await gamma.details(alpha.token))) === '["folders","modified"]' && (await gamma.details(alpha.token)).folders.join('|') === 'Reports|2026' && typeof (await gamma.details(alpha.token)).modified === 'number');
+  const untouched = () => ['Beta.pdf', 'Delta.pdf', 'Gamma.pdf'].map((n) => fs.readFileSync(path.join(sub, n), 'utf8')).join();
+  const others = untouched();
+  expect('a name another open tab has is refused', (await gamma.rename(alpha.token, 'beta')).stop === 'open');
+  expect('a name a file has on disk is refused, and that file is not replaced', (await gamma.rename(alpha.token, 'Delta')).stop === 'exists' && untouched() === others);
+  const invalid = ['', '   ', 'a/b', 'a\\b', 'C:x', 'a*b', 'a?b', 'a"b', 'a<b', 'a|b', 'a\u0007b', 'con', 'NUL.txt', 'com1', 'name.', 'x'.repeat(201), '..', undefined, 5, { toString: () => 'x' }];
+  const results = [];
+  for (const name of invalid) results.push((await gamma.rename(alpha.token, name)).stop);
+  expect('a name that Windows cannot have is refused, whatever it is', results.every((r) => r === 'invalid') && gamma.list()[0].name === 'Gamma.pdf', JSON.stringify(results));
+  expect('the name it already has changes nothing', (await gamma.rename(alpha.token, 'Gamma')).info.name === 'Gamma.pdf' && (await gamma.rename(alpha.token, ' Gamma ')).info.name === 'Gamma.pdf');
+  expect('a change of case only is allowed', (await gamma.rename(alpha.token, 'GAMMA')).info.name === 'GAMMA.pdf' && fs.readdirSync(sub).includes('GAMMA.pdf'));
+  expect('a name may have spaces, dots and letters from any script', (await gamma.rename(alpha.token, 'Annual report v1.2 日本')).info.name === 'Annual report v1.2 日本.pdf');
+  expect('a document that was deleted is reported, not renamed', await (async () => { fs.rmSync(path.join(sub, 'Annual report v1.2 日本.pdf')); const r = await gamma.rename(alpha.token, 'Back'); return r.stop === 'changed'; })());
+  const upper = await gamma.open(make('Upper.PDF', '%PDF-1.7 upper'));
+  expect('the extension keeps the case it had', (await gamma.rename(upper.token, 'Lower')).info.name === 'Lower.PDF');
+  const copy = await gamma.open(make('Copy.pdf', '%PDF-1.7 copy'));
+  await gamma.saveCopy(copy.token, path.join(sub, 'Copied.pdf'));
+  await gamma.rename(copy.token, 'Moved');
+  await gamma.saveCopy(copy.token, path.join(sub, 'Copied again.pdf'));
+  expect('a document that has not been changed is saved as a copy from where it is now', fs.readFileSync(path.join(sub, 'Copied again.pdf'), 'utf8') === '%PDF-1.7 copy %%EOF');
+  mode = 'copy';
+  const edit = await gamma.open(make('Edit.pdf', '%PDF-1.7 edit'));
+  await gamma.apply(edit.token, [{ op: 'pages.rotate', pages: [1], by: 90 }]);
+  await gamma.rename(edit.token, 'Edited');
+  await gamma.save(edit.token);
+  expect('a document with unsaved changes is saved over the file under its new name', fs.readFileSync(path.join(sub, 'Edited.pdf'), 'utf8') === '%PDF-1.7 edit %%EOF +1' && !fs.existsSync(path.join(sub, 'Edit.pdf')));
+  expect('another page cannot rename a document it has no token for', (() => { try { gamma.rename('0'.repeat(64), 'x'); return false; } catch { return true; } })());
+  await gamma.closeAll();
+
+  console.log('what the PDF engine says about a document');
+  const asked = [];
+  const informed = createDocuments({
+    runPdfTool: async (script, args, options) => {
+      if (script === 'pdf_info.py') { asked.push({ args, secrets: options.secrets, signal: options.signal }); fs.writeFileSync(args[1], JSON.stringify({ pageCount: asked.length })); return; }
+      fs.writeFileSync(args[1], `${fs.readFileSync(args[0], 'utf8')} +1`);
+    },
+  });
+  const subject = await informed.open(make('Facts.pdf', '%PDF-1.7 facts'));
+  const factsOne = await informed.facts(subject.token);
+  expect('the helper is asked for the properties of the file, and its answer is parsed', factsOne.pageCount === 1 && asked[0].args[0] === path.join(sub, 'Facts.pdf') && asked[0].args[2] === 'properties' && asked[0].secrets === undefined && path.basename(asked[0].args[1]).endsWith('.json'));
+  expect('its output file is gone afterwards', !fs.existsSync(asked[0].args[1]));
+  await informed.facts(subject.token);
+  expect('the answer is kept for as long as the revision is the same', asked.length === 1);
+  await informed.apply(subject.token, [{ op: 'pages.rotate', pages: [1], by: 90 }]);
+  const factsTwo = await informed.facts(subject.token);
+  expect('a new revision is asked about again, from the copy in the session folder', factsTwo.pageCount === 2 && asked[1].args[0] !== path.join(sub, 'Facts.pdf') && fs.existsSync(path.dirname(asked[1].args[0])));
+  await informed.undo(subject.token);
+  expect('and going back asks once more', (await informed.facts(subject.token)).pageCount === 3);
+  informed.unlock(subject.token, 'Pw-é1');
+  await informed.undo(subject.token).catch(() => {});
+  await informed.apply(subject.token, [{ op: 'pages.rotate', pages: [1], by: 90 }]);
+  await informed.facts(subject.token);
+  expect('a password goes to the helper as a secret and is in no argument', JSON.stringify(asked.at(-1).secrets) === '{"password":"Pw-é1"}' && !JSON.stringify(asked.at(-1).args).includes('Pw-'));
+  const described = createDocuments({
+    runPdfTool: async (script, args) => {
+      if (script === 'pdf_info.py') { fs.writeFileSync(args[1], JSON.stringify({ information: { title: 'Old', author: 'A', subject: '', keywords: '', created: null } })); return ''; }
+      fs.writeFileSync(args[1], `${fs.readFileSync(args[0], 'utf8')} +1`);
+      return '{"saved": "incremental"}';
+    },
+  });
+  const book = await described.open(make('Book.pdf', '%PDF-1.7 book'));
+  const titled = (title) => described.apply(book.token, [{ op: 'meta.set', title, author: 'A', subject: '', keywords: '' }]).then((r) => r.info.dirty);
+  const unread = [await titled('New'), await titled('Old')].join();
+  await described.facts(book.token);
+  await described.undo(book.token);
+  await described.undo(book.token);
+  await described.facts(book.token);
+  const changed = await titled('New');
+  const back = await titled('Old');
+  expect('a Title changed and then typed back as it was leaves nothing to save', changed === true && back === false, JSON.stringify([changed, back]));
+  expect('until the engine has read the information of the file, a change typed back still counts as a change', unread === 'true,true', unread);
+  expect('going back to the changed Title has something to save again, and forward has not', (await described.undo(book.token)).info.dirty === true && (await described.redo(book.token)).info.dirty === false);
+  await titled('Saved');
+  await described.save(book.token);
+  const afterSave = [await titled('Old'), await titled('Saved')];
+  expect('after a save, the text that was saved is the one that leaves nothing to save', afterSave.join() === 'true,false', afterSave.join());
+  await described.apply(book.token, [{ op: 'pages.rotate', pages: [1], by: 90 }]);
+  expect('a change to the pages is never taken for the saved file, whatever the information says', (await titled('Saved')) === true);
+  await described.closeAll();
+  const noEngine = createDocuments({ runPdfTool: () => Promise.reject(Object.assign(new Error('The PDF engine is not installed'), { code: 'NO_ENGINE' })) });
+  const without = await noEngine.open(make('None.pdf', '%PDF-1.7 none'));
+  expect('without the engine the question is rejected with its code', await noEngine.facts(without.token).then(() => '', (e) => e.code) === 'NO_ENGINE');
+  const stuck = createDocuments({ runPdfTool: (script, args, options) => new Promise((resolve, reject) => options.signal.addEventListener('abort', () => reject(Object.assign(new Error('Cancelled'), { name: 'CancelledError' })))) });
+  const slow = await stuck.open(make('Slow.pdf', '%PDF-1.7 slow'));
+  const pendingFacts = stuck.facts(slow.token).then(() => 'done', (e) => e.name);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await stuck.close(slow.token);
+  expect('closing a document stops the helper that is reading it', await pendingFacts === 'CancelledError');
+  await Promise.all([informed.closeAll(), noEngine.closeAll(), stuck.closeAll()]);
 
   console.log('several documents');
   const tabs = createDocuments();

@@ -11,6 +11,9 @@ console.log('what is allowed');
 expect('a rotation and a deletion are allowed, and come back as they were given', JSON.stringify(check([{ op: 'pages.rotate', pages: [3, 4], by: 90 }, { op: 'pages.delete', pages: [1] }])) === '[{"op":"pages.rotate","pages":[3,4],"by":90},{"op":"pages.delete","pages":[1]}]');
 expect('a page turns by 90, 180 or 270', [90, 180, 270].every((by) => !refused([{ op: 'pages.rotate', pages: [1], by }])));
 expect('a rotation edits in place and a deletion rewrites the file',OPS['pages.rotate'].kind === 'direct' && OPS['pages.delete'].kind === 'rewrite');
+const info = { op: 'meta.set', title: 'Annual report', author: '', subject: 'Résumé 日本', keywords: 'a, b' };
+expect('the document information is set as four texts, which may be empty, and edits in place', JSON.stringify(check([info])) === JSON.stringify([info]) && OPS['meta.set'].kind === 'direct');
+expect('a text of 1000 characters is allowed', !refused([{ ...info, title: 'x'.repeat(1000) }]));
 
 console.log('what is refused');
 const bad = {
@@ -28,6 +31,8 @@ const bad = {
   'a page over a million': [{ op: 'pages.delete', pages: [1000001] }], 'the same page twice': [{ op: 'pages.delete', pages: [2, 2] }],
   'a turn by 45': [{ op: 'pages.rotate', pages: [1], by: 45 }], 'a turn by text': [{ op: 'pages.rotate', pages: [1], by: '90' }],
   'a turn by 360': [{ op: 'pages.rotate', pages: [1], by: 360 }], 'a turn by -90': [{ op: 'pages.rotate', pages: [1], by: -90 }],
+  'a title of 1001 characters': [{ ...info, title: 'x'.repeat(1001) }], 'a title that is not text': [{ ...info, title: 5 }], 'a title with a null character': [{ ...info, title: 'a\0b' }],
+  'document information with a key missing': [{ op: 'meta.set', title: 'a', author: 'b', subject: 'c' }], 'document information with a key it does not take': [{ ...info, producer: 'x' }],
   'a good change followed by a bad one': [{ op: 'pages.delete', pages: [1] }, { op: 'pages.delete', pages: [0] }],
 };
 for (const [what, list] of Object.entries(bad)) expect(`${what} is refused`, refused(list));

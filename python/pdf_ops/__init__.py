@@ -11,13 +11,14 @@ import sys
 import pymupdf
 
 import helper
-from . import pages
+from . import meta, pages
 
 SECRET_KEYS = ("password",)
 MAX_SECRETS = 64 * 1024
 INCREMENTAL = ("fill", "annotate", "direct", "new")
 
 OPS = {
+    "meta.set": ("direct", meta.set_info),
     "pages.rotate": ("direct", pages.rotate),
     "pages.delete": ("rewrite", pages.delete),
 }

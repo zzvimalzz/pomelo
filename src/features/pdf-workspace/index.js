@@ -29,8 +29,8 @@ const REASONS = {
 // asset(name): path of a file shipped in assets/. getSettings(), setSettings(patch): the stored settings. notify({ title, detail }): the
 // notice in the corner of the screen. log(...). openExternal(url): open an address with the program Windows has for it, as a promise.
 // copyText(text): put text on the clipboard. uniquePath(dir, base, ext): a path that does not exist yet. runPdfTool(script, args, { src, signal, secrets }): run a
-// PDF editing helper with the PDF engine. solid: draw an opaque window; by default only before Windows 11.
-function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, uniquePath, runPdfTool, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
+// PDF editing helper with the PDF engine. showInFolder(file): show a file in Explorer. solid: draw an opaque window; by default only before Windows 11.
+function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, uniquePath, runPdfTool, showInFolder, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
   const documents = createDocuments({ runPdfTool });
   let win = null;
   let queue = Promise.resolve();
@@ -106,12 +106,12 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     if (!documents.list().length) win?.close();
   }
 
-  // Tells the page a document's new state (`reload`: its pages must be read again), and when a save stopped says why, once, in the
-  // corner of the screen and gives the page only the reason.
+  // Tells the page a document's new state (`reload`: its pages must be read again; a result can say it itself), and when a save stopped says
+  // why, once, in the corner of the screen and gives the page only the reason.
   async function revised(pending, reload) {
     const result = await pending;
     if (!result) return null;
-    if (result.info) { win?.webContents.send('pdfws:changed', { ...result.info, reload }); return result; }
+    if (result.info) { win?.webContents.send('pdfws:changed', { ...result.info, reload: result.reload ?? reload }); return result; }
     const why = WHY_NOT_SAVED[result.stop]?.(result);
     if (why) notify({ title: "Can't save", detail: why });
     return { stop: result.stop };
@@ -125,6 +125,18 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     log('PDF change failed:', e.code || e.message);
     notify({ title: "Can't make this change", detail: e.code ? 'The new version could not be written.' : e.message });
     return { stop: 'failed' };
+  }
+
+  // What the PDF engine knows about the document, or { stop } with 'no-engine' or 'failed'. A helper that failed is only logged: the panel
+  // simply shows less.
+  async function properties(token) {
+    try {
+      return { facts: await documents.facts(token) };
+    } catch (e) {
+      if (e.code === 'NO_ENGINE') return { stop: 'no-engine' };
+      log('PDF details failed:', e.code || e.message);
+      return { stop: 'failed' };
+    }
   }
 
   async function saveAs(token) {
@@ -161,6 +173,10 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     openDropped,
     putRevision: (token, bytes) => revised(documents.putRevision(token, bytes), false),
     apply: (token, ops) => revised(documents.apply(token, ops).catch(applyFailed), true),
+    properties,
+    details: documents.details,
+    rename: (token, name) => revised(documents.rename(token, name), false),
+    showInFolder: (token) => showInFolder(documents.fileOf(token)),
     undo: (token) => revised(documents.undo(token), true),
     redo: (token) => revised(documents.redo(token), true),
     save: (token) => revised(documents.save(token), false),

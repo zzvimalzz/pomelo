@@ -130,8 +130,13 @@
     });
     eventBus.on('scalechanging', ({ scale, presetValue }) => { if (!restoring) remember({ zoom: PRESETS.includes(presetValue) ? presetValue : Math.round(scale * 1000) / 1000 }); });
     eventBus.on('spreadmodechanged', ({ mode }) => { if (!restoring) remember({ layout: Object.keys(LAYOUTS)[mode] }); });
-    // A fit keeps fitting as the window changes size; a zoom the user chose stays as it is.
-    new ResizeObserver(() => { const zoom = viewer.currentScaleValue; if (viewer.pagesCount && PRESETS.includes(zoom)) viewer.currentScaleValue = zoom; }).observe(container);
+    // A fit keeps fitting as the window changes size; a zoom the user chose stays as it is. Fitting once the size has settled draws
+    // the pages once at the end of a panel's slide instead of on every frame of it.
+    let fitting = null;
+    new ResizeObserver(() => {
+      clearTimeout(fitting);
+      fitting = setTimeout(() => { const zoom = viewer.currentScaleValue; if (viewer.pagesCount && PRESETS.includes(zoom)) viewer.currentScaleValue = zoom; }, 120);
+    }).observe(container);
     restScrollbar(container);
     session = { viewer, linkService, history, container };
   }
