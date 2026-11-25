@@ -47,12 +47,13 @@ function createDropFlow({ conversion, getWheel, getJobs, openPdfs, openImages, c
   let showing = null;
   const convertView = (files, switchable) => ({ wheel: 'convert', switchable, ...(allImages(files) && { other: 'Edit' }) });
 
-  return {
+  const flow = {
     // The gesture, or the right-click menu (pick), opened on these files: offer the formats (or, for Shift on PDFs, the Open wheel and, for
-    // Shift on pictures, the Edit wheel), or say why there are none. Shift on anything else shows the conversion wheel, as Ctrl does.
+    // Shift on pictures, the Edit wheel), or say why there are none. Shift on anything else shows nothing: the wheel waits for Ctrl.
     async onOpen(files, pick = false, wheel = 'convert') {
       selection = files;
       showing = null;
+      if (wheel === 'open' && !allPdfs(files) && !allImages(files)) return;
       const info = describeSelection(files, conversion);
       if (wheel === 'open' && allPdfs(files)) { showing = 'open'; getWheel().openWheel(info, OPEN_TARGETS, null, { wheel: 'open', switchable: true }); return; }
       if (wheel === 'open' && allImages(files)) { showing = 'open'; getWheel().openWheel(info, EDIT_TARGETS, null, EDIT_VIEW); return; }
@@ -63,8 +64,8 @@ function createDropFlow({ conversion, getWheel, getJobs, openPdfs, openImages, c
     },
 
     // The key of the other wheel was pressed: the wheel on show turns into it. It stays as it is when there is nothing to convert to,
-    // and Shift does nothing when the files are not all PDFs or all pictures. A wheel that is showing is not drawn again: Shift and then
-    // Ctrl on a document leaves the conversion wheel as it was.
+    // and Shift does nothing when the files are not all PDFs or all pictures. A wheel that is showing is not drawn again, and Ctrl after a
+    // Shift that showed nothing opens the conversion wheel.
     onSwitch(wheel) {
       if (wheel === 'open') {
         if (allPdfs(selection)) { showing = 'open'; getWheel().switchWheel(OPEN_TARGETS, { wheel: 'open', switchable: true }); }
@@ -72,6 +73,7 @@ function createDropFlow({ conversion, getWheel, getJobs, openPdfs, openImages, c
         return;
       }
       if (showing === 'convert') return;
+      if (showing === null) { flow.onOpen(selection); return; }
       const targets = conversion.targetsFor(selection);
       if (targets.length) { showing = 'convert'; getWheel().switchWheel(targets, convertView(selection, true)); }
       else getJobs().addInfo(conversion.explainNoTargets(selection));
@@ -147,6 +149,7 @@ function createDropFlow({ conversion, getWheel, getJobs, openPdfs, openImages, c
     // The card was closed (or the wheel with it): nothing is waiting for a password any more.
     onUnlockEnd() { session = null; },
   };
+  return flow;
 }
 
 module.exports = { createDropFlow };

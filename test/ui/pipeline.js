@@ -93,15 +93,17 @@ app.whenReady().then(async () => {
   check('a drop on the ring hands the pictures, and only them, to the image editor', edited.join() === png, edited.join());
   send('mu'); await sleep(900);
 
-  console.log('drag a Word file, tap Shift: the conversion wheel, with no pill');
+  console.log('drag a Word file, tap Shift: no wheel, and Ctrl then opens the conversion wheel with no pill');
   selection = { files: [file], explorer: true };
   events.length = 0; wheels.length = 0;
   send('md', '500', '500'); send('mm', '520', '520'); await sleep(100); send('kd', 'shift'); await sleep(900);
   const pillHidden = () => page(`document.getElementById('pill').hidden`);
-  check('the conversion wheel shows, and a drop on it is taken', (await showing()).startsWith('convert ') && (await dropEffect(200, 80)) === 'copy', await showing());
+  check('Shift shows no wheel, because it has nothing to do here', !overlay.win.isVisible());
+  send('kd', 'ctrl'); await sleep(900);
+  check('Ctrl opens the conversion wheel, and a drop on it is taken', overlay.win.isVisible() && (await showing()).startsWith('convert ') && (await dropEffect(200, 80)) === 'copy', await showing());
   check('and it has no pill, because Shift is of no use here', await pillHidden() === true);
   send('kd', 'shift'); await sleep(300);
-  check('Shift again changes nothing', (await showing()).startsWith('convert ') && !events.includes('switch'));
+  check('Shift again changes nothing', (await showing()).startsWith('convert '));
   send('mu'); await sleep(900);
   selection = { files: [file], explorer: true };
 
