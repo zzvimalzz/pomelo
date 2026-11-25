@@ -153,8 +153,8 @@ class WheelWindow {
 
   // info = { name, ext, group, count } describes the selection (built by the app from the format catalog); the name is already shortened.
   // pickFiles: set when the wheel comes from the right-click menu. It then takes focus, so that a click elsewhere or Esc closes it.
-  // view: { wheel: 'convert' (the default) | 'open', switchable }. switchable: the other wheel can be reached with its key, so the pill
-  // that names the key is shown.
+  // view: { wheel: 'convert' (the default) | 'open', switchable, other }. switchable: the other wheel can be reached with its key, so the
+  // pill that names the key is shown. other: what Shift is called on the conversion wheel, 'Open' (the default) or 'Edit'.
   async openWheel(info, targets, pickFiles = null, view = {}) {
     await this.loaded;
     clearTimeout(this.hideTimer);

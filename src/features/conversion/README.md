@@ -26,7 +26,7 @@ Engines and what they do:
 
 | Folder | `name` in logs and snapshots | Handles |
 |---|---|---|
-| `builtin/` | `pure` | Documents, spreadsheets, images and PDFs with no Office and no extra program (`documents.js`, `legacy-doc.js`, `spreadsheets.js`, `images.js`, `pdf.js`) |
+| `builtin/` | `pure` | Documents, spreadsheets, images and PDFs with no Office and no extra program (`documents.js`, `legacy-doc.js`, `spreadsheets.js`, `images.js`, `pdf.js`). `images.js` also exports `readImage(file, { maxPixels, maxEdge })`, which decodes a still picture to upright sRGB RGBA for the image editor and refuses an animated one (`ANIMATED`) or one over the limits (`TOO_LARGE`) |
 | `libreoffice/` | `libreoffice` | Office formats at full fidelity; `profiles.js` lends private LibreOffice profiles |
 | `pandoc/` | `pandoc` | Markup conversions |
 | `pdf-python/` | `pdf-hifi` | PDF to Word, Excel, slides, Markdown, HTML, text and EPUB through PyMuPDF (`to-pptx.js`, `to-xlsx.js`), with OCR for scans |

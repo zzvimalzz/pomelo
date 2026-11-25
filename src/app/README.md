@@ -13,7 +13,7 @@ The entry point and the wiring. `main.js` (package.json `"main"`) creates every 
 | File | Role |
 |---|---|
 | `main.js` | Start-up order, command line, the connections between features |
-| `drop-flow.js` | From the gesture to the jobs: `onOpen(files, pick, wheel)` offers the conversion wheel (or, for Shift on PDFs, the Open wheel) or explains why there is none; `onSwitch(wheel)` turns the wheel on show into the other one; `onDrop(paths, to)` makes one job per file, or opens the PDFs among the files when `to` is `open`. `describeSelection` builds what the wheel shows in its centre |
+| `drop-flow.js` | From the gesture to the jobs: `onOpen(files, pick, wheel)` offers the conversion wheel (or, for Shift on PDFs, the Open wheel, and on pictures, the Edit wheel) or explains why there is none; `onSwitch(wheel)` turns the wheel on show into the other one; `onDrop(paths, to)` makes one job per file, opens the PDFs among the files when `to` is `open`, or the pictures among them in the image editor when `to` is `edit`. `describeSelection` builds what the wheel shows in its centre |
 | `shell-menu.js` | The right-click entries "Convert with Pomelo" and, for `.pdf` files only, "Open in Pomelo" (`--open=%1`): writes and removes their registry keys (current user only), reads the `--convert` path Explorer passes, and gathers one selection's starts into a batch. `openPathsFromArgv` reads the `--open` path |
 | `output-dir.js` | `createOutputDir`: the folder from Settings while it still works, otherwise next to the original; tells the user once when it stops working |
 | `tray.js` | Tray icon (grey while paused), tooltip and menu: status, Enabled, Start with Windows, Open a PDF…, Settings, How Pomelo works, Check for updates, Quit |

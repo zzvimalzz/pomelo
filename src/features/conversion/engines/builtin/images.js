@@ -3,7 +3,7 @@
 // BMP is read through Electron's nativeImage, which is why this file may require electron.
 const fs = require('fs');
 const { uniquePath } = require('../../engine-kit/outputs');
-const { extsInGroup } = require('../../catalog/formats');
+const { extsInGroup, extOf } = require('../../catalog/formats');
 const { sharpFrom } = require('../../lib/image-input');
 
 async function sharpInput(src, from, animated = false) {
@@ -63,7 +63,18 @@ async function run({ src, from, to, dir, base }) {
   return [out];
 }
 
+// A picture for the image editor: upright (EXIF orientation applied), sRGB, 8 bits a channel with an alpha channel. It refuses an
+// animated picture and one over the limits before any pixel is decoded.
+async function readImage(src, { maxPixels, maxEdge }) {
+  const img = await sharpInput(src, extOf(src));
+  const { width, height, pages = 1, hasAlpha } = await img.metadata();
+  if (pages > 1) throw Object.assign(new Error('animated image'), { code: 'ANIMATED' });
+  if (width * height > maxPixels || Math.max(width, height) > maxEdge) throw Object.assign(new Error('image too large'), { code: 'TOO_LARGE' });
+  const { data, info } = await img.rotate().toColourspace('srgb').ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  return { data, width: info.width, height: info.height, hasAlpha };
+}
+
 const IMG_FROM = extsInGroup('image');
 const IMG_TO = ['png', 'jpg', 'webp', 'avif', 'tiff', 'bmp', 'gif', 'pdf'];
 
-module.exports = { reads: (from) => IMG_FROM.includes(from), writes: () => IMG_TO, run };
+module.exports = { reads: (from) => IMG_FROM.includes(from), writes: () => IMG_TO, run, readImage };
