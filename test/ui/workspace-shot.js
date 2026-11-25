@@ -2408,7 +2408,7 @@ app.whenReady().then(async () => {
       g = await grid(win);
       check(`${theme}: the button opens a grid of every page that takes the place of the reading view, with its name beside the icon`, g.shown && g.organising && g.scroller === 'hidden' && g.cells === 12 && g.labels === 'Page 1,Page 2' && g.pressed === 'true' && g.on && g.labelWidth > 20 && g.tooling, JSON.stringify(g));
       const ink = await js(win, `(() => { const c = document.querySelector('.cell[data-n="1"] canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let dark = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 1] < 200) dark++; return dark; })()`);
-      check(`${theme}: every thumbnail is drawn, with ink on it, and the page in view has the focus as the one Tab stop`, g.canvases === 12 && g.focused === '1' && g.stops === 1 && g.selected === '' && g.bar === '' && ink > 500, JSON.stringify([ink, g]));
+      check(`${theme}: every thumbnail is drawn, with ink on it, and the page in view has the focus as the one Tab stop`, g.canvases === 12 && g.focused === '1' && g.stops === 1 && g.selected === '' && g.bar === 'No pages selected' && ink > 500, JSON.stringify([ink, g]));
       const widths = await js(win, `[...document.querySelectorAll('.cell .sheet')].slice(0, 3).map((s) => Math.round(s.getBoundingClientRect().width)).join()`);
       check(`${theme}: a thumbnail is 160 px wide`, widths === '160,160,160', widths);
 
@@ -2542,7 +2542,7 @@ app.whenReady().then(async () => {
       check('a band with Ctrl held adds to the selection', g.selected.split(',').includes('12') && g.selected.split(',').includes('1') && g.selected.split(',').includes('2'), g.selected);
       await click(win, box);
       g = await grid(win);
-      check('a click on empty paper clears the selection and hides the bar', g.selected === '' && g.bar === '' && g.aria === 0, JSON.stringify(g));
+      check('a click on empty paper clears the selection and the bar says no pages are selected', g.selected === '' && g.bar === 'No pages selected' && g.aria === 0, JSON.stringify(g));
       const bars = await js(win, `(() => { const l = document.querySelector('.pgrid'); return { overflow: getComputedStyle(l).overflowY, track: getComputedStyle(l).scrollbarColor }; })()`);
       check('the grid scrolls with the same thin scroll bar as the pages', bars.overflow === 'auto' && /transparent|rgba\(0, 0, 0, 0\)/.test(bars.track), JSON.stringify(bars));
       await closeAndWait(win);
@@ -2716,7 +2716,9 @@ app.whenReady().then(async () => {
         await sheetsDrawn(win, 12);
         let b = await bar(win);
         const empty = await frame(win);
-        check(`${theme}: the bar is there with nothing selected, with Rotate left, Rotate right, Delete, Undo and Redo, and every one of them off`, b.shown && b.titles === 'Rotate left|Rotate right|Delete (Del)|Undo (Ctrl+Z)|Redo (Ctrl+Y)' && b.disabled === '11111' && b.count === '', JSON.stringify(b));
+        check(`${theme}: the bar is there with nothing selected, with Rotate left, Rotate right, Delete, Undo and Redo, and every one of them off`, b.shown && b.titles === 'Rotate left|Rotate right|Delete (Del)|Undo (Ctrl+Z)|Redo (Ctrl+Y)' && b.disabled === '11111' && b.count === 'No pages selected', JSON.stringify(b));
+        const room = await js(win, `(() => { const c = document.querySelector('.optbar .count'); return { text: c.scrollWidth, box: c.clientWidth }; })()`);
+        check(`${theme}: "No pages selected" fits its place in the bar (${room.text} of ${room.box} px)`, room.text <= room.box, JSON.stringify(room));
 
         await press(win, 'Right');
         const focus = await js(win, `(() => { const c = document.activeElement; const s = c.querySelector('.sheet'); return { cell: c.classList.contains('cell'), box: getComputedStyle(c).outlineStyle, ring: getComputedStyle(s).outlineStyle, focusVisible: c.matches(':focus-visible') }; })()`);

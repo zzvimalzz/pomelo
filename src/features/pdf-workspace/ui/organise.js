@@ -125,11 +125,11 @@
       for (const n of selected) if (!next.has(n)) { cell(n).classList.remove('sel'); cell(n).setAttribute('aria-selected', 'false'); }
       for (const n of next) if (!selected.has(n)) { cell(n).classList.add('sel'); cell(n).setAttribute('aria-selected', 'true'); }
       selected = next;
-      count.textContent = next.size ? `${next.size} selected` : '';
       enable();
     }
 
     function enable() {
+      count.textContent = selected.size ? `${selected.size} selected` : 'No pages selected';
       turnLeft.disabled = turnRight.disabled = trash.disabled = !selected.size;
       undo.disabled = !tab?.doc.canUndo;
       redo.disabled = !tab?.doc.canRedo;

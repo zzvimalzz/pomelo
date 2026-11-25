@@ -261,7 +261,7 @@ body.focus:not(.reveal-dock):not(.tooling) .dockwrap:not(:focus-within) :is(.doc
 .sm:hover { background: var(--hover); color: var(--txt); }
 .sm .i { width: 16px; height: 16px; }
 .sm:disabled { opacity: .35; pointer-events: none; }
-.optbar .count { width: 96px; padding: 0 6px; box-sizing: border-box; text-align: center; color: var(--txt); font-size: 12px; font-variant-numeric: tabular-nums; }
+.optbar .count { width: 120px; padding: 0 6px; box-sizing: border-box; text-align: center; color: var(--txt); font-size: 12px; font-variant-numeric: tabular-nums; }
 .pagebox { display: flex; align-items: center; gap: 0; height: 30px; padding: 0 8px 0 4px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pageno { height: 24px; padding: 0 4px 2px; text-align: center; border: 1px solid transparent; border-radius: 6px; background: transparent; font: inherit; font-weight: 700; color: var(--txt); outline: none; }
 .pageno:hover { border-color: var(--field-line); background: var(--field); }
