@@ -55,7 +55,8 @@ function createRevisions(first) {
     return retire(old);
   }
 
-  const markSaved = () => { saved = list[at]; };
+  // What was saved is the file now: the pages it holds are no longer new, and later changes are counted from it.
+  const markSaved = () => { saved = list[at]; saved.base = saved.layout = undefined; };
   const dispose = () => Promise.all(list.map(retire));
 
   return { current, dirty, canUndo, canRedo, undo, redo, push, replaceFirst, markSaved, acquire, release, dispose };

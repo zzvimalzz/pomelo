@@ -49,6 +49,7 @@ const workspace = createWorkspace({
   openExternal: (url) => shell.openExternal(url), copyText: (text) => clipboard.writeText(text), uniquePath: conversion.uniquePath,
   runPdfTool: conversion.runPdfTool, showInFolder: (file) => shell.showItemInFolder(file),
   hasPdfEngine: () => !!conversion.getEngines().pdf, installEngine: (key, onNote) => setup.run(key, onNote),
+  probeLocked: conversion.probeLocked, checkPassword: conversion.checkPassword,
 });
 const showPdf = (paths) => workspace.open(paths).catch((e) => log('PDF window failed:', e.message));
 const editor = createEditor({

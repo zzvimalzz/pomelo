@@ -8,7 +8,7 @@ const os = require('os');
 const path = require('path');
 const { fileIdentity, sameFile, replaceFile, makeTempDir, sweepTempDirs, removeDirReliably, withTempFile } = require('#shared/node/fs');
 const { passwordBuffer } = require('#shared/node/secrets');
-const { check, arrange } = require('./ops');
+const { check, arrange, OPS } = require('./ops');
 const { createRevisions } = require('./revisions');
 
 const MAX_SPAN = 4 * 1048576;
@@ -17,21 +17,26 @@ const SESSION_TAG = 'pdfws';
 const FREE_MARGIN = 64 * 1048576;
 const MIN_BUDGET = 2 * 1024 ** 3;
 const MAX_TRACKED_PAGES = 50000;
+const MAX_SOURCES = 100;
 const CHANGED = { stop: 'changed' };
 const DEVICE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 const IN_USE = new Set(['EBUSY', 'EPERM', 'EACCES']);
 
 const badName = (name) => !name || name.length > 200 || /[\\/:*?"<>|]/.test(name) || [...name].some((c) => c < ' ') || /[. ]$/.test(name) || DEVICE_NAME.test(name);
-const info = (doc) => ({ token: doc.token, name: doc.name, size: doc.revisions.current().size, dirty: doc.revisions.dirty(), canUndo: doc.revisions.canUndo(), canRedo: doc.revisions.canRedo() });
+// The numbers of the pages that were not in the file when it was opened.
+const addedPages = (rev) => (rev.layout?.pages ?? []).flatMap(([from], i) => (from ? [] : [i + 1]));
+const info = (doc) => ({ token: doc.token, name: doc.name, size: doc.revisions.current().size, dirty: doc.revisions.dirty(), canUndo: doc.revisions.canUndo(), canRedo: doc.revisions.canRedo(), added: addedPages(doc.revisions.current()) });
 const keyOf = (file) => path.resolve(file).toLowerCase();
 const metaOf = (values) => JSON.stringify(['title', 'author', 'subject', 'keywords'].map((key) => values[key] ?? ''));
 const driveOf = (where) => path.parse(path.resolve(where)).root.replace(/\\$/, '');
 const freeBytes = async (dir) => { const f = await fs.promises.statfs(dir); return f.bavail * f.bsize; };
 
 // runPdfTool(script, args, { src, signal, secrets }): runs a PDF editing helper (the app hands in the conversion feature's).
-function createDocuments({ runPdfTool } = {}) {
+// checkPassword(file, password): resolves whether a Buffer opens a PDF.
+function createDocuments({ runPdfTool, checkPassword } = {}) {
   const byToken = new Map();
   const passwords = new Map();
+  const sources = new Map();
 
   const get = (token) => {
     const doc = typeof token === 'string' ? byToken.get(token) : null;
@@ -147,14 +152,52 @@ function createDocuments({ runPdfTool } = {}) {
     });
   }
 
+  // A file picked or dropped to be inserted into a document. The page gets an id for it and never the path; a list of changes names the
+  // file by that id. Only the newest ones are kept.
+  function addSource(file, kind) {
+    const id = crypto.randomBytes(16).toString('hex');
+    sources.set(id, { file, kind, password: null });
+    if (sources.size > MAX_SOURCES) forgetSources([sources.keys().next().value]);
+    return id;
+  }
+
+  function forgetSources(ids) {
+    for (const id of ids) {
+      sources.get(id)?.password?.fill(0);
+      sources.delete(id);
+    }
+  }
+
+  // Resolves whether the password opens the PDF behind the id, and keeps it in memory for the next list of changes that names it.
+  async function unlockSource(id, password) {
+    const source = typeof id === 'string' ? sources.get(id) : null;
+    if (!source) throw new Error('unknown file');
+    const secret = passwordBuffer(password);
+    const right = await checkPassword(source.file, secret).catch(() => false);
+    if (!right) { secret.fill(0); return false; }
+    source.password?.fill(0);
+    source.password = secret;
+    return true;
+  }
+
+  const sourceSecrets = (token, ids) => {
+    const locked = Object.fromEntries(ids.filter((id) => sources.get(id)?.password).map((id) => [id, sources.get(id).password.toString('utf8')]));
+    return Object.keys(locked).length ? { ...secretsOf(token), sources: locked } : secretsOf(token);
+  };
+
   // A checked list of changes that the PDF engine makes to the revision on show; the result is the next revision. The helper reads and
   // writes only files in the session folder, and the password reaches it on its standard input. Closing the document stops it. Throws
   // for a list that is not allowed; otherwise resolves like putRevision, and rejects with the helper's reason when it fails.
   function apply(token, ops) {
     const doc = get(token);
     const list = check(ops);
+    if (list.some((op) => OPS[op.op].kind === 'output')) throw new Error('that change makes a new file');
+    const taken = list.flatMap((op) => op.sources ?? []);
     return serial(doc, async () => {
-      const room = await prepare(doc, 2 * doc.revisions.current().size + FREE_MARGIN);
+      const files = taken.map((id) => sources.get(id)?.file);
+      if (files.includes(undefined)) throw new Error('A file to insert is no longer available.');
+      const inserted = (await Promise.all(files.map((file) => fs.promises.stat(file).then((stat) => stat.size)))).reduce((sum, size) => sum + size, 0);
+      const room = await prepare(doc, 2 * doc.revisions.current().size + inserted + FREE_MARGIN);
       if (room.stop) return room;
       const from = doc.revisions.current();
       const source = from.file;
@@ -163,21 +206,43 @@ function createDocuments({ runPdfTool } = {}) {
       const out = path.join(doc.session, `revision-${++doc.count}.pdf`);
       const listFile = path.join(doc.session, `ops-${doc.count}.json`);
       try {
-        await fs.promises.writeFile(listFile, JSON.stringify({ version: 1, ops: list }));
-        const said = await runPdfTool('pdf_edit.py', [source, out, listFile], { src: source, signal: doc.stop.signal, secrets: secretsOf(token) });
+        const named = list.map((op) => (op.sources ? { ...op, sources: op.sources.map((id) => ({ id, file: sources.get(id).file, kind: sources.get(id).kind })) } : op));
+        await fs.promises.writeFile(listFile, JSON.stringify({ version: 1, ops: named }));
+        const said = await runPdfTool('pdf_edit.py', [source, out, listFile], { src: source, signal: doc.stop.signal, secrets: sourceSecrets(token, taken) });
         const count = Number(/"pages": (\d+)/.exec(said)?.[1]);
+        const added = JSON.parse(/"added": (\[[\d, ]*\])/.exec(said)?.[1] ?? '[]');
         const lineage = { base: from.base ?? from, layout: from.layout };
         let kin = {};
         if (metaOnly) kin = { ...lineage, meta: metaOf(list.at(-1)) };
-        else if (pagesOnly && count > 0 && count <= MAX_TRACKED_PAGES) kin = { ...lineage, metaFrom: from, layout: arrange(from.layout, count, list) };
+        else if (pagesOnly && count > 0 && count <= MAX_TRACKED_PAGES) kin = { ...lineage, metaFrom: from, layout: arrange(from.layout, count, list, added) };
         const made = await adopt(doc, out, (await fs.promises.stat(out)).size, room.free, kin);
         return { ...made, reload: !(metaOnly && /"saved": "incremental"/.test(said)) };
       } catch (e) {
         await fs.promises.rm(out, { force: true });
         throw e;
       } finally {
+        forgetSources(taken);
         await fs.promises.rm(listFile, { force: true });
       }
+    });
+  }
+
+  // Writes the pages as a new PDF at `target`, leaving the document and its revisions as they are. Resolves { done } or { stop } like
+  // saveCopy, and rejects with the helper's reason when it fails.
+  function extract(token, pages, target) {
+    const [change] = check([{ op: 'pages.extract', pages }]);
+    const doc = get(token);
+    return serial(doc, async () => {
+      const source = doc.revisions.current();
+      const free = await freeBytes(os.tmpdir());
+      if (free < source.size + FREE_MARGIN) return stopped(doc, 'no-space', os.tmpdir());
+      const there = await fileIdentity(target).catch((e) => { if (e.code === 'ENOENT') return null; throw e; });
+      return withTempFile('pdf', (out) => withTempFile('json', async (listFile) => {
+        await fs.promises.writeFile(listFile, JSON.stringify({ version: 1, ops: [change] }));
+        await runPdfTool('pdf_edit.py', [source.file, out, listFile], { src: source.file, signal: doc.stop.signal, secrets: secretsOf(token) });
+        const result = await replaceFile(out, target, there);
+        return result.stop ? stopped(doc, result.stop, target) : { done: true };
+      }));
     });
   }
 
@@ -302,12 +367,13 @@ function createDocuments({ runPdfTool } = {}) {
     byToken.clear();
     for (const secret of passwords.values()) secret.fill(0);
     passwords.clear();
+    forgetSources([...sources.keys()]);
     return Promise.all(ending);
   }
 
   const served = () => [...byToken.values()].reduce((sum, doc) => sum + doc.served, 0);
 
-  return { open, find, list, read, unlock, password, fileOf, putRevision, apply, facts, details, rename, undo, redo, save, saveCopy, reload, close, closeAll, served };
+  return { open, find, list, read, unlock, password, fileOf, putRevision, apply, addSource, unlockSource, extract, facts, details, rename, undo, redo, save, saveCopy, reload, close, closeAll, served };
 }
 
 const sweepSessions = () => sweepTempDirs(SESSION_TAG, 24 * 3600 * 1000);

@@ -4,6 +4,7 @@
 const os = require('os');
 const path = require('path');
 const { createDocuments, sweepSessions } = require('./documents');
+const { check, pageRanges, PICTURE_EXTENSIONS } = require('./ops');
 const { linkTarget } = require('./links');
 const { addRecent, startFolder } = require('./recent');
 const { cleanView } = require('./view');
@@ -13,6 +14,7 @@ const WINDOWS_11 = 22621;
 const DOCKS = ['bottom', 'top', 'left', 'right'];
 const MAX_COPIED = 100000;
 const MAX_TABS = 10;
+const MAX_INSERTED = 50;
 
 const WHY_NOT_SAVED = {
   locked: ({ name }) => `${name} is open in another program. Close it there, or save a copy.`,
@@ -30,10 +32,10 @@ const REASONS = {
 // notice in the corner of the screen. log(...). openExternal(url): open an address with the program Windows has for it, as a promise.
 // copyText(text): put text on the clipboard. uniquePath(dir, base, ext): a path that does not exist yet. runPdfTool(script, args, { src, signal, secrets }): run a
 // PDF editing helper with the PDF engine. showInFolder(file): show a file in Explorer. hasPdfEngine(): is the PDF engine installed. installEngine(key, onNote):
-// install an engine as the Engines page does, calling onNote(note, fraction) as it goes, and resolve { ok, message }. solid: draw an opaque window; by default only
-// before Windows 11.
-function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, uniquePath, runPdfTool, showInFolder, hasPdfEngine, installEngine, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
-  const documents = createDocuments({ runPdfTool });
+// install an engine as the Engines page does, calling onNote(note, fraction) as it goes, and resolve { ok, message }. probeLocked(file): does a PDF need a
+// password to open. checkPassword(file, password): does this Buffer open it. solid: draw an opaque window; by default only before Windows 11.
+function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, uniquePath, runPdfTool, showInFolder, hasPdfEngine, installEngine, probeLocked, checkPassword, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
+  const documents = createDocuments({ runPdfTool, checkPassword });
   let win = null;
   let queue = Promise.resolve();
   let leaving = false;
@@ -141,18 +143,56 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     }
   }
 
-  async function saveAs(token) {
+  // Saves a copy, and with `openCopy` shows it in a tab of its own: `copied` in the answer tells the page to close this document.
+  async function saveAs(token, openCopy) {
     const file = documents.fileOf(token);
     const suggested = uniquePath(path.dirname(file), `${path.basename(file, path.extname(file))} (edited)`, 'pdf');
     const target = await require('./workspace.window').chooseSavePath(win, suggested);
     if (!target) return { stop: 'cancelled' };
     const same = path.resolve(target).toLowerCase() === path.resolve(file).toLowerCase();
-    return revised(same ? documents.save(token) : documents.saveCopy(token, target), false);
+    const result = await revised(same ? documents.save(token) : documents.saveCopy(token, target), false);
+    if (!openCopy || same || !result?.info) return result;
+    const open = documents.find(target);
+    if (open) await revised(documents.reload(open.token), true);
+    await add([target]);
+    return { ...result, copied: !!documents.find(target) };
   }
 
   async function installPdfEngine() {
     const { ok, message } = await installEngine('pdf', (note, fraction) => win?.webContents.send('pdfws:install-note', { note, fraction }));
     return { ok, message };
+  }
+
+  // The PDFs and pictures among these paths, each as { id, name, kind, locked } for the page, which names a file by its id from then on.
+  async function sourcesOf(paths) {
+    const found = [];
+    for (const file of Array.isArray(paths) ? paths.slice(0, MAX_INSERTED) : []) {
+      if (typeof file !== 'string' || !path.isAbsolute(file)) continue;
+      const ext = path.extname(file).slice(1).toLowerCase();
+      const kind = ext === 'pdf' ? 'pdf' : PICTURE_EXTENSIONS.includes(ext) ? 'image' : null;
+      if (kind) found.push({ id: documents.addSource(file, kind), name: path.basename(file), kind, locked: kind === 'pdf' && !!(await probeLocked(file)) });
+    }
+    if (!found.length) notify({ title: "Can't insert these files", detail: 'Only PDFs and pictures can be inserted.' });
+    return found;
+  }
+
+  async function chooseSources(kind) {
+    if (kind !== 'pdf' && kind !== 'image') return [];
+    const files = await require('./workspace.window').chooseInsert(win, kind, startFolder(getSettings().pdfRecent));
+    return files.length ? sourcesOf(files) : [];
+  }
+
+  // The pages go to a new file the user names; the document and its changes are as they were. Resolves { done } or { stop }.
+  async function extract(token, pages) {
+    const [{ pages: wanted }] = check([{ op: 'pages.extract', pages }]);
+    const file = documents.fileOf(token);
+    const suggested = uniquePath(path.dirname(file), `${path.basename(file, path.extname(file))} (pages ${pageRanges(wanted)})`, 'pdf');
+    const target = await require('./workspace.window').chooseSavePath(win, suggested, wanted.length === 1 ? 'Extract a page' : 'Extract pages');
+    if (!target) return { stop: 'cancelled' };
+    const result = await documents.extract(token, wanted, target).catch(applyFailed);
+    if (!result.done) return revised(Promise.resolve(result), false);
+    notify({ title: wanted.length === 1 ? 'Page extracted' : 'Pages extracted', detail: path.basename(target) });
+    return result;
   }
 
   function openLink(url) {
@@ -181,6 +221,10 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     putRevision: (token, bytes) => revised(documents.putRevision(token, bytes), false),
     apply: (token, ops) => revised(documents.apply(token, ops).catch(applyFailed), true),
     properties,
+    chooseSources,
+    dropSources: sourcesOf,
+    unlockSource: documents.unlockSource,
+    extract,
     details: documents.details,
     rename: (token, name) => revised(documents.rename(token, name), false),
     showInFolder: (token) => showInFolder(documents.fileOf(token)),

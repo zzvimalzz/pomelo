@@ -17,7 +17,7 @@ contextBridge.exposeInMainWorld('workspaceApi', {
   undo: (token) => ipcRenderer.invoke('pdfws:undo', token),
   redo: (token) => ipcRenderer.invoke('pdfws:redo', token),
   save: (token) => ipcRenderer.invoke('pdfws:save', token),
-  saveAs: (token) => ipcRenderer.invoke('pdfws:save-as', token),
+  saveAs: (token, openCopy) => ipcRenderer.invoke('pdfws:save-as', token, openCopy),
   reload: (token) => ipcRenderer.invoke('pdfws:reload', token),
   closeWindow: () => ipcRenderer.invoke('pdfws:close-window'),
   setDock: (side) => ipcRenderer.invoke('pdfws:dock', side),
@@ -32,13 +32,21 @@ contextBridge.exposeInMainWorld('workspaceApi', {
   onInstallNote: (cb) => ipcRenderer.on('pdfws:install-note', (_e, progress) => cb(progress)),
   onClosing: (cb) => ipcRenderer.on('pdfws:closing', () => cb()),
   onOpened: (cb) => ipcRenderer.on('pdfws:opened', (_e, documents) => cb(documents)),
+  chooseSources: (kind) => ipcRenderer.invoke('pdfws:choose-sources', kind),
+  unlockSource: (id, password) => ipcRenderer.invoke('pdfws:unlock-source', id, password),
+  extract: (token, pages) => ipcRenderer.invoke('pdfws:extract', token, pages),
+  onFilesDropped: (cb) => { dropped = cb; },
 });
 
-// A drop is read here and sent on, so the page never sees a path. A drop made up by a script has no file behind it.
+// A drop is read here and sent on, so the page never sees a path. A drop made up by a script has no file behind it. On the grid of pages
+// the files are offered to the page to insert; anywhere else they are opened.
+let dropped = null;
 const carriesFiles = (e) => e.isTrusted && e.dataTransfer.types.includes('Files');
 document.addEventListener('dragover', (e) => { if (carriesFiles(e)) e.preventDefault(); });
 document.addEventListener('drop', (e) => {
   if (!carriesFiles(e)) return;
   e.preventDefault();
-  ipcRenderer.invoke('pdfws:drop', [...e.dataTransfer.files].map((file) => webUtils.getPathForFile(file)).filter(Boolean));
+  const paths = [...e.dataTransfer.files].map((file) => webUtils.getPathForFile(file)).filter(Boolean);
+  if (e.target.closest?.('.pgrid')) ipcRenderer.invoke('pdfws:drop-sources', paths).then((sources) => dropped?.(sources));
+  else ipcRenderer.invoke('pdfws:drop', paths);
 });
