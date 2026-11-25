@@ -10,6 +10,7 @@ const lock = require('./engine-kit/lock');
 const { uniquePath } = require('./engine-kit/outputs');
 const { withContext } = require('./engine-kit/context');
 const { runHelper } = require('./engine-kit/python');
+const { readImage } = require('./engines/builtin/images');
 
 // Every extension Pomelo can read (spellings like .jpeg included), for the right-click menu. Folders are registered on their own.
 const sourceExts = [...Object.keys(TARGET_ORDER).filter((e) => e !== 'folder'), ...Object.keys(ALIASES)];
@@ -33,4 +34,4 @@ function runPdfTool(script, args, { src, onProgress, signal, secrets } = {}) {
 // extensions that start slowly (LibreOffice) or are pictures.
 const timingFormats = { extOf, kinds: { office: new Set(Object.values(OFFICE).flat()), picture: new Set(extsInGroup('image')) } };
 
-module.exports = { uniquePath, runPdfTool, detectEngines, getEngines, targetsFor, canConvert, convertFile, probeLocked, checkPassword, plansFor, explainNoTargets, extOf, groupOf, labelOf, timingFormats, sourceExts };
+module.exports = { uniquePath, runPdfTool, readImage, detectEngines, getEngines, targetsFor, canConvert, convertFile, probeLocked, checkPassword, plansFor, explainNoTargets, extOf, groupOf, labelOf, timingFormats, sourceExts };

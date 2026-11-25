@@ -18,6 +18,7 @@ const updates = require('../features/updates');
 const engineSetup = require('../features/engine-setup');
 const { registerUninstallIpc } = require('../features/uninstall');
 const { createWorkspace } = require('../features/pdf-workspace');
+const { createEditor } = require('../features/image-editor');
 const { createTray } = require('./tray');
 const { createDropFlow } = require('./drop-flow');
 const { createOutputDir, folderName } = require('./output-dir');
@@ -50,6 +51,11 @@ const workspace = createWorkspace({
   hasPdfEngine: () => !!conversion.getEngines().pdf, installEngine: (key, onNote) => setup.run(key, onNote),
 });
 const showPdf = (paths) => workspace.open(paths).catch((e) => log('PDF window failed:', e.message));
+const editor = createEditor({
+  asset, getSettings: () => settings.get(), setSettings: (patch) => settings.set(patch), notify: (message) => jobs?.addInfo(message), log,
+  readImage: conversion.readImage, showInFolder: (file) => shell.showItemInFolder(file), extOf: conversion.extOf,
+});
+const showImages = (paths) => editor.open(paths).catch((e) => log('image window failed:', e.message));
 const installer = engineSetup.createInstaller({ redetect: () => conversion.detectEngines() });
 let tray, wheel, jobs, trigger, helper, setup;
 
@@ -101,7 +107,7 @@ app.whenReady().then(async () => {
   helper = new InputHelper();
   helper.start();
 
-  flow = createDropFlow({ conversion, getWheel: () => wheel, getJobs: () => jobs, openPdfs: showPdf, keysSupported: () => helper.keysSupported, log });
+  flow = createDropFlow({ conversion, getWheel: () => wheel, getJobs: () => jobs, openPdfs: showPdf, openImages: showImages, canEdit: editor.editable, keysSupported: () => helper.keysSupported, log });
   wheel = new WheelWindow({ onDrop: flow.onDrop, onUnlock: flow.onUnlock, onUnlockEnd: flow.onUnlockEnd, onExpire: flow.onExpire, icon: asset('icon.png') });
   wheel.create();
   jobs = new Jobs({
@@ -128,6 +134,7 @@ app.whenReady().then(async () => {
 
   workspace.registerIpc();
   workspace.sweepSessions();
+  editor.registerIpc();
   setup = engineSetup.registerEngineSetupIpc({ installer, getEngines: conversion.getEngines, sendToSettings, log });
   let justUpdated = updates.updatedStart(process.argv, app.getVersion());      // Settings says so the first time it opens, not every time
   registerSettingsIpc({
@@ -172,4 +179,4 @@ app.whenReady().then(async () => {
   }
 });
 
-app.on('will-quit', () => { stopAll(helper); workspace.closeAll(); });
+app.on('will-quit', () => { stopAll(helper); workspace.closeAll(); editor.closeAll(); });

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // From the gesture to the jobs: the selection the user is dragging becomes a wheel of formats (or an explanation of why there is
-// none), and files dropped on a segment become one job each. The Open wheel, which Shift shows for PDFs only, has one target: PDFs dropped
-// on it are opened in the PDF workspace. A file that needs a password is held back: the wheel asks for it, and the job starts once it opens.
+// none), and files dropped on a segment become one job each. Shift shows a wheel with one target for PDFs (Open: they are opened in the
+// PDF workspace) and for pictures (Edit: they are opened in the image editor). A file that needs a password is held back: the wheel asks
+// for it, and the job starts once it opens.
 const crypto = require('crypto');
 const path = require('path');
 const { middleEllipsis } = require('#shared/core/text');
@@ -14,11 +15,13 @@ function describeSelection(files, conversion) {
 }
 
 const OPEN_TARGETS = [{ id: 'open', label: 'Open', icon: 'book' }];
+const EDIT_TARGETS = [{ id: 'edit', label: 'Edit', icon: 'pencil' }];
+const EDIT_VIEW = { wheel: 'open', switchable: true, other: 'Edit' };
 
 // conversion: the conversion feature's public API. getWheel() / getJobs(): the wheel window and the job list, which are created
-// after this. openPdfs(paths): show PDFs in the PDF workspace. keysSupported(): the input helper reports Shift, so the conversion wheel
-// can name it. log(...)
-function createDropFlow({ conversion, getWheel, getJobs, openPdfs, keysSupported, log }) {
+// after this. openPdfs(paths): show PDFs in the PDF workspace. openImages(paths): show pictures in the image editor. canEdit(file): the
+// image editor can open this file. keysSupported(): the input helper reports Shift, so the conversion wheel can name it. log(...)
+function createDropFlow({ conversion, getWheel, getJobs, openPdfs, openImages, canEdit, keysSupported, log }) {
   let selection = [];            // the files the wheel on show was opened for
   let session = null;            // the protected files of the last drop that are still waiting for a password: { to, files: Map(token -> { file, kind }) }
   const isPdf = (file) => conversion.extOf(file) === 'pdf';
@@ -39,26 +42,34 @@ function createDropFlow({ conversion, getWheel, getJobs, openPdfs, keysSupported
   }
 
   const allPdfs = (files) => files.every(isPdf);
+  const allImages = (files) => files.every(canEdit);
+  // The conversion wheel names the key of the other wheel: Shift is Open for PDFs and Edit for pictures.
+  const convertView = (files, switchable) => ({ wheel: 'convert', switchable, ...(allImages(files) && { other: 'Edit' }) });
 
   return {
-    // The gesture, or the right-click menu (pick), opened on these files: offer the formats (or, for Shift on PDFs, the Open wheel), or
-    // say why there are none. Shift on anything else shows the conversion wheel, as Ctrl does.
+    // The gesture, or the right-click menu (pick), opened on these files: offer the formats (or, for Shift on PDFs, the Open wheel and, for
+    // Shift on pictures, the Edit wheel), or say why there are none. Shift on anything else shows the conversion wheel, as Ctrl does.
     async onOpen(files, pick = false, wheel = 'convert') {
       selection = files;
       const info = describeSelection(files, conversion);
       if (wheel === 'open' && allPdfs(files)) { getWheel().openWheel(info, OPEN_TARGETS, null, { wheel: 'open', switchable: true }); return; }
+      if (wheel === 'open' && allImages(files)) { getWheel().openWheel(info, EDIT_TARGETS, null, EDIT_VIEW); return; }
       const targets = conversion.targetsFor(files);
-      if (targets.length) { getWheel().openWheel(info, targets, pick ? files : null, { wheel: 'convert', switchable: !pick && keysSupported() && allPdfs(files) }); return; }
+      if (targets.length) { getWheel().openWheel(info, targets, pick ? files : null, convertView(files, !pick && keysSupported() && (allPdfs(files) || allImages(files)))); return; }
       log('nothing to offer for', files);
       getJobs().addInfo(conversion.explainNoTargets(files));
     },
 
     // The key of the other wheel was pressed: the wheel on show turns into it. It stays as it is when there is nothing to convert to,
-    // and Shift does nothing when the files are not all PDFs.
+    // and Shift does nothing when the files are not all PDFs or all pictures.
     onSwitch(wheel) {
-      if (wheel === 'open') { if (allPdfs(selection)) getWheel().switchWheel(OPEN_TARGETS, { wheel: 'open', switchable: true }); return; }
+      if (wheel === 'open') {
+        if (allPdfs(selection)) getWheel().switchWheel(OPEN_TARGETS, { wheel: 'open', switchable: true });
+        else if (allImages(selection)) getWheel().switchWheel(EDIT_TARGETS, EDIT_VIEW);
+        return;
+      }
       const targets = conversion.targetsFor(selection);
-      if (targets.length) getWheel().switchWheel(targets, { wheel: 'convert', switchable: true });
+      if (targets.length) getWheel().switchWheel(targets, convertView(selection, true));
       else getJobs().addInfo(conversion.explainNoTargets(selection));
     },
 
@@ -70,6 +81,11 @@ function createDropFlow({ conversion, getWheel, getJobs, openPdfs, keysSupported
       if (to === OPEN_TARGETS[0].id) {
         const pdfs = paths.filter(isPdf);
         if (pdfs.length) openPdfs(pdfs);
+        return [];
+      }
+      if (to === EDIT_TARGETS[0].id) {
+        const pictures = paths.filter(canEdit);
+        if (pictures.length) openImages(pictures);
         return [];
       }
       const jobs = getJobs();

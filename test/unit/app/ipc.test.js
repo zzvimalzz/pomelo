@@ -45,6 +45,12 @@ require(path.join(features, 'pdf-workspace', 'workspace.ipc')).registerWorkspace
   engine: () => { revisions.push(['engine']); return true; }, installEngine: () => { revisions.push(['install-engine']); return { ok: true }; },
   setFocus: (on) => focused.push(on), setDock: (side) => docks.push(side), setView: (patch) => views.push(patch), checkLink: (url) => (url === 'https://ok.test/' ? url : null), openLink: (url) => opened.push(url), copyLink: (url) => copied.push(url), copyLinks: (urls) => { copied.push(urls); return urls.length; }, isWorkspace: (sender) => sender === 'the workspace page',
 });
+const imaged = [];
+require(path.join(features, 'image-editor', 'editor.ipc')).registerEditorIpc({
+  images: { pixels: (...args) => { imaged.push(['pixels', ...args]); return 'bytes'; }, pixelsDone: (token) => imaged.push(['pixels-done', token]) },
+  state: () => ({ images: [] }), closeImage: (token) => imaged.push(['close', token]), openDropped: (paths) => imaged.push(['drop', paths]), showInFolder: (token) => imaged.push(['show', token]),
+  setView: (patch) => imaged.push(['view', patch]), setFullScreen: (on) => imaged.push(['full-screen', on]), closeWindow: () => imaged.push(['close-window']), isEditor: (sender) => sender === 'the editor page',
+});
 require(path.join(features, 'engine-setup', 'engine-setup.ipc')).registerEngineSetupIpc({ installer: {}, getEngines: noop, ...quiet });
 require(path.join(features, 'updates', 'updates.ipc')).registerUpdatesIpc({ current: '0.0.0', autoCheck: {}, onChecked: noop, isPackaged: false, execPath: '', isSettingsOpen: noop, downloader: {}, stopForUpdate: noop, exit: noop, ...quiet });
 require(path.join(features, 'uninstall', 'uninstall.ipc')).registerUninstallIpc({ installer: {}, getWindow: noop, setLoginItem: noop, isPackaged: false, execPath: '', quit: noop, log: noop });
@@ -92,6 +98,13 @@ const revisionCalls = [['put-revision', 'token', new Uint8Array(4)], ['apply', '
 expect('another page cannot put a revision, ask for a change, step through them, save, reload, close the window, ask about a document, rename it, show it, ask about the PDF engine or install it', revisionCalls.every(([channel, ...args]) => refused(() => handlers[`pdfws:${channel}`]({ sender: 'another page' }, ...args))) && revisions.length === 0);
 for (const [channel, ...args] of revisionCalls) handlers[`pdfws:${channel}`]({ sender: 'the workspace page' }, ...args);
 expect('the workspace page can', JSON.stringify(revisions.map((r) => r[0])) === '["put","apply","undo","redo","save","save-as","reload","close-window","properties","details","rename","show","engine","install-engine"]' && revisions[0][1] === 'token' && revisions[0][2].length === 4, JSON.stringify(revisions));
+
+// Only the image editor's own page may ask for a picture's pixels or change its window.
+const editorCalls = [['state'], ['pixels', 'token', 0, 4], ['pixels-done', 'token'], ['close', 'token'], ['drop', ['C:/a.png']], ['show', 'token'], ['view', { panel: true }], ['full-screen', true], ['close-window']];
+expect('another page cannot ask the editor for anything', editorCalls.every(([channel, ...args]) => refused(() => handlers[`imged:${channel}`]({ sender: 'another page' }, ...args))) && imaged.length === 0);
+for (const [channel, ...args] of editorCalls) handlers[`imged:${channel}`]({ sender: 'the editor page' }, ...args);
+handlers['imged:full-screen']({ sender: 'the editor page' }, 'yes');
+expect('the editor page can, and full screen is only ever on or off', JSON.stringify(imaged.map((c) => c[0])) === '["pixels","pixels-done","close","drop","show","view","full-screen","close-window","full-screen"]' && imaged.at(-1)[1] === false && imaged[0][1] === 'token', JSON.stringify(imaged));
 
 // Only the wheel page may send a password, and only in the one shape the card uses.
 const unlockBad = [['another page', { token: 't', password: 'p', all: false }], ['the wheel page', null], ['the wheel page', { token: 1, password: 'p', all: false }], ['the wheel page', { token: 't', password: 5, all: false }], ['the wheel page', { token: 't', password: 'p', all: 'yes' }]];
