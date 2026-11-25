@@ -13,6 +13,9 @@ childProcess.execFile = (cmd, args, options, callback) => { spawned.push({ args,
 
 const conversion = require('../../../src/features/conversion');
 const { scriptPath } = require('../../../src/shared/node/paths');
+const { run: runProcess } = require('../../../src/features/conversion/engine-kit/run');
+const { withContext } = require('../../../src/features/conversion/engine-kit/context');
+const { sleep } = require('../../../src/shared/node/fs');
 const { expect } = require('../../support/expect');
 const finish = require('../../support/finish');
 const tmp = require('../../support/tmp');
@@ -261,10 +264,19 @@ const bytes = fs.readFileSync(draw);
 
   console.log('stopping');
   const stopped = at('stopped.pdf');
+  const early = new AbortController();
+  early.abort();
+  const refused = await tool(draw, stopped, list(rotate([1])), undefined, { signal: early.signal }).then(() => 'finished', (e) => e.name);
+  expect('a stop asked for before the helper starts is refused with a cancellation and leaves no file', refused === 'CancelledError' && !fs.existsSync(stopped), refused);
+  // The three-page edit ends in about the time taking its process down takes on a busy runner, so it cannot be stopped on cue; a helper that waits can.
+  const started = at('started.txt');
   const controller = new AbortController();
-  setTimeout(() => controller.abort(), 30);
-  const why = await tool(draw, stopped, list(rotate([1])), undefined, { signal: controller.signal }).then(() => 'finished', (e) => e.name);
-  expect('stopping the helper kills it and leaves no file', why === 'CancelledError' && !fs.existsSync(stopped), why);
+  const sleeper = 'import sys, time\nopen(sys.argv[1], "w").close()\ntime.sleep(60)\nopen(sys.argv[2], "w").close()';
+  const waiting = withContext({ signal: controller.signal, outputs: [] }, () => runProcess(py, ['-c', sleeper, started, stopped])).then(() => 'finished', (e) => e.name);
+  for (let waited = 0; waited < 20000 && !fs.existsSync(started); waited += 20) await sleep(20);
+  controller.abort();
+  const why = await waiting;
+  expect('stopping a helper that is running kills it and leaves no file', why === 'CancelledError' && !fs.existsSync(stopped), why);
 
   console.log('no engine');
   conversion.detectEngines([]);
