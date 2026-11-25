@@ -18,8 +18,12 @@ let picking = false;       // opened from the right-click menu: segments are cli
 let wheel = 'convert';     // 'convert' or 'open': which wheel is showing
 let sent = false;          // files were dropped or a segment was clicked: the main process is checking them, and the wheel waits for its answer
 
-const ICONS = { book: ['M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z', 'M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z'] };
+const ICONS = {
+  book: ['M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z', 'M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z'],
+  pencil: ['M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z', 'm15 5 4 4'],
+};
 const OTHER = { convert: { key: 'Shift', name: 'Open' }, open: { key: 'Ctrl', name: 'Convert' } };    // what the pill names: the other wheel
+let shiftName = OTHER.convert.name;      // what Shift does on this selection: Open for PDFs, Edit for pictures
 const EASE_OUT = 'cubic-bezier(0.2, 0.9, 0.25, 1.12)';
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -115,7 +119,7 @@ function hitTest(x, y) {
 
 const fillPill = () => {
   document.getElementById('pillKbd').textContent = OTHER[wheel].key;
-  document.getElementById('pillName').textContent = OTHER[wheel].name;
+  document.getElementById('pillName').textContent = wheel === 'convert' ? shiftName : OTHER[wheel].name;
 };
 
 // The key just pressed sinks, its words lift away, and the other wheel's key and name rise in while the pill eases to its new width.
@@ -160,6 +164,7 @@ function turn(out, inn, dir) {
 api.onOpen((data) => {
   picking = data.pick;
   wheel = data.wheel || 'convert';
+  shiftName = data.other || OTHER.convert.name;
   stage.dataset.wheel = wheel;
   stage.classList.toggle('picking', picking);
   stage.classList.remove('open', 'closing');
@@ -177,6 +182,7 @@ api.onSwitch((data) => {
   const out = targets;
   setHot(-1);
   wheel = data.wheel;
+  shiftName = data.other || OTHER.convert.name;
   stage.dataset.wheel = wheel;
   targets = addTargets(data.targets);
   turn(out, targets, wheel === 'open' ? 1 : -1);

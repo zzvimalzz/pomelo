@@ -4,8 +4,8 @@ const fs = require('fs');
 const path = require('path');
 
 // outputDir is the folder conversions are saved to, or '' for next to the original file. autoUpdate is off by default: Pomelo goes online only when asked. lastUpdateCheck / updateNotified belong to the update checker
-// (features/updates/auto-check.js). pdfView belongs to the PDF window (features/pdf-workspace): where it was last, as { x, y, width, height, maximised, savedAt }, which the window forgets after 24 hours, dock, the side of the document area the dock stands at, and the view the window was left in: zoom, layout, sidebar and pageColours (features/pdf-workspace/view.js says what each may hold). pdfRecent is the PDFs opened lately, newest first, up to ten full paths.
-const DEFAULTS = { enabled: true, outputDir: '', openAtLogin: true, advanced: false, theme: 'system', autoUpdate: false, lastUpdateCheck: 0, updateNotified: '', pdfView: { window: null, dock: 'bottom' }, pdfRecent: [] };
+// (features/updates/auto-check.js). pdfView belongs to the PDF window (features/pdf-workspace): where it was last, as { x, y, width, height, maximised, savedAt }, which the window forgets after 24 hours, dock, the side of the document area the dock stands at, and the view the window was left in: zoom, layout, sidebar and pageColours (features/pdf-workspace/view.js says what each may hold). pdfRecent is the PDFs opened lately, newest first, up to ten full paths. imageView belongs to the image editor (features/image-editor): where its window was last, which Adjust sections are open and whether the panel is shown (features/image-editor/view.js).
+const DEFAULTS = { enabled: true, outputDir: '', openAtLogin: true, advanced: false, theme: 'system', autoUpdate: false, lastUpdateCheck: 0, updateNotified: '', pdfView: { window: null, dock: 'bottom' }, pdfRecent: [], imageView: { window: null, sections: ['light', 'colour'], panel: true } };
 
 function createStore(file) {
   let cache = null;

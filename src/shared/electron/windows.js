@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Window setup that Pomelo's windows share.
+const os = require('os');
 const { BrowserWindow, nativeTheme, screen, session } = require('electron');
 const { startBounds, MIN } = require('../core/bounds');
+
+const WINDOWS_11 = 22621;
 
 // A page of Pomelo's own never navigates away and never opens another window.
 function lockNavigation(win) {
@@ -37,10 +40,11 @@ const overlay = (solid) => ({ color: solid ? chrome().color : '#00000000', symbo
 // A resizable window whose title row is part of the page. Windows 11 draws acrylic behind it and the minimise, maximise and close
 // buttons over the right-hand end. Before Windows 11 (or with `solid`) the window is opaque. Its session blocks the network, so nothing
 // a document asks for can leave the PC.
-// asset(name): path of a file shipped in assets/. solid: draw an opaque window. saved: the stored place of the window.
+// asset(name): path of a file shipped in assets/. solid: draw an opaque window (by default only before Windows 11, which is the first to
+// have acrylic). saved: the stored place of the window.
 // onBounds({ x, y, width, height, maximised, savedAt }): called, after a pause, whenever the user moved or resized it.
 // partition: the session's name. preload: the page's preload script. page: the HTML file to load.
-function createAppWindow({ asset, solid, saved, onBounds, partition, preload, page }) {
+function createAppWindow({ asset, solid = Number(os.release().split('.')[2]) < WINDOWS_11, saved, onBounds, partition, preload, page }) {
   const primary = screen.getPrimaryDisplay();
   const areas = [primary, ...screen.getAllDisplays().filter((d) => d.id !== primary.id)].map((d) => d.workArea);
   const start = startBounds(saved, areas);

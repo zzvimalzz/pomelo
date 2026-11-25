@@ -9,6 +9,7 @@ const convert = require('../../src/features/conversion');
 const { Trigger } = require('../../src/features/gesture/trigger');
 const { WheelWindow } = require('../../src/features/gesture/wheel.window');
 const { createDropFlow } = require('../../src/app/drop-flow');
+const { editable } = require('../../src/features/image-editor/limits');
 
 app.on('window-all-closed', () => {});
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -31,7 +32,8 @@ app.whenReady().then(async () => {
   const overlay = new WheelWindow({ onDrop: (paths, to) => flow.onDrop(paths, to), onUnlock: (request) => flow.onUnlock(request), onUnlockEnd: () => flow.onUnlockEnd() });
   overlay.create();
   const opened = [];
-  const flow = createDropFlow({ conversion: convert, getWheel: () => overlay, getJobs: () => ({ addInfo: () => {} }), openPdfs: (paths) => opened.push(...paths), keysSupported: () => true, log: () => {} });
+  const edited = [];
+  const flow = createDropFlow({ conversion: convert, getWheel: () => overlay, getJobs: () => ({ addInfo: () => {} }), openPdfs: (paths) => opened.push(...paths), openImages: (paths) => edited.push(...paths), canEdit: (file) => editable(convert.extOf(file)), keysSupported: () => true, log: () => {} });
   const trigger = new Trigger(helper);
   const events = [];
   const wheels = [];
@@ -75,15 +77,33 @@ app.whenReady().then(async () => {
   send('mu'); await sleep(900);
   check('letting go folds it away', !overlay.win.isVisible());
 
-  console.log('drag a Word file, tap Shift: the conversion wheel, with no pill');
+  console.log('drag a picture, tap Shift: the Edit wheel, and the other key turns it');
+  const png = path.join(dir, 'photo.png');
+  fs.writeFileSync(png, 'x');
+  const pill = () => page(`document.getElementById('pillKbd').textContent + ' ' + document.getElementById('pillName').textContent`);
+  selection = { files: [png], explorer: true };
+  events.length = 0; wheels.length = 0;
+  send('md', '500', '500'); send('mm', '520', '520'); await sleep(100); send('kd', 'shift'); await sleep(1000);
+  check('Shift opens the Edit wheel, one ring, and the pill names Ctrl Convert', wheels.join() === 'open' && (await showing()) === 'open 1 1 1' && (await pill()) === 'Ctrl Convert', `${wheels} ${await showing()} ${await pill()}`);
+  send('kd', 'ctrl'); await sleep(900);
+  check('Ctrl turns it into the conversion wheel, and the pill names Shift Edit', (await showing()).startsWith('convert ') && (await pill()) === 'Shift Edit', `${await showing()} ${await pill()}`);
+  send('kd', 'shift'); await sleep(900);
+  await page(`window.pomelo.drop('edit', [${JSON.stringify(png)}, ${JSON.stringify(file)}])`);
+  await sleep(300);
+  check('a drop on the ring hands the pictures, and only them, to the image editor', edited.join() === png, edited.join());
+  send('mu'); await sleep(900);
+
+  console.log('drag a Word file, tap Shift: no wheel, and Ctrl then opens the conversion wheel with no pill');
   selection = { files: [file], explorer: true };
   events.length = 0; wheels.length = 0;
   send('md', '500', '500'); send('mm', '520', '520'); await sleep(100); send('kd', 'shift'); await sleep(900);
   const pillHidden = () => page(`document.getElementById('pill').hidden`);
-  check('the conversion wheel shows, and a drop on it is taken', (await showing()).startsWith('convert ') && (await dropEffect(200, 80)) === 'copy', await showing());
+  check('Shift shows no wheel, because it has nothing to do here', !overlay.win.isVisible());
+  send('kd', 'ctrl'); await sleep(900);
+  check('Ctrl opens the conversion wheel, and a drop on it is taken', overlay.win.isVisible() && (await showing()).startsWith('convert ') && (await dropEffect(200, 80)) === 'copy', await showing());
   check('and it has no pill, because Shift is of no use here', await pillHidden() === true);
   send('kd', 'shift'); await sleep(300);
-  check('Shift again changes nothing', (await showing()).startsWith('convert ') && !events.includes('switch'));
+  check('Shift again changes nothing', (await showing()).startsWith('convert '));
   send('mu'); await sleep(900);
   selection = { files: [file], explorer: true };
 
