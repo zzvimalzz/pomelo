@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The list of changes the page may ask for: what is allowed, what is refused, and that only the keys an operation takes get through.
 //   node test/unit/pdf-workspace/ops.test.js
-const { check, OPS } = require('../../../src/features/pdf-workspace/ops');
+const { check, arrange, OPS } = require('../../../src/features/pdf-workspace/ops');
 const { expect } = require('../../support/expect');
 const finish = require('../../support/finish');
 
@@ -40,6 +40,18 @@ const bad = {
   'a good change followed by a bad one': [{ op: 'pages.delete', pages: [1] }, { op: 'pages.delete', pages: [0] }],
 };
 for (const [what, list] of Object.entries(bad)) expect(`${what} is refused`, refused(list));
+
+console.log('where the pages are after the changes');
+const shown = (from, count, list) => JSON.stringify(arrange(from, count, check(list))?.pages.map(([page, turned]) => (turned ? `${page}:${turned}` : String(page))));
+expect('no changes leave the pages as they began', arrange(undefined, 3, []) === undefined);
+expect('a turn is kept against its page', shown(undefined, 3, [{ op: 'pages.rotate', pages: [2], by: 90 }]) === '["1","2:90","3"]');
+expect('turns add up and four make none', arrange(arrange(undefined, 3, check([{ op: 'pages.rotate', pages: [2], by: 270 }])), 3, check([{ op: 'pages.rotate', pages: [2], by: 90 }])) === undefined);
+expect('a page that goes takes its place away', shown(undefined, 4, [{ op: 'pages.delete', pages: [2, 3] }]) === '["1","4"]');
+expect('pages moved in front of a later page keep their order', shown(undefined, 5, [{ op: 'pages.move', pages: [3, 1], before: 5 }]) === '["2","4","1","3","5"]');
+expect('pages moved to the end go last', shown(undefined, 4, [{ op: 'pages.move', pages: [1], before: 5 }]) === '["2","3","4","1"]');
+expect('pages moved in front of an earlier page go before it', shown(undefined, 4, [{ op: 'pages.move', pages: [4], before: 2 }]) === '["1","4","2","3"]');
+expect('a move to where the pages already are changes nothing', arrange(undefined, 4, check([{ op: 'pages.move', pages: [2, 3], before: 3 }])) === undefined);
+expect('later changes count the pages as the earlier ones left them', shown(undefined, 4, [{ op: 'pages.delete', pages: [1] }, { op: 'pages.rotate', pages: [1], by: 90 }]) === '["2:90","3","4"]');
 
 console.log('what gets through');
 const given = { op: 'pages.delete', pages: [2], extra: 1 };

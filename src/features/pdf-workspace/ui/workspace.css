@@ -137,18 +137,22 @@
 .cell .sheet canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 3px; }
 .cell:hover:not(.sel) .sheet { outline-color: var(--faint); }
 .cell { --ring: color-mix(in srgb, var(--accent) 80%, #000); --num: color-mix(in srgb, var(--accent-ink) 75%, #000); }
+.pgrid .cell:focus-visible { outline: none; }
 .cell:focus-visible .sheet { outline-color: var(--ring); }
 .cell.sel .sheet { outline-color: var(--ring); }
 .cell.sel { color: var(--num); font-weight: 700; }
 @media (prefers-color-scheme: dark) { .cell { --ring: var(--accent); --num: var(--accent-ink); } }
 .band { position: absolute; z-index: 2; border: 1px solid var(--accent); border-radius: 3px; background: var(--accent-soft); pointer-events: none; }
 .band[hidden] { display: none; }
-.slot { position: absolute; z-index: 2; width: 4px; border-radius: 2px; background: var(--accent); pointer-events: none; }
-.slot[hidden] { display: none; }
-.cell.lifted .sheet { opacity: .4; }
+.cell.lifted { display: none; }
+.cell.leaving { pointer-events: none; }
+.cell.hole .sheet { display: grid; place-items: center; box-sizing: border-box; background: var(--accent-soft); box-shadow: none; border: 2px dashed var(--ring); color: var(--num); font-size: 12px; font-weight: 700; }
+.ghost { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; will-change: transform; }
+.ghost .gsheet { position: absolute; inset: 0; overflow: hidden; border-radius: 3px; background: #fff; box-shadow: 0 12px 30px rgba(0, 0, 0, .32), 0 1px 3px rgba(0, 0, 0, .24); }
+.ghost canvas { display: block; width: 100%; height: 100%; }
+.ghost .badge { position: absolute; right: -9px; top: -9px; min-width: 22px; height: 22px; padding: 0 5px; box-sizing: border-box; display: grid; place-items: center; border-radius: 11px; background: #1c1c1e; border: 1.5px solid #fff; color: #fff; font-size: 12px; font-weight: 700; }
 .pgrid.dragging { cursor: grabbing; }
 .pgrid.busy { cursor: progress; pointer-events: none; }
-.pgrid.busy .cells { opacity: .55; transition: opacity .2s .25s; }
 .well { position: relative; flex: 1; min-width: 0; margin: 0 8px 8px; border-radius: 10px; background: var(--well); overflow: hidden; }
 .scroller { position: absolute; inset: 6px 3px 6px 0; overflow: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color .35s; }
 .scroller:focus-visible { outline: none; }

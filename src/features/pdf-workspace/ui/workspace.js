@@ -28,6 +28,7 @@
   }
 
   function showFailure(tab) {
+    window.workspaceOrganise.leave();
     viewer.clear();
     window.workspaceProperties.show(null);
     failure.textContent = tab.error === 'locked' ? 'This file is password-protected' : 'This file is damaged or is not a PDF';

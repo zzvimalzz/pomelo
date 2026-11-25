@@ -242,6 +242,47 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   expect('closing a document stops the helper that is reading it', await pendingFacts === 'CancelledError');
   await Promise.all([informed.closeAll(), noEngine.closeAll(), stuck.closeAll()]);
 
+  console.log('pages put back as they were');
+  let length = 4;
+  const arranging = createDocuments({
+    runPdfTool: async (script, args) => {
+      if (script === 'pdf_info.py') { fs.writeFileSync(args[1], JSON.stringify({ information: { title: 'T', author: '', subject: '', keywords: '', created: null } })); return ''; }
+      fs.writeFileSync(args[1], `${fs.readFileSync(args[0], 'utf8')} +1`);
+      const began = length;
+      for (const op of JSON.parse(fs.readFileSync(args[2], 'utf8')).ops) if (op.op === 'pages.delete') length -= op.pages.length;
+      return `{"saved": "full"}
+{"pages": ${began}}
+OK`;
+    },
+  });
+  const sheet = await arranging.open(make('Sheet.pdf', '%PDF-1.7 sheet'));
+  const change = (...ops) => arranging.apply(sheet.token, ops).then((r) => r.info.dirty);
+  const turn = (pages, by) => ({ op: 'pages.rotate', pages, by });
+  const shift = (pages, before) => ({ op: 'pages.move', pages, before });
+  const outcome = [await change(turn([2], 90)), await change(turn([2], 270))];
+  expect('a page turned and then turned back leaves nothing to save', outcome.join() === 'true,false', outcome.join());
+  const halves = [await change(turn([1, 2], 180)), await change(turn([1], 180)), await change(turn([2], 180))];
+  expect('two half turns of every page are the pages as they were', halves.join() === 'true,true,false', halves.join());
+  const moved = [await change(shift([1], 3)), await change(shift([2], 1))];
+  expect('a page moved and then moved back leaves nothing to save', moved.join() === 'true,false', moved.join());
+  const blocks = [await change(shift([1, 2], 4)), await change(shift([2, 3], 1))];
+  expect('two pages moved to the end and then moved back leave nothing to save', blocks.join() === 'true,false', blocks.join());
+  expect('a move that puts the pages somewhere else is a change', (await change(shift([1], 4))) === true && (await change(shift([3], 1))) === false);
+  expect('a page that is gone is a change however the others are put', (await change({ op: 'pages.delete', pages: [4] })) === true && (await change(turn([1], 90))) === true && (await change(turn([1], 270))) === true);
+  expect('undo through changes that are not yet the file as it was still has something to save', (await arranging.undo(sheet.token)).info.dirty === true && (await arranging.undo(sheet.token)).info.dirty === true);
+  while ((await arranging.undo(sheet.token)) && arranging.list()[0].canUndo);
+  expect('every undo back to the start leaves nothing to save', arranging.list()[0].dirty === false);
+  length = 4;
+  const read = [await change(turn([3], 90))];
+  await arranging.facts(sheet.token);
+  read.push(await change(turn([3], 270)));
+  expect('a page turned and turned back counts as the pages as they were once the information of the file is read, too', read.join() === 'true,false', read.join());
+  await change(turn([3], 90));
+  await arranging.save(sheet.token);
+  const afterwards = [await change(turn([3], 90)), await change(turn([3], 270)), await change(turn([3], 270))];
+  expect('after a save the pages as they were saved are the ones that leave nothing to save', afterwards.join() === 'true,false,true', afterwards.join());
+  await arranging.closeAll();
+
   console.log('several documents');
   const tabs = createDocuments();
   const one = await tabs.open(file);

@@ -8,7 +8,7 @@ const os = require('os');
 const path = require('path');
 const { fileIdentity, sameFile, replaceFile, makeTempDir, sweepTempDirs, removeDirReliably, withTempFile } = require('#shared/node/fs');
 const { passwordBuffer } = require('#shared/node/secrets');
-const { check } = require('./ops');
+const { check, arrange } = require('./ops');
 const { createRevisions } = require('./revisions');
 
 const MAX_SPAN = 4 * 1048576;
@@ -16,6 +16,7 @@ const NO_ENGINE_SAVE_LIMIT = 100 * 1048576;
 const SESSION_TAG = 'pdfws';
 const FREE_MARGIN = 64 * 1048576;
 const MIN_BUDGET = 2 * 1024 ** 3;
+const MAX_TRACKED_PAGES = 50000;
 const CHANGED = { stop: 'changed' };
 const DEVICE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 const IN_USE = new Set(['EBUSY', 'EPERM', 'EACCES']);
@@ -158,12 +159,18 @@ function createDocuments({ runPdfTool } = {}) {
       const from = doc.revisions.current();
       const source = from.file;
       const metaOnly = list.every((op) => op.op === 'meta.set');
+      const pagesOnly = list.every((op) => op.op.startsWith('pages.'));
       const out = path.join(doc.session, `revision-${++doc.count}.pdf`);
       const listFile = path.join(doc.session, `ops-${doc.count}.json`);
       try {
         await fs.promises.writeFile(listFile, JSON.stringify({ version: 1, ops: list }));
         const said = await runPdfTool('pdf_edit.py', [source, out, listFile], { src: source, signal: doc.stop.signal, secrets: secretsOf(token) });
-        const made = await adopt(doc, out, (await fs.promises.stat(out)).size, room.free, metaOnly ? { base: from.base ?? from, meta: metaOf(list.at(-1)) } : {});
+        const count = Number(/"pages": (\d+)/.exec(said)?.[1]);
+        const lineage = { base: from.base ?? from, layout: from.layout };
+        let kin = {};
+        if (metaOnly) kin = { ...lineage, meta: metaOf(list.at(-1)) };
+        else if (pagesOnly && count > 0 && count <= MAX_TRACKED_PAGES) kin = { ...lineage, metaFrom: from, layout: arrange(from.layout, count, list) };
+        const made = await adopt(doc, out, (await fs.promises.stat(out)).size, room.free, kin);
         return { ...made, reload: !(metaOnly && /"saved": "incremental"/.test(said)) };
       } catch (e) {
         await fs.promises.rm(out, { force: true });
@@ -185,7 +192,7 @@ function createDocuments({ runPdfTool } = {}) {
           await runPdfTool('pdf_info.py', [rev.file, out, 'properties'], { src: rev.file, signal: doc.stop.signal, secrets: secretsOf(token) });
           return JSON.parse(await fs.promises.readFile(out, 'utf8'));
         });
-        if (data.information) rev.meta ??= metaOf(data.information);
+        if (data.information) for (let r = rev; r; r = r.metaFrom) r.meta ??= metaOf(data.information);
         doc.facts = { rev, data };
       }
       return doc.facts.data;

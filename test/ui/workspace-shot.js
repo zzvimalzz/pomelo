@@ -2377,7 +2377,7 @@ app.whenReady().then(async () => {
   {
     const twelve = await makePdf('Grid twelve.pdf', 12);
     const second = await makePdf('Grid two.pdf', 2);
-    const grid = (win) => js(win, `(() => { const g = document.querySelector('.pgrid'); const b = document.querySelector('.dock .tool'); const bar = document.querySelector('.optbar'); const cells = [...document.querySelectorAll('.cell')];
+    const grid = (win) => js(win, `(() => { const g = document.querySelector('.pgrid'); const b = document.querySelector('.dock .tool'); const bar = document.querySelector('.optbar'); const cells = [...document.querySelectorAll('.cell:not(.hole):not(.leaving)')];
       return { shown: !g.hidden, organising: document.querySelector('.well').classList.contains('organising'), scroller: getComputedStyle(document.getElementById('scroller')).visibility, cells: cells.length,
         labels: cells.slice(0, 2).map((c) => c.getAttribute('aria-label')).join(), canvases: document.querySelectorAll('.cell canvas').length, selected: cells.filter((c) => c.classList.contains('sel')).map((c) => c.dataset.n).join(),
         aria: cells.filter((c) => c.getAttribute('aria-selected') === 'true').length, focused: document.activeElement.classList.contains('cell') ? document.activeElement.dataset.n : document.activeElement.id,
@@ -2674,12 +2674,13 @@ app.whenReady().then(async () => {
       const pages = (win) => reading(win, `(async () => { const d = workspaceViewer.viewer.pdfDocument; if (!d) return ''; const out = []; for (let i = 1; i <= d.numPages; i++) out.push((await (await d.getPage(i)).getTextContent()).items.map((x) => x.str).join('').match(/page (\\d+)/)[1]); return out.join(','); })()`);
       const turns = (win) => reading(win, `(async () => { const d = workspaceViewer.viewer.pdfDocument; if (!d) return ''; const out = []; for (let i = 1; i <= Math.min(d.numPages, 12); i++) out.push((await d.getPage(i)).rotate); return out.join(','); })()`);
       const bar = (win) => js(win, `(() => { const b = document.querySelector('.optbar'); const buttons = [...b.querySelectorAll('button')]; return { shown: !b.hidden, titles: buttons.map((x) => x.title).join('|'), disabled: buttons.map((x) => x.disabled ? 1 : 0).join(''),
-        count: b.querySelector('.count').textContent, busy: document.querySelector('.pgrid').classList.contains('busy'), save: !document.getElementById('savebtn').hidden, cells: document.querySelectorAll('.cell').length, shape: [...document.querySelectorAll('.cell')].map((c) => c.style.getPropertyValue('--r') < 1 ? 'w' : 't').join('') }; })()`);
-      const settled = (win) => until('the grid to be built again', () => js(win, `(() => { const g = document.querySelector('.pgrid'); return !g.hidden && !g.classList.contains('busy') && document.querySelectorAll('.cell').length > 0 && document.querySelectorAll('.cell canvas').length > 0; })()`));
+        count: b.querySelector('.count').textContent, busy: document.querySelector('.pgrid').classList.contains('busy'), save: !document.getElementById('savebtn').hidden, cells: document.querySelectorAll('.cell:not(.hole):not(.leaving)').length, shape: [...document.querySelectorAll('.cell:not(.hole):not(.leaving)')].map((c) => c.style.getPropertyValue('--r') < 1 ? 'w' : 't').join('') }; })()`);
+      const settled = (win) => until('the change to be read back', () => js(win, `(() => { const g = document.querySelector('.pgrid'); return !g.hidden && !g.classList.contains('busy') && document.querySelectorAll('.cell').length > 0 && document.querySelectorAll('.cell canvas').length > 0; })()`));
       const push = (win, name) => js(win, `[...document.querySelectorAll('.optbar button')].find((b) => b.getAttribute('aria-label') === ${JSON.stringify(name)}).click()`);
       const mouse = (win, type, p, modifiers = []) => win.webContents.sendInputEvent({ type, x: Math.round(p.x), y: Math.round(p.y), button: 'left', clickCount: 1, modifiers: type === 'mouseUp' ? modifiers : ['leftButtonDown', ...modifiers] });
       const edge = async (win, n, side) => { const c = await centre(win, n); return js(win, `(() => { const r = document.querySelector('.cell[data-n="${n}"] .sheet').getBoundingClientRect(); return { x: ${side === 'left'} ? r.left + 10 : r.right - 10, y: ${c.y} }; })()`); };
-      // Presses page `from`, pulls to the left or right half of page `n`, and lets go unless asked not to. Resolves when it let go.
+      // Presses page `from`, pulls to the left or right half of page `n` as the grid has it once the others have made way, and lets go
+      // unless asked not to. Resolves when it let go.
       const pull = async (win, from, [side, n], { release = true } = {}) => {
         win.webContents.focus();
         await edge(win, n, side);
@@ -2690,12 +2691,18 @@ app.whenReady().then(async () => {
         const to = await edge(win, n, side);
         await sleep(150);
         for (let i = 1; i <= 8; i++) { mouse(win, 'mouseMove', { x: start.x + (to.x - start.x) * i / 8, y: start.y + (to.y - start.y) * i / 8 }); await sleep(25); }
+        await sleep(350);
+        const end = await edge(win, n, side);
+        await sleep(150);
+        mouse(win, 'mouseMove', end);
         await sleep(150);
         if (!release) return null;
-        mouse(win, 'mouseUp', to);
+        mouse(win, 'mouseUp', end);
         return Date.now();
       };
       const applied = () => calls.filter((c) => c.channel === 'pdfws:apply').length;
+      const watching = (win, least) => js(win, `(() => { window.__blank = 0; window.__first = document.querySelector('.cell[data-n="1"]'); cancelAnimationFrame(window.__tick); const tick = () => { if (document.querySelectorAll('.cell canvas').length < ${least}) window.__blank++; window.__tick = requestAnimationFrame(tick); }; tick(); })()`);
+      const watched = (win) => js(win, `({ blank: window.__blank, kept: document.querySelector('.cell[data-n="1"]') === window.__first && window.__first.isConnected })`);
       const changed = (win, wanted) => until(`the pages to be ${wanted}`, async () => (await pages(win)) === wanted);
 
       for (const theme of ['light', 'dark']) {
@@ -2709,6 +2716,9 @@ app.whenReady().then(async () => {
         let b = await bar(win);
         check(`${theme}: the bar is there with nothing selected, with Rotate left, Rotate right, Delete, Undo and Redo, and every one of them off`, b.shown && b.titles === 'Rotate left|Rotate right|Delete (Del)|Undo (Ctrl+Z)|Redo (Ctrl+Y)' && b.disabled === '11111' && b.count === '', JSON.stringify(b));
 
+        await press(win, 'Right');
+        const focus = await js(win, `(() => { const c = document.activeElement; const s = c.querySelector('.sheet'); return { cell: c.classList.contains('cell'), box: getComputedStyle(c).outlineStyle, ring: getComputedStyle(s).outlineStyle, focusVisible: c.matches(':focus-visible') }; })()`);
+        check(`${theme}: a page reached with the keyboard has the one ring round the sheet and no second box round the sheet and its number`, focus.cell && focus.focusVisible && focus.box === 'none' && focus.ring === 'solid', JSON.stringify(focus));
         await clickCell(win, 3);
         await clickCell(win, 5, ['control']);
         b = await bar(win);
@@ -2716,6 +2726,8 @@ app.whenReady().then(async () => {
         const tone = await js(win, `({ count: getComputedStyle(document.querySelector('.optbar .count')).color, text: getComputedStyle(document.body).color })`);
         check(`${theme}: the count of selected pages is in the full text colour (the muted one measured 3.95:1 on the bar in light, below 4.5:1)`, tone.count === tone.text, JSON.stringify(tone));
         const before = applied();
+        await js(win, `document.querySelector('.cell[data-n="2"]').__kept = true; window.__wiggles = 0; (() => { const original = Element.prototype.animate; Element.prototype.animate = function (keys, options) { if (Array.isArray(keys) && keys.some((k) => String(k.transform ?? '').includes('translateX'))) window.__wiggles++; return original.call(this, keys, options); }; })()`);
+        await watching(win, 12);
         await push(win, 'Rotate right');
         check(`${theme}: while the engine works the grid is marked busy and the bar is off`, (await bar(win)).busy && (await bar(win)).disabled === '11111');
         await settled(win);
@@ -2724,10 +2736,12 @@ app.whenReady().then(async () => {
         let selected = (await grid(win)).selected;
         check(`${theme}: Rotate right turns the two pages, the grid is built again with them still selected, and the file has changes to save`, applied() === before + 1 && (await turns(win)) === '0,0,90,0,90,0,0,0,0,0,0,0' && b.shape === 'ttwtwttttttt' && selected === '3,5' && b.save && b.disabled === '00001', JSON.stringify([await turns(win), b, selected]));
         await shot(win, `workspace-grid-changed-${theme}.png`);
+        let seenNow = await watched(win);
+        check(`${theme}: turning the pages did not blank the grid or build it again (no frame with fewer pictures than before, the same cells kept)`, seenNow.blank === 0 && seenNow.kept && (await js(win, `document.querySelector('.cell[data-n="2"]').__kept === true`)), JSON.stringify(seenNow));
         await push(win, 'Rotate left');
         await settled(win);
         await until('the pages to be drawn upright', async () => (await bar(win)).shape === 'tttttttttttt');
-        check(`${theme}: Rotate left turns them back`, (await turns(win)) === '0,0,0,0,0,0,0,0,0,0,0,0' && (await bar(win)).shape === 'tttttttttttt');
+        check(`${theme}: Rotate left turns them back, and with the pages as they were opened there is nothing left to save`, (await turns(win)) === '0,0,0,0,0,0,0,0,0,0,0,0' && (await bar(win)).shape === 'tttttttttttt' && !(await bar(win)).save, JSON.stringify(await bar(win)));
         await push(win, 'Undo');
         await settled(win);
         check(`${theme}: Undo brings the turn back, with redo on`, (await turns(win)) === '0,0,90,0,90,0,0,0,0,0,0,0' && (await bar(win)).disabled === '11100');
@@ -2741,12 +2755,17 @@ app.whenReady().then(async () => {
         await settled(win);
 
         await clickCell(win, 2);
+        await watching(win, 11);
         await press(win, 'Delete');
+        await js(win, `new Promise((resolve) => setTimeout(resolve, 0))`);
+        const closing = await js(win, `({ leaving: document.querySelectorAll('.cell.leaving').length, left: document.querySelectorAll('.cell:not(.leaving)').length })`);
         await changed(win, '1,3,4,5,6,7,8,9,10,11,12');
         await settled(win);
         b = await bar(win);
         selected = await grid(win);
         check(`${theme}: Delete takes the selected page out, nothing is selected after it and the page that took its place has the focus`, (await pages(win)) === '1,3,4,5,6,7,8,9,10,11,12' && b.cells === 11 && selected.selected === '' && selected.focused === '2' && b.save, JSON.stringify([b, selected]));
+        seenNow = await watched(win);
+        check(`${theme}: the grid shows the deletion at once, the page fading where it was while the others close up, and never blanks (${JSON.stringify(closing)})`, closing.left === 11 && closing.leaving <= 1 && seenNow.blank === 0, JSON.stringify([closing, seenNow]));
         await push(win, 'Undo');
         await changed(win, '1,2,3,4,5,6,7,8,9,10,11,12');
         check(`${theme}: Undo puts the page back where it was`, (await bar(win)).cells === 12);
@@ -2761,16 +2780,23 @@ app.whenReady().then(async () => {
         check(`${theme}: OK closes it and the keys are back in the grid`, (await grid(win)).card === '' && (await grid(win)).focused === '2' && (await grid(win)).selected.split(',').length === 12, JSON.stringify(await grid(win)));
 
         await clickCell(win, 2);
+        const ring = await js(win, `getComputedStyle(document.querySelector('.cell[data-n="2"] .sheet')).outlineColor`);
+        await js(win, `window.__wiggles = 0`);
+        await watching(win, 12);
         await pull(win, 2, ['left', 5], { release: false });
-        const slot = await js(win, `(() => { const s = document.querySelector('.slot'); const c = document.querySelector('.cell[data-n="5"]').getBoundingClientRect(); const g = document.querySelector('.pgrid').getBoundingClientRect(); const r = s.getBoundingClientRect();
-          return { hidden: s.hidden, gap: Math.round(r.left - (c.left)), top: Math.abs(r.top - c.top) < 2, lifted: [...document.querySelectorAll('.cell.lifted')].map((x) => x.dataset.n).join(), cursor: getComputedStyle(document.querySelector('.pgrid')).cursor, colour: getComputedStyle(s).backgroundColor }; })()`);
-        check(`${theme}: pulling page 2 over the left half of page 5 shows a line in the gap before page 5 and fades the page being moved`, !slot.hidden && slot.gap < 0 && slot.gap >= -14 && slot.top && slot.lifted === '2' && slot.cursor === 'grabbing', JSON.stringify(slot));
+        const moving = await js(win, `(() => { const h = document.querySelector('.cell.hole'); const g = document.querySelector('.ghost'); const sheet = h?.querySelector('.sheet'); const style = sheet && getComputedStyle(sheet); const other = document.querySelector('.cell[data-n="3"] .sheet').getBoundingClientRect();
+          return { hole: !!h, before: h?.nextElementSibling?.dataset.n ?? '', text: sheet?.textContent ?? '', dashed: style?.borderTopStyle ?? '', border: style?.borderTopColor ?? '', fits: !!sheet && Math.abs(sheet.getBoundingClientRect().width - other.width) < 1.5 && Math.abs(sheet.getBoundingClientRect().height - other.height) < 1.5,
+            lifted: [...document.querySelectorAll('.cell.lifted')].map((x) => x.dataset.n).join(), hidden: getComputedStyle(document.querySelector('.cell[data-n="2"]')).display, ghost: !!g, drawn: g ? g.querySelectorAll('canvas').length : 0, ghostFits: !!g && Math.abs(g.getBoundingClientRect().width - other.width) < 8,
+            cursor: getComputedStyle(document.querySelector('.pgrid')).cursor, shaken: window.__wiggles, line: !!document.querySelector('.slot') }; })()`);
+        check(`${theme}: pulling page 2 over the left half of page 5 takes it out of the grid, opens a dashed Drop here space the size of a page before page 5, and a copy of the page follows the pointer`, moving.hole && moving.before === '5' && moving.text === 'Drop here' && moving.dashed === 'dashed' && moving.fits && moving.lifted === '2' && moving.hidden === 'none' && moving.ghost && moving.drawn === 1 && moving.ghostFits && moving.cursor === 'grabbing' && !moving.line, JSON.stringify(moving));
+        check(`${theme}: the dashed edge of the space is the selection colour, and the pages that made way shook from side to side (${moving.shaken} shakes)`, moving.border === ring && moving.shaken > 0, JSON.stringify([moving.border, ring, moving.shaken]));
         await shot(win, `workspace-grid-moving-${theme}.png`);
         mouse(win, 'mouseUp', await edge(win, 5, 'left'));
         await changed(win, '1,3,4,2,5,6,7,8,9,10,11,12');
         await settled(win);
         selected = await grid(win);
-        check(`${theme}: letting go moves the page in front of page 5, and it stays selected where it landed`, selected.selected === '4' && selected.focused === '4' && selected.cells === 12, JSON.stringify(selected));
+        seenNow = await watched(win);
+        check(`${theme}: letting go moves the page in front of page 5, it stays selected where it landed, and the grid was never blank or built again`, selected.selected === '4' && selected.focused === '4' && selected.cells === 12 && seenNow.blank === 0 && seenNow.kept && (await js(win, `!document.querySelector('.cell.hole') && !document.querySelector('.ghost')`)), JSON.stringify([selected, seenNow]));
 
         const mark = applied();
         await pull(win, 4, ['left', 5]);
@@ -2791,7 +2817,17 @@ app.whenReady().then(async () => {
         mouse(win, 'mouseUp', await edge(win, 8, 'left'));
         await sleep(500);
         const open = await grid(win);
-        check(`${theme}: Esc in the middle of a pull puts the page down where it was, and the grid stays open`, applied() === cancelled && open.shown && (await pages(win)) === '4,2,5,6,7,8,9,10,11,12,1,3' && (await js(win, `document.querySelectorAll('.cell.lifted').length + document.querySelector('.slot').hidden * 10`)) === 10, JSON.stringify(open));
+        check(`${theme}: Esc in the middle of a pull puts the page down where it was, and the grid stays open`, applied() === cancelled && open.shown && (await pages(win)) === '4,2,5,6,7,8,9,10,11,12,1,3' && (await js(win, `document.querySelectorAll('.cell.lifted').length + (document.querySelector('.cell.hole') ? 10 : 0) + (document.querySelector('.ghost') ? 100 : 0)`)) === 0, JSON.stringify(open));
+        await clickCell(win, 11);
+        await clickCell(win, 12, ['shift']);
+        await pull(win, 11, ['left', 1]);
+        await changed(win, '1,3,4,2,5,6,7,8,9,10,11,12');
+        await settled(win);
+        check(`${theme}: the two pages moved back to the front still leave the second page out of its place, so there is something to save`, (await bar(win)).save, JSON.stringify(await bar(win)));
+        await pull(win, 4, ['left', 2]);
+        await changed(win, '1,2,3,4,5,6,7,8,9,10,11,12');
+        await settled(win);
+        check(`${theme}: moving the page back where it was leaves the pages as they were opened, and the Save button goes`, !(await bar(win)).save && (await bar(win)).disabled === '00001', JSON.stringify(await bar(win)));
         win.destroy();
         await sleep(500);
         forgetSize();
@@ -2825,12 +2861,12 @@ app.whenReady().then(async () => {
         const released = await pull(win, 1, ['left', 8]);
         await settled(win);
         const moved = Date.now() - released;
-        check(`a page moved in a file of 3 000 pages is in place in under 6 seconds (${moved} ms)`, moved < 6000 && (await js(win, `document.querySelectorAll('.cell').length`)) === 3000 && (await grid(win)).selected === '7', JSON.stringify(await grid(win)));
+        check(`a page moved in a file of 3 000 pages is in place in under 6 seconds (${moved} ms)`, moved < 6000 && (await js(win, `document.querySelectorAll('.cell:not(.leaving)').length`)) === 3000 && (await grid(win)).selected === '7', JSON.stringify(await grid(win)));
         await press(win, 'A', ['control']);
         await clickCell(win, 1, ['control']);
         const began = Date.now();
         await press(win, 'Delete');
-        await until('the one page', async () => (await js(win, `document.querySelectorAll('.cell').length`)) === 1, 20000);
+        await until('the one page', async () => (await js(win, `document.querySelectorAll('.cell:not(.leaving)').length`)) === 1, 20000);
         await settled(win);
         const deleted = Date.now() - began;
         check(`deleting 2 999 pages of 3 000 leaves the one page in under 6 seconds (${deleted} ms)`, deleted < 6000 && (await pages(win)) === '2', `${deleted} ${await pages(win)}`);
