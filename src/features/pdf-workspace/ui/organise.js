@@ -9,6 +9,7 @@
   const WIDTH = 160;
   const EDGE = 28;
   const DRAG = 4;
+  const QUEUE = 20;
   const GLIDE = { duration: 260, easing: 'cubic-bezier(.2, .8, .2, 1)' };
   const WIGGLE = [{ transform: 'none' }, { transform: 'translateX(-3px) rotate(-.7deg)' }, { transform: 'translateX(3px) rotate(.7deg)' }, { transform: 'translateX(-2px) rotate(-.4deg)' }, { transform: 'translateX(2px) rotate(.4deg)' }, { transform: 'none' }];
 
@@ -72,6 +73,7 @@
     let drag = null;
     let dropped = false;
     let nodes = [];
+    const queued = [];
     const visible = new Set();
     const cell = (n) => nodes[n - 1];
     const pageOf = (target) => { const c = target.closest('.cell'); return c ? Number(c.dataset.n) : null; };
@@ -128,9 +130,9 @@
     }
 
     function enable() {
-      turnLeft.disabled = turnRight.disabled = trash.disabled = busy || !selected.size;
-      undo.disabled = busy || !tab?.doc.canUndo;
-      redo.disabled = busy || !tab?.doc.canRedo;
+      turnLeft.disabled = turnRight.disabled = trash.disabled = !selected.size;
+      undo.disabled = !tab?.doc.canUndo;
+      redo.disabled = !tab?.doc.canRedo;
     }
 
     function unfocus() {
@@ -372,6 +374,7 @@
       anchor = focused = null;
       pending = null;
       busy = false;
+      queued.length = 0;
       list.classList.remove('busy');
       list.hidden = band.hidden = bar.hidden = true;
       well.classList.remove('organising');
@@ -421,6 +424,7 @@
         cell(focused).scrollIntoView({ block: 'center' });
       }
       enable();
+      while (queued.length && !busy) step(queued.shift());
     }
 
     function rebuild({ select, focus }) {
@@ -453,6 +457,7 @@
       if (result?.info) return;
       pending = null;
       busy = false;
+      queued.length = 0;
       list.classList.remove('busy');
       if (apply) rebuild(before);
       enable();
@@ -526,7 +531,10 @@
       });
     }
 
+    // A press while the last change is still being read back waits its turn, so a run of presses on Undo goes back one step for
+    // each, and the buttons stay as they are meanwhile.
     function step(way) {
+      if (busy) { if (queued.length < QUEUE) queued.push(way); return; }
       if (tab?.doc[way === 'undo' ? 'canUndo' : 'canRedo']) run((token) => window.workspaceApi[way](token), { select: [], focus: focused ?? 1 });
     }
 
@@ -579,9 +587,10 @@
     eventBus.on('pagesdestroy', () => { if (pending) { thumbs?.release(); thumbs = null; } else teardown(); });
     api.leave = () => { if (wanted) leave(); };
     api.use = (next) => { tab = next; enable(); };
+    api.waiting = () => !!pending;
   }
 
   bind('escape', () => escape());
-  const api = { watch, leave: () => {}, use: () => {} };
+  const api = { watch, leave: () => {}, use: () => {}, waiting: () => false };
   window.workspaceOrganise = api;
 })();

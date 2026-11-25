@@ -2701,6 +2701,7 @@ app.whenReady().then(async () => {
         return Date.now();
       };
       const applied = () => calls.filter((c) => c.channel === 'pdfws:apply').length;
+      const frame = (win) => js(win, `(() => { const b = document.querySelector('.optbar'); const u = [...b.querySelectorAll('button')].find((x) => x.getAttribute('aria-label') === 'Undo').getBoundingClientRect(); return { width: Math.round(b.getBoundingClientRect().width), undo: Math.round(u.left), shown: !b.hidden }; })()`);
       const watching = (win, least) => js(win, `(() => { window.__blank = 0; window.__first = document.querySelector('.cell[data-n="1"]'); cancelAnimationFrame(window.__tick); const tick = () => { if (document.querySelectorAll('.cell canvas').length < ${least}) window.__blank++; window.__tick = requestAnimationFrame(tick); }; tick(); })()`);
       const watched = (win) => js(win, `({ blank: window.__blank, kept: document.querySelector('.cell[data-n="1"]') === window.__first && window.__first.isConnected })`);
       const changed = (win, wanted) => until(`the pages to be ${wanted}`, async () => (await pages(win)) === wanted);
@@ -2714,6 +2715,7 @@ app.whenReady().then(async () => {
         await openGrid(win);
         await sheetsDrawn(win, 12);
         let b = await bar(win);
+        const empty = await frame(win);
         check(`${theme}: the bar is there with nothing selected, with Rotate left, Rotate right, Delete, Undo and Redo, and every one of them off`, b.shown && b.titles === 'Rotate left|Rotate right|Delete (Del)|Undo (Ctrl+Z)|Redo (Ctrl+Y)' && b.disabled === '11111' && b.count === '', JSON.stringify(b));
 
         await press(win, 'Right');
@@ -2723,13 +2725,16 @@ app.whenReady().then(async () => {
         await clickCell(win, 5, ['control']);
         b = await bar(win);
         check(`${theme}: with pages selected, turning and deleting are on and undo and redo are still off`, b.disabled === '00011' && b.count === '2 selected', JSON.stringify(b));
+        const full = await frame(win);
+        check(`${theme}: selecting pages does not change the bar's width or move Undo and Redo (${full.width} px, Undo at ${full.undo} px, as with nothing selected)`, full.width === empty.width && full.undo === empty.undo, JSON.stringify([empty, full]));
         const tone = await js(win, `({ count: getComputedStyle(document.querySelector('.optbar .count')).color, text: getComputedStyle(document.body).color })`);
         check(`${theme}: the count of selected pages is in the full text colour (the muted one measured 3.95:1 on the bar in light, below 4.5:1)`, tone.count === tone.text, JSON.stringify(tone));
         const before = applied();
         await js(win, `document.querySelector('.cell[data-n="2"]').__kept = true; window.__wiggles = 0; (() => { const original = Element.prototype.animate; Element.prototype.animate = function (keys, options) { if (Array.isArray(keys) && keys.some((k) => String(k.transform ?? '').includes('translateX'))) window.__wiggles++; return original.call(this, keys, options); }; })()`);
         await watching(win, 12);
         await push(win, 'Rotate right');
-        check(`${theme}: while the engine works the grid is marked busy and the bar is off`, (await bar(win)).busy && (await bar(win)).disabled === '11111');
+        const working = await js(win, `({ busy: document.querySelector('.pgrid').classList.contains('busy'), look: [...document.querySelectorAll('.optbar button')].map((x) => getComputedStyle(x).opacity + (x.disabled ? 'off' : '')).join(), shown: !document.querySelector('.optbar').hidden })`);
+        check(`${theme}: while the engine works the grid is marked busy and the bar keeps its look, with only the buttons that have nothing to do dimmed`, working.busy && working.shown && working.look === '1,1,1,0.35off,0.35off', JSON.stringify(working));
         await settled(win);
         await until('the turned pages to be drawn turned', async () => (await bar(win)).shape === 'ttwtwttttttt');
         b = await bar(win);
@@ -2753,6 +2758,19 @@ app.whenReady().then(async () => {
         check(`${theme}: Ctrl+Y does the turn again`, (await turns(win)) === '0,0,90,0,90,0,0,0,0,0,0,0');
         await press(win, 'Z', ['control']);
         await settled(win);
+
+        await clickCell(win, 3);
+        await push(win, 'Rotate right');
+        await settled(win);
+        await push(win, 'Rotate right');
+        await settled(win);
+        const undone = calls.filter((c) => c.channel === 'pdfws:undo').length;
+        const beforeSpam = await frame(win);
+        for (let i = 0; i < 4; i++) await push(win, 'Undo');
+        await until('the presses to be worked through', async () => (await turns(win)) === '0,0,0,0,0,0,0,0,0,0,0,0' && (await bar(win)).shape === 'tttttttttttt' && !(await bar(win)).busy);
+        await settled(win);
+        const afterSpam = await frame(win);
+        check(`${theme}: four quick presses on Undo after two turns step back twice and stop at the file as it was opened, the bar staying where it was (${beforeSpam.width} px, Undo at ${beforeSpam.undo} px)`, calls.filter((c) => c.channel === 'pdfws:undo').length === undone + 2 && !(await bar(win)).save && afterSpam.width === beforeSpam.width && afterSpam.undo === beforeSpam.undo && afterSpam.shown, JSON.stringify([beforeSpam, afterSpam, await bar(win)]));
 
         await clickCell(win, 2);
         await watching(win, 11);
