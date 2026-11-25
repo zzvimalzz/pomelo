@@ -22,8 +22,9 @@ const threw = async (fn) => { try { await fn(); return false; } catch { return t
 (async () => {
   const notices = [];
   let nextPath = null;
+  const shown = [];
   const images = createImages({ readImage: async () => ({ data: Buffer.alloc(W * H * 4), width: W, height: H, hasAlpha: false }), extOf });
-  const { save } = createSave({ images, writeImage, uniquePath, notify: (m) => notices.push(m), log: () => {}, chooseSavePath: async () => nextPath });
+  const { save } = createSave({ images, writeImage, uniquePath, notify: (m) => notices.push(m), log: () => {}, chooseSavePath: async () => nextPath, show: async (file) => { shown.push(file); return true; } });
 
   const photo = async (name) => {
     const file = path.join(root, name);
@@ -59,7 +60,7 @@ const threw = async (fn) => { try { await fn(); return false; } catch { return t
   console.log('a copy');
   ({ file, token } = await photo('copy.jpg'));
   nextPath = path.join(root, 'copy (edited).png');
-  expect('a copy in another format is written where the user chose', (await save(token, pixels(200, 20, 20, 255), { mode: 'copy', format: 'png', ...sizes }))?.ok === true && (await look(nextPath)).format === 'png');
+  expect('a copy in another format is written where the user chose, and is opened as a tab', (await save(token, pixels(200, 20, 20, 255), { mode: 'copy', format: 'png', ...sizes }))?.copy === true && (await look(nextPath)).format === 'png' && shown.at(-1) === nextPath);
   expect('and the original is as it was', (await look(file)).first[1] > 150);
   nextPath = path.join(root, 'small.webp');
   expect('a smaller long edge scales the picture', (await save(token, pixels(200, 20, 20), { mode: 'copy', format: 'webp', quality: 70, longEdge: 20, ...sizes }))?.ok === true && (await look(nextPath)).width === 20 && (await look(nextPath)).height === 15);
@@ -69,7 +70,7 @@ const threw = async (fn) => { try { await fn(); return false; } catch { return t
   expect('cancelling the dialog stops quietly and writes nothing', (await save(token, pixels(1, 2, 3), { mode: 'copy', format: 'png', ...sizes }))?.stop === 'cancelled' && fs.readdirSync(root).every((n) => !n.includes('tmp')));
   nextPath = file;
   const reread = fs.statSync(file).mtimeMs;
-  expect('a copy chosen over the original itself is a save over it, so a second one works', (await save(token, pixels(5, 5, 200), { mode: 'copy', format: 'jpg', ...sizes }))?.ok === true && (await save(token, pixels(5, 200, 5), { mode: 'replace', format: 'same', ...sizes }))?.ok === true && fs.statSync(file).mtimeMs !== reread);
+  expect('a copy chosen over the original itself is a save over it, so a second one works', (await save(token, pixels(5, 5, 200), { mode: 'copy', format: 'jpg', ...sizes }))?.copy === undefined && (await save(token, pixels(5, 200, 5), { mode: 'replace', format: 'same', ...sizes }))?.ok === true && fs.statSync(file).mtimeMs !== reread);
 
   console.log('what the page may not do');
   expect('pixels of the wrong length are refused', await threw(() => save(token, new Uint8Array(10), { mode: 'copy', format: 'png', ...sizes })));

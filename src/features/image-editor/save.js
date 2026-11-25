@@ -19,10 +19,10 @@ const WHY_NOT_SAVED = {
 const driveOf = (file) => path.parse(path.resolve(file)).root.replace(/\$/, '');
 
 // images: the open pictures (images.js). writeImage(rgba, out, format, options) and uniquePath(dir, base, ext) are the conversion
-// feature's. chooseSavePath(suggested, format): ask the user where a copy goes, and
-// resolve the path or null. notify({ title, detail }) and log(...) as in index.js.
-function createSave({ images, writeImage, uniquePath, chooseSavePath, notify, log }) {
-  // Resolves { ok: true } or { stop } with 'changed' (another program changed the file: the page asks what to do), 'cancelled',
+// feature's. chooseSavePath(suggested, format): ask the user where a copy goes, and resolve the path or null. show(file): open a file
+// as a tab and resolve whether it is open now. notify({ title, detail }) and log(...) as in index.js.
+function createSave({ images, writeImage, uniquePath, chooseSavePath, show, notify, log }) {
+  // Resolves { ok: true }, with `copy: true` when the copy is open as a tab of its own, or { stop } with 'changed' (another program changed the file: the page asks what to do), 'cancelled',
   // 'busy' or 'failed'; a stop that needs saying has been said in the corner of the screen. Throws when the page sent nonsense.
   async function save(token, rgba, raw) {
     const image = images.get(token);
@@ -64,8 +64,8 @@ function createSave({ images, writeImage, uniquePath, chooseSavePath, notify, lo
       return replaceFile(temp, target, expected, () => true);
     });
     if (result.stop) return stopped(result.stop, name, target);
-    if (original) image.identity = result.identity;
-    return { ok: true };
+    if (original) { image.identity = result.identity; return { ok: true }; }
+    return { ok: true, copy: replacing ? undefined : await show(target) };
   }
 
   function stopped(why, name, target) {

@@ -339,7 +339,7 @@ app.whenReady().then(async () => {
   await sleep(500);
   const turnedMeta = await sharp(saveTo).metadata();
   check('a 4000 by 3000 picture turned right and saved as a PNG is 3000 by 4000', turnedMeta.format === 'png' && turnedMeta.width === 3000 && turnedMeta.height === 4000, `${turnedMeta.format} ${turnedMeta.width}x${turnedMeta.height}`);
-  check('the dialog was asked once, and the copy leaves the changes in place, with Saved shown', dialogs.length === 1 && (await state()).dot === true && (await js(win, `document.getElementById('imgsaved').classList.contains('on')`)) === true);
+  check('the dialog was asked once, and the copy opens in place of the edited picture, which is closed with no question', dialogs.length === 1 && await until('the copy tab', async () => (await js(win, `document.getElementById('imgname').textContent`)) === 'flat-turned.png') && (await state()).dot === false && (await js(win, `document.querySelector('.card')`)) === null);
 
   console.log('save over a file, and closing with changes');
   await closeAll(editor);

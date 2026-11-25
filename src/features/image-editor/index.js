@@ -32,6 +32,7 @@ function createEditor({ asset, getSettings, setSettings, notify, log, readImage,
   let leaving = false;
   const saver = createSave({
     images, writeImage, uniquePath, notify, log,
+    show: async (file) => { await open([file]); return !!images.find(file); },
     chooseSavePath: chooseSavePath ?? ((suggested, format) => require('./editor.window').chooseSavePath(win, suggested, format)),
   });
 
