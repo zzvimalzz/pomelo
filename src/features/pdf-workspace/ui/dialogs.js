@@ -23,8 +23,12 @@
     picture.append(file, lock);
     const title = el('h3', '', 'Password protected');
     title.id = 'dialog-title';
+    const fname = el('p', 'fname');
+    fname.hidden = true;
+    const words = el('div', 'uname');
+    words.append(title, fname);
     const head = el('div', 'uhead');
-    head.append(picture, title);
+    head.append(picture, words);
     const field = el('input', 'fld');
     field.type = 'password';
     field.placeholder = 'Password';
@@ -54,7 +58,7 @@
     row.append(cancel, submit);
     box.append(head, holder, room, row);
 
-    const c = { close, field, eye, holder, message, room, cancel, submit, pending: null, abort: null, busy: false };
+    const c = { close, field, eye, holder, message, room, cancel, submit, fname, pending: null, abort: null, busy: false };
     field.oninput = () => { submit.disabled = !field.value || c.busy; };
     submit.onclick = () => {
       if (submit.disabled || !c.pending) return;
@@ -87,11 +91,14 @@
   }
 
   // Resolves with the password typed, or null when the user cancels. The card stays up while it is checked, so a wrong password is
-  // answered where it was typed and can be corrected. `abort` is called when the user cancels during the check.
-  function askPassword(wrong, abort) {
+  // answered where it was typed and can be corrected. `abort` is called when the user cancels during the check. `name` is the file the
+  // password is for, shown under the title when it is not the document in the window.
+  function askPassword(wrong, abort, name) {
     card ??= build();
     const c = card;
     c.abort = abort;
+    c.fname.textContent = c.fname.title = name ?? '';
+    c.fname.hidden = !name;
     c.label = wrong ? 'Try Again' : 'Open';
     busy(c, false);
     if (wrong) {

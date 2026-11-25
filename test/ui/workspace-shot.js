@@ -281,7 +281,7 @@ app.whenReady().then(async () => {
     check('the window session cancels a request to the web', /ERR_BLOCKED_BY_CLIENT/.test(refusal), refusal);
     check('the page cannot fetch the web either', (await js(win, `fetch('https://pomelo-offline-check.invalid/').then(() => 'answered', () => 'refused')`)) === 'refused');
     const state = await js(win, `workspaceApi.state().then((s) => JSON.stringify(s))`);
-    check('the page is given a token, a name and a size, and no path', Object.keys(JSON.parse(state).documents[0]).sort().join() === 'canRedo,canUndo,dirty,name,size,token' && !state.includes(root.replace(/\\/g, '\\\\')) && !/[A-Za-z]:\\\\/.test(state), state);
+    check('the page is given a token, a name and a size, and no path', Object.keys(JSON.parse(state).documents[0]).sort().join() === 'added,canRedo,canUndo,dirty,name,size,token' && !state.includes(root.replace(/\\/g, '\\\\')) && !/[A-Za-z]:\\\\/.test(state), state);
     check('the page cannot read with a token it was not given', (await js(win, `workspaceApi.read('0'.repeat(64), 0, 10).then(() => 'read', () => 'refused')`)) === 'refused');
     check('the page cannot read more than 4 MiB in one call', (await js(win, `workspaceApi.state().then((s) => workspaceApi.read(s.documents[0].token, 0, 4 * 1048576 + 1)).then(() => 'read', () => 'refused')`)) === 'refused');
     await closeAndWait(win);
@@ -2891,6 +2891,12 @@ app.whenReady().then(async () => {
         const first = picture('Grid picture one.png', [200, 40, 40]);
         const second = picture('Grid picture two.png', [40, 40, 200]);
         const order = (win) => reading(win, `(async () => { const d = workspaceViewer.viewer.pdfDocument; if (!d) return ''; const out = []; for (let i = 1; i <= d.numPages; i++) { const m = (await (await d.getPage(i)).getTextContent()).items.map((x) => x.str).join('').match(/page (\\d+) of (\\d+)/); out.push(m ? m[1] + (m[2] === '6' ? '' : 's') : '-'); } return out.join(','); })()`);
+        const tagged = (win) => js(win, `[...document.querySelectorAll('.cell.added')].map((c) => c.dataset.n).join()`);
+        const tagLook = (win, n) => js(win, `(() => { const channel = (c) => { const v = Number(c) / 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+          const lum = (css) => { const [r, g, b] = css.match(/[\\d.]+/g).slice(0, 3).map((x) => Number(x) * (css.startsWith('color(') ? 255 : 1)); return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b); };
+          const cell = document.querySelector('.cell[data-n="${n}"]'); const sheet = cell.querySelector('.sheet'); const tag = getComputedStyle(sheet, '::after');
+          const a = lum(tag.color); const b = lum(tag.backgroundColor); const sheetBox = sheet.getBoundingClientRect();
+          return { text: tag.content, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05), label: cell.getAttribute('aria-label'), width: parseFloat(tag.width), fits: parseFloat(tag.width) + 14 < sheetBox.width }; })()`);
         const arrives = (win, wanted) => until(`the pages to be ${wanted}`, async () => (await order(win)) === wanted);
         const menu = (win) => js(win, `(() => { const m = document.querySelector('.insertgroup .menu'); const b = document.querySelector('.insertgroup .opt'); const r = m.getBoundingClientRect(); return { open: !m.hidden, expanded: b.getAttribute('aria-expanded'), items: [...m.querySelectorAll('.mi')].map((x) => x.textContent).join('|'), focused: document.activeElement?.textContent ?? '',
           inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight, wide: r.width }; })()`);
@@ -2942,10 +2948,12 @@ app.whenReady().then(async () => {
           let g = await grid(win);
           let last = calls.filter((c) => c.channel === 'pdfws:apply').at(-1);
           check(`${theme}: Blank page puts a page after the selected one, selects it, closes the menu, and the file has changes to save`, applied() === mark + 1 && JSON.stringify(last.args[1]) === '[{"op":"pages.blank","before":3}]' && g.selected === '3' && g.cells === 7 && (await bar(win)).save && !(await menu(win)).open, JSON.stringify([g, last.args]));
+          check(`${theme}: the blank page wears the Added tag, and no other page does`, (await tagged(win)) === '3' && (await js(win, `document.querySelector('.cell[data-n="3"]').getAttribute('aria-label')`)) === 'Page 3, added', await tagged(win));
           await push(win, 'Undo');
           await arrives(win, '1,2,3,4,5,6');
           await settled(win);
           check(`${theme}: Undo takes it away again, and the pages are as they were opened`, !(await bar(win)).save && (await bar(win)).cells === 6);
+          check(`${theme}: with the page gone no page wears the tag`, (await tagged(win)) === '');
 
           answer(source);
           await clickCell(win, 4);
@@ -2958,6 +2966,8 @@ app.whenReady().then(async () => {
           last = calls.filter((c) => c.channel === 'pdfws:apply').at(-1);
           check(`${theme}: From a PDF… asks for one PDF and puts its pages after the selected page, selects them, and sends the engine no path`, picked.at(-1).title === 'Insert pages from a PDF' && !picked.at(-1).properties.includes('multiSelections') && applied() === mark + 1 && last.args[1][0].op === 'pages.insert' && last.args[1][0].before === 5 && last.args[1][0].sources.length === 1 && !JSON.stringify(last.args).includes(source) && g.selected === '5,6' && g.cells === 8 && (await bar(win)).save, JSON.stringify([picked.at(-1), last.args, g]));
           await shot(win, `workspace-grid-inserted-${theme}.png`);
+          const tag = await tagLook(win, 5);
+          check(`${theme}: the pages put in from a PDF wear an Added tag and the pages round them do not; the tag reads at 4.5:1 or better and fits the page (${tag.ratio.toFixed(1)}:1)`, (await tagged(win)) === '5,6' && tag.text === '"Added"' && tag.ratio >= 4.5 && tag.fits && tag.label === 'Page 5, added' && (await js(win, `document.querySelector('.cell[data-n="4"]').getAttribute('aria-label')`)) === 'Page 4', JSON.stringify([await tagged(win), tag]));
 
           answer(first, second);
           await insertMenu(win);
@@ -2966,6 +2976,7 @@ app.whenReady().then(async () => {
           await settled(win);
           g = await grid(win);
           check(`${theme}: From pictures… takes several pictures and puts one page of each after the selected pages, in the order chosen`, picked.at(-1).title === 'Insert pictures' && picked.at(-1).properties.includes('multiSelections') && picked.at(-1).filters[0].extensions.includes('png') && g.selected === '7,8' && g.cells === 10, JSON.stringify([picked.at(-1), g]));
+          check(`${theme}: pictures put in wear the tag too, beside the pages from the PDF`, (await tagged(win)) === '5,6,7,8', await tagged(win));
 
           mark = applied();
           answer();
@@ -2989,6 +3000,10 @@ app.whenReady().then(async () => {
           await askedFor(win);
           const ask = await js(win, `({ title: document.querySelector('.veil h3').textContent, type: document.querySelector('.veil input').type, buttons: [...document.querySelectorAll('.veil .btn')].map((b) => b.textContent).join() })`);
           check(`${theme}: a protected PDF to insert asks for its password in the usual card, and nothing is sent yet`, ask.title === 'Password protected' && ask.type === 'password' && ask.buttons === 'Cancel,Open' && applied() === mark, JSON.stringify(ask));
+          const named = await js(win, `(() => { const n = document.querySelector('.veil .fname'); return { text: n.textContent, shown: !n.hidden, title: n.title, colour: getComputedStyle(n).color, body: getComputedStyle(document.body).color }; })()`);
+          check(`${theme}: the card says which file it is asking about, in the full text colour, under the title`, named.shown && named.text === 'Grid protected.pdf' && named.title === 'Grid protected.pdf' && named.colour === named.body, JSON.stringify(named));
+          await sleep(450);
+          await shot(win, `workspace-grid-insert-password-${theme}.png`);
           await submit(win, 'not the password');
           await until('the second ask', () => js(win, `!!document.querySelector('.veil .emsg.on') && !document.querySelector('.veil input').disabled`));
           check(`${theme}: a wrong password is answered in the same card`, (await js(win, `document.querySelector('.veil .emsg p').textContent`)) === 'Wrong Password' && applied() === mark);
@@ -2996,6 +3011,7 @@ app.whenReady().then(async () => {
           await arrives(win, '1,2,3,4,1s,2s,-,-,5,6,-');
           await settled(win);
           check(`${theme}: the right password puts the page in at the end, and the card is gone`, (await js(win, `!document.querySelector('.veil')`)) && (await grid(win)).cells === 11 && applied() === mark + 1, JSON.stringify(await grid(win)));
+          check(`${theme}: and that page wears the tag`, (await tagged(win)) === '5,6,7,8,11', await tagged(win));
 
           answer(protectedFile);
           await insertMenu(win);
@@ -3042,10 +3058,13 @@ app.whenReady().then(async () => {
           await settled(win);
           g = await grid(win);
           check(`${theme}: a picture dropped on the left half of page 1 goes in front of it, is selected, and no new tab opens`, g.selected === '1' && g.cells === 12 && (await tabs()) === tabsBefore, JSON.stringify([g, await tabs()]));
+          check(`${theme}: the tags follow the pages when more go in before them`, (await tagged(win)) === '1,6,7,8,9,12', await tagged(win));
           await dropOn(12, 'right', [source]);
           await arrives(win, '-,1,2,3,4,1s,2s,-,-,5,6,-,1s,2s');
           await settled(win);
           check(`${theme}: a PDF dropped on the right half of the last page goes after it`, (await grid(win)).selected === '13,14' && (await grid(win)).cells === 14, JSON.stringify(await grid(win)));
+          check(`${theme}: and the pages dropped at the end are tagged`, (await tagged(win)) === '1,6,7,8,9,12,13,14', await tagged(win));
+          await shot(win, `workspace-grid-dropped-${theme}.png`);
           await dropOn(3, 'right', [notAPdf]);
           await sleep(500);
           check(`${theme}: a file dropped on the grid that is neither a PDF nor a picture changes nothing`, (await grid(win)).cells === 14 && (await tabs()) === tabsBefore);

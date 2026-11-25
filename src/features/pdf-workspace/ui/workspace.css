@@ -140,6 +140,8 @@
 .pgrid .cell:focus-visible { outline: none; }
 .cell:focus-visible .sheet { outline-color: var(--ring); }
 .cell.sel .sheet { outline-color: var(--ring); }
+.cell.added .sheet::after { content: 'Added'; position: absolute; top: -9px; left: 8px; padding: 2px 8px; border-radius: 999px; background: var(--num); color: #fff; font-size: 10.5px; font-weight: 700; line-height: 1.4; letter-spacing: .02em; pointer-events: none; }
+@media (prefers-color-scheme: dark) { .cell.added .sheet::after { color: #1c1c1e; } }
 .cell.sel { color: var(--num); font-weight: 700; }
 @media (prefers-color-scheme: dark) { .cell { --ring: var(--accent); --num: var(--accent-ink); } }
 .band { position: absolute; z-index: 2; border: 1px solid var(--accent); border-radius: 3px; background: var(--accent-soft); pointer-events: none; }
@@ -261,6 +263,8 @@ body.focus:not(.reveal-dock):not(.tooling) .dockwrap:not(:focus-within) :is(.doc
 .sm:hover { background: var(--hover); color: var(--txt); }
 .sm .i { width: 16px; height: 16px; }
 .sm:disabled { opacity: .35; pointer-events: none; }
+.uname { min-width: 0; }
+.card .fname { margin: 3px 0 0; color: var(--txt); font-size: 12.5px; overflow-wrap: anywhere; }
 .optbar .opt { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--txt); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background .15s; }
 .optbar .opt:hover, .optbar .opt[aria-expanded="true"] { background: var(--hover); }
 .optbar .opt:disabled { opacity: .35; pointer-events: none; }

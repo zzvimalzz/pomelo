@@ -21,7 +21,7 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   console.log('opening');
   const doc = await docs.open(file);
   const second = await docs.open(file);
-  expect('a document has a name and a size, and its token is 32 random bytes in hex', doc.name === 'Report.pdf' && doc.size === content.length && /^[0-9a-f]{64}$/.test(doc.token) && Object.keys(doc).sort().join() === 'canRedo,canUndo,dirty,name,size,token', JSON.stringify(Object.keys(doc)));
+  expect('a document has a name and a size, and its token is 32 random bytes in hex', doc.name === 'Report.pdf' && doc.size === content.length && /^[0-9a-f]{64}$/.test(doc.token) && Object.keys(doc).sort().join() === 'added,canRedo,canUndo,dirty,name,size,token', JSON.stringify(Object.keys(doc)));
   expect('every open gets its own token', doc.token !== second.token);
   expect('a file that is not there is refused with its reason', await docs.open(path.join(root, 'nope.pdf')).then(() => '', (e) => e.code) === 'ENOENT');
   expect('a folder is refused', await fails(docs.open(root)));
@@ -64,7 +64,7 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   docs.unlock(doc.token, 'Pw-é1');
   const stored = docs.password(doc.token);
   expect('the password is kept in memory as UTF-8, under the document\'s token only', stored.toString('utf8') === 'Pw-é1' && docs.password(second.token) === undefined);
-  expect('the document record carries no password', !JSON.stringify(doc).includes('Pw-') && Object.keys(doc).sort().join() === 'canRedo,canUndo,dirty,name,size,token');
+  expect('the document record carries no password', !JSON.stringify(doc).includes('Pw-') && Object.keys(doc).sort().join() === 'added,canRedo,canUndo,dirty,name,size,token');
   docs.unlock(doc.token, 'another');
   expect('a new password replaces the old one, which is overwritten with zeros', docs.password(doc.token).toString() === 'another' && stored.every((b) => b === 0));
   const refusedPasswords = { 'an unknown token': ['0'.repeat(64), 'x'], 'no password': [doc.token, undefined], 'an empty password': [doc.token, ''], 'a password that is not text': [doc.token, 12], 'a password of 4097 characters': [doc.token, 'x'.repeat(4097)] };
@@ -333,10 +333,13 @@ OK`; } });
   const shelf = await grid.open(make('Shelf.pdf', '%PDF-1.7 shelf'));
   const from = grid.addSource(piece, 'pdf');
   added4.push('[2]');
-  expect('pages put in are a change to save', (await grid.apply(shelf.token, [insertAt(2, from)])).info.dirty === true);
-  expect('taking those pages out again leaves the file as it was', (await grid.apply(shelf.token, [{ op: 'pages.delete', pages: [2, 3] }])).info.dirty === false);
+  const put = (await grid.apply(shelf.token, [insertAt(2, from)])).info;
+  expect('pages put in are a change to save, and the state names them as added', put.dirty === true && JSON.stringify(put.added) === '[2,3]', JSON.stringify(put));
+  expect('a file as it was opened has no added pages', JSON.stringify((await grid.open(make('Plain shelf.pdf', '%PDF-1.7 plain shelf'))).added) === '[]');
+  expect('taking those pages out again leaves the file as it was, with none added', (await grid.apply(shelf.token, [{ op: 'pages.delete', pages: [2, 3] }])).info.added.length === 0 && !grid.list().find((d) => d.token === shelf.token).dirty);
   added4.push('[1]');
-  expect('a blank page is a change to save too', (await grid.apply(shelf.token, [{ op: 'pages.blank', before: 4 }])).info.dirty === true);
+  const blanked = (await grid.apply(shelf.token, [{ op: 'pages.blank', before: 4 }])).info;
+  expect('a blank page is a change to save too, and is added', blanked.dirty === true && JSON.stringify(blanked.added) === '[4]', JSON.stringify(blanked));
   await grid.closeAll();
 
   const outputs = path.join(root, 'Taken.pdf');

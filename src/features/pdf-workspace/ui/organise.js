@@ -357,13 +357,24 @@
       drag = stop;
     });
 
+    const named = (c) => c.setAttribute('aria-label', `Page ${c.dataset.n}${c.classList.contains('added') ? ', added' : ''}`);
+
+    // The pages that were not in the file when it was opened wear a tag, whatever has been done to the cells since.
+    function markAdded() {
+      const fresh = new Set(tab?.doc.added);
+      nodes.forEach((c, i) => {
+        c.classList.toggle('added', fresh.has(i + 1));
+        named(c);
+      });
+    }
+
     function makeCell(n) {
       const c = el('div', 'cell');
       c.dataset.n = String(n);
       c.tabIndex = -1;
       c.setAttribute('role', 'option');
       c.setAttribute('aria-selected', 'false');
-      c.setAttribute('aria-label', `Page ${n}`);
+      named(c);
       const { width, height } = viewer.getPageView(n - 1).viewport;
       c.style.setProperty('--r', String(height / width));
       c.append(el('span', 'sheet'), el('span', 'num', String(n)));
@@ -377,7 +388,7 @@
         const n = String(i + 1);
         if (c.dataset.n === n) return;
         c.dataset.n = n;
-        c.setAttribute('aria-label', `Page ${n}`);
+        named(c);
         c.lastChild.textContent = n;
       });
     }
@@ -388,6 +399,7 @@
       cells.replaceChildren();
       nodes = [];
       for (let n = 1; n <= viewer.pagesCount; n++) makeCell(n);
+      markAdded();
     }
 
     function build() {
@@ -421,6 +433,7 @@
       while (nodes.length > total) { const c = nodes.pop(); seen.unobserve(c); visible.delete(c); c.remove(); }
       while (nodes.length < total) makeCell(nodes.length + 1);
       renumber();
+      markAdded();
       nodes.forEach((c, i) => {
         if (visible.has(c)) { paint(c); return; }
         c.firstChild.replaceChildren();
@@ -596,7 +609,7 @@
       let gaveUp = false;
       let wrong = false;
       for (;;) {
-        const password = await window.workspaceDialogs.askPassword(wrong, () => { gaveUp = true; window.workspaceDialogs.closePassword(); });
+        const password = await window.workspaceDialogs.askPassword(wrong, () => { gaveUp = true; window.workspaceDialogs.closePassword(); }, source.name);
         if (password === null) { window.workspaceDialogs.closePassword(); return false; }
         const right = await window.workspaceApi.unlockSource(source.id, password).catch(() => false);
         if (gaveUp) return false;
