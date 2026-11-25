@@ -13,7 +13,31 @@ const OPS = {
   'meta.set': { kind: 'direct', keys: { title: isText, author: isText, subject: isText, keywords: isText } },
   'pages.rotate': { kind: 'direct', keys: { pages: isPages, by: (v) => v === 90 || v === 180 || v === 270 } },
   'pages.delete': { kind: 'rewrite', keys: { pages: isPages } },
+  'pages.move': { kind: 'direct', keys: { pages: isPages, before: (v) => Number.isInteger(v) && v >= 1 && v <= MAX_PAGE + 1 } },
 };
+
+// Where every page is after a list of page changes: [the page it was when the document began, degrees turned], in the order they now
+// have. `from` is the answer for the changes before, `count` the pages the document had before this list. Resolves undefined when
+// that is the document as it began, so two versions that are the same pages in the same order and turn compare equal.
+function arrange(from, count, list) {
+  const began = from?.began ?? count;
+  let now = from?.pages ?? Array.from({ length: count }, (_, i) => [i + 1, 0]);
+  for (const op of list) {
+    if (op.op === 'pages.rotate') {
+      now = now.slice();
+      for (const p of op.pages) now[p - 1] = [now[p - 1][0], (now[p - 1][1] + op.by) % 360];
+    } else if (op.op === 'pages.delete') {
+      const gone = new Set(op.pages);
+      now = now.filter((_, i) => !gone.has(i + 1));
+    } else {
+      const moving = new Set(op.pages);
+      const rest = now.filter((_, i) => !moving.has(i + 1));
+      const at = op.before - 1 - op.pages.filter((p) => p < op.before).length;
+      now = [...rest.slice(0, at), ...[...op.pages].sort((a, b) => a - b).map((p) => now[p - 1]), ...rest.slice(at)];
+    }
+  }
+  return now.length === began && now.every(([page, turned], i) => page === i + 1 && turned === 0) ? undefined : { began, pages: now };
+}
 
 // Returns a copy of the list that holds only the keys each operation takes. Throws a sentence for anything else.
 function check(list) {
@@ -28,4 +52,4 @@ function check(list) {
   });
 }
 
-module.exports = { check, OPS };
+module.exports = { check, arrange, OPS };

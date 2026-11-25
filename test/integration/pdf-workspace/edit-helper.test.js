@@ -78,6 +78,7 @@ def sign(path, name, signer, extra_sig="", extra_field="", certify=False, empty=
 const list = (...ops) => { const file = at(`ops-${crypto.randomBytes(4).toString('hex')}.json`); fs.writeFileSync(file, JSON.stringify({ version: 1, ops })); return file; };
 const rotate = (pages, by = 90) => ({ op: 'pages.rotate', pages, by });
 const remove = (pages) => ({ op: 'pages.delete', pages });
+const move = (pages, before) => ({ op: 'pages.move', pages, before });
 const tool = (src, out, file, secrets, options) => conversion.runPdfTool('pdf_edit.py', [src, out, file], { src, secrets, ...options });
 const reason = (promise) => promise.then(() => '', (e) => e.message);
 const direct = (args, input) => childProcess.spawnSync(py, ['-W', 'ignore', scriptPath('pdf_edit.py'), ...args], { encoding: 'utf8', windowsHide: true, input, stdio: input === undefined ? ['ignore', 'pipe', 'pipe'] : 'pipe' });
@@ -93,6 +94,7 @@ const bytes = fs.readFileSync(draw);
   expect('the content of every page is the same bytes', after.contents.every((c, i) => c === original.contents[i]));
   expect('it is appended to the file: the original is a prefix of the result', fs.readFileSync(rotated).subarray(0, bytes.length).equals(bytes));
   expect('the helper says it appended, then OK, with progress lines', /^\{"saved": "incremental"\}$/m.test(said) && /^OK$/m.test(said) && /POMELO_PROGRESS 0\.990/.test(said), said);
+  expect('it says how many pages the file it started from had', /^\{"pages": 3\}$/m.test(said), said);
   expect('the file reopens without repair', after.repaired === false);
   expect('the file it started from is untouched', fs.readFileSync(draw).equals(bytes));
   const twice = at('twice.pdf');
@@ -104,13 +106,57 @@ const bytes = fs.readFileSync(draw);
   const full = await tool(draw, shorter, list(remove([2])));
   const gone = look(shorter);
   expect('page 2 is gone and the others are in order', gone.texts.length === 2 && /PAGEMARK1/.test(gone.texts[0]) && /PAGEMARK3/.test(gone.texts[1]), JSON.stringify(gone.texts));
-  expect('the helper says it wrote the whole file', /^\{"saved": "full"\}$/m.test(full), full);
+  expect('the helper says it wrote the whole file, and that the file it started from had 3 pages', /^\{"saved": "full"\}$/m.test(full) && /^\{"pages": 3\}$/m.test(full), full);
   const marker = Buffer.from('PAGEMARK2').toString('hex');
   expect('the text of the deleted page is not in the file any more', bytes.includes(marker) && !fs.readFileSync(shorter).includes(marker));
   expect('the pages that stay keep their content bytes', gone.contents[0] === original.contents[0] && gone.contents[1] === original.contents[2]);
   const mixed = at('mixed.pdf');
   await tool(draw, mixed, list(remove([1]), rotate([1], 270)));
   expect('after a deletion, page numbers are those of the document as it is then', JSON.stringify(look(mixed).rotations) === '[270,0]' && /PAGEMARK2/.test(look(mixed).texts[0]), JSON.stringify(look(mixed).rotations));
+
+  console.log('pages that move');
+  const six = at('six.pdf');
+  python('import pymupdf, sys\nd = pymupdf.open()\nfor i in range(6):\n    d.new_page().insert_text((72, 100), "PAGEMARK%d" % (i + 1))\nd[0].insert_link({"kind": pymupdf.LINK_GOTO, "from": pymupdf.Rect(10, 10, 100, 30), "page": 4, "to": pymupdf.Point(0, 0)})\nd.set_toc([[1, "to five", 5]])\nd.save(sys.argv[1], expand=255)', six);
+  const sixBytes = fs.readFileSync(six);
+  const order = (file) => look(file).texts.map((t) => t.replace('PAGEMARK', '')).join('');
+  const arranged = async (name, ...ops) => { const out = at(`${name}.pdf`); const said = await tool(six, out, list(...ops)); return { out, said }; };
+  const cases = {
+    'one page forward': [[move([1], 4)], '231456'], 'one page back': [[move([5], 2)], '152346'], 'a page to the end': [[move([2], 7)], '134562'], 'a page to the start': [[move([6], 1)], '612345'],
+    'a block, kept in its order, whatever order it was named in': [[move([5, 2, 3], 1)], '235146'], 'a block to the end': [[move([1, 2], 7)], '345612'],
+    'pages that are apart, brought together': [[move([1, 5], 4)], '231546'], 'a place inside the block itself': [[move([2, 3], 3)], '123456'], 'the place just after the block': [[move([2, 3], 4)], '123456'],
+    'two moves in turn, the second counted in the document the first left': [[move([1], 7), move([1], 7)], '345612'],
+  };
+  for (const [what, [ops, wanted]] of Object.entries(cases)) {
+    const { out, said } = await arranged(`move-${crypto.randomBytes(3).toString('hex')}`, ...ops);
+    expect(`${what}: the pages end up in the order ${wanted}`, order(out) === wanted && /^\{"saved": "incremental"\}$/m.test(said), `${order(out)} ${said}`);
+  }
+  const { out: moved } = await arranged('moved', move([5], 2));
+  const where = JSON.parse(python('import json, sys, pymupdf\nd = pymupdf.open(sys.argv[1])\nprint(json.dumps({"toc": d.get_toc(), "link": [l["page"] for l in d[0].get_links()], "repaired": d.is_repaired}))', moved));
+  expect('the file is the original with the change appended, and it opens without repair', fs.readFileSync(moved).subarray(0, sixBytes.length).equals(sixBytes) && where.repaired === false);
+  expect('a bookmark and a link still lead to the page they led to, which is now the second', JSON.stringify(where.toc) === '[[1,"to five",2]]' && JSON.stringify(where.link) === '[1]', JSON.stringify(where));
+  expect('the content of every page is the same bytes, in the new order', JSON.stringify(look(moved).contents) === JSON.stringify([0, 4, 1, 2, 3, 5].map((i) => look(six).contents[i])));
+  for (const [what, op, why] of [['a place before the first page', move([1], 0), 'there is no such place to move pages to'], ['a place past the end', move([1], 8), 'there is no such place to move pages to'], ['a page that is not there', move([7], 1), 'this PDF has no page 7'], ['the same page twice', move([1, 1], 3), 'pages must be a list of different page numbers']]) {
+    const out = at(`move-refused-${crypto.randomBytes(3).toString('hex')}.pdf`);
+    const message = await reason(tool(six, out, list(op)));
+    expect(`${what} is refused with a reason and nothing is written`, message.includes(why) && !fs.existsSync(out), message);
+  }
+  const lockedMoved = at('locked-moved.pdf');
+  await tool(locked, lockedMoved, list(move([3], 1)), { password: PASSWORD });
+  expect('a protected file with a page moved still needs its password, and has the page in its new place', look(lockedMoved).locked === true && /PAGEMARK3/.test(look(lockedMoved, PASSWORD).texts[0]) && look(lockedMoved, PASSWORD).encryption === look(locked, PASSWORD).encryption);
+
+  console.log('a file of 3 000 pages');
+  const big = at('big.pdf');
+  python('import pymupdf, sys\nd = pymupdf.open()\nfor i in range(3000):\n    d.new_page().insert_text((72, 100), "BIG%d" % (i + 1))\nd.save(sys.argv[1], expand=255)', big);
+  const thirds = Array.from({ length: 1000 }, (_, i) => 3 * i + 1);
+  const timed = async (name, ...ops) => { const out = at(`${name}.pdf`); const began = Date.now(); await tool(big, out, list(...ops)); return { out, took: Date.now() - began }; };
+  const ends = (file) => python('import sys, pymupdf\nd = pymupdf.open(sys.argv[1])\nprint(d.page_count, *[d[i].get_text().strip() for i in (0, 1, 2, d.page_count - 1)])', file);
+  const turned = await timed('big-turned', rotate(thirds));
+  const toEnd = await timed('big-to-end', move(thirds, 3001));
+  const deleted = await timed('big-deleted', remove(thirds));
+  const toStart = await timed('big-to-start', move([3000], 1));
+  expect('1 000 pages turned, moved to the end or deleted, and a page moved to the front, each take under 6 seconds', [turned, toEnd, deleted, toStart].every((r) => r.took < 6000), JSON.stringify([turned.took, toEnd.took, deleted.took, toStart.took]));
+  expect('the 1 000 pages moved to the end are the last 1 000, in their order', ends(toEnd.out) === '3000 BIG2 BIG3 BIG5 BIG2998', ends(toEnd.out));
+  expect('the deletion leaves 2 000 pages and the move to the front puts the last page first', ends(deleted.out) === '2000 BIG2 BIG3 BIG5 BIG3000' && ends(toStart.out) === '3000 BIG3000 BIG1 BIG2 BIG2999', `${ends(deleted.out)} | ${ends(toStart.out)}`);
 
   console.log('a file that has to be repaired is saved whole');
   const broken = at('broken.pdf');

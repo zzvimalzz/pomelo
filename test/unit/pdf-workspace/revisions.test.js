@@ -35,6 +35,7 @@ const readAll = async (docs, info) => docs.read(info.token, 0, info.size);
     await chain.push(b, 1e9);
     expect('a pushed revision is the one on show and the chain has changes', chain.current() === b && chain.dirty());
     expect('undo and redo step one revision, and stop at the ends', chain.undo() === a && chain.undo() === first && chain.undo() === null && chain.redo() === a && chain.redo() === b && chain.redo() === null);
+    expect('undo and redo say whether there is a step to take', chain.canUndo() && !chain.canRedo() && chain.undo() === a && chain.canUndo() && chain.canRedo() && chain.undo() === first && !chain.canUndo() && chain.canRedo() && chain.redo() === a && chain.redo() === b);
     chain.undo();
     chain.markSaved();
     expect('what is saved is not a change', !chain.dirty() && chain.undo() === first && chain.dirty() && chain.redo() === a && !chain.dirty());

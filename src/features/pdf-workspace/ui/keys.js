@@ -15,6 +15,9 @@
     documentPanel: { keys: ['Ctrl+d', 'Ctrl+D'], label: 'Ctrl+D' },
     saveCopy: { keys: ['Ctrl+Shift+S'], label: 'Ctrl+Shift+S' },
     save: { keys: ['Ctrl+s', 'Ctrl+S'], label: 'Ctrl+S' },
+    redo: { keys: ['Ctrl+y', 'Ctrl+Y', 'Ctrl+Shift+Z'], label: 'Ctrl+Y' },
+    undo: { keys: ['Ctrl+z', 'Ctrl+Z'], label: 'Ctrl+Z' },
+    deletePages: { keys: ['Delete'], label: 'Del' },
     back: { keys: ['Alt+ArrowLeft'], label: 'Alt+Left' },
     forward: { keys: ['Alt+ArrowRight'], label: 'Alt+Right' },
     escape: { keys: ['Escape'], label: 'Esc' },
@@ -38,7 +41,7 @@
     if (e.defaultPrevented) return;
     const id = Object.keys(TABLE).find((k) => TABLE[k].keys.some((combo) => matches(e, combo)));
     if (!id || !actions[id] || (id !== 'escape' && window.workspaceDialogs.isOpen())) return;
-    if (typing(e) && id !== 'focusReading' && !e.ctrlKey) return;
+    if (typing(e) && id !== 'focusReading' && (!e.ctrlKey || id === 'undo' || id === 'redo')) return;
     if (actions[id].some((fn) => fn(e) !== false)) e.preventDefault();
   });
 

@@ -15,6 +15,7 @@
   let flash = null;
   let flashTimer = null;
   let folded = false;
+  let hide = () => {};
   const focusReading = () => document.body.classList.contains('focus');
   const menuOpen = () => !!menu && !menu.hidden;
   const closeMenu = () => { if (menu) { menu.hidden = true; zoomButton.setAttribute('aria-expanded', 'false'); } };
@@ -158,7 +159,9 @@
       sync();
       wrap.hidden = false;
     });
-    eventBus.on('pagesdestroy', () => { closeMenu(); wrap.hidden = true; });
+    hide = () => { closeMenu(); wrap.hidden = true; };
+    // The dock stays up while the pages of a document just changed are read again, so it does not drop out and come back each time.
+    eventBus.on('pagesdestroy', () => { if (!window.workspaceOrganise.waiting()) hide(); });
     eventBus.on('pagechanging', ({ pageNumber }) => {
       if (document.activeElement !== page) { page.value = pageNumber; fit(); }
       if (focusReading() || folded) showPill(`${pageNumber} / ${viewer.pagesCount}`);
@@ -201,5 +204,5 @@
 
   bind('escape', () => (menuOpen() ? (closeMenu(), true) : false));
 
-  window.workspaceDock = { watch };
+  window.workspaceDock = { watch, hide: () => hide() };
 })();

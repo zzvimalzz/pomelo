@@ -21,7 +21,7 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   console.log('opening');
   const doc = await docs.open(file);
   const second = await docs.open(file);
-  expect('a document has a name and a size, and its token is 32 random bytes in hex', doc.name === 'Report.pdf' && doc.size === content.length && /^[0-9a-f]{64}$/.test(doc.token) && Object.keys(doc).sort().join() === 'dirty,name,size,token', JSON.stringify(Object.keys(doc)));
+  expect('a document has a name and a size, and its token is 32 random bytes in hex', doc.name === 'Report.pdf' && doc.size === content.length && /^[0-9a-f]{64}$/.test(doc.token) && Object.keys(doc).sort().join() === 'canRedo,canUndo,dirty,name,size,token', JSON.stringify(Object.keys(doc)));
   expect('every open gets its own token', doc.token !== second.token);
   expect('a file that is not there is refused with its reason', await docs.open(path.join(root, 'nope.pdf')).then(() => '', (e) => e.code) === 'ENOENT');
   expect('a folder is refused', await fails(docs.open(root)));
@@ -64,7 +64,7 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   docs.unlock(doc.token, 'Pw-é1');
   const stored = docs.password(doc.token);
   expect('the password is kept in memory as UTF-8, under the document\'s token only', stored.toString('utf8') === 'Pw-é1' && docs.password(second.token) === undefined);
-  expect('the document record carries no password', !JSON.stringify(doc).includes('Pw-') && Object.keys(doc).sort().join() === 'dirty,name,size,token');
+  expect('the document record carries no password', !JSON.stringify(doc).includes('Pw-') && Object.keys(doc).sort().join() === 'canRedo,canUndo,dirty,name,size,token');
   docs.unlock(doc.token, 'another');
   expect('a new password replaces the old one, which is overwritten with zeros', docs.password(doc.token).toString() === 'another' && stored.every((b) => b === 0));
   const refusedPasswords = { 'an unknown token': ['0'.repeat(64), 'x'], 'no password': [doc.token, undefined], 'an empty password': [doc.token, ''], 'a password that is not text': [doc.token, 12], 'a password of 4097 characters': [doc.token, 'x'.repeat(4097)] };
@@ -97,7 +97,9 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   expect('no list file is left in the session folder', fs.readdirSync(session).every((name) => !name.startsWith('ops-')), fs.readdirSync(session).join());
   await edits.apply(edited.token, rotate);
   expect('the next change starts from the revision on show', runs[1].source === runs[0].target);
-  expect('undo steps back one change at a time', (await edits.undo(edited.token)).info.size === result.info.size && (await edits.undo(edited.token)).info.size === '%PDF-1.7 the original'.length && !(await edits.undo(edited.token)));
+  expect('the document says whether undo and redo have a step to take', result.info.canUndo === true && result.info.canRedo === false && edited.canUndo === false && (await edits.undo(edited.token)).info.canRedo === true);
+  await edits.redo(edited.token);
+  expect('undo steps back one change at a time',(await edits.undo(edited.token)).info.size === result.info.size && (await edits.undo(edited.token)).info.size === '%PDF-1.7 the original'.length && !(await edits.undo(edited.token)));
   expect('a document with no password gives the helper no secret', runs[0].secrets === undefined);
   edits.unlock(edited.token, 'Pw-é1');
   await edits.apply(edited.token, rotate);
@@ -239,6 +241,47 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   await stuck.close(slow.token);
   expect('closing a document stops the helper that is reading it', await pendingFacts === 'CancelledError');
   await Promise.all([informed.closeAll(), noEngine.closeAll(), stuck.closeAll()]);
+
+  console.log('pages put back as they were');
+  let length = 4;
+  const arranging = createDocuments({
+    runPdfTool: async (script, args) => {
+      if (script === 'pdf_info.py') { fs.writeFileSync(args[1], JSON.stringify({ information: { title: 'T', author: '', subject: '', keywords: '', created: null } })); return ''; }
+      fs.writeFileSync(args[1], `${fs.readFileSync(args[0], 'utf8')} +1`);
+      const began = length;
+      for (const op of JSON.parse(fs.readFileSync(args[2], 'utf8')).ops) if (op.op === 'pages.delete') length -= op.pages.length;
+      return `{"saved": "full"}
+{"pages": ${began}}
+OK`;
+    },
+  });
+  const sheet = await arranging.open(make('Sheet.pdf', '%PDF-1.7 sheet'));
+  const change = (...ops) => arranging.apply(sheet.token, ops).then((r) => r.info.dirty);
+  const turn = (pages, by) => ({ op: 'pages.rotate', pages, by });
+  const shift = (pages, before) => ({ op: 'pages.move', pages, before });
+  const outcome = [await change(turn([2], 90)), await change(turn([2], 270))];
+  expect('a page turned and then turned back leaves nothing to save', outcome.join() === 'true,false', outcome.join());
+  const halves = [await change(turn([1, 2], 180)), await change(turn([1], 180)), await change(turn([2], 180))];
+  expect('two half turns of every page are the pages as they were', halves.join() === 'true,true,false', halves.join());
+  const moved = [await change(shift([1], 3)), await change(shift([2], 1))];
+  expect('a page moved and then moved back leaves nothing to save', moved.join() === 'true,false', moved.join());
+  const blocks = [await change(shift([1, 2], 4)), await change(shift([2, 3], 1))];
+  expect('two pages moved to the end and then moved back leave nothing to save', blocks.join() === 'true,false', blocks.join());
+  expect('a move that puts the pages somewhere else is a change', (await change(shift([1], 4))) === true && (await change(shift([3], 1))) === false);
+  expect('a page that is gone is a change however the others are put', (await change({ op: 'pages.delete', pages: [4] })) === true && (await change(turn([1], 90))) === true && (await change(turn([1], 270))) === true);
+  expect('undo through changes that are not yet the file as it was still has something to save', (await arranging.undo(sheet.token)).info.dirty === true && (await arranging.undo(sheet.token)).info.dirty === true);
+  while ((await arranging.undo(sheet.token)) && arranging.list()[0].canUndo);
+  expect('every undo back to the start leaves nothing to save', arranging.list()[0].dirty === false);
+  length = 4;
+  const read = [await change(turn([3], 90))];
+  await arranging.facts(sheet.token);
+  read.push(await change(turn([3], 270)));
+  expect('a page turned and turned back counts as the pages as they were once the information of the file is read, too', read.join() === 'true,false', read.join());
+  await change(turn([3], 90));
+  await arranging.save(sheet.token);
+  const afterwards = [await change(turn([3], 90)), await change(turn([3], 270)), await change(turn([3], 270))];
+  expect('after a save the pages as they were saved are the ones that leave nothing to save', afterwards.join() === 'true,false,true', afterwards.join());
+  await arranging.closeAll();
 
   console.log('several documents');
   const tabs = createDocuments();

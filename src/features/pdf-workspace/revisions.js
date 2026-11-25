@@ -22,13 +22,18 @@ function createRevisions(first) {
   const release = (rev) => { if (--rev.refs === 0 && rev.retired) close(rev); };
 
   const current = () => list[at];
-  // A revision made from another by changes to the document information alone holds the same document again once that information
-  // is back as it was: `base` is the revision it was made from, `meta` its information as text (both set by documents.js).
-  const same = (a, b) => a === b || (!!a.meta && a.meta === b.meta && (a.base ?? a) === (b.base ?? b));
+  // A revision made from another by changes to the document information or to the pages alone holds the same document again once that
+  // is back as it was: `base` is the revision it was made from, `meta` its information as text (a revision that only moved pages has
+  // none of its own and takes it from `metaFrom`) and `layout` where its pages are (all set by documents.js).
+  const information = (r) => { while (r && !r.meta) r = r.metaFrom; return r?.meta; };
+  const arrangement = (r) => (r.layout ? JSON.stringify(r.layout.pages) : '');
+  const same = (a, b) => a === b || ((a.base ?? a) === (b.base ?? b) && information(a) === information(b) && arrangement(a) === arrangement(b));
   const dirty = () => !same(list[at], saved);
 
-  function undo() { return at > 0 ? list[--at] : null; }
-  function redo() { return at < list.length - 1 ? list[++at] : null; }
+  const canUndo = () => at > 0;
+  const canRedo = () => at < list.length - 1;
+  function undo() { return canUndo() ? list[--at] : null; }
+  function redo() { return canRedo() ? list[++at] : null; }
 
   // Adds the next revision after the one on show and lets go of what that leaves behind: the redo tail, then the oldest revisions
   // after the first until there are at most MAX_REVISIONS and they fit in `budget` bytes.
@@ -53,7 +58,7 @@ function createRevisions(first) {
   const markSaved = () => { saved = list[at]; };
   const dispose = () => Promise.all(list.map(retire));
 
-  return { current, dirty, undo, redo, push, replaceFirst, markSaved, acquire, release, dispose };
+  return { current, dirty, canUndo, canRedo, undo, redo, push, replaceFirst, markSaved, acquire, release, dispose };
 }
 
 module.exports = { createRevisions, MAX_REVISIONS };
