@@ -283,6 +283,76 @@ OK`;
   expect('after a save the pages as they were saved are the ones that leave nothing to save', afterwards.join() === 'true,false,true', afterwards.join());
   await arranging.closeAll();
 
+  console.log('pages put in and written out');
+  const runsOf = [];
+  let added = '[2]';
+  const inserting = createDocuments({
+    checkPassword: async (file, password) => password.toString() === 'right',
+    runPdfTool: async (script, args, options) => {
+      runsOf.push({ args, list: JSON.parse(fs.readFileSync(args[2], 'utf8')), secrets: options.secrets });
+      fs.writeFileSync(args[1], `${fs.readFileSync(args[0], 'utf8')} +1`);
+      return `{"saved": "incremental"}
+{"pages": 4}
+{"added": ${added}}
+OK`;
+    },
+  });
+  const chapter = await inserting.open(make('Book.pdf', '%PDF-1.7 chapter'));
+  const piece = make('Part.pdf', '%PDF-1.7 piece');
+  const picked = inserting.addSource(piece, 'pdf');
+  const insertAt = (before, ...sources) => ({ op: 'pages.insert', before, sources });
+  expect('a file to insert gets an id of 32 hex digits, and the id is not the path', /^[0-9a-f]{32}$/.test(picked) && !piece.toLowerCase().includes(picked));
+  const inserted = await inserting.apply(chapter.token, [insertAt(2, picked)]);
+  expect('the helper is given the file by path and kind under the id, and the page never sees the path', JSON.stringify(runsOf[0].list.ops[0].sources) === JSON.stringify([{ id: picked, file: piece, kind: 'pdf' }]) && !JSON.stringify(inserted).includes('Part.pdf') && inserted.reload === true);
+  expect('with no password given the helper is sent none', runsOf[0].secrets === undefined);
+  expect('a file is forgotten once the change that used it is made', await inserting.apply(chapter.token, [insertAt(2, picked)]).then(() => '', (e) => e.message) === 'A file to insert is no longer available.');
+  expect('an id that was never given is refused the same way', await inserting.apply(chapter.token, [insertAt(2, 'f'.repeat(32))]).then(() => '', (e) => e.message) === 'A file to insert is no longer available.');
+  const wrongOne = inserting.addSource(piece, 'pdf');
+  expect('a wrong password is turned down and kept nowhere', (await inserting.unlockSource(wrongOne, 'wrong')) === false);
+  await inserting.apply(chapter.token, [insertAt(1, wrongOne)]).catch(() => {});
+  expect('so the change that follows is sent no password', runsOf.at(-1).secrets === undefined);
+  const again = inserting.addSource(piece, 'pdf');
+  expect('the right password is accepted', (await inserting.unlockSource(again, 'right')) === true);
+  await inserting.apply(chapter.token, [insertAt(1, again)]);
+  expect('and it reaches the helper under the id of its file, beside the password of the document itself', JSON.stringify(runsOf.at(-1).secrets) === JSON.stringify({ sources: { [again]: 'right' } }));
+  inserting.unlock(chapter.token, 'own-password');
+  const both = inserting.addSource(piece, 'pdf');
+  await inserting.unlockSource(both, 'right');
+  await inserting.apply(chapter.token, [insertAt(1, both)]);
+  expect('both are sent together, and the list file holds neither', JSON.stringify(runsOf.at(-1).secrets) === JSON.stringify({ password: 'own-password', sources: { [both]: 'right' } }) && !JSON.stringify(runsOf.at(-1).list).includes('right'));
+  expect('a password for a file that is not known is refused', await inserting.unlockSource('e'.repeat(32), 'right').then(() => '', (e) => e.message) === 'unknown file');
+  expect('and one that is not text', await inserting.unlockSource(inserting.addSource(piece, 'pdf'), 5).then(() => 'written', () => 'refused') === 'refused');
+  expect('a list may not name a path in place of an id', (() => { try { inserting.apply(chapter.token, [insertAt(1, piece)]); return false; } catch { return true; } })());
+  expect('a change that makes a new file is not made on the document', (() => { try { inserting.apply(chapter.token, [{ op: 'pages.extract', pages: [1] }]); return false; } catch { return true; } })());
+
+  const added4 = [];
+  const grid = createDocuments({ runPdfTool: async (script, args) => { fs.writeFileSync(args[1], `${fs.readFileSync(args[0], 'utf8')} +1`); return `{"saved": "incremental"}
+{"pages": 3}
+{"added": ${added4.shift() ?? '[0]'}}
+OK`; } });
+  const shelf = await grid.open(make('Shelf.pdf', '%PDF-1.7 shelf'));
+  const from = grid.addSource(piece, 'pdf');
+  added4.push('[2]');
+  expect('pages put in are a change to save', (await grid.apply(shelf.token, [insertAt(2, from)])).info.dirty === true);
+  expect('taking those pages out again leaves the file as it was', (await grid.apply(shelf.token, [{ op: 'pages.delete', pages: [2, 3] }])).info.dirty === false);
+  added4.push('[1]');
+  expect('a blank page is a change to save too', (await grid.apply(shelf.token, [{ op: 'pages.blank', before: 4 }])).info.dirty === true);
+  await grid.closeAll();
+
+  const outputs = path.join(root, 'Taken.pdf');
+  const ran = runsOf.length;
+  const unchanged = inserting.list()[0];
+  const written = await inserting.extract(chapter.token, [3, 1], outputs);
+  expect('extracting writes the pages to the target and leaves the document and its revisions as they were', written.done === true && fs.existsSync(outputs) && JSON.stringify(inserting.list()[0]) === JSON.stringify(unchanged));
+  expect('the helper is asked for the pages in a list of one change, on the revision on show', runsOf.length === ran + 1 && JSON.stringify(runsOf.at(-1).list.ops) === '[{"op":"pages.extract","pages":[3,1]}]' && /revision-\d+\.pdf$/.test(runsOf.at(-1).args[0]));
+  expect('what the helper wrote is not left in the temp folder', !fs.existsSync(runsOf.at(-1).args[1]));
+  expect('pages that are not a list of pages are refused before the helper starts', (() => { try { inserting.extract(chapter.token, [], outputs); return false; } catch { return true; } })() && runsOf.length === ran + 1);
+  const clean = await createDocuments({ runPdfTool: async (script, args) => { fs.writeFileSync(args[1], '%PDF-1.7 out %%EOF'); runsOf.push({ source: args[0] }); return ''; } });
+  const plain = await clean.open(make('Plain.pdf', '%PDF-1.7 plain'));
+  await clean.extract(plain.token, [1], path.join(root, 'Plain out.pdf'));
+  expect('a document with no change yet is read by the helper from the file itself, with no copy made', runsOf.at(-1).source === make('Plain.pdf', '%PDF-1.7 plain') && !clean.list()[0].dirty);
+  await Promise.all([clean.closeAll(), inserting.closeAll()]);
+
   console.log('several documents');
   const tabs = createDocuments();
   const one = await tabs.open(file);

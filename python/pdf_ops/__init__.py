@@ -22,6 +22,9 @@ OPS = {
     "pages.rotate": ("direct", pages.rotate),
     "pages.delete": ("rewrite", pages.delete),
     "pages.move": ("direct", pages.move),
+    "pages.insert": ("new", pages.insert),
+    "pages.blank": ("new", pages.blank),
+    "pages.extract": ("output", pages.extract),
 }
 
 
@@ -38,14 +41,16 @@ def read_secrets():
         secrets = json.loads(line.decode("utf-8"))
     except ValueError:
         raise ValueError("the request is not valid")
-    if not isinstance(secrets, dict) or any(k not in SECRET_KEYS or not isinstance(v, str) for k, v in secrets.items()):
+    if not isinstance(secrets, dict) or any(k not in SECRET_KEYS or not isinstance(v, str) for k, v in secrets.items() if k != "sources"):
+        raise ValueError("the request is not valid")
+    if "sources" in secrets and (not isinstance(secrets["sources"], dict) or any(not isinstance(v, str) for v in secrets["sources"].values())):
         raise ValueError("the request is not valid")
     return secrets
 
 
 def fail(exc, secrets):
     reason = helper.reason(exc)
-    for value in secrets.values():
+    for value in [v for k, v in secrets.items() if k != "sources"] + list(secrets.get("sources", {}).values()):
         if value:
             reason = reason.replace(value, "***")
     sys.stderr.write(reason + "\n")
@@ -70,7 +75,7 @@ def load(path):
         name = op.get("op") if isinstance(op, dict) else None
         if name not in OPS:
             raise ValueError("unknown change %s" % json.dumps(name)[:40])
-        takes = set(inspect.signature(OPS[name][1]).parameters) - {"doc"}
+        takes = set(inspect.signature(OPS[name][1]).parameters) - {"doc", "secrets"}
         if set(op) - {"op"} != takes:
             raise ValueError("%s takes %s" % (name, ", ".join(sorted(takes))))
     return data["ops"]
@@ -80,13 +85,20 @@ def incremental(ops):
     return all(OPS[op["op"]][0] in INCREMENTAL for op in ops)
 
 
-def apply(doc, ops, progress):
+def apply(doc, ops, progress, secrets):
+    """Makes each change in turn and returns how many pages each one added."""
+    added = []
     for i, op in enumerate(ops):
+        run = OPS[op["op"]][1]
+        arguments = {k: v for k, v in op.items() if k != "op"}
+        if "secrets" in inspect.signature(run).parameters:
+            arguments["secrets"] = secrets
         try:
-            OPS[op["op"]][1](doc, **{k: v for k, v in op.items() if k != "op"})
+            added.append(run(doc, **arguments) or 0)
         except ValueError as e:
             raise ValueError("%s: %s" % (op["op"], e))
         progress((i + 1) / len(ops))
+    return added
 
 
 def save(doc, dst, in_place):

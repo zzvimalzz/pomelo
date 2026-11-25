@@ -11,7 +11,7 @@ const os = require('os');
 const path = require('path');
 const { PDFDocument, PDFName, PDFRawStream, PDFString, PDFHexString, StandardFonts, clip, endPath, popGraphicsState, pushGraphicsState, rectangle, rgb } = require('pdf-lib');
 const { createWorkspace } = require('../../src/features/pdf-workspace');
-const { uniquePath, runPdfTool, detectEngines } = require('../../src/features/conversion');
+const { uniquePath, runPdfTool, detectEngines, probeLocked, checkPassword } = require('../../src/features/conversion');
 const { expect: check, failed } = require('../support/expect');
 const { encryptedPdf } = require('../support/encrypted-pdf');
 const finish = require('../support/finish');
@@ -40,8 +40,8 @@ const setSettings = (patch) => { writes++; settings = { ...settings, ...patch };
 const VIEW_KEYS = ['zoom', 'layout', 'sidebar', 'pageColours'];
 const fresh = ({ keepView = false, ...options } = {}) => {
   if (!keepView && settings.pdfView && typeof settings.pdfView === 'object') settings = { ...settings, pdfView: Object.fromEntries(Object.entries(settings.pdfView).filter(([key]) => !VIEW_KEYS.includes(key))) };
-  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'pdfws:put-revision', 'pdfws:apply', 'pdfws:undo', 'pdfws:redo', 'pdfws:save', 'pdfws:save-as', 'pdfws:reload', 'pdfws:close-window', 'pdfws:properties', 'pdfws:details', 'pdfws:rename', 'pdfws:show', 'pdfws:engine', 'pdfws:install-engine']) ipcMain.removeHandler(channel);
-  const workspace = createWorkspace({ hasPdfEngine: () => true, asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), uniquePath, runPdfTool, showInFolder: (file) => shown.push(file), ...options });
+  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'pdfws:put-revision', 'pdfws:apply', 'pdfws:undo', 'pdfws:redo', 'pdfws:save', 'pdfws:save-as', 'pdfws:choose-sources', 'pdfws:drop-sources', 'pdfws:unlock-source', 'pdfws:extract', 'pdfws:reload', 'pdfws:close-window', 'pdfws:properties', 'pdfws:details', 'pdfws:rename', 'pdfws:show', 'pdfws:engine', 'pdfws:install-engine']) ipcMain.removeHandler(channel);
+  const workspace = createWorkspace({ hasPdfEngine: () => true, asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), uniquePath, runPdfTool, probeLocked, checkPassword, showInFolder: (file) => shown.push(file), ...options });
   workspace.registerIpc();
   return workspace;
 };
@@ -2381,7 +2381,7 @@ app.whenReady().then(async () => {
       return { shown: !g.hidden, organising: document.querySelector('.well').classList.contains('organising'), scroller: getComputedStyle(document.getElementById('scroller')).visibility, cells: cells.length,
         labels: cells.slice(0, 2).map((c) => c.getAttribute('aria-label')).join(), canvases: document.querySelectorAll('.cell canvas').length, selected: cells.filter((c) => c.classList.contains('sel')).map((c) => c.dataset.n).join(),
         aria: cells.filter((c) => c.getAttribute('aria-selected') === 'true').length, focused: document.activeElement.classList.contains('cell') ? document.activeElement.dataset.n : document.activeElement.id,
-        stops: cells.filter((c) => c.tabIndex === 0).length, bar: bar.hidden ? '' : bar.textContent, title: b.title, label: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'), on: b.classList.contains('on'),
+        stops: cells.filter((c) => c.tabIndex === 0).length, bar: bar.hidden ? '' : bar.querySelector('.count').textContent, title: b.title, label: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'), on: b.classList.contains('on'),
         dot: !b.querySelector('.engdot').hidden, labelWidth: b.querySelector('.lbl').getBoundingClientRect().width, tooling: document.body.classList.contains('tooling'), page: workspaceViewer.viewer.currentPageNumber,
         card: document.querySelector('.card h3')?.textContent ?? '', role: g.getAttribute('role') }; })()`);
     const centre = (win, n) => js(win, `(() => { const c = document.querySelector('.cell[data-n="${n}"] .sheet'); c.scrollIntoView({ block: 'nearest' }); const r = c.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
@@ -2673,7 +2673,7 @@ app.whenReady().then(async () => {
       const reading = (win, code) => Promise.race([js(win, code), new Promise((resolve) => setTimeout(() => resolve(''), 3000))]);
       const pages = (win) => reading(win, `(async () => { const d = workspaceViewer.viewer.pdfDocument; if (!d) return ''; const out = []; for (let i = 1; i <= d.numPages; i++) out.push((await (await d.getPage(i)).getTextContent()).items.map((x) => x.str).join('').match(/page (\\d+)/)[1]); return out.join(','); })()`);
       const turns = (win) => reading(win, `(async () => { const d = workspaceViewer.viewer.pdfDocument; if (!d) return ''; const out = []; for (let i = 1; i <= Math.min(d.numPages, 12); i++) out.push((await d.getPage(i)).rotate); return out.join(','); })()`);
-      const bar = (win) => js(win, `(() => { const b = document.querySelector('.optbar'); const buttons = [...b.querySelectorAll('button')]; return { shown: !b.hidden, titles: buttons.map((x) => x.title).join('|'), disabled: buttons.map((x) => x.disabled ? 1 : 0).join(''),
+      const bar = (win) => js(win, `(() => { const b = document.querySelector('.optbar'); const buttons = [...b.querySelectorAll('button:not(.mi)')]; return { shown: !b.hidden, titles: buttons.map((x) => x.title).join('|'), disabled: buttons.map((x) => x.disabled ? 1 : 0).join(''),
         count: b.querySelector('.count').textContent, busy: document.querySelector('.pgrid').classList.contains('busy'), save: !document.getElementById('savebtn').hidden, cells: document.querySelectorAll('.cell:not(.hole):not(.leaving)').length, shape: [...document.querySelectorAll('.cell:not(.hole):not(.leaving)')].map((c) => c.style.getPropertyValue('--r') < 1 ? 'w' : 't').join('') }; })()`);
       const settled = (win) => until('the change to be read back', () => js(win, `(() => { const g = document.querySelector('.pgrid'); return !g.hidden && !g.classList.contains('busy') && document.querySelectorAll('.cell').length > 0 && document.querySelectorAll('.cell canvas').length > 0; })()`));
       const push = (win, name) => js(win, `[...document.querySelectorAll('.optbar button')].find((b) => b.getAttribute('aria-label') === ${JSON.stringify(name)}).click()`);
@@ -2719,7 +2719,7 @@ app.whenReady().then(async () => {
         await sheetsDrawn(win, 12);
         let b = await bar(win);
         const empty = await frame(win);
-        check(`${theme}: the bar is there with nothing selected, with Rotate left, Rotate right, Delete, Undo and Redo, and every one of them off`, b.shown && b.titles === 'Rotate left|Rotate right|Delete (Del)|Undo (Ctrl+Z)|Redo (Ctrl+Y)' && b.disabled === '11111' && b.count === '- pages', JSON.stringify(b));
+        check(`${theme}: the bar is there with nothing selected, with Insert, Rotate left, Rotate right, Delete, Extract, Undo and Redo, and everything but Insert off`, b.shown && b.titles === 'Insert…|Rotate left|Rotate right|Delete (Del)|Extract|Undo (Ctrl+Z)|Redo (Ctrl+Y)' && b.disabled === '0111111' && b.count === '- pages', JSON.stringify(b));
         const room = await js(win, `(() => { const c = document.querySelector('.optbar .count'); return { text: c.scrollWidth, box: c.clientWidth, faint: Number(getComputedStyle(c).opacity) }; })()`);
         check(`${theme}: "- pages" is greyed out and fits its place in the bar (${room.text} of ${room.box} px)`, room.text <= room.box && room.faint < 0.5, JSON.stringify(room));
 
@@ -2729,7 +2729,7 @@ app.whenReady().then(async () => {
         await clickCell(win, 3);
         await clickCell(win, 5, ['control']);
         b = await bar(win);
-        check(`${theme}: with pages selected, turning and deleting are on and undo and redo are still off`, b.disabled === '00011' && b.count === '2 selected', JSON.stringify(b));
+        check(`${theme}: with pages selected, turning and deleting are on and undo and redo are still off`, b.disabled === '0000011' && b.count === '2 selected', JSON.stringify(b));
         const full = await frame(win);
         check(`${theme}: selecting pages does not change the bar's width or move Undo and Redo (${full.width} px, Undo at ${full.undo} px, as with nothing selected)`, full.width === empty.width && full.undo === empty.undo, JSON.stringify([empty, full]));
         const tone = await js(win, `({ count: getComputedStyle(document.querySelector('.optbar .count')).color, text: getComputedStyle(document.body).color })`);
@@ -2738,13 +2738,13 @@ app.whenReady().then(async () => {
         await js(win, `document.querySelector('.cell[data-n="2"]').__kept = true; window.__wiggles = 0; (() => { const original = Element.prototype.animate; Element.prototype.animate = function (keys, options) { if (Array.isArray(keys) && keys.some((k) => String(k.transform ?? '').includes('translateX'))) window.__wiggles++; return original.call(this, keys, options); }; })()`);
         await watching(win, 12);
         await push(win, 'Rotate right');
-        const working = await js(win, `({ busy: document.querySelector('.pgrid').classList.contains('busy'), look: [...document.querySelectorAll('.optbar button')].map((x) => getComputedStyle(x).opacity + (x.disabled ? 'off' : '')).join(), shown: !document.querySelector('.optbar').hidden })`);
-        check(`${theme}: while the engine works the grid is marked busy and the bar keeps its look, with only the buttons that have nothing to do dimmed`, working.busy && working.shown && working.look === '1,1,1,0.35off,0.35off', JSON.stringify(working));
+        const working = await js(win, `({ busy: document.querySelector('.pgrid').classList.contains('busy'), look: [...document.querySelectorAll('.optbar button:not(.mi)')].map((x) => getComputedStyle(x).opacity + (x.disabled ? 'off' : '')).join(), shown: !document.querySelector('.optbar').hidden })`);
+        check(`${theme}: while the engine works the grid is marked busy and the bar keeps its look, with only the buttons that have nothing to do dimmed`, working.busy && working.shown && working.look === '1,1,1,1,1,0.35off,0.35off', JSON.stringify(working));
         await settled(win);
         await until('the turned pages to be drawn turned', async () => (await bar(win)).shape === 'ttwtwttttttt');
         b = await bar(win);
         let selected = (await grid(win)).selected;
-        check(`${theme}: Rotate right turns the two pages, the grid is built again with them still selected, and the file has changes to save`, applied() === before + 1 && (await turns(win)) === '0,0,90,0,90,0,0,0,0,0,0,0' && b.shape === 'ttwtwttttttt' && selected === '3,5' && b.save && b.disabled === '00001', JSON.stringify([await turns(win), b, selected]));
+        check(`${theme}: Rotate right turns the two pages, the grid is built again with them still selected, and the file has changes to save`, applied() === before + 1 && (await turns(win)) === '0,0,90,0,90,0,0,0,0,0,0,0' && b.shape === 'ttwtwttttttt' && selected === '3,5' && b.save && b.disabled === '0000001', JSON.stringify([await turns(win), b, selected]));
         await shot(win, `workspace-grid-changed-${theme}.png`);
         let seenNow = await watched(win);
         check(`${theme}: turning the pages did not blank the grid or build it again (no frame with fewer pictures than before, the same cells kept)`, seenNow.blank === 0 && seenNow.kept && (await js(win, `document.querySelector('.cell[data-n="2"]').__kept === true`)), JSON.stringify(seenNow));
@@ -2754,10 +2754,10 @@ app.whenReady().then(async () => {
         check(`${theme}: Rotate left turns them back, and with the pages as they were opened there is nothing left to save`, (await turns(win)) === '0,0,0,0,0,0,0,0,0,0,0,0' && (await bar(win)).shape === 'tttttttttttt' && !(await bar(win)).save, JSON.stringify(await bar(win)));
         await push(win, 'Undo');
         await settled(win);
-        check(`${theme}: Undo brings the turn back, with redo on`, (await turns(win)) === '0,0,90,0,90,0,0,0,0,0,0,0' && (await bar(win)).disabled === '11100');
+        check(`${theme}: Undo brings the turn back, with redo on`, (await turns(win)) === '0,0,90,0,90,0,0,0,0,0,0,0' && (await bar(win)).disabled === '0111100');
         await press(win, 'Z', ['control']);
         await settled(win);
-        check(`${theme}: Ctrl+Z goes back once more, to the file as it was opened, and there is nothing left to save`, (await turns(win)) === '0,0,0,0,0,0,0,0,0,0,0,0' && !(await bar(win)).save && (await bar(win)).disabled === '11110');
+        check(`${theme}: Ctrl+Z goes back once more, to the file as it was opened, and there is nothing left to save`, (await turns(win)) === '0,0,0,0,0,0,0,0,0,0,0,0' && !(await bar(win)).save && (await bar(win)).disabled === '0111110');
         await press(win, 'Y', ['control']);
         await settled(win);
         check(`${theme}: Ctrl+Y does the turn again`, (await turns(win)) === '0,0,90,0,90,0,0,0,0,0,0,0');
@@ -2850,7 +2850,7 @@ app.whenReady().then(async () => {
         await pull(win, 4, ['left', 2]);
         await changed(win, '1,2,3,4,5,6,7,8,9,10,11,12');
         await settled(win);
-        check(`${theme}: moving the page back where it was leaves the pages as they were opened, and the Save button goes`, !(await bar(win)).save && (await bar(win)).disabled === '00001', JSON.stringify(await bar(win)));
+        check(`${theme}: moving the page back where it was leaves the pages as they were opened, and the Save button goes`, !(await bar(win)).save && (await bar(win)).disabled === '0000001', JSON.stringify(await bar(win)));
         win.destroy();
         await sleep(500);
         forgetSize();
@@ -2869,9 +2869,194 @@ app.whenReady().then(async () => {
         await until('the notice', async () => notices.length > 0, 5000);
         await sleep(300);
         const b = await bar(win);
-        check('a change the engine cannot make says so in the corner and leaves the grid as it was, with the page still selected and the bar on again', notices.at(-1)?.title === "Can't make this change" && notices.at(-1).detail === 'This PDF has a problem' && !b.busy && b.disabled === '00011' && (await grid(win)).selected === '4' && !b.save, JSON.stringify([notices, b]));
+        check('a change the engine cannot make says so in the corner and leaves the grid as it was, with the page still selected and the bar on again', notices.at(-1)?.title === "Can't make this change" && notices.at(-1).detail === 'This PDF has a problem' && !b.busy && b.disabled === '0000011' && (await grid(win)).selected === '4' && !b.save, JSON.stringify([notices, b]));
         notices.length = 0;
         await closeAndWait(win);
+      }
+
+      console.log('the grid: inserting and extracting pages');
+      {
+        const picture = (name, colour) => {
+          const buffer = Buffer.alloc(80 * 40 * 4);
+          for (let i = 0; i < 80 * 40; i++) buffer.set([...colour, 255], i * 4);
+          const file = path.join(root, name);
+          fs.writeFileSync(file, nativeImage.createFromBitmap(buffer, { width: 80, height: 40 }).toPNG());
+          return file;
+        };
+        const secret = `Pw-${crypto.randomBytes(6).toString('hex')}`;
+        const protectedFile = path.join(root, 'Grid protected.pdf');
+        fs.writeFileSync(protectedFile, encryptedPdf(secret));
+        const notAPdf = path.join(root, 'Grid notes.txt');
+        fs.writeFileSync(notAPdf, 'not a pdf');
+        const first = picture('Grid picture one.png', [200, 40, 40]);
+        const second = picture('Grid picture two.png', [40, 40, 200]);
+        const order = (win) => reading(win, `(async () => { const d = workspaceViewer.viewer.pdfDocument; if (!d) return ''; const out = []; for (let i = 1; i <= d.numPages; i++) { const m = (await (await d.getPage(i)).getTextContent()).items.map((x) => x.str).join('').match(/page (\\d+) of (\\d+)/); out.push(m ? m[1] + (m[2] === '6' ? '' : 's') : '-'); } return out.join(','); })()`);
+        const arrives = (win, wanted) => until(`the pages to be ${wanted}`, async () => (await order(win)) === wanted);
+        const menu = (win) => js(win, `(() => { const m = document.querySelector('.insertgroup .menu'); const b = document.querySelector('.insertgroup .opt'); const r = m.getBoundingClientRect(); return { open: !m.hidden, expanded: b.getAttribute('aria-expanded'), items: [...m.querySelectorAll('.mi')].map((x) => x.textContent).join('|'), focused: document.activeElement?.textContent ?? '',
+          inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight, wide: r.width }; })()`);
+        const choose = (win, label) => js(win, `[...document.querySelectorAll('.insertgroup .mi')].find((x) => x.textContent === ${JSON.stringify(label)}).click()`);
+        const insertMenu = (win) => js(win, `document.querySelector('.insertgroup .opt').click()`);
+        const extractButton = (win) => js(win, `[...document.querySelectorAll('.optbar .opt')].find((x) => x.title === 'Extract').click()`);
+        const submit = (win, text) => js(win, `(() => { const f = document.querySelector('.veil input'); f.value = ${JSON.stringify(text)}; f.dispatchEvent(new Event('input')); document.querySelector('.veil .primary').click(); })()`);
+        const askedFor = (win) => until('the password card', () => js(win, `!!document.querySelector('.veil input') && !document.querySelector('.veil input').disabled`));
+        const picked = [];
+        const realOpen = dialog.showOpenDialog;
+        const realSave = dialog.showSaveDialog;
+        const answer = (...files) => { dialog.showOpenDialog = async (_win, options) => { picked.push(options); return files.length ? { canceled: false, filePaths: files } : { canceled: true, filePaths: [] }; }; };
+
+        for (const theme of ['light', 'dark']) {
+          nativeTheme.themeSource = theme;
+          const doc = await makePdf(`Grid insert ${theme}.pdf`, 6);
+          const source = await makePdf(`Grid source ${theme}.pdf`, 2);
+          const win = await openAndWait(fresh({ solid: true }), doc);
+          win.setSize(900, 600);
+          await sleep(600);
+          await openGrid(win);
+          await sheetsDrawn(win, 6);
+
+          const looks = await js(win, `(() => { const o = document.querySelector('.insertgroup .opt'); const e = [...document.querySelectorAll('.optbar .opt')].find((x) => x.title === 'Extract'); return { insert: o.textContent, insertColour: getComputedStyle(o).color, extract: e.textContent, extractColour: getComputedStyle(e).color, text: getComputedStyle(document.body).color, icons: o.querySelectorAll('svg').length + e.querySelectorAll('svg').length, height: o.getBoundingClientRect().height, haspopup: o.getAttribute('aria-haspopup') }; })()`);
+          check(`${theme}: Insert… and Extract carry an icon and their words, in the full text colour, 30 px high`, looks.insert === 'Insert…' && looks.extract === 'Extract' && looks.insertColour === looks.text && looks.extractColour === looks.text && looks.icons === 2 && looks.height === 30 && looks.haspopup === 'menu', JSON.stringify(looks));
+
+          await insertMenu(win);
+          await sleep(300);
+          let m = await menu(win);
+          check(`${theme}: Insert… opens a menu with From a PDF…, From pictures… and Blank page inside the window, the first item focused`, m.open && m.expanded === 'true' && m.items === 'From a PDF…|From pictures…|Blank page' && m.focused === 'From a PDF…' && m.inside, JSON.stringify(m));
+          await shot(win, `workspace-grid-insert-menu-${theme}.png`);
+          await press(win, 'Down');
+          check(`${theme}: the arrow keys move through the items`, (await menu(win)).focused === 'From pictures…');
+          await press(win, 'Escape');
+          m = await menu(win);
+          check(`${theme}: Esc closes the menu and the grid stays open`, !m.open && m.expanded === 'false' && (await grid(win)).shown, JSON.stringify(m));
+          await insertMenu(win);
+          mouse(win, 'mouseDown', { x: 450, y: 300 });
+          mouse(win, 'mouseUp', { x: 450, y: 300 });
+          await sleep(200);
+          check(`${theme}: a click outside the menu closes it`, !(await menu(win)).open);
+
+          await clickCell(win, 2);
+          let mark = applied();
+          await insertMenu(win);
+          await choose(win, 'Blank page');
+          await arrives(win, '1,2,-,3,4,5,6');
+          await settled(win);
+          let g = await grid(win);
+          let last = calls.filter((c) => c.channel === 'pdfws:apply').at(-1);
+          check(`${theme}: Blank page puts a page after the selected one, selects it, closes the menu, and the file has changes to save`, applied() === mark + 1 && JSON.stringify(last.args[1]) === '[{"op":"pages.blank","before":3}]' && g.selected === '3' && g.cells === 7 && (await bar(win)).save && !(await menu(win)).open, JSON.stringify([g, last.args]));
+          await push(win, 'Undo');
+          await arrives(win, '1,2,3,4,5,6');
+          await settled(win);
+          check(`${theme}: Undo takes it away again, and the pages are as they were opened`, !(await bar(win)).save && (await bar(win)).cells === 6);
+
+          answer(source);
+          await clickCell(win, 4);
+          mark = applied();
+          await insertMenu(win);
+          await choose(win, 'From a PDF…');
+          await arrives(win, '1,2,3,4,1s,2s,5,6');
+          await settled(win);
+          g = await grid(win);
+          last = calls.filter((c) => c.channel === 'pdfws:apply').at(-1);
+          check(`${theme}: From a PDF… asks for one PDF and puts its pages after the selected page, selects them, and sends the engine no path`, picked.at(-1).title === 'Insert pages from a PDF' && !picked.at(-1).properties.includes('multiSelections') && applied() === mark + 1 && last.args[1][0].op === 'pages.insert' && last.args[1][0].before === 5 && last.args[1][0].sources.length === 1 && !JSON.stringify(last.args).includes(source) && g.selected === '5,6' && g.cells === 8 && (await bar(win)).save, JSON.stringify([picked.at(-1), last.args, g]));
+          await shot(win, `workspace-grid-inserted-${theme}.png`);
+
+          answer(first, second);
+          await insertMenu(win);
+          await choose(win, 'From pictures…');
+          await arrives(win, '1,2,3,4,1s,2s,-,-,5,6');
+          await settled(win);
+          g = await grid(win);
+          check(`${theme}: From pictures… takes several pictures and puts one page of each after the selected pages, in the order chosen`, picked.at(-1).title === 'Insert pictures' && picked.at(-1).properties.includes('multiSelections') && picked.at(-1).filters[0].extensions.includes('png') && g.selected === '7,8' && g.cells === 10, JSON.stringify([picked.at(-1), g]));
+
+          mark = applied();
+          answer();
+          await insertMenu(win);
+          await choose(win, 'From a PDF…');
+          await sleep(400);
+          check(`${theme}: closing the file dialog with nothing chosen changes nothing`, applied() === mark && (await order(win)) === '1,2,3,4,1s,2s,-,-,5,6');
+
+          notices.length = 0;
+          answer(notAPdf);
+          await insertMenu(win);
+          await choose(win, 'From a PDF…');
+          await until('the notice', async () => notices.length > 0, 5000);
+          check(`${theme}: a file that is neither a PDF nor a picture says so in the corner and changes nothing`, notices.at(-1).title === "Can't insert these files" && notices.at(-1).detail === 'Only PDFs and pictures can be inserted.' && applied() === mark, JSON.stringify(notices));
+          notices.length = 0;
+
+          await clickCell(win, 10);
+          answer(protectedFile);
+          await insertMenu(win);
+          await choose(win, 'From a PDF…');
+          await askedFor(win);
+          const ask = await js(win, `({ title: document.querySelector('.veil h3').textContent, type: document.querySelector('.veil input').type, buttons: [...document.querySelectorAll('.veil .btn')].map((b) => b.textContent).join() })`);
+          check(`${theme}: a protected PDF to insert asks for its password in the usual card, and nothing is sent yet`, ask.title === 'Password protected' && ask.type === 'password' && ask.buttons === 'Cancel,Open' && applied() === mark, JSON.stringify(ask));
+          await submit(win, 'not the password');
+          await until('the second ask', () => js(win, `!!document.querySelector('.veil .emsg.on') && !document.querySelector('.veil input').disabled`));
+          check(`${theme}: a wrong password is answered in the same card`, (await js(win, `document.querySelector('.veil .emsg p').textContent`)) === 'Wrong Password' && applied() === mark);
+          await submit(win, secret);
+          await arrives(win, '1,2,3,4,1s,2s,-,-,5,6,-');
+          await settled(win);
+          check(`${theme}: the right password puts the page in at the end, and the card is gone`, (await js(win, `!document.querySelector('.veil')`)) && (await grid(win)).cells === 11 && applied() === mark + 1, JSON.stringify(await grid(win)));
+
+          answer(protectedFile);
+          await insertMenu(win);
+          await choose(win, 'From a PDF…');
+          await askedFor(win);
+          await js(win, `[...document.querySelectorAll('.veil .btn')].find((b) => !b.classList.contains('primary')).click()`);
+          await sleep(500);
+          check(`${theme}: Cancel on the password card inserts nothing`, (await js(win, `!document.querySelector('.veil')`)) && applied() === mark + 1 && (await grid(win)).cells === 11);
+
+          await clickCell(win, 2);
+          await clickCell(win, 3, ['control']);
+          const saved = path.join(root, `Grid extracted ${theme}.pdf`);
+          const asked = [];
+          dialog.showSaveDialog = async (_win, options) => { asked.push(options); return { canceled: false, filePath: saved }; };
+          notices.length = 0;
+          const before = applied();
+          await extractButton(win);
+          await until('the extracted file', async () => fs.existsSync(saved) && notices.length > 0, 20000);
+          const extracted = await PDFDocument.load(fs.readFileSync(saved));
+          g = await grid(win);
+          check(`${theme}: Extract asks where to save, writes the two pages as a new file, says so in the corner, and leaves the document and its selection alone`, asked[0].title === 'Extract pages' && /\(pages 2-3\)\.pdf$/.test(asked[0].defaultPath) && extracted.getPageCount() === 2 && notices.at(-1).title === 'Pages extracted' && notices.at(-1).detail === path.basename(saved) && applied() === before && g.selected === '2,3' && g.cells === 11 && !(await bar(win)).busy, JSON.stringify([asked[0], notices, g]));
+          notices.length = 0;
+          fs.rmSync(saved);
+          dialog.showSaveDialog = async () => ({ canceled: true });
+          await extractButton(win);
+          await sleep(500);
+          check(`${theme}: closing the save dialog writes nothing and says nothing`, !fs.existsSync(saved) && notices.length === 0 && !(await bar(win)).busy);
+          dialog.showSaveDialog = realSave;
+
+          const drops = win.webContents.debugger;
+          if (!drops.isAttached()) drops.attach('1.3');
+          const dropOn = async (n, side, files) => {
+            const c = await centre(win, n);
+            const width = await js(win, `document.querySelector('.cell[data-n="${n}"] .sheet').getBoundingClientRect().width`);
+            const x = Math.round(c.x + (side === 'right' ? width / 4 : -width / 4));
+            const data = { items: [], files, dragOperationsMask: 1 };
+            for (const type of ['dragEnter', 'dragOver', 'drop']) await drops.sendCommand('Input.dispatchDragEvent', { type, x, y: c.y, data });
+            await sleep(900);
+          };
+          const tabs = () => js(win, `document.querySelectorAll('#tabs .tab').length`);
+          const tabsBefore = await tabs();
+          await dropOn(1, 'left', [first]);
+          await arrives(win, '-,1,2,3,4,1s,2s,-,-,5,6,-');
+          await settled(win);
+          g = await grid(win);
+          check(`${theme}: a picture dropped on the left half of page 1 goes in front of it, is selected, and no new tab opens`, g.selected === '1' && g.cells === 12 && (await tabs()) === tabsBefore, JSON.stringify([g, await tabs()]));
+          await dropOn(12, 'right', [source]);
+          await arrives(win, '-,1,2,3,4,1s,2s,-,-,5,6,-,1s,2s');
+          await settled(win);
+          check(`${theme}: a PDF dropped on the right half of the last page goes after it`, (await grid(win)).selected === '13,14' && (await grid(win)).cells === 14, JSON.stringify(await grid(win)));
+          await dropOn(3, 'right', [notAPdf]);
+          await sleep(500);
+          check(`${theme}: a file dropped on the grid that is neither a PDF nor a picture changes nothing`, (await grid(win)).cells === 14 && (await tabs()) === tabsBefore);
+          notices.length = 0;
+          drops.detach();
+          dialog.showOpenDialog = realOpen;
+          win.destroy();
+          await sleep(500);
+          forgetSize();
+        }
+        nativeTheme.themeSource = 'light';
       }
 
       console.log('the grid: 3 000 pages');

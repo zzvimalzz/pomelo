@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The Pages tool: a button in the dock that swaps the reading view for a grid of every page, with selection by click, Ctrl, Shift, Ctrl+A, the
-// keyboard and a rubber band, and an option bar that turns, deletes and moves the selected pages (by dragging) and undoes and redoes. Each change is a
-// list of operations for the PDF engine. The grid shows the result at once and keeps its pages while they are read again from the new version,
+// keyboard and a rubber band, and an option bar that inserts pages (from a PDF, from pictures, or a blank one, also by dropping files on the grid), turns,
+// deletes, extracts and moves the selected pages (by dragging) and undoes and redoes. Each change is a list of operations for the PDF engine. The grid shows the result at once and keeps its pages while they are read again from the new version,
 // so nothing is drawn twice. Without the engine the button shows the engine card first. A classic script that adds window.workspaceOrganise.
 (() => {
   const { el, icon } = window.pomeloUi;
@@ -43,12 +43,43 @@
       b.onclick = run;
       return b;
     };
+    const labelled = (name, title, run) => {
+      const b = el('button', 'opt');
+      b.type = 'button';
+      b.innerHTML = icon(name);
+      b.append(title);
+      b.title = title;
+      b.onclick = run;
+      return b;
+    };
+    const insertButton = labelled('insert', 'Insert…', () => toggleMenu());
+    insertButton.setAttribute('aria-haspopup', 'menu');
+    insertButton.setAttribute('aria-expanded', 'false');
+    const menu = el('div', 'menu');
+    menu.setAttribute('role', 'menu');
+    menu.hidden = true;
+    for (const [title, run] of [['From a PDF…', () => insertFrom('pdf')], ['From pictures…', () => insertFrom('image')], ['Blank page', () => blank()]]) {
+      const item = el('button', 'mi', title);
+      item.type = 'button';
+      item.setAttribute('role', 'menuitem');
+      item.onclick = () => { closeMenu(); run(); };
+      menu.append(item);
+    }
+    menu.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const items = [...menu.querySelectorAll('.mi')];
+      items[(items.indexOf(document.activeElement) + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+      e.preventDefault();
+    });
+    const insertGroup = el('div', 'insertgroup');
+    insertGroup.append(insertButton, menu);
     const turnLeft = action('rotl', 'Rotate left', '', () => rotate(270));
     const turnRight = action('rotr', 'Rotate right', '', () => rotate(90));
     const trash = action('trash', 'Delete', label('deletePages'), () => remove());
     const undo = action('undo', 'Undo', label('undo'), () => step('undo'));
     const redo = action('redo', 'Redo', label('redo'), () => step('redo'));
-    bar.append(turnLeft, turnRight, trash, count, el('span', 'sep'), undo, redo);
+    const extractButton = labelled('extract', 'Extract', () => extract());
+    bar.append(insertGroup, turnLeft, turnRight, trash, extractButton, count, el('span', 'sep'), undo, redo);
     bar.addEventListener('mousedown', (e) => e.preventDefault());
     const button = el('button', 'tool');
     button.type = 'button';
@@ -131,7 +162,7 @@
     function enable() {
       count.textContent = selected.size ? `${selected.size} selected` : '- pages';
       count.classList.toggle('none', !selected.size);
-      turnLeft.disabled = turnRight.disabled = trash.disabled = !selected.size;
+      turnLeft.disabled = turnRight.disabled = trash.disabled = extractButton.disabled = !selected.size;
       undo.disabled = !tab?.doc.canUndo;
       redo.disabled = !tab?.doc.canRedo;
     }
@@ -378,6 +409,7 @@
       queued.length = 0;
       list.classList.remove('busy');
       list.hidden = band.hidden = bar.hidden = true;
+      closeMenu();
       well.classList.remove('organising');
     }
 
@@ -418,6 +450,10 @@
       list.hidden = bar.hidden = false;
       well.classList.add('organising');
       if (back) {
+        if (back.grow) {
+          const added = viewer.pagesCount - back.was;
+          back.select = added > 0 ? span(back.grow, back.grow + added - 1) : [];
+        }
         retain(back);
         if (!kept) list.scrollTop = back.top;
       } else {
@@ -532,6 +568,84 @@
       });
     }
 
+    const menuOpen = () => !menu.hidden;
+    function closeMenu() {
+      menu.hidden = true;
+      insertButton.setAttribute('aria-expanded', 'false');
+    }
+
+    function toggleMenu() {
+      if (menuOpen()) { closeMenu(); return; }
+      menu.hidden = false;
+      insertButton.setAttribute('aria-expanded', 'true');
+      menu.querySelector('.mi').focus();
+    }
+
+    document.addEventListener('pointerdown', (e) => { if (menuOpen() && !e.target.closest('.insertgroup')) closeMenu(); });
+
+    // New pages go after the last selected page, or at the end when none is selected.
+    const spot = () => (selected.size ? Math.max(...selected) + 1 : viewer.pagesCount + 1);
+
+    function blank() {
+      const before = spot();
+      run((token) => window.workspaceApi.apply(token, [{ op: 'pages.blank', before }]), { select: [before], focus: before });
+    }
+
+    // Asks for the password of a PDF to insert until it is right. Resolves false when the user gives up.
+    async function unlock(source) {
+      let gaveUp = false;
+      let wrong = false;
+      for (;;) {
+        const password = await window.workspaceDialogs.askPassword(wrong, () => { gaveUp = true; window.workspaceDialogs.closePassword(); });
+        if (password === null) { window.workspaceDialogs.closePassword(); return false; }
+        const right = await window.workspaceApi.unlockSource(source.id, password).catch(() => false);
+        if (gaveUp) return false;
+        if (right) { window.workspaceDialogs.closePassword(); return true; }
+        wrong = true;
+      }
+    }
+
+    // `found` is what the main process made of the files chosen or dropped: { id, kind, locked } for each. They are put in front of page `before`.
+    async function insertSources(found, before) {
+      if (!found?.length || busy || !tab || !open()) return;
+      for (const source of found) if (source.locked && !(await unlock(source))) return;
+      await run((token) => window.workspaceApi.apply(token, [{ op: 'pages.insert', before, sources: found.map((s) => s.id) }]), { grow: before, was: viewer.pagesCount, select: [], focus: before });
+    }
+
+    async function insertFrom(kind) {
+      if (busy || !tab) return;
+      const before = spot();
+      await insertSources(await window.workspaceApi.chooseSources(kind), before);
+    }
+
+    // The selected pages become a new file the user names. The document is not changed.
+    async function extract() {
+      const pages = chosen();
+      if (!pages.length || busy || !tab) return;
+      busy = true;
+      list.classList.add('busy');
+      enable();
+      const result = await window.workspaceApi.extract(tab.doc.token, pages).catch(() => null);
+      busy = false;
+      list.classList.remove('busy');
+      enable();
+      if (result?.stop === 'no-engine') await window.workspaceDialogs.engineCard();
+      if (focused && !list.hidden) focusCell(focused);
+    }
+
+    // Files dropped on the grid go in front of the page the pointer is over, or after it in its right half; elsewhere in the grid, at the end.
+    let droppedAt = null;
+    list.addEventListener('drop', (e) => {
+      if (!e.dataTransfer?.types.includes('Files')) return;
+      const n = pageOf(e.target);
+      droppedAt = n ? n + (e.clientX < cell(n).getBoundingClientRect().left + cell(n).getBoundingClientRect().width / 2 ? 0 : 1) : viewer.pagesCount + 1;
+    });
+    window.workspaceApi.onFilesDropped((found) => {
+      const before = droppedAt ?? viewer.pagesCount + 1;
+      droppedAt = null;
+      insertSources(found, before);
+    });
+
     // A press while the last change is still being read back waits its turn, so a run of presses on Undo goes back one step for
     // each, and the buttons stay as they are meanwhile.
     function step(way) {
@@ -581,6 +695,7 @@
     bind('deletePages', () => { if (!open() || !selected.size) return false; remove(); });
     escape = () => {
       if (drag) { drag.cancelled = true; drag(); return; }
+      if (menuOpen()) { closeMenu(); insertButton.focus(); return; }
       if (!open()) return false;
       leave();
     };

@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Operations on whole pages. Page numbers start at 1 and are counted in the document as the earlier operations of the list left it."""
+"""Operations on whole pages. Page numbers start at 1 and are counted in the document as the earlier operations of the list left it.
+An operation that adds pages returns how many."""
+import os
+
+import pymupdf
+
+MAX_SOURCES = 50
+PICTURE_PT = 842
 
 
 def pick(doc, pages):
@@ -39,3 +46,54 @@ def move(doc, pages, before):
         doc.move_page(order.index(page), -1 if stay is None else order.index(stay))
         order.remove(page)
         order.insert(len(order) if stay is None else order.index(stay), page)
+
+
+def place(doc, before):
+    if type(before) is not int or not 1 <= before <= doc.page_count + 1:
+        raise ValueError("there is no such place to put pages")
+    return before - 1
+
+
+def blank(doc, before):
+    """A page the size of the one before it, or of the first page when it goes at the start."""
+    at = place(doc, before)
+    shown = doc[max(at - 1, 0)].rect
+    doc.new_page(at, width=shown.width, height=shown.height)
+    return 1
+
+
+def picture(file):
+    """A one-page document holding the picture at the size its file gives it, but no longer than A4's long side."""
+    with pymupdf.open(file) as image:
+        width, height = image[0].rect.width, image[0].rect.height
+    scale = min(1, PICTURE_PT / max(width, height))
+    sheet = pymupdf.open()
+    sheet.new_page(width=width * scale, height=height * scale).insert_image(pymupdf.Rect(0, 0, width * scale, height * scale), filename=file)
+    return sheet
+
+
+def insert(doc, before, sources, secrets):
+    """Each source is {"id", "file", "kind"}: a PDF, which is opened with the password in secrets["sources"][id] when it has one, or a picture."""
+    at = place(doc, before)
+    if not isinstance(sources, list) or not 0 < len(sources) <= MAX_SOURCES:
+        raise ValueError("there are no files to insert")
+    added = 0
+    for source in sources:
+        if not isinstance(source, dict) or set(source) != {"id", "file", "kind"} or source["kind"] not in ("pdf", "image") or not os.path.isfile(source["file"]):
+            raise ValueError("a file to insert is not there")
+        if source["kind"] == "image":
+            part = picture(source["file"])
+        else:
+            part = pymupdf.open(source["file"])
+            if part.needs_pass and not part.authenticate(secrets.get("sources", {}).get(source["id"], "")):
+                part.close()
+                raise ValueError("a PDF to insert is password-protected")
+        with part:
+            doc.insert_pdf(part, start_at=at + added)
+            added += part.page_count
+    return added
+
+
+def extract(doc, pages):
+    """Keeps only these pages, in their order. The caller saves the result as a new file."""
+    doc.select(sorted(pick(doc, pages)))

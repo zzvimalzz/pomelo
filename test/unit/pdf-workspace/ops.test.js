@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The list of changes the page may ask for: what is allowed, what is refused, and that only the keys an operation takes get through.
 //   node test/unit/pdf-workspace/ops.test.js
-const { check, arrange, OPS } = require('../../../src/features/pdf-workspace/ops');
+const { check, arrange, pageRanges, OPS, PICTURE_EXTENSIONS } = require('../../../src/features/pdf-workspace/ops');
 const { expect } = require('../../support/expect');
 const finish = require('../../support/finish');
 
@@ -12,6 +12,10 @@ expect('a rotation and a deletion are allowed, and come back as they were given'
 expect('a page turns by 90, 180 or 270', [90, 180, 270].every((by) => !refused([{ op: 'pages.rotate', pages: [1], by }])));
 expect('a rotation edits in place and a deletion rewrites the file',OPS['pages.rotate'].kind === 'direct' && OPS['pages.delete'].kind === 'rewrite');
 expect('pages move before another page, or to the end, and edit in place', JSON.stringify(check([{ op: 'pages.move', pages: [5, 2], before: 1 }, { op: 'pages.move', pages: [1], before: 1000001 }])) === '[{"op":"pages.move","pages":[5,2],"before":1},{"op":"pages.move","pages":[1],"before":1000001}]' && OPS['pages.move'].kind === 'direct');
+const ids = ['a'.repeat(32), 'b'.repeat(32)];
+expect('files are inserted before a page by the ids they were given, and a blank page needs only its place', JSON.stringify(check([{ op: 'pages.insert', before: 3, sources: ids }, { op: 'pages.blank', before: 1 }])) === JSON.stringify([{ op: 'pages.insert', before: 3, sources: ids }, { op: 'pages.blank', before: 1 }]));
+expect('inserting and a blank page add to the file, and extracting writes another one', OPS['pages.insert'].kind === 'new' && OPS['pages.blank'].kind === 'new' && OPS['pages.extract'].kind === 'output');
+expect('pictures of the usual kinds can be inserted, and no program or archive', PICTURE_EXTENSIONS.includes('png') && PICTURE_EXTENSIONS.includes('jpg') && !PICTURE_EXTENSIONS.some((e) => ['exe', 'pdf', 'zip'].includes(e)));
 const info = { op: 'meta.set', title: 'Annual report', author: '', subject: 'Résumé 日本', keywords: 'a, b' };
 expect('the document information is set as four texts, which may be empty, and edits in place', JSON.stringify(check([info])) === JSON.stringify([info]) && OPS['meta.set'].kind === 'direct');
 expect('a text of 1000 characters is allowed', !refused([{ ...info, title: 'x'.repeat(1000) }]));
@@ -37,12 +41,19 @@ const bad = {
   'a move with no place': [{ op: 'pages.move', pages: [1] }], 'a move to place 0': [{ op: 'pages.move', pages: [1], before: 0 }], 'a move to a fractional place': [{ op: 'pages.move', pages: [1], before: 1.5 }],
   'a move to a place that is text': [{ op: 'pages.move', pages: [1], before: '2' }], 'a move past the last possible place': [{ op: 'pages.move', pages: [1], before: 1000002 }],
   'a move of no pages': [{ op: 'pages.move', pages: [], before: 1 }], 'a move that takes a rotation too': [{ op: 'pages.move', pages: [1], before: 2, by: 90 }],
+  'inserting with no files': [{ op: 'pages.insert', before: 1, sources: [] }], 'inserting a path': [{ op: 'pages.insert', before: 1, sources: ['C:/Users/x/a.pdf'] }],
+  'inserting an id that is not 32 hex digits': [{ op: 'pages.insert', before: 1, sources: ['abc'] }], 'inserting the same file twice': [{ op: 'pages.insert', before: 1, sources: [ids[0], ids[0]] }],
+  'inserting more than 50 files': [{ op: 'pages.insert', before: 1, sources: Array.from({ length: 51 }, (_, i) => i.toString(16).padStart(32, '0')) }],
+  'inserting with a password': [{ op: 'pages.insert', before: 1, sources: ids, password: 'x' }], 'inserting before page 0': [{ op: 'pages.insert', before: 0, sources: ids }],
+  'inserting with a source that is not a list': [{ op: 'pages.insert', before: 1, sources: ids[0] }],
+  'a blank page with no place': [{ op: 'pages.blank' }], 'a blank page before page 0': [{ op: 'pages.blank', before: 0 }], 'a blank page that takes a size': [{ op: 'pages.blank', before: 1, width: 100 }],
+  'extracting no pages': [{ op: 'pages.extract', pages: [] }], 'extracting with a target path': [{ op: 'pages.extract', pages: [1], target: 'C:/x.pdf' }],
   'a good change followed by a bad one': [{ op: 'pages.delete', pages: [1] }, { op: 'pages.delete', pages: [0] }],
 };
 for (const [what, list] of Object.entries(bad)) expect(`${what} is refused`, refused(list));
 
 console.log('where the pages are after the changes');
-const shown = (from, count, list) => JSON.stringify(arrange(from, count, check(list))?.pages.map(([page, turned]) => (turned ? `${page}:${turned}` : String(page))));
+const shown = (from, count, list, added) => JSON.stringify(arrange(from, count, check(list), added)?.pages.map(([page, turned]) => (turned ? `${page}:${turned}` : String(page))));
 expect('no changes leave the pages as they began', arrange(undefined, 3, []) === undefined);
 expect('a turn is kept against its page', shown(undefined, 3, [{ op: 'pages.rotate', pages: [2], by: 90 }]) === '["1","2:90","3"]');
 expect('turns add up and four make none', arrange(arrange(undefined, 3, check([{ op: 'pages.rotate', pages: [2], by: 270 }])), 3, check([{ op: 'pages.rotate', pages: [2], by: 90 }])) === undefined);
@@ -52,6 +63,15 @@ expect('pages moved to the end go last', shown(undefined, 4, [{ op: 'pages.move'
 expect('pages moved in front of an earlier page go before it', shown(undefined, 4, [{ op: 'pages.move', pages: [4], before: 2 }]) === '["1","4","2","3"]');
 expect('a move to where the pages already are changes nothing', arrange(undefined, 4, check([{ op: 'pages.move', pages: [2, 3], before: 3 }])) === undefined);
 expect('later changes count the pages as the earlier ones left them', shown(undefined, 4, [{ op: 'pages.delete', pages: [1] }, { op: 'pages.rotate', pages: [1], by: 90 }]) === '["2:90","3","4"]');
+
+expect('pages added are new pages, in the place they were put', shown(undefined, 3, [{ op: 'pages.insert', before: 2, sources: ids }], [4]) === '["1","0","0","0","0","2","3"]');
+expect('a blank page is one new page, and it can be turned like any other', shown(undefined, 2, [{ op: 'pages.blank', before: 3 }, { op: 'pages.rotate', pages: [3], by: 90 }], [1, 0]) === '["1","2","0:90"]');
+expect('a page added and then deleted leaves the pages as they began', arrange(arrange(undefined, 3, check([{ op: 'pages.blank', before: 2 }]), [1]), 3, check([{ op: 'pages.delete', pages: [2] }])) === undefined);
+expect('pages added to a document that lost a page are not the pages that were lost', arrange(undefined, 2, check([{ op: 'pages.delete', pages: [2] }, { op: 'pages.blank', before: 2 }]), [0, 1]) !== undefined);
+
+console.log('pages written as a person writes them');
+expect('a run is written with a dash, in order', pageRanges([3, 1, 2, 7]) === '1-3, 7');
+expect('a single page, two pages in a row and a gap', pageRanges([5]) === '5' && pageRanges([4, 5]) === '4-5' && pageRanges([1, 3]) === '1, 3');
 
 console.log('what gets through');
 const given = { op: 'pages.delete', pages: [2], extra: 1 };

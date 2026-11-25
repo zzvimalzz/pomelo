@@ -144,6 +144,86 @@ const bytes = fs.readFileSync(draw);
   await tool(locked, lockedMoved, list(move([3], 1)), { password: PASSWORD });
   expect('a protected file with a page moved still needs its password, and has the page in its new place', look(lockedMoved).locked === true && /PAGEMARK3/.test(look(lockedMoved, PASSWORD).texts[0]) && look(lockedMoved, PASSWORD).encryption === look(locked, PASSWORD).encryption);
 
+  console.log('pages put in, and pages taken out');
+  const source = at('source.pdf');
+  python('import pymupdf, sys\nd = pymupdf.open()\nfor i in range(2):\n    p = d.new_page(width=400, height=300)\n    p.insert_text((20, 60), "SOURCE%d" % (i + 1))\nd[0].insert_link({"kind": pymupdf.LINK_URI, "from": pymupdf.Rect(10, 10, 100, 30), "uri": "https://example.com/"})\nw = pymupdf.Widget()\nw.field_type = pymupdf.PDF_WIDGET_TYPE_TEXT\nw.field_name = "city"\nw.rect = pymupdf.Rect(20, 100, 200, 120)\nd[1].add_widget(w)\nd.save(sys.argv[1], expand=255)', source);
+  const sourceLocked = at('source-locked.pdf');
+  python('import pymupdf, sys\nd = pymupdf.open(sys.argv[1])\nd.save(sys.argv[2], encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw=sys.argv[3], owner_pw="owner-" + sys.argv[3])', source, sourceLocked, PASSWORD);
+  const small = at('small.png');
+  const large = at('large.png');
+  for (const [file, w, h] of [[small, 400, 200], [large, 2000, 1000]]) python('import pymupdf, sys\npix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, int(sys.argv[2]), int(sys.argv[3])), False)\npix.clear_with(200)\npix.save(sys.argv[1])', file, String(w), String(h));
+  const named = (file, kind = 'pdf') => ({ id: crypto.randomBytes(8).toString('hex'), file, kind });
+  const insert = (before, ...sources) => ({ op: 'pages.insert', before, sources });
+  const blank = (before) => ({ op: 'pages.blank', before });
+  const extract = (pages) => ({ op: 'pages.extract', pages });
+  const sizes = (file) => JSON.parse(python('import json, sys, pymupdf\nd = pymupdf.open(sys.argv[1])\nprint(json.dumps([[round(p.rect.width), round(p.rect.height)] for p in d]))', file));
+  const inserted = async (name, ops, secrets) => { const out = at(`${name}.pdf`); const said = await tool(draw, out, list(...ops), secrets); return { out, said }; };
+
+  const middle = await inserted('insert-middle', [insert(3, named(source))]);
+  expect('a PDF inserted before page 3 puts its two pages there, and the pages of the file stay as they were', look(middle.out).texts.length === 5 && /PAGEMARK1/.test(look(middle.out).texts[0]) && /SOURCE1/.test(look(middle.out).texts[2]) && /SOURCE2/.test(look(middle.out).texts[3]) && /PAGEMARK3/.test(look(middle.out).texts[4]), JSON.stringify(look(middle.out).texts));
+  expect('the helper says how many pages it added, and it only adds to the file', /^\{"added": \[2\]\}$/m.test(middle.said) && /^\{"saved": "incremental"\}$/m.test(middle.said) && fs.readFileSync(middle.out).subarray(0, bytes.length).equals(bytes) && look(middle.out).repaired === false, middle.said);
+  const carried = JSON.parse(python('import json, sys, pymupdf\nd = pymupdf.open(sys.argv[1])\nprint(json.dumps({"links": [[l.get("uri") for l in p.get_links()] for p in d], "fields": [[w.field_name for w in p.widgets()] for p in d]}))', middle.out));
+  expect('the link and the form field of the pages inserted come with them', JSON.stringify(carried.links) === '[[],[],["https://example.com/"],[],[]]' && JSON.stringify(carried.fields) === '[[],[],[],["city"],[]]', JSON.stringify(carried));
+  expect('inserted pages keep their own size', JSON.stringify(sizes(middle.out)) === '[[595,842],[595,842],[400,300],[400,300],[595,842]]', JSON.stringify(sizes(middle.out)));
+  const first = await inserted('insert-start', [insert(1, named(source))]);
+  const last = await inserted('insert-end', [insert(4, named(source))]);
+  expect('before page 1 puts them first and before the page after the last puts them last', /SOURCE1/.test(look(first.out).texts[0]) && look(first.out).texts.length === 5 && /SOURCE2/.test(look(last.out).texts[4]) && /PAGEMARK3/.test(look(last.out).texts[2]));
+  const twoKinds = await inserted('insert-pictures', [insert(2, named(small, 'image'), named(large, 'image'), named(source))]);
+  expect('pictures become pages the size their file gives them, no longer than the long side of an A4 page, in the order they were given, before a PDF', JSON.stringify(sizes(twoKinds.out)) === '[[595,842],[300,150],[842,421],[400,300],[400,300],[595,842],[595,842]]' && /^\{"added": \[4\]\}$/m.test(twoKinds.said), JSON.stringify(sizes(twoKinds.out)) + twoKinds.said);
+  const itself = await inserted('insert-itself', [insert(2, named(draw))]);
+  expect('a file inserted into itself brings its own pages, once', look(itself.out).texts.length === 6 && /PAGEMARK1/.test(look(itself.out).texts[1]) && /PAGEMARK3/.test(look(itself.out).texts[3]));
+  const together = await inserted('insert-and-blank', [insert(2, named(source)), blank(1)]);
+  expect('two changes in one list each say how many pages they added, the second counted in the file the first left', /^\{"added": \[2, 1\]\}$/m.test(together.said) && look(together.out).texts.length === 6 && look(together.out).texts[0] === '', together.said);
+
+  const space = await inserted('blank-pages', [blank(1), blank(3), blank(5)]);
+  expect('a blank page is the size of the page before it, or of the first page when it goes first, and holds no text', JSON.stringify(sizes(space.out)) === '[[595,842],[595,842],[595,842],[595,842],[595,842],[595,842]]' && look(space.out).texts.filter((t) => !t).length === 3 && /^\{"added": \[1, 1, 1\]\}$/m.test(space.said), space.said);
+  const blankAfterSmall = at('blank-small.pdf');
+  await tool(middle.out, blankAfterSmall, list(blank(5)));
+  expect('after a small page the blank page is small too', JSON.stringify(sizes(blankAfterSmall).at(4)) === '[400,300]', JSON.stringify(sizes(blankAfterSmall)));
+
+  const withLocked = await inserted('insert-locked', [insert(2, { ...named(sourceLocked), id: 'lockedid' })], { sources: { lockedid: PASSWORD } });
+  expect('a protected PDF is inserted when its password is given on standard input', look(withLocked.out).texts.length === 5 && /SOURCE1/.test(look(withLocked.out).texts[1]) && !look(withLocked.out).locked, JSON.stringify(look(withLocked.out).texts));
+  const unopened = at('insert-locked-none.pdf');
+  expect('without the password it is refused, and nothing is written', (await reason(tool(draw, unopened, list(insert(2, named(sourceLocked)))))).includes('password-protected') && !fs.existsSync(unopened));
+  expect('and with a wrong one', (await reason(tool(draw, unopened, list(insert(2, { ...named(sourceLocked), id: 'lockedid' })), { sources: { lockedid: 'wrong' } }))).includes('password-protected') && !fs.existsSync(unopened));
+  spawned.length = 0;
+  await tool(draw, at('insert-locked-2.pdf'), list(insert(2, { ...named(sourceLocked), id: 'lockedid' })), { sources: { lockedid: PASSWORD } });
+  expect('the password of the PDF to insert is in no argument and no environment of the helper, and not in the list', spawned.length === 1 && !JSON.stringify(spawned[0].args).includes(PASSWORD) && !JSON.stringify(spawned[0].env || {}).includes(PASSWORD) && !fs.readFileSync(list(insert(2, named(sourceLocked)))).includes(PASSWORD));
+  const betrayed = await reason(tool(draw, at('insert-locked-3.pdf'), list(insert(2, { ...named(sourceLocked), id: PASSWORD })), { sources: { [PASSWORD]: PASSWORD } }));
+  expect('a reason that would repeat it has it replaced', !betrayed.includes(PASSWORD), betrayed);
+  const intoLocked = at('locked-inserted.pdf');
+  await tool(locked, intoLocked, list(insert(2, named(source))), { password: PASSWORD });
+  expect('pages inserted into a protected file leave it protected, with the same algorithm', look(intoLocked).locked === true && look(intoLocked, PASSWORD).texts.length === 5 && look(intoLocked, PASSWORD).encryption === look(locked, PASSWORD).encryption);
+
+  const sizesWanted = { 'a place before page 1': [blank(0), 'there is no such place to put pages'], 'a place two past the last page': [blank(5), 'there is no such place to put pages'], 'a place that is text': [blank('2'), 'there is no such place to put pages'] };
+  for (const [what, [op, why]] of Object.entries(sizesWanted)) {
+    const out = at(`blank-refused-${crypto.randomBytes(3).toString('hex')}.pdf`);
+    const message = await reason(tool(draw, out, list(op)));
+    expect(`${what} is refused with a reason and nothing is written`, message.includes(why) && !fs.existsSync(out), message);
+  }
+  const nothing = { id: 'x', file: at('missing.pdf'), kind: 'pdf' };
+  for (const [what, op, why] of [['a file that is not there', insert(2, nothing), 'a file to insert is not there'], ['a kind of file it cannot insert', insert(2, { ...named(source), kind: 'zip' }), 'a file to insert is not there'], ['no files', insert(2), 'there are no files to insert'], ['a file with a key too many', insert(2, { ...named(source), extra: 1 }), 'a file to insert is not there']]) {
+    const out = at(`insert-refused-${crypto.randomBytes(3).toString('hex')}.pdf`);
+    const message = await reason(tool(draw, out, list(op)));
+    expect(`${what} is refused with a reason and nothing is written`, message.includes(why) && !fs.existsSync(out), message);
+  }
+  const notAPicture = at('not-a-picture.png');
+  fs.writeFileSync(notAPicture, 'this is not a picture');
+  const brokenPicture = at('insert-refused-picture.pdf');
+  expect('a picture that is not one is refused and nothing is written', (await reason(tool(draw, brokenPicture, list(insert(2, named(notAPicture, 'image')))))) !== '' && !fs.existsSync(brokenPicture));
+
+  const taken = at('extracted.pdf');
+  const extractedSaid = await tool(six, taken, list(extract([5, 2])));
+  expect('extracted pages are a new file with those pages, in their order in the document', order(taken) === '25' && look(taken).texts.length === 2 && /^\{"saved": "full"\}$/m.test(extractedSaid), JSON.stringify(look(taken).texts));
+  expect('the document the pages came from is as it was', fs.readFileSync(six).equals(sixBytes));
+  expect('the new file reopens without repair', look(taken).repaired === false);
+  const takenLocked = at('extracted-locked.pdf');
+  await tool(locked, takenLocked, list(extract([3])), { password: PASSWORD });
+  expect('pages taken from a protected file are protected in the same way', look(takenLocked).locked === true && look(takenLocked, PASSWORD).texts.length === 1 && /PAGEMARK3/.test(look(takenLocked, PASSWORD).texts[0]) && look(takenLocked, PASSWORD).encryption === look(locked, PASSWORD).encryption);
+  const oneToo = at('extract-refused.pdf');
+  expect('a page that is not there is refused', (await reason(tool(draw, oneToo, list(extract([4]))))).includes('this PDF has no page 4') && !fs.existsSync(oneToo));
+  expect('and the same page twice', (await reason(tool(draw, oneToo, list(extract([1, 1]))))).includes('pages must be a list of different page numbers') && !fs.existsSync(oneToo));
+
   console.log('a file of 3 000 pages');
   const big = at('big.pdf');
   python('import pymupdf, sys\nd = pymupdf.open()\nfor i in range(3000):\n    d.new_page().insert_text((72, 100), "BIG%d" % (i + 1))\nd.save(sys.argv[1], expand=255)', big);
