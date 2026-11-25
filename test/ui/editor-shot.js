@@ -369,11 +369,19 @@ app.whenReady().then(async () => {
 
   await key(win, 'R');
   await sleep(500);
+  await js(win, `document.getElementById('zoomval').click()`);
+  await sleep(300);
+  await js(win, `[...document.querySelectorAll('#zmenu .mi')].find((b) => b.firstChild.textContent === '800%').click()`);
+  await sleep(600);
+  check('the picture is zoomed in far enough to pan', await js(win, `document.getElementById('well').classList.contains('pan')`));
   win.close();
   await sleep(600);
   check('closing the window with changes asks first, and does not close', !win.isDestroyed() && (await js(win, `document.querySelector('.card h3')?.textContent`)) === `Save changes to ramp.png?`);
-  await js(win, `[...document.querySelectorAll('.card .btn')].find((b) => b.textContent === 'Cancel').click()`);
+  const [cx, cy] = await js(win, `(() => { const r = [...document.querySelectorAll('.card .btn')].find((b) => b.textContent === 'Cancel').getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; })()`);
+  win.webContents.sendInputEvent({ type: 'mouseDown', x: cx, y: cy, button: 'left', clickCount: 1 });
+  win.webContents.sendInputEvent({ type: 'mouseUp', x: cx, y: cy, button: 'left', clickCount: 1 });
   await sleep(300);
+  check('a mouse click on Cancel works while the picture is zoomed in', await js(win, `document.querySelector('.card') === null`));
   check('Cancel keeps the window', !win.isDestroyed());
   win.close();
   await sleep(500);

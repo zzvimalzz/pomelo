@@ -188,12 +188,12 @@
   }, { passive: false });
 
   well.addEventListener('dblclick', (e) => {
-    if (e.target.closest('.pill, .zmenu') || !shown?.texture) return;
+    if (e.target.closest('.pill, .zmenu, .veil') || !shown?.texture) return;
     zoomTo(shown.view.fit ? 1 : 'fit', ...aboutPointer(e));
   });
 
   well.addEventListener('pointerdown', (e) => {
-    if (!well.classList.contains('pan') || e.button !== 0 || e.target.closest('.pill, .zmenu')) return;
+    if (!well.classList.contains('pan') || e.button !== 0 || e.target.closest('.pill, .zmenu, .veil')) return;
     cancelAnimationFrame(tween);
     well.setPointerCapture(e.pointerId);
     well.classList.add('panning');
