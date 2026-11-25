@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Where the workspace window opens: its saved place when that is still on a screen, otherwise the middle of the main screen.
-//   node test/unit/pdf-workspace/bounds.test.js
-const { startBounds, MIN } = require('../../../src/features/pdf-workspace/bounds');
+// Where an app window opens: its saved place when that is still on a screen, otherwise the middle of the main screen.
+//   node test/unit/shared/bounds.test.js
+const { startBounds, MIN } = require('../../../src/shared/core/bounds');
 const { expect } = require('../../support/expect');
 const finish = require('../../support/finish');
 

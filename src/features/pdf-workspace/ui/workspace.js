@@ -12,6 +12,7 @@
   const savedNote = document.getElementById('docsaved');
   const saveButton = document.getElementById('savebtn');
   const { choose, isOpen } = window.workspaceDialogs;
+  const tabStrip = window.pomeloTabs.create(document.getElementById('tabs'));
   const tabs = [];
   let active = null;
   let turn = 0;
@@ -22,7 +23,7 @@
 
   function drawTabs() {
     line.hidden = tabs.length > 1;
-    window.workspaceTabs.render(tabs.map((t) => t.doc), active?.doc.token);
+    tabStrip.render(tabs.map((t) => t.doc), active?.doc.token);
     dot.hidden = saveButton.hidden = !active?.doc.dirty;
   }
 
@@ -150,7 +151,7 @@
     if (tab && (!tab.doc.dirty || await settle(tab))) close(token);
   }
 
-  window.workspaceTabs.bind({ select: (token) => activate(find(token)), close: closeTab });
+  tabStrip.bind({ select: (token) => activate(find(token)), close: closeTab });
   name.onclick = () => window.workspaceProperties.open();
   saveButton.title = `Save (${window.workspaceKeys.label('save')})`;
   saveButton.onclick = () => active && save(active);
