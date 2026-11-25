@@ -222,6 +222,17 @@ app.whenReady().then(async () => {
   check('Esc leaves it', await until('the window to leave full screen', () => !win.isFullScreen()) && await until('the page to know', () => js(win, `!document.body.classList.contains('full')`)));
   await closeAll(editor);
 
+  console.log('a small picture is not enlarged to fit');
+  editor = fresh();
+  await editor.open([files.still]);
+  win = windowOf();
+  await firstShown(win);
+  await sleep(500);
+  await js(win, `document.getElementById('zoomval').click()`);
+  await sleep(300);
+  check('Fit shows a 200 by 100 picture at 100%, so 100% can be chosen and smaller zooms are greyed out', (await js(win, `[...document.querySelectorAll('#zmenu .mi')].map((b) => b.firstChild.textContent + (b.classList.contains('on') ? '*' : '') + (b.disabled ? '-' : '')).join()`)) === 'Fit*,25%-,50%-,100%,200%,400%,800%');
+  await closeAll(editor);
+
   console.log('graphics acceleration gone');
   editor = fresh();
   await editor.open([files.glass]);

@@ -44,6 +44,7 @@ function createDropFlow({ conversion, getWheel, getJobs, openPdfs, openImages, c
   const allPdfs = (files) => files.every(isPdf);
   const allImages = (files) => files.every(canEdit);
   // The conversion wheel names the key of the other wheel: Shift is Open for PDFs and Edit for pictures.
+  let showing = null;
   const convertView = (files, switchable) => ({ wheel: 'convert', switchable, ...(allImages(files) && { other: 'Edit' }) });
 
   return {
@@ -51,25 +52,28 @@ function createDropFlow({ conversion, getWheel, getJobs, openPdfs, openImages, c
     // Shift on pictures, the Edit wheel), or say why there are none. Shift on anything else shows the conversion wheel, as Ctrl does.
     async onOpen(files, pick = false, wheel = 'convert') {
       selection = files;
+      showing = null;
       const info = describeSelection(files, conversion);
-      if (wheel === 'open' && allPdfs(files)) { getWheel().openWheel(info, OPEN_TARGETS, null, { wheel: 'open', switchable: true }); return; }
-      if (wheel === 'open' && allImages(files)) { getWheel().openWheel(info, EDIT_TARGETS, null, EDIT_VIEW); return; }
+      if (wheel === 'open' && allPdfs(files)) { showing = 'open'; getWheel().openWheel(info, OPEN_TARGETS, null, { wheel: 'open', switchable: true }); return; }
+      if (wheel === 'open' && allImages(files)) { showing = 'open'; getWheel().openWheel(info, EDIT_TARGETS, null, EDIT_VIEW); return; }
       const targets = conversion.targetsFor(files);
-      if (targets.length) { getWheel().openWheel(info, targets, pick ? files : null, convertView(files, !pick && keysSupported() && (allPdfs(files) || allImages(files)))); return; }
+      if (targets.length) { showing = 'convert'; getWheel().openWheel(info, targets, pick ? files : null, convertView(files, !pick && keysSupported() && (allPdfs(files) || allImages(files)))); return; }
       log('nothing to offer for', files);
       getJobs().addInfo(conversion.explainNoTargets(files));
     },
 
     // The key of the other wheel was pressed: the wheel on show turns into it. It stays as it is when there is nothing to convert to,
-    // and Shift does nothing when the files are not all PDFs or all pictures.
+    // and Shift does nothing when the files are not all PDFs or all pictures. A wheel that is showing is not drawn again: Shift and then
+    // Ctrl on a document leaves the conversion wheel as it was.
     onSwitch(wheel) {
       if (wheel === 'open') {
-        if (allPdfs(selection)) getWheel().switchWheel(OPEN_TARGETS, { wheel: 'open', switchable: true });
-        else if (allImages(selection)) getWheel().switchWheel(EDIT_TARGETS, EDIT_VIEW);
+        if (allPdfs(selection)) { showing = 'open'; getWheel().switchWheel(OPEN_TARGETS, { wheel: 'open', switchable: true }); }
+        else if (allImages(selection)) { showing = 'open'; getWheel().switchWheel(EDIT_TARGETS, EDIT_VIEW); }
         return;
       }
+      if (showing === 'convert') return;
       const targets = conversion.targetsFor(selection);
-      if (targets.length) getWheel().switchWheel(targets, convertView(selection, true));
+      if (targets.length) { showing = 'convert'; getWheel().switchWheel(targets, convertView(selection, true)); }
       else getJobs().addInfo(conversion.explainNoTargets(selection));
     },
 

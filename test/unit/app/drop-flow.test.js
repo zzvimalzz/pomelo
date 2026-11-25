@@ -114,6 +114,9 @@ expect('Shift on a document that is showing its wheel turns nothing', take().len
 flow.onOpen(['C:\\a.pdf', 'C:\\b.docx']); take();
 flow.onSwitch('open');
 expect('and neither on a mix', take().length === 0);
+flow.onOpen(['C:\\a.docx']); take();
+flow.onSwitch('open'); flow.onSwitch('convert');
+expect('Shift and then Ctrl on a document do not draw the conversion wheel again', take().length === 0);
 
 flow.onOpen(['C:\\a.jpg'], false, 'open'); take();
 flow.onSwitch('convert');

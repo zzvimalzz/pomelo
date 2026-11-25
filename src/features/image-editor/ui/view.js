@@ -25,7 +25,7 @@
   let frame = 0;
   let tween = 0;
 
-  const fitZoom = (tab) => Math.max(0.01, Math.min((canvas.width - 2 * AIR * dpr()) / tab.width, (canvas.height - 2 * AIR * dpr()) / tab.height));
+  const fitZoom = (tab) => Math.max(0.01, Math.min(1, (canvas.width - 2 * AIR * dpr()) / tab.width, (canvas.height - 2 * AIR * dpr()) / tab.height));
   const zoomOf = (tab) => (tab.view.fit ? fitZoom(tab) : tab.view.zoom);
 
   // How far the picture may be pushed from the middle: until its edge is 32 px inside the well on the far side.
