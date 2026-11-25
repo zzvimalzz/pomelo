@@ -113,6 +113,20 @@
     return new Promise((resolve) => { c.pending = resolve; });
   }
 
+  // Asks for the password of a file to insert or combine until it is right. Resolves false when the user gives up.
+  async function askSource(source) {
+    let gaveUp = false;
+    let wrong = false;
+    for (;;) {
+      const password = await askPassword(wrong, () => { gaveUp = true; closePassword(); }, source.name);
+      if (password === null) { closePassword(); return false; }
+      const right = await window.workspaceApi.unlockSource(source.id, password).catch(() => false);
+      if (gaveUp) return false;
+      if (right) { closePassword(); return true; }
+      wrong = true;
+    }
+  }
+
   // The field is emptied before the card goes.
   function closePassword() {
     if (!card) return;
@@ -337,5 +351,5 @@
     });
   }
 
-  window.workspaceDialogs = { askPassword, closePassword, confirmLink, engineCard, choose, chooseColours, isOpen: window.pomeloCard.isOpen };
+  window.workspaceDialogs = { askPassword, askSource, closePassword, confirmLink, engineCard, choose, chooseColours, isOpen: window.pomeloCard.isOpen };
 })();

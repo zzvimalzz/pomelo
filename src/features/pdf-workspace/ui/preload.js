@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('workspaceApi', {
   chooseSources: (kind) => ipcRenderer.invoke('pdfws:choose-sources', kind),
   unlockSource: (id, password) => ipcRenderer.invoke('pdfws:unlock-source', id, password),
   extract: (token, pages) => ipcRenderer.invoke('pdfws:extract', token, pages),
+  combine: (token, ids, at) => ipcRenderer.invoke('pdfws:combine', token, ids, at),
+  split: (token, request, total) => ipcRenderer.invoke('pdfws:split', token, request, total),
   onFilesDropped: (cb) => { dropped = cb; },
 });
 

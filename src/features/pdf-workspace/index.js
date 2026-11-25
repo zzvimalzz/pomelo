@@ -4,7 +4,7 @@
 const os = require('os');
 const path = require('path');
 const { createDocuments, sweepSessions } = require('./documents');
-const { check, pageRanges, PICTURE_EXTENSIONS } = require('./ops');
+const { check, pageRanges, splitParts, PICTURE_EXTENSIONS } = require('./ops');
 const { linkTarget } = require('./links');
 const { addRecent, startFolder } = require('./recent');
 const { cleanView } = require('./view');
@@ -177,7 +177,7 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
   }
 
   async function chooseSources(kind) {
-    if (kind !== 'pdf' && kind !== 'image') return [];
+    if (kind !== 'pdf' && kind !== 'pdfs' && kind !== 'image') return [];
     const files = await require('./workspace.window').chooseInsert(win, kind, startFolder(getSettings().pdfRecent));
     return files.length ? sourcesOf(files) : [];
   }
@@ -193,6 +193,32 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     if (!result.done) return revised(Promise.resolve(result), false);
     notify({ title: wanted.length === 1 ? 'Page extracted' : 'Pages extracted', detail: path.basename(target) });
     return result;
+  }
+
+  // The document and the PDFs the page chose (by id, in the order of the list; the document stands after the first `at`) become a new file
+  // the user names. Resolves { done } or { stop }.
+  async function combine(token, ids, at) {
+    const file = documents.fileOf(token);
+    const suggested = uniquePath(path.dirname(file), `${path.basename(file, path.extname(file))} (combined)`, 'pdf');
+    const target = await require('./workspace.window').chooseSavePath(win, suggested, 'Combine files');
+    if (!target) return { stop: 'cancelled' };
+    const result = await documents.merge(token, ids, at, target).catch(applyFailed);
+    if (!result.done) return revised(Promise.resolve(result), false);
+    notify({ title: 'Files combined', detail: path.basename(target) });
+    return result;
+  }
+
+  // The document's pages go into files next to it, named by their pages, as `request` says (ops.js splitParts). `total` is the page count
+  // the page shows. Resolves { done }, { stop: 'invalid', message } for a request that makes no sense, or another { stop }.
+  async function split(token, request, total) {
+    const made = splitParts(request, total);
+    if (!made.parts) return { stop: 'invalid', message: made.error };
+    const file = documents.fileOf(token);
+    const [folder, name] = [path.dirname(file), path.basename(file, path.extname(file))];
+    const result = await documents.split(token, made.parts, (pages) => uniquePath(folder, `${name} (${pageRanges(pages)})`, 'pdf')).catch(applyFailed);
+    if (!result.done) return revised(Promise.resolve(result), false);
+    notify({ title: `Split into ${result.files.length} ${result.files.length === 1 ? 'file' : 'files'}`, detail: `Saved next to ${path.basename(file)}` });
+    return { done: true };
   }
 
   function openLink(url) {
@@ -225,6 +251,8 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     dropSources: sourcesOf,
     unlockSource: documents.unlockSource,
     extract,
+    combine,
+    split,
     details: documents.details,
     rename: (token, name) => revised(documents.rename(token, name), false),
     showInFolder: (token) => showInFolder(documents.fileOf(token)),

@@ -224,6 +224,38 @@ const bytes = fs.readFileSync(draw);
   expect('a page that is not there is refused', (await reason(tool(draw, oneToo, list(extract([4]))))).includes('this PDF has no page 4') && !fs.existsSync(oneToo));
   expect('and the same page twice', (await reason(tool(draw, oneToo, list(extract([1, 1]))))).includes('pages must be a list of different page numbers') && !fs.existsSync(oneToo));
 
+  console.log('files combined');
+  const merge = (at, ...sources) => ({ op: 'pages.merge', sources, at });
+  const drawnBytes = fs.readFileSync(draw);
+  const behind = at('merged-after.pdf');
+  const afterSaid = await tool(draw, behind, list(merge(0, named(source))));
+  expect('a file combined after the document adds its pages at the end, and the result is written whole', look(behind).texts.length === 5 && /PAGEMARK1/.test(look(behind).texts[0]) && /SOURCE2/.test(look(behind).texts[4]) && /^\{"saved": "full"\}$/m.test(afterSaid), JSON.stringify(look(behind).texts));
+  const between = at('merged-between.pdf');
+  await tool(draw, between, list(merge(1, named(source), named(draw))));
+  expect('the document stands after the first of the files given, and the files keep the order they were given', JSON.stringify(look(between).texts.map((t) => t.slice(0, 9))) === JSON.stringify(['SOURCE1', 'SOURCE2', 'PAGEMARK1', 'PAGEMARK2', 'PAGEMARK3', 'PAGEMARK1', 'PAGEMARK2', 'PAGEMARK3']), JSON.stringify(look(between).texts));
+  expect('the sizes of the pages come with them and the file reopens without repair', JSON.stringify(sizes(between)) === '[[400,300],[400,300],[595,842],[595,842],[595,842],[595,842],[595,842],[595,842]]' && look(between).repaired === false);
+  const front = at('merged-front.pdf');
+  await tool(draw, front, list(merge(1, named(source))));
+  expect('a document placed after the only file puts the file first', /SOURCE1/.test(look(front).texts[0]) && /PAGEMARK1/.test(look(front).texts[2]));
+  expect('the document the files were combined with is as it was', fs.readFileSync(draw).equals(drawnBytes));
+  const mergedLocked = at('merged-locked.pdf');
+  await tool(draw, mergedLocked, list(merge(0, { ...named(sourceLocked), id: 'lockedid' })), { sources: { lockedid: PASSWORD } });
+  expect('a protected file is opened with its own password and its pages are in the result', !look(mergedLocked).locked && look(mergedLocked).texts.length === 5 && /SOURCE1/.test(look(mergedLocked).texts[3]), JSON.stringify(look(mergedLocked)));
+  const lockedBase = at('merged-into-locked.pdf');
+  await tool(locked, lockedBase, list(merge(0, named(source))), { password: PASSWORD });
+  expect('combining into a protected document leaves the result protected in the same way', look(lockedBase).locked === true && look(lockedBase, PASSWORD).texts.length === 5 && look(lockedBase, PASSWORD).encryption === look(locked, PASSWORD).encryption);
+  for (const [what, op, secrets, why] of [
+    ['a protected file with no password', merge(0, { ...named(sourceLocked), id: 'lockedid' }), undefined, 'password-protected'],
+    ['a protected file with a wrong one', merge(0, { ...named(sourceLocked), id: 'lockedid' }), { sources: { lockedid: 'wrong' } }, 'password-protected'],
+    ['a file that is not there', merge(0, nothing), undefined, 'a file to insert is not there'],
+    ['a place past the files', merge(2, named(source)), undefined, 'there are no files to combine'],
+    ['no files', merge(0), undefined, 'there are no files to combine'],
+  ]) {
+    const out = at(`merge-refused-${crypto.randomBytes(3).toString('hex')}.pdf`);
+    const message = await reason(tool(draw, out, list(op), secrets));
+    expect(`${what} is refused with a reason and nothing is written`, message.includes(why) && !fs.existsSync(out), message);
+  }
+
   console.log('a file of 3 000 pages');
   const big = at('big.pdf');
   python('import pymupdf, sys\nd = pymupdf.open()\nfor i in range(3000):\n    d.new_page().insert_text((72, 100), "BIG%d" % (i + 1))\nd.save(sys.argv[1], expand=255)', big);

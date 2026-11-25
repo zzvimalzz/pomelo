@@ -415,6 +415,17 @@ body.focus .scroller { top: 0; bottom: 0; }
 .pw button { position: absolute; top: 3px; right: 4px; width: 26px; height: 26px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
 .pw button:hover { background: var(--hover); color: var(--txt); }
 .fld:focus, .fld:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); outline: none; }
+.card .seg3 { margin-bottom: 10px; }
+.files { display: grid; gap: 6px; max-height: 232px; margin: 0 0 8px; padding: 0; list-style: none; }
+.cfile { display: flex; align-items: center; gap: 2px; min-height: 38px; padding: 4px 4px 4px 10px; border-radius: 9px; background: var(--field); border: 1px solid var(--field-line); font-size: 12.5px; }
+.cfile .cname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cfile button { flex: none; width: 26px; height: 26px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
+.cfile button:hover:not(:disabled) { background: var(--hover); color: var(--txt); }
+.cfile button:disabled { opacity: .3; cursor: default; }
+.cfile button:focus-visible, .addfiles:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.addfiles { width: 100%; height: 36px; border-radius: 10px; border: 1.5px dashed var(--field-line); background: none; color: var(--muted); font: inherit; font-weight: 600; cursor: pointer; }
+.addfiles:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); }
+.addfiles:disabled { opacity: .5; cursor: default; }
 
 @media (prefers-reduced-motion: reduce) {
   .panel[data-turn] :is(.sideview, #thumbs, #outline), .cmark, .ccard, .tip, .pick, .pw.shake, .emsg, .dockwrap, .dock, .fold, .fold .i, .menu, .tool, .optbar, .cell .sheet, .findbar, .flash, .titlerow, .edgehint { animation: none; transition: none; }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The Pages tool: a button in the dock that swaps the reading view for a grid of every page, with selection by click, Ctrl, Shift, Ctrl+A, the
 // keyboard and a rubber band, and an option bar that inserts pages (from a PDF, from pictures, or a blank one, also by dropping files on the grid), turns,
-// deletes, extracts and moves the selected pages (by dragging) and undoes and redoes. Each change is a list of operations for the PDF engine. The grid shows the result at once and keeps its pages while they are read again from the new version,
+// deletes, extracts and moves the selected pages (by dragging), opens the Split and Combine files cards, and undoes and redoes. Each change is a list of operations for the PDF engine. The grid shows the result at once and keeps its pages while they are read again from the new version,
 // so nothing is drawn twice. Without the engine the button shows the engine card first. A classic script that adds window.workspaceOrganise.
 (() => {
   const { el, icon } = window.pomeloUi;
@@ -79,7 +79,9 @@
     const undo = action('undo', 'Undo', label('undo'), () => step('undo'));
     const redo = action('redo', 'Redo', label('redo'), () => step('redo'));
     const extractButton = labelled('extract', 'Extract', () => extract());
-    bar.append(insertGroup, turnLeft, turnRight, trash, extractButton, count, el('span', 'sep'), undo, redo);
+    const splitButton = labelled('split', 'Split…', () => away(() => window.workspaceSplit.open(tab.doc.token, viewer)));
+    const combineButton = labelled('combine', 'Combine files…', () => away(() => window.workspaceCombine.open(tab.doc.token, tab.doc.name)));
+    bar.append(insertGroup, turnLeft, turnRight, trash, extractButton, splitButton, combineButton, count, el('span', 'sep'), undo, redo);
     bar.addEventListener('mousedown', (e) => e.preventDefault());
     const button = el('button', 'tool');
     button.type = 'button';
@@ -604,24 +606,10 @@
       run((token) => window.workspaceApi.apply(token, [{ op: 'pages.blank', before }]), { select: [before], focus: before });
     }
 
-    // Asks for the password of a PDF to insert until it is right. Resolves false when the user gives up.
-    async function unlock(source) {
-      let gaveUp = false;
-      let wrong = false;
-      for (;;) {
-        const password = await window.workspaceDialogs.askPassword(wrong, () => { gaveUp = true; window.workspaceDialogs.closePassword(); }, source.name);
-        if (password === null) { window.workspaceDialogs.closePassword(); return false; }
-        const right = await window.workspaceApi.unlockSource(source.id, password).catch(() => false);
-        if (gaveUp) return false;
-        if (right) { window.workspaceDialogs.closePassword(); return true; }
-        wrong = true;
-      }
-    }
-
     // `found` is what the main process made of the files chosen or dropped: { id, kind, locked } for each. They are put in front of page `before`.
     async function insertSources(found, before) {
       if (!found?.length || busy || !tab || !open()) return;
-      for (const source of found) if (source.locked && !(await unlock(source))) return;
+      for (const source of found) if (source.locked && !(await window.workspaceDialogs.askSource(source))) return;
       await run((token) => window.workspaceApi.apply(token, [{ op: 'pages.insert', before, sources: found.map((s) => s.id) }]), { grow: before, was: viewer.pagesCount, select: [], focus: before });
     }
 
@@ -631,19 +619,23 @@
       await insertSources(await window.workspaceApi.chooseSources(kind), before);
     }
 
-    // The selected pages become a new file the user names. The document is not changed.
-    async function extract() {
-      const pages = chosen();
-      if (!pages.length || busy || !tab) return;
+    // Makes new files from the document, which is not changed: `make` resolves what the main process answered.
+    async function away(make) {
+      if (busy || !tab) return;
       busy = true;
       list.classList.add('busy');
       enable();
-      const result = await window.workspaceApi.extract(tab.doc.token, pages).catch(() => null);
+      const result = await make().catch(() => null);
       busy = false;
       list.classList.remove('busy');
       enable();
       if (result?.stop === 'no-engine') await window.workspaceDialogs.engineCard();
       if (focused && !list.hidden) focusCell(focused);
+    }
+
+    function extract() {
+      const pages = chosen();
+      if (pages.length && tab) away(() => window.workspaceApi.extract(tab.doc.token, pages));
     }
 
     // Files dropped on the grid go in front of the page the pointer is over, or after it in its right half; elsewhere in the grid, at the end.

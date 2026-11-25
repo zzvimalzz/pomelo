@@ -5,6 +5,7 @@
 const MAX_OPS = 1000;
 const MAX_PAGE = 1000000;
 const MAX_SOURCES = 50;
+const MAX_PARTS = 100;
 const PICTURE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff'];
 
 const isPages = (v) => Array.isArray(v) && v.length > 0 && v.length <= MAX_PAGE && v.every((p) => Number.isInteger(p) && p >= 1 && p <= MAX_PAGE) && new Set(v).size === v.length;
@@ -12,6 +13,8 @@ const isPages = (v) => Array.isArray(v) && v.length > 0 && v.length <= MAX_PAGE 
 const isBefore = (v) => Number.isInteger(v) && v >= 1 && v <= MAX_PAGE + 1;
 
 const isSources = (v) => Array.isArray(v) && v.length > 0 && v.length <= MAX_SOURCES && v.every((id) => typeof id === 'string' && /^[0-9a-f]{32}$/.test(id)) && new Set(v).size === v.length;
+
+const isPosition = (v) => Number.isInteger(v) && v >= 0 && v <= MAX_SOURCES;
 
 const isText = (v) => typeof v === 'string' && v.length <= 1000 && !v.includes('\0');
 
@@ -23,6 +26,7 @@ const OPS = {
   'pages.insert': { kind: 'new', keys: { before: isBefore, sources: isSources } },
   'pages.blank': { kind: 'new', keys: { before: isBefore } },
   'pages.extract': { kind: 'output', keys: { pages: isPages } },
+  'pages.merge': { kind: 'output', keys: { sources: isSources, at: isPosition } },
 };
 
 // Where every page is after a list of page changes: [the page it was when the document began, degrees turned], in the order they now
@@ -62,6 +66,40 @@ function pageRanges(pages) {
   return runs.map(([a, b]) => (a === b ? String(a) : `${a}-${b}`)).join(', ');
 }
 
+const RANGE = /^(\d+)\s*(?:(-)\s*(\d*))?$/;
+const SPLIT_WORDS = { ranges: 'Use page numbers such as 1-3, 7', every: 'Use a number of pages such as 5' };
+const TOO_MANY = { error: `That would make more than ${MAX_PARTS} files` };
+const TOO_MUCH = { error: 'That is too much to split at once' };
+
+// The files a split makes, each as the list of its pages, from what the Split dialog asks for in a document of `total` pages:
+// { mode: 'ranges', text: '1-3, 7, 10-' } (one file for each), { mode: 'every', n } (a file for each n pages) or { mode: 'bookmarks', starts }
+// (the pages where a file begins; the first file begins at page 1). Returns { parts } or { error } with a sentence for the dialog.
+function splitParts(request, total) {
+  const { mode, text, n, starts } = request ?? {};
+  if (!Number.isInteger(total) || total < 1 || total > MAX_PAGE) return TOO_MUCH;
+  const spans = [];
+  if (mode === 'ranges' && typeof text === 'string' && text.length <= 1000) {
+    for (const item of text.split(',')) {
+      const m = RANGE.exec(item.trim());
+      const from = m && Number(m[1]);
+      const to = !m ? 0 : m[2] ? (m[3] === '' ? total : Number(m[3])) : from;
+      if (!m || from < 1 || to < from || to > total) return { error: SPLIT_WORDS.ranges };
+      spans.push([from, to]);
+    }
+  } else if (mode === 'every' && Number.isInteger(n) && n >= 1 && n < total) {
+    if (Math.ceil(total / n) > MAX_PARTS) return TOO_MANY;
+    for (let from = 1; from <= total; from += n) spans.push([from, Math.min(from + n - 1, total)]);
+  } else if (mode === 'bookmarks' && Array.isArray(starts) && starts.length <= MAX_PARTS && starts.every((s) => Number.isInteger(s) && s >= 1 && s <= total)) {
+    const begins = [...new Set([1, ...starts])].sort((a, b) => a - b);
+    begins.forEach((from, i) => spans.push([from, (begins[i + 1] ?? total + 1) - 1]));
+  } else {
+    return { error: SPLIT_WORDS[mode] ?? 'This change cannot be made' };
+  }
+  if (spans.length > MAX_PARTS) return TOO_MANY;
+  if (spans.reduce((sum, [from, to]) => sum + to - from + 1, 0) > MAX_PAGE) return TOO_MUCH;
+  return { parts: spans.map(([from, to]) => Array.from({ length: to - from + 1 }, (_, i) => from + i)) };
+}
+
 // Returns a copy of the list that holds only the keys each operation takes. Throws a sentence for anything else.
 function check(list) {
   if (!Array.isArray(list) || !list.length || list.length > MAX_OPS) throw new Error('a list of changes has 1 to 1000 changes');
@@ -75,4 +113,4 @@ function check(list) {
   });
 }
 
-module.exports = { check, arrange, pageRanges, OPS, PICTURE_EXTENSIONS };
+module.exports = { check, arrange, pageRanges, splitParts, OPS, PICTURE_EXTENSIONS };

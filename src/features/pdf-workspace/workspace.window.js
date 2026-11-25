@@ -24,11 +24,11 @@ async function choosePdf(parent, folder) {
   return picked.canceled ? [] : picked.filePaths;
 }
 
-// One PDF, or any number of pictures, to put among the pages. kind: 'pdf' or 'image'.
+// One PDF ('pdf'), any number of PDFs ('pdfs') or any number of pictures ('image') to put among the pages or combine with the document.
 async function chooseInsert(parent, kind, folder) {
   const pictures = kind === 'image';
   const options = {
-    title: pictures ? 'Insert pictures' : 'Insert pages from a PDF', defaultPath: folder, properties: pictures ? ['openFile', 'multiSelections'] : ['openFile'],
+    title: pictures ? 'Insert pictures' : kind === 'pdfs' ? 'Add files' : 'Insert pages from a PDF', defaultPath: folder, properties: kind === 'pdf' ? ['openFile'] : ['openFile', 'multiSelections'],
     filters: [pictures ? { name: 'Pictures', extensions: PICTURE_EXTENSIONS } : { name: 'PDF files', extensions: ['pdf'] }],
   };
   const picked = await dialog.showOpenDialog(parent, options);
