@@ -45,6 +45,7 @@ const fresh = ({ keepView = false, ...options } = {}) => {
   workspace.registerIpc();
   return workspace;
 };
+const forgetSize = () => { settings = { ...settings, pdfView: { ...settings.pdfView, window: null } }; };
 const js = (win, code) => win.webContents.executeJavaScript(code);
 const shot = async (win, name) => fs.writeFileSync(path.join(out, name), (await win.webContents.capturePage()).toPNG());
 const until = async (what, fn, ms = 20000) => {
@@ -1480,10 +1481,11 @@ app.whenReady().then(async () => {
   console.log('selecting from empty paper');
   {
     const win = await openAndWait(fresh(), await makeSearchPdf('Search select.pdf'));
-    await sleep(500);
+    win.setSize(900, 600);
+    await sleep(900);
     const mouse = (type, x, y) => win.webContents.sendInputEvent({ type, x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1, modifiers: type === 'mouseUp' ? [] : ['leftButtonDown'] });
     const geometry = await js(win, `(() => { const spans = [...document.querySelectorAll('.page[data-page-number="1"] .textLayer span')].filter((s) => /Delivery of the goods|will happen/.test(s.textContent)).map((s) => s.getBoundingClientRect());
-      const p = document.querySelector('.page[data-page-number="1"]').getBoundingClientRect(); return { lines: spans.map((r) => ({ l: r.left, r: r.right, y: r.top + r.height / 2 })), page: { l: p.left, r: p.right, b: p.bottom } }; })()`);
+      const p = document.querySelector('.page[data-page-number="1"]').getBoundingClientRect(); return { lines: spans.map((r) => ({ l: r.left, r: r.right, y: r.top + r.height / 2 })), page: { l: p.left, r: p.right, b: Math.min(p.bottom, document.querySelector('.dock').getBoundingClientRect().top - 12) } }; })()`);
     const [one, two] = geometry.lines;
     const drag = async (from, to) => {
       mouse('mouseDown', from[0], from[1]);
@@ -1500,6 +1502,7 @@ app.whenReady().then(async () => {
     picked = await drag([geometry.page.r - 30, geometry.page.b - 30], [(one.l + one.r) / 2, one.y]);
     check('a press far below the text and a drag up into the first line select the lines between them, to the end of the last', /goods will happen on Monday\.$/.test(picked) && !/^Delivery/.test(picked), JSON.stringify(picked));
     await closeAndWait(win);
+    forgetSize();
   }
 
   console.log('finding: the hits listed, marked and coloured');
@@ -2381,7 +2384,7 @@ app.whenReady().then(async () => {
         stops: cells.filter((c) => c.tabIndex === 0).length, bar: bar.hidden ? '' : bar.textContent, title: b.title, label: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'), on: b.classList.contains('on'),
         dot: !b.querySelector('.engdot').hidden, labelWidth: b.querySelector('.lbl').getBoundingClientRect().width, tooling: document.body.classList.contains('tooling'), page: workspaceViewer.viewer.currentPageNumber,
         card: document.querySelector('.card h3')?.textContent ?? '', role: g.getAttribute('role') }; })()`);
-    const centre = (win, n) => js(win, `(() => { const r = document.querySelector('.cell[data-n="${n}"] .sheet').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+    const centre = (win, n) => js(win, `(() => { const c = document.querySelector('.cell[data-n="${n}"] .sheet'); c.scrollIntoView({ block: 'nearest' }); const r = c.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
     const click = async (win, p, modifiers = [], times = 1) => {
       win.webContents.focus();
       win.webContents.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y });
@@ -2396,6 +2399,8 @@ app.whenReady().then(async () => {
     for (const theme of ['light', 'dark']) {
       nativeTheme.themeSource = theme;
       const win = await openAndWait(fresh({ solid: true, hasPdfEngine: () => true }), twelve);
+      win.setSize(900, 600);
+      await sleep(600);
       let g = await grid(win);
       check(`${theme}: the dock has a Pages button with its key in the tooltip, not pressed, with no engine dot and no grid`, g.title === 'Pages (P)' && g.label === 'Pages' && g.pressed === 'false' && !g.dot && !g.shown && g.cells === 0 && g.role === 'listbox', JSON.stringify(g));
       await openGrid(win);
@@ -2427,13 +2432,13 @@ app.whenReady().then(async () => {
       check(`${theme}: Ctrl+A selects every page`, g.aria === 12 && g.bar === '12 selected', JSON.stringify(g));
       await shot(win, `workspace-grid-all-${theme}.png`);
 
-      await clickCell(win, 4);
-      await clickCell(win, 6, ['control']);
-      const hover = await centre(win, 9);
+      await js(win, `document.querySelector('.pgrid').scrollTop = 0`);
+      await clickCell(win, 3);
+      const hover = await centre(win, 2);
       win.webContents.sendInputEvent({ type: 'mouseMove', x: hover.x, y: hover.y });
       await sleep(400);
       const looks = await js(win, `(() => { const o = (n) => getComputedStyle(document.querySelector('.cell[data-n="' + n + '"] .sheet')).outlineColor; const c = (n) => getComputedStyle(document.querySelector('.cell[data-n="' + n + '"]'));
-        return { selected: o(4), hovered: o(9), plain: o(11), label: c(4).color, plainLabel: c(11).color, weight: c(4).fontWeight, plainWeight: c(11).fontWeight, halo: getComputedStyle(document.querySelector('.cell[data-n="4"] .sheet')).boxShadow, width: getComputedStyle(document.querySelector('.cell[data-n="4"] .sheet')).outlineWidth }; })()`);
+        return { selected: o(3), hovered: o(2), plain: o(1), label: c(3).color, plainLabel: c(1).color, weight: c(3).fontWeight, plainWeight: c(1).fontWeight, halo: getComputedStyle(document.querySelector('.cell[data-n="3"] .sheet')).boxShadow, width: getComputedStyle(document.querySelector('.cell[data-n="3"] .sheet')).outlineWidth }; })()`);
       check(`${theme}: a selected page, one the pointer is over and one that is neither each look different: one accent ring and a bold accent number, a grey ring, and nothing`,
         looks.selected !== looks.hovered && looks.hovered !== looks.plain && looks.selected !== looks.plain && looks.label !== looks.plainLabel && Number(looks.weight) > Number(looks.plainWeight) && !looks.halo.includes('7px') && looks.width === '3px', JSON.stringify(looks));
       const image = await win.webContents.capturePage();
@@ -2443,8 +2448,8 @@ app.whenReady().then(async () => {
       const pixel = (x, y) => { const i = (Math.round(y * scale) * width + Math.round(x * scale)) * 4; return [bitmap[i + 2], bitmap[i + 1], bitmap[i]]; };
       const lum = (rgb) => rgb.map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }).reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
       const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
-      const probe = await js(win, `(() => { const s = document.querySelector('.cell[data-n="4"] .sheet').getBoundingClientRect(); const w = document.querySelector('.well').getBoundingClientRect(); const p = document.querySelector('.cell[data-n="11"] .sheet').getBoundingClientRect();
-        return { ring: [s.left - 4, s.top + s.height / 2], well: [w.left + 6, w.top + 12], plain: [p.left - 4, p.top + p.height / 2], label: getComputedStyle(document.querySelector('.cell[data-n="4"]')).color }; })()`);
+      const probe = await js(win, `(() => { const s = document.querySelector('.cell[data-n="3"] .sheet').getBoundingClientRect(); const w = document.querySelector('.well').getBoundingClientRect(); const p = document.querySelector('.cell[data-n="1"] .sheet').getBoundingClientRect();
+        return { ring: [s.left - 4, s.top + s.height / 2], well: [w.left + 6, w.top + 12], plain: [p.left - 4, p.top + p.height / 2], label: getComputedStyle(document.querySelector('.cell[data-n="3"]')).color }; })()`);
       const wellPixel = pixel(...probe.well);
       const ringPixel = pixel(...probe.ring);
       const labelRgb = probe.label.match(/\d+/g).slice(0, 3).map(Number);
@@ -2484,6 +2489,7 @@ app.whenReady().then(async () => {
       await press(win, 'P');
       check(`${theme}: and P closes it`, !(await grid(win)).shown);
       await closeAndWait(win);
+      forgetSize();
     }
     nativeTheme.themeSource = 'light';
 
