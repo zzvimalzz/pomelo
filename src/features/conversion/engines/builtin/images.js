@@ -48,18 +48,26 @@ async function imageToPdf(img, out) {
   fs.writeFileSync(out, await doc.save());
 }
 
+const QUALITY = { jpg: 92, webp: 90, avif: 60 };
+
+// The one place that turns a picture into a file of each format. mozjpeg is 15 % smaller and about fifteen times slower than plain
+// libjpeg, so only the converter uses it.
+async function encode(img, to, out, { quality = QUALITY[to], mozjpeg = true } = {}) {
+  if (to === 'bmp') fs.writeFileSync(out, await toBmp(img));
+  else if (to === 'jpg') await img.flatten({ background: '#ffffff' }).jpeg({ quality, mozjpeg }).toFile(out);
+  else if (to === 'png') await img.png().toFile(out);
+  else if (to === 'webp') await img.webp({ quality }).toFile(out);
+  else if (to === 'avif') await img.avif({ quality }).toFile(out);
+  else if (to === 'tiff') await img.tiff({ compression: 'lzw' }).toFile(out);
+  else if (to === 'gif') await img.gif({ effort: 7 }).toFile(out);
+  else if (to === 'pdf') await imageToPdf(img, out);
+}
+
 async function run({ src, from, to, dir, base }) {
   const moving = (from === 'gif' || from === 'webp') && (to === 'gif' || to === 'webp');   // keep every frame; other targets take the first
   const img = await sharpInput(src, from, moving);
   const out = uniquePath(dir, base, to);
-  if (to === 'bmp') fs.writeFileSync(out, await toBmp(img));
-  else if (to === 'pdf') await imageToPdf(img, out);
-  else if (to === 'jpg') await img.flatten({ background: '#ffffff' }).jpeg({ quality: 92, mozjpeg: true }).toFile(out);
-  else if (to === 'png') await img.png().toFile(out);
-  else if (to === 'webp') await img.webp({ quality: 90 }).toFile(out);
-  else if (to === 'avif') await img.avif({ quality: 60 }).toFile(out);
-  else if (to === 'tiff') await img.tiff({ compression: 'lzw' }).toFile(out);
-  else if (to === 'gif') await img.gif({ effort: 7 }).toFile(out);
+  await encode(img, to, out);
   return [out];
 }
 
@@ -74,7 +82,37 @@ async function readImage(src, { maxPixels, maxEdge }) {
   return { data, width: info.width, height: info.height, hasAlpha };
 }
 
+const EXIF_FORMATS = ['jpg', 'png', 'webp', 'avif'];
+
+// Writes the editor's RGBA pixels (width x height, straight alpha) as `to`, scaled so the long edge is `longEdge` when that is smaller.
+// When `metadataFrom` is a picture that can carry EXIF the tags are copied from it and the orientation is set upright: the pixels go
+// over an 8 x 8 corner of the original, which keeps the original's metadata without decoding all of it.
+async function writeImage(rgba, out, to, { width, height, quality, longEdge, metadataFrom }) {
+  const sharp = require('sharp');
+  sharp.cache(false);
+  let pixels = rgba;
+  let raw = { width, height, channels: 4 };
+  if (longEdge && longEdge < Math.max(width, height)) {
+    const k = longEdge / Math.max(width, height);
+    raw = { width: Math.max(1, Math.round(width * k)), height: Math.max(1, Math.round(height * k)), channels: 4 };
+    pixels = await sharp(rgba, { raw: { width, height, channels: 4 } }).resize(raw.width, raw.height, { kernel: 'lanczos3', fit: 'fill' }).raw().toBuffer();
+  }
+  let img = sharp(pixels, { raw });
+  if (metadataFrom && EXIF_FORMATS.includes(extOf(metadataFrom)) && EXIF_FORMATS.includes(to)) {
+    if (to === 'jpg') {   // sharp flattens before it composites, so an alpha channel here would reach the JPEG encoder unflattened
+      const flat = await img.flatten({ background: '#ffffff' }).raw().toBuffer({ resolveWithObject: true });
+      pixels = flat.data;
+      raw = { ...raw, channels: flat.info.channels };
+    }
+    const { width: sw, height: sh } = await sharp(metadataFrom).metadata();
+    img = sharp(metadataFrom).extract({ left: 0, top: 0, width: Math.min(8, sw), height: Math.min(8, sh) })
+      .resize(raw.width, raw.height, { fit: 'fill', kernel: 'nearest' }).ensureAlpha()
+      .composite([{ input: pixels, raw, blend: 'source' }]).keepExif().withMetadata({ orientation: 1 });
+  }
+  await encode(img, to, out, { quality, mozjpeg: false });
+}
+
 const IMG_FROM = extsInGroup('image');
 const IMG_TO = ['png', 'jpg', 'webp', 'avif', 'tiff', 'bmp', 'gif', 'pdf'];
 
-module.exports = { reads: (from) => IMG_FROM.includes(from), writes: () => IMG_TO, run, readImage };
+module.exports = { reads: (from) => IMG_FROM.includes(from), writes: () => IMG_TO, run, readImage, writeImage, QUALITY };

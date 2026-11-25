@@ -54,7 +54,7 @@ const workspace = createWorkspace({
 const showPdf = (paths) => workspace.open(paths).catch((e) => log('PDF window failed:', e.message));
 const editor = createEditor({
   asset, getSettings: () => settings.get(), setSettings: (patch) => settings.set(patch), notify: (message) => jobs?.addInfo(message), log,
-  readImage: conversion.readImage, showInFolder: (file) => shell.showItemInFolder(file), extOf: conversion.extOf,
+  readImage: conversion.readImage, writeImage: conversion.writeImage, uniquePath: conversion.uniquePath, qualities: conversion.QUALITY, showInFolder: (file) => shell.showItemInFolder(file), extOf: conversion.extOf,
 });
 const showImages = (paths) => editor.open(paths).catch((e) => log('image window failed:', e.message));
 const installer = engineSetup.createInstaller({ redetect: () => conversion.detectEngines() });

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The editor window: the shared app window with the editor's page and preload, and the full-screen events its page listens for.
+// The editor window: the shared app window with the editor's page and preload, the full-screen events its page listens for, and the
+// Save a copy dialog.
 const path = require('path');
+const { dialog } = require('electron');
 const { createAppWindow } = require('#shared/electron/windows');
 
 // asset(name): path of a file shipped in assets/. solid: draw an opaque window. saved: the stored place of the window.
@@ -14,4 +16,11 @@ function create({ asset, solid, saved, onBounds }) {
   return win;
 }
 
-module.exports = { create };
+const FILTERS = { jpg: ['jpg', 'jpeg'], tiff: ['tiff', 'tif'] };
+
+async function chooseSavePath(parent, file, format) {
+  const picked = await dialog.showSaveDialog(parent, { title: 'Save a copy', defaultPath: file, filters: [{ name: `${format.toUpperCase()} files`, extensions: FILTERS[format] ?? [format] }] });
+  return picked.canceled ? null : picked.filePath;
+}
+
+module.exports = { create, chooseSavePath };

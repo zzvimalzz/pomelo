@@ -102,8 +102,10 @@ const FREE_MARGIN = 64 * 1048576;
 // may be there yet. Resolves { identity } of the new file, or { stop } with why nothing was changed: 'changed' (another program
 // replaced target, or made it), 'read-only', 'no-space' or 'locked' (another program holds target open without letting go of it).
 // A rename over the target fails with EPERM while any handle on it is open, Pomelo's own included, so an existing target goes
-// through ReplaceFileW, which also keeps its permissions, creation time and Zone.Identifier stream.
-async function replaceFile(src, target, expected) {
+// through ReplaceFileW, which also keeps its permissions, creation time and Zone.Identifier stream. `complete(tail)` says whether
+// the last bytes of the copy look like a finished file; the default is a PDF's end marker.
+const PDF_END = (tail) => tail.includes('%%EOF');
+async function replaceFile(src, target, expected, complete = PDF_END) {
   let now = null;
   try { now = await fileIdentity(target); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   if (expected ? !now || !sameFile(now, expected) : now) return { stop: 'changed' };
@@ -120,7 +122,7 @@ async function replaceFile(src, target, expected) {
       await handle.sync();
       const tail = Buffer.alloc(Math.min(size, 1024));
       await handle.read(tail, 0, tail.length, size - tail.length);
-      if ((await handle.stat()).size !== size || !tail.includes('%%EOF')) throw new Error('The copy to save is incomplete');
+      if ((await handle.stat()).size !== size || !complete(tail)) throw new Error('The copy to save is incomplete');
     } finally { await handle.close(); }
     if (!now) await fs.promises.rename(temp, target);
     else {
