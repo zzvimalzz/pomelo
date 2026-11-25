@@ -89,6 +89,7 @@ const EXIF_FORMATS = ['jpg', 'png', 'webp', 'avif'];
 // over an 8 x 8 corner of the original, which keeps the original's metadata without decoding all of it.
 async function writeImage(rgba, out, to, { width, height, quality, longEdge, metadataFrom }) {
   const sharp = require('sharp');
+  sharp.cache(false);
   let pixels = rgba;
   let raw = { width, height, channels: 4 };
   if (longEdge && longEdge < Math.max(width, height)) {

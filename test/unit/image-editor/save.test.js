@@ -5,7 +5,7 @@ const path = require('path');
 const sharp = require('sharp');
 const { createImages } = require('../../../src/features/image-editor/images');
 const { createSave } = require('../../../src/features/image-editor/save');
-const { writeImage } = require('../../../src/features/conversion/engines/builtin/images');
+const { readImage, writeImage } = require('../../../src/features/conversion/engines/builtin/images');
 const { uniquePath } = require('../../../src/features/conversion/engine-kit/outputs');
 const { extOf } = require('../../../src/features/conversion/catalog/formats');
 const { expect } = require('../../support/expect');
@@ -56,6 +56,13 @@ const threw = async (fn) => { try { await fn(); return false; } catch { return t
   fs.chmodSync(file, 0o444);
   expect('a read-only file stops the save, with the sentence for it', (await save(token, pixels(1, 2, 3), { mode: 'replace', format: 'same', ...sizes }))?.stop === 'read-only' && notices.at(-1)?.title === "Can't save" && notices.at(-1)?.detail === 'locked.jpg is read-only. Save a copy instead.', JSON.stringify(notices.at(-1)));
   fs.chmodSync(file, 0o666);
+
+  console.log('a picture that was read can be deleted');
+  const webp = path.join(root, 'read.webp');
+  await sharp({ create: { width: 8, height: 8, channels: 3, background: '#4a8' } }).webp().toFile(webp);
+  sharp.cache(true);
+  await readImage(webp, { maxPixels: 1e6, maxEdge: 1e4 });
+  expect('a WebP the editor has read is not held open', await fs.promises.rm(webp).then(() => true, () => false));
 
   console.log('a copy');
   ({ file, token } = await photo('copy.jpg'));
