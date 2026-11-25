@@ -86,6 +86,7 @@
       active.left = viewer.where();
       active.shown = false;
     }
+    window.workspaceOrganise.leave();
     active = tab;
     showName(tab);
     savedNote.classList.remove('on');

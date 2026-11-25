@@ -47,10 +47,11 @@ const workspace = createWorkspace({
   asset, getSettings: () => settings.get(), setSettings: (patch) => settings.set(patch), notify: (message) => jobs?.addInfo(message), log,
   openExternal: (url) => shell.openExternal(url), copyText: (text) => clipboard.writeText(text), uniquePath: conversion.uniquePath,
   runPdfTool: conversion.runPdfTool, showInFolder: (file) => shell.showItemInFolder(file),
+  hasPdfEngine: () => !!conversion.getEngines().pdf, installEngine: (key, onNote) => setup.run(key, onNote),
 });
 const showPdf = (paths) => workspace.open(paths).catch((e) => log('PDF window failed:', e.message));
 const installer = engineSetup.createInstaller({ redetect: () => conversion.detectEngines() });
-let tray, wheel, jobs, trigger, helper;
+let tray, wheel, jobs, trigger, helper, setup;
 
 const openSettings = (target) => openSettingsWindow(asset, target);
 const sendToSettings = (channel, payload) => getSettingsWindow()?.webContents.send(channel, payload);
@@ -127,7 +128,7 @@ app.whenReady().then(async () => {
 
   workspace.registerIpc();
   workspace.sweepSessions();
-  const setup = engineSetup.registerEngineSetupIpc({ installer, getEngines: conversion.getEngines, sendToSettings, log });
+  setup = engineSetup.registerEngineSetupIpc({ installer, getEngines: conversion.getEngines, sendToSettings, log });
   let justUpdated = updates.updatedStart(process.argv, app.getVersion());      // Settings says so the first time it opens, not every time
   registerSettingsIpc({
     store: settings,

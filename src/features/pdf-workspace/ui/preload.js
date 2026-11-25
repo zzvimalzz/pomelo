@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('workspaceApi', {
   details: (token) => ipcRenderer.invoke('pdfws:details', token),
   rename: (token, name) => ipcRenderer.invoke('pdfws:rename', token, name),
   showInFolder: (token) => ipcRenderer.invoke('pdfws:show', token),
+  engine: () => ipcRenderer.invoke('pdfws:engine'),
+  installEngine: () => ipcRenderer.invoke('pdfws:install-engine'),
   undo: (token) => ipcRenderer.invoke('pdfws:undo', token),
   redo: (token) => ipcRenderer.invoke('pdfws:redo', token),
   save: (token) => ipcRenderer.invoke('pdfws:save', token),
@@ -27,6 +29,7 @@ contextBridge.exposeInMainWorld('workspaceApi', {
   copyLinks: (urls) => ipcRenderer.invoke('pdfws:copy-links', urls),
   onFocus: (cb) => ipcRenderer.on('pdfws:focus-changed', (_e, on) => cb(on)),
   onChanged: (cb) => ipcRenderer.on('pdfws:changed', (_e, document) => cb(document)),
+  onInstallNote: (cb) => ipcRenderer.on('pdfws:install-note', (_e, progress) => cb(progress)),
   onClosing: (cb) => ipcRenderer.on('pdfws:closing', () => cb()),
   onOpened: (cb) => ipcRenderer.on('pdfws:opened', (_e, documents) => cb(documents)),
 });

@@ -10,6 +10,7 @@
     nextPage: { keys: ['PageDown', 'ArrowRight', 'ArrowDown'], label: 'Page Down' },
     previousPage: { keys: ['PageUp', 'ArrowLeft', 'ArrowUp'], label: 'Page Up' },
     focusReading: { keys: ['F11'], label: 'F11' },
+    pages: { keys: ['p', 'P'], label: 'P' },
     find: { keys: ['Ctrl+f', 'Ctrl+F'], label: 'Ctrl+F' },
     documentPanel: { keys: ['Ctrl+d', 'Ctrl+D'], label: 'Ctrl+D' },
     saveCopy: { keys: ['Ctrl+Shift+S'], label: 'Ctrl+Shift+S' },

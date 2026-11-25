@@ -20,7 +20,8 @@ async function sevenZip(exe, args, { report, password, timeout = 3600000, ...opt
   } catch (e) {
     if (e instanceof CancelledError) throw e;
     if (asked && !password) throw new PasswordError('needed');
-    if (password && /wrong password|data error in encrypted/i.test(e.message)) throw new PasswordError('wrong');
+    // A wrong password on a 7z makes the decoder fail before any checksum is read about once in two hundred tries, and 7-Zip then says only "Data Error : #0".
+    if (password && /wrong password|data error/i.test(e.message)) throw new PasswordError('wrong');
     throw e;
   } finally { input?.fill(0); }
 }

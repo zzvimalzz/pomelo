@@ -38,14 +38,10 @@
     let current = null;
     let closing = null;
 
-    const paint = (n, { bitmap, ratio }) => {
+    const paint = (n, image) => {
       const { button: b, sheet } = items[n - 1];
-      const canvas = el('canvas');
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      canvas.getContext('2d').drawImage(bitmap, 0, 0);
-      b.style.setProperty('--r', String(ratio));
-      sheet.replaceChildren(canvas);
+      b.style.setProperty('--r', String(image.ratio));
+      sheet.replaceChildren(window.workspaceThumbs.picture(image));
     };
 
     const seen = new IntersectionObserver((changes) => {

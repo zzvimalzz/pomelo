@@ -115,6 +115,7 @@
     api.viewer = viewer;
     window.workspaceComments.watch(viewer, eventBus, container);
     window.workspaceDock.watch(viewer, eventBus, container);
+    window.workspaceOrganise.watch(viewer, eventBus, container);
     window.workspaceSidebar.watch(viewer, eventBus, container, linkService, saved.sidebar);
     window.workspaceLinkList.watch(viewer, eventBus, container, followLink);
     window.workspaceSelect.watch(container);

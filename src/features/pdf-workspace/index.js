@@ -29,8 +29,10 @@ const REASONS = {
 // asset(name): path of a file shipped in assets/. getSettings(), setSettings(patch): the stored settings. notify({ title, detail }): the
 // notice in the corner of the screen. log(...). openExternal(url): open an address with the program Windows has for it, as a promise.
 // copyText(text): put text on the clipboard. uniquePath(dir, base, ext): a path that does not exist yet. runPdfTool(script, args, { src, signal, secrets }): run a
-// PDF editing helper with the PDF engine. showInFolder(file): show a file in Explorer. solid: draw an opaque window; by default only before Windows 11.
-function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, uniquePath, runPdfTool, showInFolder, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
+// PDF editing helper with the PDF engine. showInFolder(file): show a file in Explorer. hasPdfEngine(): is the PDF engine installed. installEngine(key, onNote):
+// install an engine as the Engines page does, calling onNote(note, fraction) as it goes, and resolve { ok, message }. solid: draw an opaque window; by default only
+// before Windows 11.
+function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, uniquePath, runPdfTool, showInFolder, hasPdfEngine, installEngine, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
   const documents = createDocuments({ runPdfTool });
   let win = null;
   let queue = Promise.resolve();
@@ -148,6 +150,11 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     return revised(same ? documents.save(token) : documents.saveCopy(token, target), false);
   }
 
+  async function installPdfEngine() {
+    const { ok, message } = await installEngine('pdf', (note, fraction) => win?.webContents.send('pdfws:install-note', { note, fraction }));
+    return { ok, message };
+  }
+
   function openLink(url) {
     const target = linkTarget(url);
     if (target) openExternal(target).catch(() => notify({ title: "Can't open this link", detail: 'Windows has nothing to open it with.' }));
@@ -177,6 +184,8 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     details: documents.details,
     rename: (token, name) => revised(documents.rename(token, name), false),
     showInFolder: (token) => showInFolder(documents.fileOf(token)),
+    engine: () => !!hasPdfEngine(),
+    installEngine: installPdfEngine,
     undo: (token) => revised(documents.undo(token), true),
     redo: (token) => revised(documents.redo(token), true),
     save: (token) => revised(documents.save(token), false),
