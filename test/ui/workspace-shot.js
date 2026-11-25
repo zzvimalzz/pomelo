@@ -40,8 +40,8 @@ const setSettings = (patch) => { writes++; settings = { ...settings, ...patch };
 const VIEW_KEYS = ['zoom', 'layout', 'sidebar', 'pageColours'];
 const fresh = ({ keepView = false, ...options } = {}) => {
   if (!keepView && settings.pdfView && typeof settings.pdfView === 'object') settings = { ...settings, pdfView: Object.fromEntries(Object.entries(settings.pdfView).filter(([key]) => !VIEW_KEYS.includes(key))) };
-  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'pdfws:put-revision', 'pdfws:apply', 'pdfws:undo', 'pdfws:redo', 'pdfws:save', 'pdfws:save-as', 'pdfws:reload', 'pdfws:close-window', 'pdfws:properties', 'pdfws:details', 'pdfws:rename', 'pdfws:show']) ipcMain.removeHandler(channel);
-  const workspace = createWorkspace({ asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), uniquePath, runPdfTool, showInFolder: (file) => shown.push(file), ...options });
+  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'pdfws:put-revision', 'pdfws:apply', 'pdfws:undo', 'pdfws:redo', 'pdfws:save', 'pdfws:save-as', 'pdfws:reload', 'pdfws:close-window', 'pdfws:properties', 'pdfws:details', 'pdfws:rename', 'pdfws:show', 'pdfws:engine', 'pdfws:install-engine']) ipcMain.removeHandler(channel);
+  const workspace = createWorkspace({ hasPdfEngine: () => true, asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), uniquePath, runPdfTool, showInFolder: (file) => shown.push(file), ...options });
   workspace.registerIpc();
   return workspace;
 };
@@ -707,7 +707,7 @@ app.whenReady().then(async () => {
     const win = await openAndWait(fresh(), twelve);
     await sleep(900);
     let d = await dockState(win);
-    check(`${theme}: the dock holds the page group and the zoom group and nothing else`, d.titles.join('|') === 'Drag to move|Previous page (Page Up)|Next page (Page Down)|Zoom out (Ctrl+−)|View options|Zoom in (Ctrl+=)'
+    check(`${theme}: the dock holds the page group and the zoom group and nothing else`, d.titles.join('|') === 'Drag to move|Previous page (Page Up)|Next page (Page Down)|Pages (P)|Zoom out (Ctrl+−)|View options|Zoom in (Ctrl+=)'
       && d.page === '1' && d.count === '/ 12' && d.zoom === 'Fit page' && d.opacity === '1', JSON.stringify(d));
     await js(win, `document.querySelector('.dock [aria-label="Next page"]').click()`);
     await sleep(400);
@@ -2368,6 +2368,298 @@ app.whenReady().then(async () => {
     check('and a click on it goes to page 3 000', (await js(win, `workspaceViewer.viewer.currentPageNumber`)) === 3000);
     await closeAndWait(win);
     check('closing the window closes the file', workspace.served() === 0 && (() => { try { fs.rmSync(big); return true; } catch { return false; } })());
+  }
+
+  console.log('the Pages grid');
+  {
+    const twelve = await makePdf('Grid twelve.pdf', 12);
+    const second = await makePdf('Grid two.pdf', 2);
+    const grid = (win) => js(win, `(() => { const g = document.querySelector('.pgrid'); const b = document.querySelector('.dock .tool'); const bar = document.querySelector('.optbar'); const cells = [...document.querySelectorAll('.cell')];
+      return { shown: !g.hidden, organising: document.querySelector('.well').classList.contains('organising'), scroller: getComputedStyle(document.getElementById('scroller')).visibility, cells: cells.length,
+        labels: cells.slice(0, 2).map((c) => c.getAttribute('aria-label')).join(), canvases: document.querySelectorAll('.cell canvas').length, selected: cells.filter((c) => c.classList.contains('sel')).map((c) => c.dataset.n).join(),
+        aria: cells.filter((c) => c.getAttribute('aria-selected') === 'true').length, focused: document.activeElement.classList.contains('cell') ? document.activeElement.dataset.n : document.activeElement.id,
+        stops: cells.filter((c) => c.tabIndex === 0).length, bar: bar.hidden ? '' : bar.textContent, title: b.title, label: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'), on: b.classList.contains('on'),
+        dot: !b.querySelector('.engdot').hidden, labelWidth: b.querySelector('.lbl').getBoundingClientRect().width, tooling: document.body.classList.contains('tooling'), page: workspaceViewer.viewer.currentPageNumber,
+        card: document.querySelector('.card h3')?.textContent ?? '', role: g.getAttribute('role') }; })()`);
+    const centre = (win, n) => js(win, `(() => { const r = document.querySelector('.cell[data-n="${n}"] .sheet').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+    const click = async (win, p, modifiers = [], times = 1) => {
+      win.webContents.focus();
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y });
+      for (let clickCount = 1; clickCount <= times; clickCount++) for (const type of ['mouseDown', 'mouseUp']) win.webContents.sendInputEvent({ type, x: p.x, y: p.y, button: 'left', clickCount, modifiers });
+      await sleep(200);
+    };
+    const clickCell = async (win, n, modifiers = [], times = 1) => click(win, await centre(win, n), modifiers, times);
+    const sheetsDrawn = (win, n) => until(`${n} thumbnails`, async () => (await grid(win)).canvases >= n);
+    const across = (win) => js(win, `(() => { const top = document.querySelector('.cell').offsetTop; return [...document.querySelectorAll('.cell')].filter((c) => c.offsetTop === top).length; })()`);
+    const openGrid = async (win, wait = 500) => { await js(win, `document.querySelector('.dock .tool').click()`); await sleep(wait); };
+
+    for (const theme of ['light', 'dark']) {
+      nativeTheme.themeSource = theme;
+      const win = await openAndWait(fresh({ solid: true, hasPdfEngine: () => true }), twelve);
+      let g = await grid(win);
+      check(`${theme}: the dock has a Pages button with its key in the tooltip, not pressed, with no engine dot and no grid`, g.title === 'Pages (P)' && g.label === 'Pages' && g.pressed === 'false' && !g.dot && !g.shown && g.cells === 0 && g.role === 'listbox', JSON.stringify(g));
+      await openGrid(win);
+      await sheetsDrawn(win, 12);
+      g = await grid(win);
+      check(`${theme}: the button opens a grid of every page that takes the place of the reading view, with its name beside the icon`, g.shown && g.organising && g.scroller === 'hidden' && g.cells === 12 && g.labels === 'Page 1,Page 2' && g.pressed === 'true' && g.on && g.labelWidth > 20 && g.tooling, JSON.stringify(g));
+      const ink = await js(win, `(() => { const c = document.querySelector('.cell[data-n="1"] canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let dark = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 1] < 200) dark++; return dark; })()`);
+      check(`${theme}: every thumbnail is drawn, with ink on it, and the page in view has the focus as the one Tab stop`, g.canvases === 12 && g.focused === '1' && g.stops === 1 && g.selected === '' && g.bar === '' && ink > 500, JSON.stringify([ink, g]));
+      const widths = await js(win, `[...document.querySelectorAll('.cell .sheet')].slice(0, 3).map((s) => Math.round(s.getBoundingClientRect().width)).join()`);
+      check(`${theme}: a thumbnail is 160 px wide`, widths === '160,160,160', widths);
+
+      await clickCell(win, 3);
+      g = await grid(win);
+      check(`${theme}: a click selects one page and the bar says so`, g.selected === '3' && g.aria === 1 && g.bar === '1 selected' && g.focused === '3', JSON.stringify(g));
+      await clickCell(win, 5, ['control']);
+      await clickCell(win, 7, ['control']);
+      g = await grid(win);
+      check(`${theme}: Ctrl and a click adds a page`, g.selected === '3,5,7' && g.bar === '3 selected', JSON.stringify(g));
+      await clickCell(win, 5, ['control']);
+      check(`${theme}: Ctrl and a click on a selected page takes it out`, (await grid(win)).selected === '3,7');
+      await clickCell(win, 9, ['shift']);
+      g = await grid(win);
+      check(`${theme}: Shift and a click selects from the page last clicked to this one`, g.selected === '5,6,7,8,9' || g.selected === '7,8,9', JSON.stringify(g));
+      await clickCell(win, 2, ['control', 'shift']);
+      g = await grid(win);
+      check(`${theme}: Ctrl and Shift adds that range to what is selected`, g.aria >= 8 && g.selected.split(',').includes('2') && g.selected.split(',').includes('9'), JSON.stringify(g));
+      await press(win, 'A', ['control']);
+      g = await grid(win);
+      check(`${theme}: Ctrl+A selects every page`, g.aria === 12 && g.bar === '12 selected', JSON.stringify(g));
+      await shot(win, `workspace-grid-all-${theme}.png`);
+
+      await clickCell(win, 4);
+      await clickCell(win, 6, ['control']);
+      const hover = await centre(win, 9);
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: hover.x, y: hover.y });
+      await sleep(400);
+      const looks = await js(win, `(() => { const o = (n) => getComputedStyle(document.querySelector('.cell[data-n="' + n + '"] .sheet')).outlineColor; const c = (n) => getComputedStyle(document.querySelector('.cell[data-n="' + n + '"]'));
+        return { selected: o(4), hovered: o(9), plain: o(11), label: c(4).color, plainLabel: c(11).color, weight: c(4).fontWeight, plainWeight: c(11).fontWeight, halo: getComputedStyle(document.querySelector('.cell[data-n="4"] .sheet')).boxShadow }; })()`);
+      check(`${theme}: a selected page, one the pointer is over and one that is neither each look different: an accent ring with a halo and a bold accent number, a grey ring, and nothing`,
+        looks.selected !== looks.hovered && looks.hovered !== looks.plain && looks.selected !== looks.plain && looks.label !== looks.plainLabel && Number(looks.weight) > Number(looks.plainWeight) && looks.halo.includes('7px'), JSON.stringify(looks));
+      const image = await win.webContents.capturePage();
+      const bitmap = image.toBitmap();
+      const width = image.getSize().width;
+      const scale = width / (await js(win, `innerWidth`));
+      const pixel = (x, y) => { const i = (Math.round(y * scale) * width + Math.round(x * scale)) * 4; return [bitmap[i + 2], bitmap[i + 1], bitmap[i]]; };
+      const lum = (rgb) => rgb.map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }).reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
+      const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+      const probe = await js(win, `(() => { const s = document.querySelector('.cell[data-n="4"] .sheet').getBoundingClientRect(); const w = document.querySelector('.well').getBoundingClientRect(); const p = document.querySelector('.cell[data-n="11"] .sheet').getBoundingClientRect();
+        return { ring: [s.left - 4, s.top + s.height / 2], well: [w.left + 6, w.top + 12], plain: [p.left - 4, p.top + p.height / 2], label: getComputedStyle(document.querySelector('.cell[data-n="4"]')).color }; })()`);
+      const wellPixel = pixel(...probe.well);
+      const ringPixel = pixel(...probe.ring);
+      const labelRgb = probe.label.match(/\d+/g).slice(0, 3).map(Number);
+      check(`${theme}: the ring of a selected page is at least 3 to 1 against the area behind it, and its bold number at least 4.5 to 1`, ratio(ringPixel, wellPixel) >= 3 && ratio(labelRgb, wellPixel) >= 4.5, `ring ${ratio(ringPixel, wellPixel).toFixed(2)} label ${ratio(labelRgb, wellPixel).toFixed(2)} ${ringPixel} ${wellPixel}`);
+      check(`${theme}: a page that is not selected has no ring`, ratio(pixel(...probe.plain), wellPixel) < 1.2, `${pixel(...probe.plain)} ${wellPixel}`);
+      await shot(win, `workspace-grid-${theme}.png`);
+
+      await clickCell(win, 4);
+      await press(win, 'Right');
+      g = await grid(win);
+      check(`${theme}: Right moves to the next page and selects only it`, g.selected === '5' && g.focused === '5', JSON.stringify(g));
+      const columns = await across(win);
+      await press(win, 'Down');
+      g = await grid(win);
+      check(`${theme}: Down moves a row (${columns} pages across)`, 5 + columns <= 12 ? g.selected === String(5 + columns) && g.focused === String(5 + columns) : g.selected === '5', JSON.stringify(g));
+      await press(win, 'Right', ['shift']);
+      await press(win, 'Right', ['shift']);
+      g = await grid(win);
+      check(`${theme}: Shift and an arrow extends the selection from where it began`, g.aria === 3 && g.bar === '3 selected', JSON.stringify(g));
+      await press(win, 'Home');
+      g = await grid(win);
+      await press(win, 'End');
+      const end = await grid(win);
+      check(`${theme}: Home goes to the first page and End to the last`, g.selected === '1' && g.focused === '1' && end.selected === '12' && end.focused === '12', JSON.stringify([g, end]));
+      await press(win, 'Home');
+      await press(win, 'Space');
+      g = await grid(win);
+      await press(win, 'Space');
+      check(`${theme}: Space takes the focused page out of the selection and puts it back`, g.selected === '' && (await grid(win)).selected === '1', JSON.stringify(g));
+      await press(win, 'Escape');
+      g = await grid(win);
+      const inside = await js(win, `document.getElementById('scroller').contains(document.activeElement)`);
+      check(`${theme}: Esc leaves the grid for the reading view, with the keys back in the document`, !g.shown && !g.organising && g.scroller === 'visible' && g.pressed === 'false' && !g.on && !g.tooling && inside && g.cells === 0, JSON.stringify(g));
+      await press(win, 'P');
+      await sleep(500);
+      check(`${theme}: P opens the grid again`, (await grid(win)).shown);
+      await press(win, 'P');
+      check(`${theme}: and P closes it`, !(await grid(win)).shown);
+      await closeAndWait(win);
+    }
+    nativeTheme.themeSource = 'light';
+
+    console.log('the grid: a double click, Enter, the rubber band');
+    {
+      const win = await openAndWait(fresh({ hasPdfEngine: () => true }), twelve);
+      await openGrid(win);
+      await sheetsDrawn(win, 12);
+      await clickCell(win, 4, [], 2);
+      let g = await grid(win);
+      check('a double click on a page returns to reading at that page', !g.shown && g.page === 4 && g.pressed === 'false', JSON.stringify(g));
+      await openGrid(win);
+      await press(win, 'Right');
+      await press(win, 'Return');
+      g = await grid(win);
+      check('Enter on a focused page does the same (the grid opened on page 4, Right moved to 5)', !g.shown && g.page === 5, JSON.stringify(g));
+
+      await openGrid(win);
+      const box = await js(win, `(() => { const g = document.querySelector('.pgrid').getBoundingClientRect(); return { x: Math.round(g.left + 10), y: Math.round(g.top + 10) }; })()`);
+      const mouse = (type, x, y, modifiers = []) => win.webContents.sendInputEvent({ type, x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1, modifiers: type === 'mouseUp' ? modifiers : ['leftButtonDown', ...modifiers] });
+      const dragTo = async (to, modifiers = []) => {
+        mouse('mouseDown', box.x, box.y, modifiers);
+        for (let i = 1; i <= 10; i++) { mouse('mouseMove', box.x + (to.x - box.x) * i / 10, box.y + (to.y - box.y) * i / 10, modifiers); await sleep(20); }
+        await sleep(100);
+      };
+      const two = await centre(win, 2);
+      const six = await centre(win, 6);
+      win.webContents.focus();
+      await dragTo(two);
+      const during = await js(win, `(() => { const b = document.querySelector('.band'); const r = b.getBoundingClientRect(); return { shown: !b.hidden, width: Math.round(r.width), height: Math.round(r.height), selected: [...document.querySelectorAll('.cell.sel')].map((c) => c.dataset.n).join() }; })()`);
+      check('a rubber band dragged from empty paper over two pages in a row draws a rectangle and selects them', during.shown && during.width > 100 && during.height > 20 && during.selected === '1,2', JSON.stringify(during));
+      await shot(win, 'workspace-grid-band.png');
+      mouse('mouseUp', two.x, two.y);
+      await sleep(200);
+      g = await grid(win);
+      check('letting go keeps them selected and removes the rectangle', g.selected === '1,2' && (await js(win, `document.querySelector('.band').hidden`)) && g.bar === '2 selected', JSON.stringify(g));
+      await dragTo(six);
+      mouse('mouseUp', six.x, six.y);
+      await sleep(200);
+      const columns = await across(win);
+      const wanted = [];
+      for (let n = 1; n <= 6; n++) if (Math.floor((n - 1) / columns) <= Math.floor(5 / columns) && (n - 1) % columns <= 5 % columns) wanted.push(n);
+      g = await grid(win);
+      check(`a band over a block of pages selects the pages it touches and replaces the old selection (${columns} across)`, g.selected === wanted.join(), `${g.selected} ${wanted}`);
+      await clickCell(win, 12, ['control']);
+      await dragTo(two, ['control']);
+      mouse('mouseUp', two.x, two.y, ['control']);
+      await sleep(200);
+      g = await grid(win);
+      check('a band with Ctrl held adds to the selection', g.selected.split(',').includes('12') && g.selected.split(',').includes('1') && g.selected.split(',').includes('2'), g.selected);
+      await click(win, box);
+      g = await grid(win);
+      check('a click on empty paper clears the selection and hides the bar', g.selected === '' && g.bar === '' && g.aria === 0, JSON.stringify(g));
+      const bars = await js(win, `(() => { const l = document.querySelector('.pgrid'); return { overflow: getComputedStyle(l).overflowY, track: getComputedStyle(l).scrollbarColor }; })()`);
+      check('the grid scrolls with the same thin scroll bar as the pages', bars.overflow === 'auto' && /transparent|rgba\(0, 0, 0, 0\)/.test(bars.track), JSON.stringify(bars));
+      await closeAndWait(win);
+    }
+
+    console.log('the grid: tabs, focus reading, the dock on each side');
+    {
+      const workspace = fresh({ hasPdfEngine: () => true });
+      const win = await openAndWait(workspace, twelve);
+      await workspace.open([second]);
+      await sleep(1500);
+      await js(win, `document.querySelectorAll('#tabs .tab')[0].click()`);
+      await sleep(1000);
+      await openGrid(win);
+      await js(win, `document.querySelectorAll('#tabs .tab')[1].click()`);
+      await sleep(1500);
+      let g = await grid(win);
+      check('choosing another tab leaves the grid for that tab\'s pages', !g.shown && g.cells === 0 && g.pressed === 'false' && g.scroller === 'visible', JSON.stringify(g));
+      await js(win, `document.querySelectorAll('#tabs .tab')[0].click()`);
+      await sleep(1500);
+      await openGrid(win, 600);
+      await js(win, `document.getElementById('focus').click()`);
+      await until('full screen', async () => (await dockState(win)).full);
+      await sleep(900);
+      const wrap = await js(win, `(() => { const w = document.querySelector('.dockwrap'); const r = w.getBoundingClientRect(); return { transform: getComputedStyle(w).transform, bottom: r.bottom, height: innerHeight }; })()`);
+      check('in focus reading the dock stays while the grid is up, though the pointer is not at the edge', wrap.transform === 'none' && wrap.bottom <= wrap.height, JSON.stringify(wrap));
+      await press(win, 'Escape');
+      await sleep(900);
+      g = await grid(win);
+      check('Esc leaves the grid first and focus reading second', !g.shown && (await dockState(win)).full);
+      await press(win, 'Escape');
+      await until('the window leaves full screen', async () => !(await dockState(win)).full);
+      check('and the second Esc leaves focus reading', !(await dockState(win)).full);
+      await openGrid(win, 600);
+      await clickCell(win, 3);
+      for (const side of ['bottom', 'top', 'left', 'right']) {
+        await js(win, `document.querySelector('.well').dataset.dock = '${side}'`);
+        await sleep(700);
+        const place = await js(win, `(() => { const d = document.querySelector('.dock').getBoundingClientRect(); const o = document.querySelector('.optbar').getBoundingClientRect(); const w = document.querySelector('.well').getBoundingClientRect();
+          return { beside: { bottom: o.bottom <= d.top, top: o.top >= d.bottom, left: o.left >= d.right, right: o.right <= d.left }, inside: o.left >= w.left && o.right <= w.right && o.top >= w.top && o.bottom <= w.bottom,
+            centre: Math.abs((o.left + o.right) / 2 - (d.left + d.right) / 2) < 2, middle: Math.abs((o.top + o.bottom) / 2 - (d.top + d.bottom) / 2) < 2, label: document.querySelector('.dock .tool .lbl').getBoundingClientRect().width }; })()`);
+        const level = side === 'bottom' || side === 'top' ? place.centre : place.middle;
+        const named = side === 'left' || side === 'right' ? place.label < 2 : place.label > 20;
+        check(`with the dock at the ${side}, the bar of selected pages stands ${{ bottom: 'above', top: 'below', left: 'beside', right: 'beside' }[side]} it, level with it, and the tool's name shows only in a row`, place.beside[side] && place.inside && level && named, JSON.stringify(place));
+      }
+      await js(win, `document.querySelector('.well').dataset.dock = 'bottom'`);
+      await closeAndWait(win);
+    }
+
+    console.log('the grid: a big file draws only what is in view');
+    {
+      const big = await makePdf('Grid big.pdf', 3000);
+      const win = await openAndWait(fresh({ hasPdfEngine: () => true }), big);
+      await openGrid(win, 1500);
+      const first = await js(win, `({ cells: document.querySelectorAll('.cell').length, canvases: document.querySelectorAll('.cell canvas').length })`);
+      await js(win, `document.querySelector('.pgrid').scrollTop = document.querySelector('.pgrid').scrollHeight`);
+      await sleep(2500);
+      const last = await js(win, `({ canvases: document.querySelectorAll('.cell canvas').length, end: !!document.querySelector('.cell[data-n="3000"] canvas') })`);
+      check(`3 000 pages make 3 000 cells but draw only the few in view (${first.canvases} at the start, ${last.canvases} at the end)`, first.cells === 3000 && first.canvases > 0 && first.canvases < 80 && last.canvases < 80 && last.end, JSON.stringify([first, last]));
+      await js(win, `document.querySelector('.cell[data-n="3000"]').click()`);
+      await press(win, 'A', ['control']);
+      check('Ctrl+A on 3 000 pages selects them all', (await js(win, `document.querySelectorAll('.cell.sel').length`)) === 3000 && (await grid(win)).bar === '3000 selected');
+      await closeAndWait(win);
+      fs.rmSync(big, { force: true });
+    }
+
+    console.log('the grid without the PDF engine');
+    {
+      let installed = false;
+      const asked = [];
+      const outcomes = [{ ok: false, message: 'There is no network connection' }, { ok: true }];
+      const workspace = fresh({
+        hasPdfEngine: () => installed,
+        installEngine: async (key, onNote) => {
+          asked.push(key);
+          onNote('Downloading 40%', 0.4);
+          await sleep(1500);
+          const outcome = outcomes.shift();
+          installed = outcome.ok;
+          return outcome;
+        },
+      });
+      const win = await openAndWait(workspace, twelve);
+      await sleep(500);
+      let g = await grid(win);
+      check('the Pages button carries a small dot while the engine is missing', g.dot && g.title === 'Pages (P)', JSON.stringify(g));
+      const mark = calls.length;
+      await openGrid(win, 600);
+      g = await grid(win);
+      const card = await js(win, `(() => { const c = document.querySelector('.card'); return { text: c.querySelector('.note').textContent, buttons: [...c.querySelectorAll('.row button')].map((b) => b.textContent).join(), focus: document.activeElement.textContent, modal: c.getAttribute('aria-modal') }; })()`);
+      check('without the engine the button opens one card, and no grid', !g.shown && g.card === 'Editing needs the PDF engine' && card.text === 'A one-time download. It runs on this PC and works offline.' && card.buttons === 'Not now,Install' && card.focus === 'Install' && card.modal === 'true', JSON.stringify([g, card]));
+      await shot(win, 'workspace-grid-engine-card.png');
+      await js(win, `[...document.querySelectorAll('.card button')].find((b) => b.textContent === 'Not now').click()`);
+      await sleep(300);
+      g = await grid(win);
+      check('Not now closes the card and leaves the reading view, the dot and the document as they were', !g.shown && g.card === '' && g.dot && g.scroller === 'visible' && asked.length === 0, JSON.stringify(g));
+      await press(win, 'P');
+      await sleep(500);
+      check('the P key shows the same card', (await grid(win)).card === 'Editing needs the PDF engine');
+      await press(win, 'Escape');
+      await sleep(300);
+      check('and Esc is Not now', (await grid(win)).card === '');
+      await openGrid(win, 400);
+      await js(win, `[...document.querySelectorAll('.card button')].find((b) => b.textContent === 'Install').click()`);
+      await sleep(500);
+      const working = await js(win, `(() => { const c = document.querySelector('.card'); const b = [...c.querySelectorAll('.row button')]; return { note: c.querySelector('.note').textContent, disabled: b.map((x) => x.disabled).join(), spinning: !!c.querySelector('.row .spin'), meter: !c.querySelector('.meter').hidden, done: c.querySelector('.meter .scanline').style.getPropertyValue('--done') }; })()`);
+      check('Install asks for the PDF engine and shows its progress inside the card, with both buttons resting', asked.join() === 'pdf' && working.note === 'Downloading 40%' && working.disabled === 'true,true' && working.spinning && working.meter && working.done === '40%', JSON.stringify(working));
+      await press(win, 'Escape');
+      check('Esc does not close the card while it installs', (await grid(win)).card === 'Editing needs the PDF engine');
+      await shot(win, 'workspace-grid-engine-installing.png');
+      await sleep(1500);
+      const failed = await js(win, `(() => { const c = document.querySelector('.card'); return { message: c.querySelector('.emsg p').textContent, shown: c.querySelector('.emsg').classList.contains('on'), button: [...c.querySelectorAll('.row button')].map((b) => b.textContent + (b.disabled ? '!' : '')).join(), meter: c.querySelector('.meter').hidden, note: c.querySelector('.note').textContent }; })()`);
+      check('a failed install says why in the card and offers Retry', failed.message === 'There is no network connection' && failed.shown && failed.button === 'Not now,Retry' && failed.meter && failed.note === 'A one-time download. It runs on this PC and works offline.' && !installed, JSON.stringify(failed));
+      await shot(win, 'workspace-grid-engine-failed.png');
+      await js(win, `[...document.querySelectorAll('.card button')].find((b) => b.textContent === 'Retry').click()`);
+      await until('the card to close', async () => (await grid(win)).card === '', 8000);
+      await sleep(600);
+      g = await grid(win);
+      check('when it installs, the card closes and the grid opens at once, with no restart and no dot', asked.join() === 'pdf,pdf' && g.shown && g.cells === 12 && !g.dot && g.pressed === 'true', JSON.stringify(g));
+      const ran = calls.slice(mark).map((c) => c.channel).filter((c) => ['pdfws:apply', 'pdfws:put-revision', 'pdfws:save'].includes(c));
+      check('none of this changed the document', ran.length === 0 && (await js(win, `document.getElementById('savebtn').hidden`)), ran.join());
+      await closeAndWait(win);
+    }
   }
 
   console.log('the Document panel');

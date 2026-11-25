@@ -205,6 +205,21 @@ html.solid .window { background: var(--solid); }
 .thumb.on .sheet, .thumb:focus-visible .sheet { outline-color: var(--accent); }
 .thumb:focus-visible { outline: none; }
 .thumb.on { color: var(--accent-ink); font-weight: 700; }
+.pgrid { position: absolute; inset: 6px 3px 6px 0; z-index: 1; box-sizing: border-box; padding: 26px 30px 120px; }
+.well.organising .scroller { visibility: hidden; }
+.well.organising .ticks { display: none; }
+.cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 26px 20px; align-items: start; justify-items: center; }
+.cell { display: grid; gap: 7px; justify-items: center; font-size: 11.5px; color: var(--muted); outline: none; user-select: none; }
+.cell .sheet { position: relative; display: block; width: calc(160px * min(1, 2 / var(--r, 1.414))); aspect-ratio: 1 / var(--r, 1.414); border-radius: 3px; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .14); outline: 2px solid transparent; outline-offset: 3px; transition: outline-color .15s, box-shadow .15s; }
+.cell .sheet canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 3px; }
+.cell:hover:not(.sel) .sheet { outline-color: var(--faint); }
+.cell { --ring: color-mix(in srgb, var(--accent) 80%, #000); --num: color-mix(in srgb, var(--accent-ink) 75%, #000); }
+.cell:focus-visible .sheet { outline-color: var(--ring); }
+.cell.sel .sheet { outline-color: var(--ring); box-shadow: 0 0 0 7px var(--accent-soft), 0 1px 3px rgba(0, 0, 0, .14); }
+.cell.sel { color: var(--num); font-weight: 700; }
+@media (prefers-color-scheme: dark) { .cell { --ring: var(--accent); --num: var(--accent-ink); } }
+.band { position: absolute; z-index: 2; border: 1px solid var(--accent); border-radius: 3px; background: var(--accent-soft); pointer-events: none; }
+.band[hidden] { display: none; }
 .well { position: relative; flex: 1; min-width: 0; margin: 0 8px 8px; border-radius: 10px; background: var(--well); overflow: hidden; }
 .scroller { position: absolute; inset: 6px 3px 6px 0; overflow: auto; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color .35s; }
 .scroller:focus-visible { outline: none; }
@@ -266,8 +281,8 @@ html.solid .window { background: var(--solid); }
 .well[data-dock="left"] .dockwrap, .well[data-dock="right"] .dockwrap { top: 0; bottom: 0; width: 76px; height: max-content; margin: auto 0; }
 .well[data-dock="left"] .dockwrap { left: 16px; --away: translateX(-130px); }
 .well[data-dock="right"] .dockwrap { right: 16px; --away: translateX(130px); }
-body.focus:not(.reveal-dock) .dockwrap:not(:focus-within) { transform: var(--away); }
-body.focus:not(.reveal-dock) .dockwrap:not(:focus-within) :is(.dock, .fold) { pointer-events: none; }
+body.focus:not(.reveal-dock):not(.tooling) .dockwrap:not(:focus-within) { transform: var(--away); }
+body.focus:not(.reveal-dock):not(.tooling) .dockwrap:not(:focus-within) :is(.dock, .fold) { pointer-events: none; }
 .well .dockwrap.dragging { right: auto; bottom: auto; margin: 0; transform: none; transition: none; }
 .dockwrap.dragging .dock { box-shadow: inset 0 1px 0 var(--bar-hi), 0 2px 4px rgba(0, 0, 0, .1), 0 18px 44px rgba(0, 0, 0, .26); }
 .dockwrap.dragging .fold { opacity: 0; pointer-events: none; }
@@ -329,6 +344,31 @@ body.focus:not(.reveal-dock) .dockwrap:not(:focus-within) :is(.dock, .fold) { po
 .zoom:hover { background: var(--hover); }
 .zoom { transition: background .15s; }
 @keyframes dock-in { from { transform: scale(.92); opacity: 0; } }
+.tools { display: flex; align-items: center; gap: 2px; }
+.well[data-dock="left"] .tools, .well[data-dock="right"] .tools { flex-direction: column; }
+.tool { position: relative; display: flex; align-items: center; gap: 0; height: 34px; padding: 0 8px; border: 0; border-radius: 10px; background: none; color: var(--muted); font: inherit; font-weight: 600; white-space: nowrap; cursor: pointer;
+  transition: background .18s, color .18s, gap .25s var(--out); }
+.tool:hover { background: var(--hover); color: var(--txt); }
+.tool:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tool .i { width: 18px; height: 18px; }
+.tool .lbl { max-width: 0; overflow: hidden; transition: max-width .3s var(--out); }
+.tool.on { gap: 7px; background: var(--accent-soft); color: var(--accent-ink); }
+.tool.on .lbl { max-width: 90px; }
+.well[data-dock="left"] .tool.on, .well[data-dock="right"] .tool.on { gap: 0; }
+.well[data-dock="left"] .tool.on .lbl, .well[data-dock="right"] .tool.on .lbl { max-width: 0; }
+.engdot { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+.engdot[hidden] { display: none; }
+.optbar { position: absolute; z-index: 5; display: flex; align-items: center; height: 42px; padding: 0 14px; border-radius: 13px; background: var(--dock); border: 1px solid var(--bar-line); white-space: nowrap; font-weight: 600; color: var(--muted);
+  box-shadow: inset 0 1px 0 var(--bar-hi), 0 1px 2px rgba(0, 0, 0, .08), 0 12px 32px rgba(0, 0, 0, .16); pointer-events: auto; animation: opt-in .26s var(--spring); }
+.optbar[hidden] { display: none; }
+.well[data-dock="bottom"] .optbar, .well[data-dock="top"] .optbar { left: 50%; translate: -50% 0; }
+.well[data-dock="bottom"] .optbar { bottom: calc(100% + 10px); }
+.well[data-dock="top"] .optbar { top: calc(100% + 10px); }
+.well[data-dock="left"] .optbar, .well[data-dock="right"] .optbar { top: 50%; translate: 0 -50%; }
+.well[data-dock="left"] .optbar { left: calc(100% + 14px); }
+.well[data-dock="right"] .optbar { right: calc(100% + 14px); }
+.dockwrap:has(.dock.folded) .optbar { opacity: 0; pointer-events: none; transition: opacity .2s; }
+@keyframes opt-in { from { transform: translateY(8px) scale(.96); opacity: 0; } }
 
 .menu { position: absolute; right: -7px; bottom: calc(100% + 18px); z-index: 5; min-width: 250px; padding: 6px; border-radius: 13px; background: var(--dock); border: 1px solid var(--bar-line);
   box-shadow: inset 0 1px 0 var(--bar-hi), 0 1px 2px rgba(0, 0, 0, .08), 0 12px 32px rgba(0, 0, 0, .16);
@@ -369,7 +409,7 @@ body.focus .findbar { top: 56px; }
 .flash.show { opacity: 1; transform: translateX(-50%); }
 
 .edgehint { position: absolute; left: 50%; bottom: 8px; z-index: 3; width: 44px; height: 4px; border-radius: 2px; background: var(--faint); transform: translateX(-50%); opacity: 0; pointer-events: none; transition: opacity .3s; }
-body.focus:not(.reveal-dock) .edgehint { opacity: .5; }
+body.focus:not(.reveal-dock):not(.tooling) .edgehint { opacity: .5; }
 .well[data-dock="top"] .edgehint { bottom: auto; top: 8px; }
 .well[data-dock="left"] .edgehint, .well[data-dock="right"] .edgehint { bottom: auto; top: 50%; width: 4px; height: 44px; transform: translateY(-50%); }
 .well[data-dock="left"] .edgehint { left: 8px; }
@@ -425,6 +465,9 @@ body.focus .scroller { top: 0; bottom: 0; }
 .sw[aria-checked="true"] { box-shadow: 0 0 0 2px var(--accent); }
 .sw:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .card .note { margin: -4px 0 0; color: var(--muted); font-size: 12.5px; }
+.meter { position: relative; height: 4px; margin-top: 14px; }
+.meter[hidden] { display: none; }
+.meter .scanline { left: 0; right: 0; bottom: 0; height: 4px; border-radius: 2px; }
 .card .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 .card .btn { min-width: 68px; justify-content: center; }
 .spin { width: 13px; height: 13px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .4); border-top-color: #fff; animation: rot .7s linear infinite; }
@@ -441,5 +484,5 @@ body.focus .scroller { top: 0; bottom: 0; }
 .fld:focus, .fld:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); outline: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .panel, .panel[data-turn] :is(.sideview, #thumbs, #outline), .seg3::before, .seg3 button, .scanline::after, .cmark, .ccard, .card, .veil, .tip, .pick, .pw.shake, .emsg, .dockwrap, .dock, .fold, .fold .i, .menu, .findbar, .flash, .titlerow, .edgehint { animation: none; transition: none; }
+  .panel, .panel[data-turn] :is(.sideview, #thumbs, #outline), .seg3::before, .seg3 button, .scanline::after, .cmark, .ccard, .card, .veil, .tip, .pick, .pw.shake, .emsg, .dockwrap, .dock, .fold, .fold .i, .menu, .tool, .optbar, .cell .sheet, .findbar, .flash, .titlerow, .edgehint { animation: none; transition: none; }
 }

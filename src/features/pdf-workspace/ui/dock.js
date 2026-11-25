@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The dock: the page box with its arrows, the zoom buttons and the View menu. A round button beside it slides it off the edge and, once
+// The dock: the page box with its arrows, a place for the tools (organise.js fills it), the zoom buttons and the View menu. A round button beside it slides it off the edge and, once
 // it is folded, takes the middle of the place it stood and brings it back. A grip at its start end moves it (dock-place.js). A classic
 // script that adds window.workspaceDock.
 (() => {
@@ -104,7 +104,7 @@
     menu = buildMenu([['Continuous', 0], ['Two pages side by side', 1]]);
     const zoomGroup = el('div', 'zoomgroup');
     zoomGroup.append(out, zoom, menu, into);
-    dock.append(grip, previous, box, next, el('span', 'sep'), zoomGroup);
+    dock.append(grip, previous, box, next, el('span', 'sep'), el('span', 'tools'), el('span', 'sep'), zoomGroup);
     const fold = button('fold', 'right', 'Hide controls');
     const wrap = el('div', 'dockwrap');
     wrap.hidden = true;
@@ -191,7 +191,7 @@
     bind('actualSize', () => { viewer.currentScaleValue = '1'; });
     // Outside focus reading these keys keep scrolling the page as the container does itself.
     const turning = (step) => (e) => {
-      if (!focusReading() || e.target.closest('.dock, .panel')) return false;
+      if (!focusReading() || e.target.closest('.dock, .panel, .pgrid')) return false;
       turn(viewer.currentPageNumber + step);
     };
     bind('nextPage', turning(1));

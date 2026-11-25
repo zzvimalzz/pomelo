@@ -101,5 +101,13 @@
     return { want, drop, setWidth, release, kept: () => cache.size };
   }
 
-  window.workspaceThumbs = { create };
+  function picture({ bitmap }) {
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0);
+    return canvas;
+  }
+
+  window.workspaceThumbs = { create, picture };
 })();

@@ -5,6 +5,8 @@
   const SWATCHES = { page: ['#ffffff', '#fdf6e3', '#eef3ea', '#e9eef6', '#1e1e20'], text: ['#1c1c1e', '#3b3b3b', '#4b3b25', '#1b3a8a', '#e8e8ea'] };
   let card = null;
   let linkOpen = false;
+  let progress = null;
+  window.workspaceApi.onInstallNote((p) => progress?.(p));
 
   // A card over a veil in the document area, labelled by the element whose id is dialog-title. While it is up everything round it is
   // inert, so nothing behind it can be clicked, selected or scrolled, and close() gives that back (a folded dock stays inert).
@@ -187,6 +189,73 @@
     });
   }
 
+  // Resolves true once the PDF engine has been installed from the card, false when the user says Not now. While it installs the card
+  // cannot be closed; a failed install says why in the card and the button offers Retry.
+  function engineCard() {
+    const { box, close } = frame();
+    const badge = el('i', 'badge');
+    badge.innerHTML = icon('cpu');
+    const title = el('h3', '', 'Editing needs the PDF engine');
+    title.id = 'dialog-title';
+    const head = el('div', 'uhead');
+    head.append(badge, title);
+    const note = el('p', 'note', 'A one-time download. It runs on this PC and works offline.');
+    const meter = el('div', 'meter');
+    const line = el('i', 'scanline busy');
+    meter.hidden = true;
+    meter.append(line);
+    const message = el('p');
+    message.setAttribute('role', 'alert');
+    const inner = el('div');
+    inner.append(message);
+    const room = el('div', 'emsg');
+    room.append(inner);
+    const later = el('button', 'btn', 'Not now');
+    const install = el('button', 'btn primary', 'Install');
+    const row = el('div', 'row');
+    row.append(later, install);
+    box.append(head, note, meter, room, row);
+    let working = false;
+    return new Promise((resolve) => {
+      const done = (answer) => {
+        progress = null;
+        close();
+        document.getElementById('scroller').focus();
+        resolve(answer);
+      };
+      const rest = (on) => {
+        working = on;
+        later.disabled = on;
+        install.disabled = on;
+        install.replaceChildren(on ? el('span', 'spin') : document.createTextNode('Retry'));
+        meter.hidden = !on;
+      };
+      install.onclick = async () => {
+        room.classList.remove('on');
+        rest(true);
+        progress = ({ note: text, fraction }) => {
+          note.textContent = text;
+          line.classList.toggle('busy', typeof fraction !== 'number');
+          if (typeof fraction === 'number') line.style.setProperty('--done', `${Math.round(fraction * 100)}%`);
+        };
+        const result = await window.workspaceApi.installEngine();
+        if (result.ok) { done(true); return; }
+        progress = null;
+        rest(false);
+        note.textContent = 'A one-time download. It runs on this PC and works offline.';
+        message.textContent = result.message || 'The PDF engine could not be installed';
+        room.classList.add('on');
+        install.focus();
+      };
+      later.onclick = () => done(false);
+      box.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); if (!working) done(false); }
+        else if (e.key === 'Tab') loop(e, [later, install]);
+      });
+      install.focus();
+    });
+  }
+
   // Asks a question with its answers as buttons, drawn left to right with the last one as the main one. title and detail are text.
   // Resolves with the value of the button chosen, or null on Esc.
   function choose(title, detail, buttons) {
@@ -284,5 +353,5 @@
     });
   }
 
-  window.workspaceDialogs = { askPassword, closePassword, confirmLink, choose, chooseColours, isOpen: () => !!document.querySelector('[aria-modal="true"]') };
+  window.workspaceDialogs = { askPassword, closePassword, confirmLink, engineCard, choose, chooseColours, isOpen: () => !!document.querySelector('[aria-modal="true"]') };
 })();

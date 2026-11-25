@@ -7,10 +7,10 @@ const { ipcMain } = require('electron');
 // window with the last one. openDropped(paths): open the PDFs among the paths of a drop. setFocus(on): enter or leave full screen.
 // putRevision(token, bytes), apply(token, ops), undo(token), redo(token), save(token), saveAs(token), reload(token): the document's revisions (index.js).
 // properties(token): what the PDF engine reports about the document. details(token): its folder and when it was changed. rename(token, name): give the
-// file another name. showInFolder(token): show it in Explorer.
+// file another name. showInFolder(token): show it in Explorer. engine(): is the PDF engine installed. installEngine(): install it and resolve { ok, message }.
 // closeWindow(): close the window now that the page has dealt with unsaved changes. setDock(side): keep the dock's place. setView(patch): keep the valid fields of the view (view.js). checkLink(url): the address a link may open, or null. openLink(url): open it. copyLink(url): put
 // it on the clipboard. copyLinks(urls): put the ones that may be opened on it, one to a line, and answer how many. isWorkspace(sender): is this the workspace window's page.
-function registerWorkspaceIpc({ documents, state, closeDocument, openDropped, putRevision, apply, properties, details, rename, showInFolder, undo, redo, save, saveAs, reload, closeWindow, setFocus, setDock, setView, checkLink, openLink, copyLink, copyLinks, isWorkspace }) {
+function registerWorkspaceIpc({ documents, state, closeDocument, openDropped, putRevision, apply, properties, details, rename, showInFolder, engine, installEngine, undo, redo, save, saveAs, reload, closeWindow, setFocus, setDock, setView, checkLink, openLink, copyLink, copyLinks, isWorkspace }) {
   const guard = (e) => { if (!isWorkspace(e.sender)) throw new Error('not the workspace window'); };
   ipcMain.handle('pdfws:state', (e) => { guard(e); return state(); });
   ipcMain.handle('pdfws:read', (e, token, begin, end) => { guard(e); return documents.read(token, begin, end); });
@@ -22,6 +22,8 @@ function registerWorkspaceIpc({ documents, state, closeDocument, openDropped, pu
   ipcMain.handle('pdfws:details', (e, token) => { guard(e); return details(token); });
   ipcMain.handle('pdfws:rename', (e, token, name) => { guard(e); return rename(token, name); });
   ipcMain.handle('pdfws:show', (e, token) => { guard(e); showInFolder(token); });
+  ipcMain.handle('pdfws:engine', (e) => { guard(e); return engine(); });
+  ipcMain.handle('pdfws:install-engine', (e) => { guard(e); return installEngine(); });
   ipcMain.handle('pdfws:undo', (e, token) => { guard(e); return undo(token); });
   ipcMain.handle('pdfws:redo', (e, token) => { guard(e); return redo(token); });
   ipcMain.handle('pdfws:save', (e, token) => { guard(e); return save(token); });
