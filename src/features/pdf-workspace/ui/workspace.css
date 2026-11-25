@@ -210,12 +210,12 @@ html.solid .window { background: var(--solid); }
 .well.organising .ticks { display: none; }
 .cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 26px 20px; align-items: start; justify-items: center; }
 .cell { display: grid; gap: 7px; justify-items: center; font-size: 11.5px; color: var(--muted); outline: none; user-select: none; }
-.cell .sheet { position: relative; display: block; width: calc(160px * min(1, 2 / var(--r, 1.414))); aspect-ratio: 1 / var(--r, 1.414); border-radius: 3px; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .14); outline: 2px solid transparent; outline-offset: 3px; transition: outline-color .15s, box-shadow .15s; }
+.cell .sheet { position: relative; display: block; width: calc(160px * min(1, 2 / var(--r, 1.414))); aspect-ratio: 1 / var(--r, 1.414); border-radius: 3px; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .14); outline: 3px solid transparent; outline-offset: 2px; transition: outline-color .15s; }
 .cell .sheet canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 3px; }
 .cell:hover:not(.sel) .sheet { outline-color: var(--faint); }
 .cell { --ring: color-mix(in srgb, var(--accent) 80%, #000); --num: color-mix(in srgb, var(--accent-ink) 75%, #000); }
 .cell:focus-visible .sheet { outline-color: var(--ring); }
-.cell.sel .sheet { outline-color: var(--ring); box-shadow: 0 0 0 7px var(--accent-soft), 0 1px 3px rgba(0, 0, 0, .14); }
+.cell.sel .sheet { outline-color: var(--ring); }
 .cell.sel { color: var(--num); font-weight: 700; }
 @media (prefers-color-scheme: dark) { .cell { --ring: var(--accent); --num: var(--accent-ink); } }
 .band { position: absolute; z-index: 2; border: 1px solid var(--accent); border-radius: 3px; background: var(--accent-soft); pointer-events: none; }

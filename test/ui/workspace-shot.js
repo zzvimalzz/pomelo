@@ -2433,9 +2433,9 @@ app.whenReady().then(async () => {
       win.webContents.sendInputEvent({ type: 'mouseMove', x: hover.x, y: hover.y });
       await sleep(400);
       const looks = await js(win, `(() => { const o = (n) => getComputedStyle(document.querySelector('.cell[data-n="' + n + '"] .sheet')).outlineColor; const c = (n) => getComputedStyle(document.querySelector('.cell[data-n="' + n + '"]'));
-        return { selected: o(4), hovered: o(9), plain: o(11), label: c(4).color, plainLabel: c(11).color, weight: c(4).fontWeight, plainWeight: c(11).fontWeight, halo: getComputedStyle(document.querySelector('.cell[data-n="4"] .sheet')).boxShadow }; })()`);
-      check(`${theme}: a selected page, one the pointer is over and one that is neither each look different: an accent ring with a halo and a bold accent number, a grey ring, and nothing`,
-        looks.selected !== looks.hovered && looks.hovered !== looks.plain && looks.selected !== looks.plain && looks.label !== looks.plainLabel && Number(looks.weight) > Number(looks.plainWeight) && looks.halo.includes('7px'), JSON.stringify(looks));
+        return { selected: o(4), hovered: o(9), plain: o(11), label: c(4).color, plainLabel: c(11).color, weight: c(4).fontWeight, plainWeight: c(11).fontWeight, halo: getComputedStyle(document.querySelector('.cell[data-n="4"] .sheet')).boxShadow, width: getComputedStyle(document.querySelector('.cell[data-n="4"] .sheet')).outlineWidth }; })()`);
+      check(`${theme}: a selected page, one the pointer is over and one that is neither each look different: one accent ring and a bold accent number, a grey ring, and nothing`,
+        looks.selected !== looks.hovered && looks.hovered !== looks.plain && looks.selected !== looks.plain && looks.label !== looks.plainLabel && Number(looks.weight) > Number(looks.plainWeight) && !looks.halo.includes('7px') && looks.width === '3px', JSON.stringify(looks));
       const image = await win.webContents.capturePage();
       const bitmap = image.toBitmap();
       const width = image.getSize().width;
