@@ -129,7 +129,8 @@
     }
 
     function enable() {
-      count.textContent = selected.size ? `${selected.size} selected` : 'No pages selected';
+      count.textContent = selected.size ? `${selected.size} selected` : '- pages';
+      count.classList.toggle('none', !selected.size);
       turnLeft.disabled = turnRight.disabled = trash.disabled = !selected.size;
       undo.disabled = !tab?.doc.canUndo;
       redo.disabled = !tab?.doc.canRedo;
