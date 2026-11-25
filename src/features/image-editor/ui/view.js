@@ -1,21 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The well and what is round it: the picture's zoom and pan, the pill with the zoom buttons, the zoom ruler, the panel that hides, and
+// The well and what is round it: the picture's zoom and pan, the pill with the zoom buttons, the zoom menu, the panel that hides, and
 // full screen. Zoom is canvas pixels for each picture pixel, so 100 % is one picture pixel for each screen pixel. A classic script that
 // adds window.editorView; show(tab) takes a tab { width, height, alpha, pixels, view } and keeps its texture while it is on show.
 (() => {
-  const { icon } = window.pomeloUi;
+  const { icon, el } = window.pomeloUi;
   const { label, bind } = window.editorKeys;
   const api = window.editorApi;
   const $ = (id) => document.getElementById(id);
-  const well = $('well'), canvas = $('canvas'), stage = $('stage'), checker = $('checker'), zpop = $('zpop'), zruler = $('zruler');
+  const well = $('well'), canvas = $('canvas'), stage = $('stage'), checker = $('checker'), zmenu = $('zmenu'), zoomval = $('zoomval');
   const body = document.body, panel = $('panel'), panelButton = $('panelbtn'), pill = $('pill');
 
   const AIR = 32;
   const MAX_ZOOM = 8;
   const STEPS = [0.125, 0.25, 1 / 3, 0.5, 2 / 3, 1, 1.5, 2, 3, 4, 6, 8];
-  const RULER_PX = 96;
-  const RULER_MID = 144;
-  const SNAP_PX = 6;
+  const PRESETS = [0.25, 0.5, 1, 2, 4, 8];
   const clamp = (v, low, high) => Math.min(Math.max(v, low), high);
   const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
   const dpr = () => window.devicePixelRatio || 1;
@@ -81,7 +79,7 @@
       if (renderer && !lost && renderer.fits(tab.width, tab.height)) tab.texture = renderer.upload(tab.width, tab.height, tab.pixels);
       else tab.gpu = true;
     }
-    closeRuler();
+    closeMenu();
     gpuState();
     draw();
     if (how === 'first') stage.classList.add('first');
@@ -107,7 +105,7 @@
     want();
   }
 
-  // Zoom at once, for the wheel and the ruler, which follow the hand.
+  // Zoom at once, for the mouse wheel, which follows the hand.
   function zoomNow(zoom, px, py) {
     cancelAnimationFrame(tween);
     apply(target(zoom, px, py));
@@ -145,12 +143,12 @@
   }, { passive: false });
 
   well.addEventListener('dblclick', (e) => {
-    if (e.target.closest('.pill, .zpop') || !shown?.texture) return;
+    if (e.target.closest('.pill, .zmenu') || !shown?.texture) return;
     zoomTo(shown.view.fit ? 1 : 'fit', ...aboutPointer(e));
   });
 
   well.addEventListener('pointerdown', (e) => {
-    if (!well.classList.contains('pan') || e.button !== 0 || e.target.closest('.pill, .zpop')) return;
+    if (!well.classList.contains('pan') || e.button !== 0 || e.target.closest('.pill, .zmenu')) return;
     cancelAnimationFrame(tween);
     well.setPointerCapture(e.pointerId);
     well.classList.add('panning');
@@ -176,64 +174,52 @@
   $('zoomin').onclick = zoomIn;
   $('gpuicon').innerHTML = icon('image');
 
-  // The zoom ruler: one doubling every 96 px from 3 % to 800 %, veiled below Fit, which the zoom never goes under. It snaps to Fit and to 100 %.
-  const rulerX = (zoom) => (Math.log2(zoom) + 5) * RULER_PX;
-  let ticks = '';
-  for (let i = 0; i <= 64; i++) {
-    const x = RULER_MID + i * 12, long = i % 8 === 0;
-    ticks += `<line class="${long ? 'big' : ''}" x1="${x}" x2="${x}" y1="${long ? 8 : 14}" y2="${long ? 30 : 24}"/>`;
+  function item(text, key, zoom, run) {
+    const b = el('button', 'mi');
+    b.type = 'button';
+    b.setAttribute('role', 'menuitem');
+    b.dataset.zoom = zoom;
+    b.append(el('span', '', text));
+    if (key) b.append(el('kbd', '', key));
+    b.onclick = () => { closeMenu(); run(); };
+    return b;
   }
-  ['3%', '6%', '12.5%', '25%', '50%', '100%', '200%', '400%', '800%'].forEach((text, i) => { ticks += `<text x="${RULER_MID + i * RULER_PX}" y="45">${text}</text>`; });
-  zruler.insertAdjacentHTML('afterbegin', `<svg width="1056" height="52" viewBox="0 0 1056 52">${ticks}<rect class="below" x="0" y="0" height="52"/><circle r="2.5" cy="36"/></svg>`);
-  const scale = zruler.querySelector('svg'), veil = scale.querySelector('.below'), dot = scale.querySelector('circle');
+  zmenu.append(item('Fit', label('fit'), 'fit', () => zoomTo('fit')), ...PRESETS.map((z) => item(`${z * 100}%`, z === 1 ? label('actualSize') : '', z, () => zoomTo(z))));
 
+  // A preset below Fit is greyed out, because the zoom never goes under Fit.
   function readout() {
-    const fit = !shown || shown.view.fit, zoom = here(), percent = `${Math.round(zoom * 100)}%`;
-    $('zoomval').textContent = fit ? 'Fit' : percent;
-    if (zpop.hidden) return;
-    $('znum').textContent = percent;
-    $('zfit').classList.toggle('on', fit);
-    $('z100').classList.toggle('on', !fit && zoom === 1);
-    scale.style.transform = `translateX(${-rulerX(zoom)}px)`;
-    const fitX = RULER_MID + rulerX(shown ? fitZoom(shown) : 1);
-    dot.setAttribute('cx', fitX);
-    veil.setAttribute('width', fitX);
+    const fit = !shown || shown.view.fit, zoom = here();
+    zoomval.textContent = fit ? 'Fit' : `${Math.round(zoom * 100)}%`;
+    if (zmenu.hidden) return;
+    const floor = shown ? fitZoom(shown) : 0;
+    for (const b of zmenu.children) {
+      const z = b.dataset.zoom === 'fit' ? null : Number(b.dataset.zoom);
+      b.classList.toggle('on', z === null ? fit : !fit && Math.abs(zoom - z) < 0.005);
+      b.disabled = z !== null && z < floor * 0.999;
+    }
   }
 
-  function closeRuler() {
-    zpop.hidden = true;
-    $('zoomval').classList.remove('on');
-    $('zoomval').setAttribute('aria-expanded', 'false');
+  function closeMenu() {
+    if (zmenu.contains(document.activeElement)) zoomval.focus({ preventScroll: true });
+    zmenu.hidden = true;
+    zoomval.classList.remove('on');
+    zoomval.setAttribute('aria-expanded', 'false');
   }
-  $('zoomval').onclick = () => {
-    if (!zpop.hidden) { closeRuler(); return; }
-    zpop.hidden = false;
-    $('zoomval').classList.add('on');
-    $('zoomval').setAttribute('aria-expanded', 'true');
-    scale.style.transition = 'none';
+  zoomval.onclick = () => {
+    if (!zmenu.hidden) { closeMenu(); return; }
+    zmenu.hidden = false;
+    zoomval.classList.add('on');
+    zoomval.setAttribute('aria-expanded', 'true');
     readout();
-    scale.getBoundingClientRect();
-    scale.style.transition = '';
+    (zmenu.querySelector('.on:not(:disabled)') ?? zmenu.querySelector('.mi:not(:disabled)'))?.focus({ preventScroll: true });
   };
-  $('zfit').onclick = () => zoomTo('fit');
-  $('z100').onclick = () => zoomTo(1);
-  document.addEventListener('pointerdown', (e) => { if (!zpop.hidden && !e.target.closest('#zpop, #zoomval')) closeRuler(); });
-  zruler.addEventListener('dblclick', () => zoomTo('fit'));
-  zruler.addEventListener('pointerdown', (e) => {
-    if (!shown?.texture) return;
-    zruler.setPointerCapture(e.pointerId);
-    zruler.classList.add('drag');
-    const started = e.clientX, start = Math.log2(here());
-    const move = (m) => {
-      const fit = fitZoom(shown);
-      let zoom = 2 ** (start - (m.clientX - started) / RULER_PX);
-      if (Math.abs(Math.log2(zoom)) * RULER_PX < SNAP_PX) zoom = 1;
-      if (Math.log2(zoom / fit) * RULER_PX < SNAP_PX) zoom = fit;
-      zoomNow(Math.min(zoom, MAX_ZOOM), 0, 0);
-    };
-    const up = () => { zruler.classList.remove('drag'); zruler.removeEventListener('pointermove', move); zruler.removeEventListener('pointerup', up); };
-    zruler.addEventListener('pointermove', move);
-    zruler.addEventListener('pointerup', up);
+  document.addEventListener('pointerdown', (e) => { if (!zmenu.hidden && !e.target.closest('#zmenu, #zoomval')) closeMenu(); });
+  zmenu.addEventListener('keydown', (e) => {
+    const step = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+    if (!step) return;
+    const items = [...zmenu.querySelectorAll('.mi:not(:disabled)')];
+    items[(items.indexOf(document.activeElement) + step + items.length) % items.length]?.focus({ preventScroll: true });
+    e.preventDefault();
   });
 
   const panelOpen = () => panel.classList.contains('open');
@@ -270,7 +256,7 @@
   bind('zoomIn', zoomIn);
   bind('zoomOut', zoomOut);
   bind('escape', () => {
-    if (!zpop.hidden) closeRuler();
+    if (!zmenu.hidden) closeMenu();
     else if (isFull()) api.fullScreen(false);
     else return false;
     return true;

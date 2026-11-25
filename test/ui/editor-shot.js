@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Opens the real image editor on pictures made here: that a rotated photo stands upright, that the chequerboard shows only under a
-// transparent picture, the tabs, the pictures that are refused, the zoom readout and ruler, the panel that hides, full screen and the
+// transparent picture, the tabs, the pictures that are refused, the zoom readout and menu, the panel that hides, full screen and the
 // notice when graphics acceleration is gone. Saves light and dark screenshots.
 //   npx electron test/ui/editor-shot.js
 const { app, BrowserWindow, ipcMain, nativeTheme } = require('electron');
@@ -163,7 +163,7 @@ app.whenReady().then(async () => {
   check('the eleventh is refused with a notice', notices.at(-1)?.title === 'Too many images open' && (await js(win, `document.querySelectorAll('#tabs .tab').length`)) === 10, JSON.stringify(notices));
   await closeAll(editor);
 
-  console.log('zoom, the ruler, the panel and full screen');
+  console.log('zoom, the menu, the panel and full screen');
   editor = fresh();
   await editor.open([files.photo]);
   win = windowOf();
@@ -183,18 +183,21 @@ app.whenReady().then(async () => {
   check('Zoom in leaves Fit for a percentage', /^\d+%$/.test(zoomed), zoomed);
   await js(win, `document.getElementById('zoomval').click()`);
   await sleep(300);
-  check('the zoom value opens the ruler, which repeats the percentage', (await js(win, `!document.getElementById('zpop').hidden`)) && (await text('znum')) === zoomed, await text('znum'));
-  const ruler = await js(win, `(() => { const r = document.getElementById('zruler').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
-  win.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(ruler[0]), y: Math.round(ruler[1]), button: 'left', clickCount: 1 });
-  win.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(ruler[0]) + 40, y: Math.round(ruler[1]), modifiers: ['leftButtonDown'] });
-  win.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(ruler[0]) + 40, y: Math.round(ruler[1]), button: 'left', clickCount: 1 });
-  await sleep(300);
-  check('dragging the ruler changes the zoom', (await text('znum')) !== zoomed, await text('znum'));
-  await js(win, `document.getElementById('z100').click()`);
+  const items = () => js(win, `[...document.querySelectorAll('#zmenu .mi')].map((b) => b.firstChild.textContent + (b.classList.contains('on') ? '*' : '') + (b.disabled ? '-' : '')).join()`);
+  check('the zoom value opens a menu of Fit and six zooms, and ticks the one in use', (await js(win, `!document.getElementById('zmenu').hidden`)) && (await items()) === 'Fit,25%*,50%,100%,200%,400%,800%', await items());
+  await js(win, `[...document.querySelectorAll('#zmenu .mi')].find((b) => b.firstChild.textContent === '200%').click()`);
   await sleep(500);
-  check('the 100% chip sets 100%', (await text('znum')) === '100%' && (await text('zoomval')) === '100%');
+  check('choosing 200% sets it and closes the menu', (await text('zoomval')) === '200%' && (await js(win, `document.getElementById('zmenu').hidden`)) === true, await text('zoomval'));
+  await js(win, `document.getElementById('zoomval').click()`);
+  await sleep(300);
+  check('the menu then ticks 200%', (await items()).includes('200%*'), await items());
   await key(win, 'Escape');
-  check('Esc closes the ruler', (await js(win, `document.getElementById('zpop').hidden`)) === true);
+  check('Esc closes the menu', (await js(win, `document.getElementById('zmenu').hidden`)) === true);
+  await js(win, `document.getElementById('zoomval').click()`);
+  await sleep(200);
+  await js(win, `[...document.querySelectorAll('#zmenu .mi')].find((b) => b.firstChild.textContent === 'Fit').click()`);
+  await sleep(500);
+  check('Fit in the menu goes back to Fit', (await text('zoomval')) === 'Fit', await text('zoomval'));
   await key(win, '0', true);
   await sleep(400);
 
@@ -249,6 +252,10 @@ app.whenReady().then(async () => {
     check(`${theme}: the tab on show is told from the others`, JSON.stringify(chosen) !== JSON.stringify(other), `${chosen} ${other}`);
     console.log(`  (tab on show ${chosen}, others ${other}: contrast ${contrast(chosen, other).toFixed(2)})`);
     await shot(win, `editor-${theme}-transparent.png`);
+    await js(win, `document.getElementById('zoomval').click()`);
+    await sleep(500);
+    await shot(win, `editor-${theme}-zoom-menu.png`);
+    await js(win, `document.getElementById('zoomval').click()`);
     await js(win, `document.querySelector('#tabs .tab:not(.on)').click()`);
     await sleep(600);
     await shot(win, `editor-${theme}-photo.png`);
