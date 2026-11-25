@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The WebGL2 side of the editor: a picture becomes a texture, and a frame draws it into the canvas at a zoom and a place. Only the pixels
-// on screen are ever computed, whatever the picture's size. A classic script that adds window.editorRender.
+// on screen are ever computed, whatever the picture's size. Saving draws the same shader at full size into a canvas that is not shown. A classic script that adds window.editorRender.
 (() => {
   const { vertex, fragment } = window.editorShaders;
+  const geometryOf = window.editorGeometry;
   const MIPMAP_BELOW = 0.5;
 
   function program(gl) {
@@ -26,7 +27,7 @@
     const gl = canvas.getContext('webgl2', { premultipliedAlpha: false, alpha: true, antialias: false, preserveDrawingBuffer: false });
     if (!gl) return null;
     const prog = program(gl);
-    const uniform = Object.fromEntries(['uSource', 'uCanvas', 'uOrigin', 'uImage', 'uZoom'].map((name) => [name, gl.getUniformLocation(prog, name)]));
+    const uniform = Object.fromEntries(['uSource', 'uCanvas', 'uOrigin', 'uOut', 'uZoom', 'uGeom', 'uFlip'].map((name) => [name, gl.getUniformLocation(prog, name)]));
     const maxSide = gl.getParameter(gl.MAX_TEXTURE_SIZE);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
@@ -46,9 +47,10 @@
       return texture;
     }
 
-    // picture: { texture, width, height }; zoom: canvas pixels for each picture pixel; x, y: the picture's top-left corner on the canvas.
-    // A null picture clears the canvas.
-    function draw(picture, zoom, x, y) {
+    // picture: { texture, width, height }; geometry: its turn and flips; zoom: canvas pixels for each picture pixel; x, y: the shown
+    // picture's top-left corner on the canvas; flip: draw the rows from the bottom, for reading the pixels back. A null picture clears
+    // the canvas.
+    function draw(picture, geometry, zoom, x, y, flip = false) {
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.clear(gl.COLOR_BUFFER_BIT);
       if (!picture) return;
@@ -56,13 +58,37 @@
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, zoom < MIPMAP_BELOW ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
       gl.uniform2f(uniform.uCanvas, canvas.width, canvas.height);
       gl.uniform2f(uniform.uOrigin, x, y);
-      gl.uniform2f(uniform.uImage, picture.width, picture.height);
+      gl.uniform2f(uniform.uOut, ...geometryOf.outputSize(geometry, picture.width, picture.height));
       gl.uniform1f(uniform.uZoom, zoom);
+      gl.uniformMatrix3fv(uniform.uGeom, false, geometryOf.matrix(geometry));
+      gl.uniform1f(uniform.uFlip, flip ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
 
-    return { fits: (width, height) => width <= maxSide && height <= maxSide, upload, drop: (texture) => gl.deleteTexture(texture), draw };
+    function read(width, height) {
+      const pixels = new Uint8Array(width * height * 4);
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      return pixels;
+    }
+
+    const release = () => gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return { fits: (width, height) => width <= maxSide && height <= maxSide, upload, drop: (texture) => gl.deleteTexture(texture), draw, read, release };
   }
 
-  window.editorRender = { create };
+  // picture: { width, height, pixels }. Returns the picture as it is shown, as { width, height, rgba } with the top row first. The
+  // pixels are read in the task that draws them, because the browser may clear a canvas after it has been shown.
+  function exportPixels(picture, geometry) {
+    const [width, height] = geometryOf.outputSize(geometry, picture.width, picture.height);
+    const renderer = create(new OffscreenCanvas(width, height));
+    if (!renderer) throw new Error('no WebGL2');
+    try {
+      const texture = renderer.upload(picture.width, picture.height, picture.pixels);
+      renderer.draw({ texture, width: picture.width, height: picture.height }, geometry, 1, 0, 0, true);
+      return { width, height, rgba: renderer.read(width, height) };
+    } finally {
+      renderer.release();
+    }
+  }
+
+  window.editorRender = { create, exportPixels };
 })();

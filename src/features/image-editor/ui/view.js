@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The well and what is round it: the picture's zoom and pan, the pill with the zoom buttons, the zoom menu, the panel that hides, and
 // full screen. Zoom is canvas pixels for each picture pixel, so 100 % is one picture pixel for each screen pixel. A classic script that
-// adds window.editorView; show(tab) takes a tab { width, height, alpha, pixels, view } and keeps its texture while it is on show.
+// adds window.editorView; show(tab) takes a tab { width, height, alpha, pixels, edit, view } and keeps its texture while it is on show.
 (() => {
   const { icon, el } = window.pomeloUi;
   const { label, bind } = window.editorKeys;
   const api = window.editorApi;
+  const geometryOf = window.editorGeometry;
   const $ = (id) => document.getElementById(id);
-  const well = $('well'), canvas = $('canvas'), stage = $('stage'), checker = $('checker'), zmenu = $('zmenu'), zoomval = $('zoomval');
+  const well = $('well'), canvas = $('canvas'), snap = $('snap'), stage = $('stage'), checker = $('checker'), zmenu = $('zmenu'), zoomval = $('zoomval');
   const body = document.body, panel = $('panel'), panelButton = $('panelbtn'), pill = $('pill');
 
   const AIR = 32;
@@ -24,14 +25,18 @@
   let shown = null;
   let frame = 0;
   let tween = 0;
+  let comparing = false;
 
-  const fitZoom = (tab) => Math.max(0.01, Math.min(1, (canvas.width - 2 * AIR * dpr()) / tab.width, (canvas.height - 2 * AIR * dpr()) / tab.height));
+  const geometry = (tab) => (comparing ? geometryOf.neutral() : tab.edit.geometry);
+  const sizeOf = (tab) => geometryOf.outputSize(geometry(tab), tab.width, tab.height);
+  const fitZoom = (tab) => { const [w, h] = sizeOf(tab); return Math.max(0.01, Math.min(1, (canvas.width - 2 * AIR * dpr()) / w, (canvas.height - 2 * AIR * dpr()) / h)); };
   const zoomOf = (tab) => (tab.view.fit ? fitZoom(tab) : tab.view.zoom);
 
   // How far the picture may be pushed from the middle: until its edge is 32 px inside the well on the far side.
   const reach = (extent, space) => Math.max(0, (extent - space) / 2 + AIR * dpr());
   function clampPan(tab, zoom) {
-    const mx = reach(tab.width * zoom, canvas.width), my = reach(tab.height * zoom, canvas.height);
+    const [w, h] = sizeOf(tab);
+    const mx = reach(w * zoom, canvas.width), my = reach(h * zoom, canvas.height);
     tab.view.panX = clamp(tab.view.panX, -mx, mx);
     tab.view.panY = clamp(tab.view.panY, -my, my);
     return mx > 0 || my > 0;
@@ -45,9 +50,10 @@
     if (!renderer || lost || !tab?.texture) { checker.hidden = true; readout(); return; }
     const zoom = zoomOf(tab);
     well.classList.toggle('pan', clampPan(tab, zoom));
-    const w = Math.round(tab.width * zoom), h = Math.round(tab.height * zoom);
+    const [shownWidth, shownHeight] = sizeOf(tab);
+    const w = Math.round(shownWidth * zoom), h = Math.round(shownHeight * zoom);
     const x = Math.round((canvas.width - w) / 2 + tab.view.panX), y = Math.round((canvas.height - h) / 2 + tab.view.panY);
-    renderer.draw(tab, zoom, x, y);
+    renderer.draw(tab, geometry(tab), zoom, x, y);
     checker.hidden = !tab.alpha;
     Object.assign(checker.style, { left: `${x / dpr()}px`, top: `${y / dpr()}px`, width: `${w / dpr()}px`, height: `${h / dpr()}px` });
     readout();
@@ -75,6 +81,7 @@
   function show(tab, how) {
     if (shown && shown !== tab && shown.texture) { renderer.drop(shown.texture); shown.texture = null; }
     shown = tab;
+    comparing = false;
     if (tab && !tab.texture && !tab.gpu) {
       if (renderer && !lost && renderer.fits(tab.width, tab.height)) tab.texture = renderer.upload(tab.width, tab.height, tab.pixels);
       else tab.gpu = true;
@@ -90,6 +97,44 @@
     if (tab.texture) renderer.drop(tab.texture);
     tab.texture = null;
     if (shown === tab) shown = null;
+  }
+
+  // Copies the frame on screen over the picture and fades it out, so the change made next appears to melt in. The frame is drawn again
+  // first, because a canvas that has been shown may already be cleared.
+  function crossfade(ms) {
+    if (reduced() || !shown?.texture) return;
+    draw();
+    snap.width = canvas.width;
+    snap.height = canvas.height;
+    snap.getContext('2d').drawImage(canvas, 0, 0);
+    snap.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: 'linear' });
+  }
+
+  const compare = $('compare');
+  function setCompare(on) {
+    if (comparing === on || !shown?.texture) return;
+    crossfade(120);
+    comparing = on;
+    compare.classList.toggle('held', on);
+    draw();
+  }
+  compare.addEventListener('pointerdown', (e) => { if (e.button === 0) setCompare(true); });
+  for (const type of ['pointerup', 'pointerleave', 'pointercancel']) compare.addEventListener(type, () => setCompare(false));
+  window.addEventListener('blur', () => setCompare(false));
+
+  // Runs `update`, which changes the edit of the tab on show, and shows the result. `how` says what the user did ({ turn: 1 or -1 }, or
+  // { flip: 'h' or 'v' }) so the picture can move from where it was to where it is, and a zoomed picture keeps what was in view.
+  function change(update, how) {
+    if (!shown?.texture) { update(); return; }
+    const before = zoomOf(shown), v = shown.view;
+    update();
+    if (how?.turn) [v.panX, v.panY] = how.turn > 0 ? [-v.panY, v.panX] : [v.panY, -v.panX];
+    if (how?.flip) v[how.flip === 'h' ? 'panX' : 'panY'] *= -1;
+    cancelAnimationFrame(tween);
+    draw();
+    if (reduced() || !how) return;
+    const from = how.turn ? { transform: `rotate(${-90 * how.turn}deg) scale(${before / zoomOf(shown)})` } : { transform: how.flip === 'h' ? 'scaleX(-1)' : 'scaleY(-1)' };
+    stage.animate([from, { transform: 'none' }], how.turn ? { duration: 320, easing: 'cubic-bezier(.2, .9, .25, 1.12)' } : { duration: 300, easing: 'cubic-bezier(.22, 1, .36, 1)' });
   }
 
   // The view that shows `zoom` ('fit' or a number) with the point (px, py), measured from the middle of the well in canvas pixels, held still.
@@ -164,7 +209,6 @@
     button.title = keyId ? `${text} (${label(keyId)})` : text;
     button.setAttribute('aria-label', text);
   }
-  const compare = $('compare');
   compare.innerHTML = icon('compare');
   compare.title = 'Compare (\\)';
   compare.setAttribute('aria-label', 'Compare');
@@ -262,5 +306,5 @@
     return true;
   });
 
-  window.editorView = { show, dispose, setPanel, showPanel: () => { if (!panelOpen()) setPanel(true); } };
+  window.editorView = { show, dispose, change, setCompare, setPanel, showPanel: () => { if (!panelOpen()) setPanel(true); } };
 })();

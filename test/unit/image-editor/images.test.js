@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createImages } = require('../../../src/features/image-editor/images');
+const { extOf } = require('../../../src/features/conversion/catalog/formats');
 const { MAX_TABS, MAX_PIXELS, MAX_EDGE, PIECE } = require('../../../src/features/image-editor/limits');
 const { expect } = require('../../support/expect');
 const finish = require('../../support/finish');
@@ -21,16 +22,18 @@ const readImage = async (file, limits) => {
 };
 
 (async () => {
-  const images = createImages({ readImage });
+  const images = createImages({ readImage, extOf });
 
   console.log('opening a picture');
   const jpg = make('Photo.JPG');
   const info = await images.open(jpg);
   expect('it is described by a random 64 character token, its name, format and size', /^[0-9a-f]{64}$/.test(info.token) && info.name === 'Photo.JPG' && info.ext === 'jpg' && info.width === 3 && info.height === 2, JSON.stringify(info));
+  expect('its format has spellings like .jpeg folded in, and Save can write over a JPG but not a HEIC', info.writable === true && (await images.open(make('c.jpeg'))).ext === 'jpg' && (await images.open(make('d.heic'))).writable === false);
   expect('and by whether it can be transparent', info.alpha === false && (await images.open(make('b.png'))).alpha === true);
   expect('the decoder is told the limits', asked[0].maxPixels === MAX_PIXELS && asked[0].maxEdge === MAX_EDGE, JSON.stringify(asked[0]));
   expect('the page is told nothing of the path', !('file' in info) && !('file' in images.list()[0]));
-  expect('a file that is not there is refused before it is decoded, with its error code', (await threw(() => images.open(path.join(root, 'gone.png'))))?.code === 'ENOENT' && asked.length === 2);
+  const decoded = asked.length;
+  expect('a file that is not there is refused before it is decoded, with its error code', (await threw(() => images.open(path.join(root, 'gone.png'))))?.code === 'ENOENT' && asked.length === decoded);
   expect('and a folder is refused too', (await threw(() => images.open(root)))?.code === 'ENOTFILE');
 
   console.log('the same file twice, and many files');
@@ -49,6 +52,13 @@ const readImage = async (file, limits) => {
   images.pixelsDone(info.token);
   expect('once the page has the pixels the main process lets go of its copy', (() => { try { images.pixels(info.token, 0, 4); return false; } catch { return true; } })());
   expect('and the picture is still open', images.find(jpg)?.token === info.token && images.fileOf(info.token) === jpg);
+
+  console.log('what Save needs');
+  const entry = images.get(info.token);
+  expect('the file and what it was when it was read are kept for the main process', entry.file === jpg && entry.identity.size === 1 && typeof entry.identity.ino === 'string');
+  expect('no picture has changes until the page says so', !images.anyDirty());
+  images.setDirty(info.token, true);
+  expect('the page can say a picture has changes, and say it has none', images.anyDirty() && (images.setDirty(info.token, false), !images.anyDirty()));
 
   console.log('closing');
   images.close(info.token);
