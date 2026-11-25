@@ -50,6 +50,7 @@
   }
 
   function put(tab) {
+    window.workspaceOrganise.use(tab);
     viewer.show(tab.pdf, tab.left);
     tab.shown = true;
     window.workspaceProperties.show(tab);
@@ -165,7 +166,7 @@
     if (tab === active) showName(tab);
     drawTabs();
     if (reload) reopen(tab);
-    else if (tab === active && tab.shown) window.workspaceProperties.show(tab);
+    else if (tab === active && tab.shown) { window.workspaceProperties.show(tab); window.workspaceOrganise.use(tab); }
   });
 
   // The window was asked to close while a document has changes: each of those is asked about in turn, and the window goes only when

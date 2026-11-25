@@ -21,6 +21,7 @@ OPS = {
     "meta.set": ("direct", meta.set_info),
     "pages.rotate": ("direct", pages.rotate),
     "pages.delete": ("rewrite", pages.delete),
+    "pages.move": ("direct", pages.move),
 }
 
 

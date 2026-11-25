@@ -58,7 +58,7 @@ const SUITES = [
   { name: 'unlock-shot', file: 'ui/unlock-shot.js', tier: 'ui', electron: true },
   { name: 'toast-shot', file: 'ui/toast-shot.js', tier: 'ui', electron: true },
   { name: 'settings-shot', file: 'ui/settings-shot.js', tier: 'ui', electron: true },
-  { name: 'workspace-shot', file: 'ui/workspace-shot.js', tier: 'ui', electron: true, timeout: 480 },
+  { name: 'workspace-shot', file: 'ui/workspace-shot.js', tier: 'ui', electron: true, timeout: 900 },
   { name: 'downloader-shot', file: 'ui/downloader-shot.js', tier: 'ui', electron: true },
 ];
 const DEFAULT_TIMEOUT = 120;

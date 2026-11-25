@@ -281,7 +281,7 @@ app.whenReady().then(async () => {
     check('the window session cancels a request to the web', /ERR_BLOCKED_BY_CLIENT/.test(refusal), refusal);
     check('the page cannot fetch the web either', (await js(win, `fetch('https://pomelo-offline-check.invalid/').then(() => 'answered', () => 'refused')`)) === 'refused');
     const state = await js(win, `workspaceApi.state().then((s) => JSON.stringify(s))`);
-    check('the page is given a token, a name and a size, and no path', Object.keys(JSON.parse(state).documents[0]).sort().join() === 'dirty,name,size,token' && !state.includes(root.replace(/\\/g, '\\\\')) && !/[A-Za-z]:\\\\/.test(state), state);
+    check('the page is given a token, a name and a size, and no path', Object.keys(JSON.parse(state).documents[0]).sort().join() === 'canRedo,canUndo,dirty,name,size,token' && !state.includes(root.replace(/\\/g, '\\\\')) && !/[A-Za-z]:\\\\/.test(state), state);
     check('the page cannot read with a token it was not given', (await js(win, `workspaceApi.read('0'.repeat(64), 0, 10).then(() => 'read', () => 'refused')`)) === 'refused');
     check('the page cannot read more than 4 MiB in one call', (await js(win, `workspaceApi.state().then((s) => workspaceApi.read(s.documents[0].token, 0, 4 * 1048576 + 1)).then(() => 'read', () => 'refused')`)) === 'refused');
     await closeAndWait(win);
@@ -2665,6 +2665,179 @@ app.whenReady().then(async () => {
       const ran = calls.slice(mark).map((c) => c.channel).filter((c) => ['pdfws:apply', 'pdfws:put-revision', 'pdfws:save'].includes(c));
       check('none of this changed the document', ran.length === 0 && (await js(win, `document.getElementById('savebtn').hidden`)), ran.join());
       await closeAndWait(win);
+    }
+
+    console.log('the grid: turning, deleting and moving pages');
+    if (!detectEngines().pdf) console.log('  PDF engine not installed: skipped');
+    else {
+      const reading = (win, code) => Promise.race([js(win, code), new Promise((resolve) => setTimeout(() => resolve(''), 3000))]);
+      const pages = (win) => reading(win, `(async () => { const d = workspaceViewer.viewer.pdfDocument; if (!d) return ''; const out = []; for (let i = 1; i <= d.numPages; i++) out.push((await (await d.getPage(i)).getTextContent()).items.map((x) => x.str).join('').match(/page (\\d+)/)[1]); return out.join(','); })()`);
+      const turns = (win) => reading(win, `(async () => { const d = workspaceViewer.viewer.pdfDocument; if (!d) return ''; const out = []; for (let i = 1; i <= Math.min(d.numPages, 12); i++) out.push((await d.getPage(i)).rotate); return out.join(','); })()`);
+      const bar = (win) => js(win, `(() => { const b = document.querySelector('.optbar'); const buttons = [...b.querySelectorAll('button')]; return { shown: !b.hidden, titles: buttons.map((x) => x.title).join('|'), disabled: buttons.map((x) => x.disabled ? 1 : 0).join(''),
+        count: b.querySelector('.count').textContent, busy: document.querySelector('.pgrid').classList.contains('busy'), save: !document.getElementById('savebtn').hidden, cells: document.querySelectorAll('.cell').length, shape: [...document.querySelectorAll('.cell')].map((c) => c.style.getPropertyValue('--r') < 1 ? 'w' : 't').join('') }; })()`);
+      const settled = (win) => until('the grid to be built again', () => js(win, `(() => { const g = document.querySelector('.pgrid'); return !g.hidden && !g.classList.contains('busy') && document.querySelectorAll('.cell').length > 0 && document.querySelectorAll('.cell canvas').length > 0; })()`));
+      const push = (win, name) => js(win, `[...document.querySelectorAll('.optbar button')].find((b) => b.getAttribute('aria-label') === ${JSON.stringify(name)}).click()`);
+      const mouse = (win, type, p, modifiers = []) => win.webContents.sendInputEvent({ type, x: Math.round(p.x), y: Math.round(p.y), button: 'left', clickCount: 1, modifiers: type === 'mouseUp' ? modifiers : ['leftButtonDown', ...modifiers] });
+      const edge = async (win, n, side) => { const c = await centre(win, n); return js(win, `(() => { const r = document.querySelector('.cell[data-n="${n}"] .sheet').getBoundingClientRect(); return { x: ${side === 'left'} ? r.left + 10 : r.right - 10, y: ${c.y} }; })()`); };
+      // Presses page `from`, pulls to the left or right half of page `n`, and lets go unless asked not to. Resolves when it let go.
+      const pull = async (win, from, [side, n], { release = true } = {}) => {
+        win.webContents.focus();
+        await edge(win, n, side);
+        const start = await centre(win, from);
+        await sleep(150);
+        mouse(win, 'mouseMove', start);
+        mouse(win, 'mouseDown', start);
+        const to = await edge(win, n, side);
+        await sleep(150);
+        for (let i = 1; i <= 8; i++) { mouse(win, 'mouseMove', { x: start.x + (to.x - start.x) * i / 8, y: start.y + (to.y - start.y) * i / 8 }); await sleep(25); }
+        await sleep(150);
+        if (!release) return null;
+        mouse(win, 'mouseUp', to);
+        return Date.now();
+      };
+      const applied = () => calls.filter((c) => c.channel === 'pdfws:apply').length;
+      const changed = (win, wanted) => until(`the pages to be ${wanted}`, async () => (await pages(win)) === wanted);
+
+      for (const theme of ['light', 'dark']) {
+        nativeTheme.themeSource = theme;
+        const file = await makePdf('Grid change.pdf', 12);
+        const win = await openAndWait(fresh({ solid: true }), file);
+        win.setSize(900, 600);
+        await sleep(600);
+        await openGrid(win);
+        await sheetsDrawn(win, 12);
+        let b = await bar(win);
+        check(`${theme}: the bar is there with nothing selected, with Rotate left, Rotate right, Delete, Undo and Redo, and every one of them off`, b.shown && b.titles === 'Rotate left|Rotate right|Delete (Del)|Undo (Ctrl+Z)|Redo (Ctrl+Y)' && b.disabled === '11111' && b.count === '', JSON.stringify(b));
+
+        await clickCell(win, 3);
+        await clickCell(win, 5, ['control']);
+        b = await bar(win);
+        check(`${theme}: with pages selected, turning and deleting are on and undo and redo are still off`, b.disabled === '00011' && b.count === '2 selected', JSON.stringify(b));
+        const tone = await js(win, `({ count: getComputedStyle(document.querySelector('.optbar .count')).color, text: getComputedStyle(document.body).color })`);
+        check(`${theme}: the count of selected pages is in the full text colour (the muted one measured 3.95:1 on the bar in light, below 4.5:1)`, tone.count === tone.text, JSON.stringify(tone));
+        const before = applied();
+        await push(win, 'Rotate right');
+        check(`${theme}: while the engine works the grid is marked busy and the bar is off`, (await bar(win)).busy && (await bar(win)).disabled === '11111');
+        await settled(win);
+        await until('the turned pages to be drawn turned', async () => (await bar(win)).shape === 'ttwtwttttttt');
+        b = await bar(win);
+        let selected = (await grid(win)).selected;
+        check(`${theme}: Rotate right turns the two pages, the grid is built again with them still selected, and the file has changes to save`, applied() === before + 1 && (await turns(win)) === '0,0,90,0,90,0,0,0,0,0,0,0' && b.shape === 'ttwtwttttttt' && selected === '3,5' && b.save && b.disabled === '00001', JSON.stringify([await turns(win), b, selected]));
+        await shot(win, `workspace-grid-changed-${theme}.png`);
+        await push(win, 'Rotate left');
+        await settled(win);
+        await until('the pages to be drawn upright', async () => (await bar(win)).shape === 'tttttttttttt');
+        check(`${theme}: Rotate left turns them back`, (await turns(win)) === '0,0,0,0,0,0,0,0,0,0,0,0' && (await bar(win)).shape === 'tttttttttttt');
+        await push(win, 'Undo');
+        await settled(win);
+        check(`${theme}: Undo brings the turn back, with redo on`, (await turns(win)) === '0,0,90,0,90,0,0,0,0,0,0,0' && (await bar(win)).disabled === '11100');
+        await press(win, 'Z', ['control']);
+        await settled(win);
+        check(`${theme}: Ctrl+Z goes back once more, to the file as it was opened, and there is nothing left to save`, (await turns(win)) === '0,0,0,0,0,0,0,0,0,0,0,0' && !(await bar(win)).save && (await bar(win)).disabled === '11110');
+        await press(win, 'Y', ['control']);
+        await settled(win);
+        check(`${theme}: Ctrl+Y does the turn again`, (await turns(win)) === '0,0,90,0,90,0,0,0,0,0,0,0');
+        await press(win, 'Z', ['control']);
+        await settled(win);
+
+        await clickCell(win, 2);
+        await press(win, 'Delete');
+        await changed(win, '1,3,4,5,6,7,8,9,10,11,12');
+        await settled(win);
+        b = await bar(win);
+        selected = await grid(win);
+        check(`${theme}: Delete takes the selected page out, nothing is selected after it and the page that took its place has the focus`, (await pages(win)) === '1,3,4,5,6,7,8,9,10,11,12' && b.cells === 11 && selected.selected === '' && selected.focused === '2' && b.save, JSON.stringify([b, selected]));
+        await push(win, 'Undo');
+        await changed(win, '1,2,3,4,5,6,7,8,9,10,11,12');
+        check(`${theme}: Undo puts the page back where it was`, (await bar(win)).cells === 12);
+        await press(win, 'A', ['control']);
+        const asked = applied();
+        await press(win, 'Delete');
+        await sleep(300);
+        const card = await js(win, `({ title: document.querySelector('.card h3')?.textContent ?? '', buttons: [...document.querySelectorAll('.card .row button')].map((x) => x.textContent).join() })`);
+        check(`${theme}: deleting every page is refused with a card, and nothing is sent to the engine`, card.title === 'A PDF needs at least one page' && card.buttons === 'OK' && applied() === asked, JSON.stringify(card));
+        await js(win, `[...document.querySelectorAll('.card button')].find((x) => x.textContent === 'OK').click()`);
+        await sleep(300);
+        check(`${theme}: OK closes it and the keys are back in the grid`, (await grid(win)).card === '' && (await grid(win)).focused === '2' && (await grid(win)).selected.split(',').length === 12, JSON.stringify(await grid(win)));
+
+        await clickCell(win, 2);
+        await pull(win, 2, ['left', 5], { release: false });
+        const slot = await js(win, `(() => { const s = document.querySelector('.slot'); const c = document.querySelector('.cell[data-n="5"]').getBoundingClientRect(); const g = document.querySelector('.pgrid').getBoundingClientRect(); const r = s.getBoundingClientRect();
+          return { hidden: s.hidden, gap: Math.round(r.left - (c.left)), top: Math.abs(r.top - c.top) < 2, lifted: [...document.querySelectorAll('.cell.lifted')].map((x) => x.dataset.n).join(), cursor: getComputedStyle(document.querySelector('.pgrid')).cursor, colour: getComputedStyle(s).backgroundColor }; })()`);
+        check(`${theme}: pulling page 2 over the left half of page 5 shows a line in the gap before page 5 and fades the page being moved`, !slot.hidden && slot.gap < 0 && slot.gap >= -14 && slot.top && slot.lifted === '2' && slot.cursor === 'grabbing', JSON.stringify(slot));
+        await shot(win, `workspace-grid-moving-${theme}.png`);
+        mouse(win, 'mouseUp', await edge(win, 5, 'left'));
+        await changed(win, '1,3,4,2,5,6,7,8,9,10,11,12');
+        await settled(win);
+        selected = await grid(win);
+        check(`${theme}: letting go moves the page in front of page 5, and it stays selected where it landed`, selected.selected === '4' && selected.focused === '4' && selected.cells === 12, JSON.stringify(selected));
+
+        const mark = applied();
+        await pull(win, 4, ['left', 5]);
+        await sleep(400);
+        check(`${theme}: dropping a page where it already is changes nothing`, applied() === mark && (await pages(win)) === '1,3,4,2,5,6,7,8,9,10,11,12');
+        await clickCell(win, 1);
+        await clickCell(win, 2, ['shift']);
+        await pull(win, 1, ['right', 12]);
+        await changed(win, '4,2,5,6,7,8,9,10,11,12,1,3');
+        await settled(win);
+        check(`${theme}: two selected pages move together, in their order, to the end when dropped on the right half of the last page`, (await grid(win)).selected === '11,12', JSON.stringify(await grid(win)));
+
+        await clickCell(win, 3);
+        const cancelled = applied();
+        await pull(win, 3, ['left', 8], { release: false });
+        win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+        win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+        mouse(win, 'mouseUp', await edge(win, 8, 'left'));
+        await sleep(500);
+        const open = await grid(win);
+        check(`${theme}: Esc in the middle of a pull puts the page down where it was, and the grid stays open`, applied() === cancelled && open.shown && (await pages(win)) === '4,2,5,6,7,8,9,10,11,12,1,3' && (await js(win, `document.querySelectorAll('.cell.lifted').length + document.querySelector('.slot').hidden * 10`)) === 10, JSON.stringify(open));
+        win.destroy();
+        await sleep(500);
+        forgetSize();
+      }
+      nativeTheme.themeSource = 'light';
+
+      console.log('the grid: a change that fails, and a file that was changed by another program');
+      {
+        const file = await makePdf('Grid fails.pdf', 12);
+        const win = await openAndWait(fresh({ runPdfTool: async () => { throw new Error('This PDF has a problem'); } }), file);
+        await openGrid(win);
+        await sheetsDrawn(win, 12);
+        await clickCell(win, 4);
+        notices.length = 0;
+        await push(win, 'Rotate left');
+        await until('the notice', async () => notices.length > 0, 5000);
+        await sleep(300);
+        const b = await bar(win);
+        check('a change the engine cannot make says so in the corner and leaves the grid as it was, with the page still selected and the bar on again', notices.at(-1)?.title === "Can't make this change" && notices.at(-1).detail === 'This PDF has a problem' && !b.busy && b.disabled === '00011' && (await grid(win)).selected === '4' && !b.save, JSON.stringify([notices, b]));
+        notices.length = 0;
+        await closeAndWait(win);
+      }
+
+      console.log('the grid: 3 000 pages');
+      {
+        const big = await makePdf('Grid change big.pdf', 3000);
+        const win = await openAndWait(fresh({ solid: true }), big);
+        await openGrid(win, 1500);
+        await sheetsDrawn(win, 6);
+        await clickCell(win, 1);
+        const released = await pull(win, 1, ['left', 8]);
+        await settled(win);
+        const moved = Date.now() - released;
+        check(`a page moved in a file of 3 000 pages is in place in under 6 seconds (${moved} ms)`, moved < 6000 && (await js(win, `document.querySelectorAll('.cell').length`)) === 3000 && (await grid(win)).selected === '7', JSON.stringify(await grid(win)));
+        await press(win, 'A', ['control']);
+        await clickCell(win, 1, ['control']);
+        const began = Date.now();
+        await press(win, 'Delete');
+        await until('the one page', async () => (await js(win, `document.querySelectorAll('.cell').length`)) === 1, 20000);
+        await settled(win);
+        const deleted = Date.now() - began;
+        check(`deleting 2 999 pages of 3 000 leaves the one page in under 6 seconds (${deleted} ms)`, deleted < 6000 && (await pages(win)) === '2', `${deleted} ${await pages(win)}`);
+        win.destroy();
+        await sleep(500);
+        fs.rmSync(big, { force: true });
+      }
     }
   }
 

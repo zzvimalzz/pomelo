@@ -21,7 +21,7 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   console.log('opening');
   const doc = await docs.open(file);
   const second = await docs.open(file);
-  expect('a document has a name and a size, and its token is 32 random bytes in hex', doc.name === 'Report.pdf' && doc.size === content.length && /^[0-9a-f]{64}$/.test(doc.token) && Object.keys(doc).sort().join() === 'dirty,name,size,token', JSON.stringify(Object.keys(doc)));
+  expect('a document has a name and a size, and its token is 32 random bytes in hex', doc.name === 'Report.pdf' && doc.size === content.length && /^[0-9a-f]{64}$/.test(doc.token) && Object.keys(doc).sort().join() === 'canRedo,canUndo,dirty,name,size,token', JSON.stringify(Object.keys(doc)));
   expect('every open gets its own token', doc.token !== second.token);
   expect('a file that is not there is refused with its reason', await docs.open(path.join(root, 'nope.pdf')).then(() => '', (e) => e.code) === 'ENOENT');
   expect('a folder is refused', await fails(docs.open(root)));
@@ -64,7 +64,7 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   docs.unlock(doc.token, 'Pw-é1');
   const stored = docs.password(doc.token);
   expect('the password is kept in memory as UTF-8, under the document\'s token only', stored.toString('utf8') === 'Pw-é1' && docs.password(second.token) === undefined);
-  expect('the document record carries no password', !JSON.stringify(doc).includes('Pw-') && Object.keys(doc).sort().join() === 'dirty,name,size,token');
+  expect('the document record carries no password', !JSON.stringify(doc).includes('Pw-') && Object.keys(doc).sort().join() === 'canRedo,canUndo,dirty,name,size,token');
   docs.unlock(doc.token, 'another');
   expect('a new password replaces the old one, which is overwritten with zeros', docs.password(doc.token).toString() === 'another' && stored.every((b) => b === 0));
   const refusedPasswords = { 'an unknown token': ['0'.repeat(64), 'x'], 'no password': [doc.token, undefined], 'an empty password': [doc.token, ''], 'a password that is not text': [doc.token, 12], 'a password of 4097 characters': [doc.token, 'x'.repeat(4097)] };
@@ -97,7 +97,9 @@ const fails = async (promise) => { try { await promise; return false; } catch { 
   expect('no list file is left in the session folder', fs.readdirSync(session).every((name) => !name.startsWith('ops-')), fs.readdirSync(session).join());
   await edits.apply(edited.token, rotate);
   expect('the next change starts from the revision on show', runs[1].source === runs[0].target);
-  expect('undo steps back one change at a time', (await edits.undo(edited.token)).info.size === result.info.size && (await edits.undo(edited.token)).info.size === '%PDF-1.7 the original'.length && !(await edits.undo(edited.token)));
+  expect('the document says whether undo and redo have a step to take', result.info.canUndo === true && result.info.canRedo === false && edited.canUndo === false && (await edits.undo(edited.token)).info.canRedo === true);
+  await edits.redo(edited.token);
+  expect('undo steps back one change at a time',(await edits.undo(edited.token)).info.size === result.info.size && (await edits.undo(edited.token)).info.size === '%PDF-1.7 the original'.length && !(await edits.undo(edited.token)));
   expect('a document with no password gives the helper no secret', runs[0].secrets === undefined);
   edits.unlock(edited.token, 'Pw-é1');
   await edits.apply(edited.token, rotate);

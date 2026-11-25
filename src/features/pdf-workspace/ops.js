@@ -13,6 +13,7 @@ const OPS = {
   'meta.set': { kind: 'direct', keys: { title: isText, author: isText, subject: isText, keywords: isText } },
   'pages.rotate': { kind: 'direct', keys: { pages: isPages, by: (v) => v === 90 || v === 180 || v === 270 } },
   'pages.delete': { kind: 'rewrite', keys: { pages: isPages } },
+  'pages.move': { kind: 'direct', keys: { pages: isPages, before: (v) => Number.isInteger(v) && v >= 1 && v <= MAX_PAGE + 1 } },
 };
 
 // Returns a copy of the list that holds only the keys each operation takes. Throws a sentence for anything else.

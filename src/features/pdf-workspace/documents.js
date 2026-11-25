@@ -21,7 +21,7 @@ const DEVICE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
 const IN_USE = new Set(['EBUSY', 'EPERM', 'EACCES']);
 
 const badName = (name) => !name || name.length > 200 || /[\\/:*?"<>|]/.test(name) || [...name].some((c) => c < ' ') || /[. ]$/.test(name) || DEVICE_NAME.test(name);
-const info = (doc) => ({ token: doc.token, name: doc.name, size: doc.revisions.current().size, dirty: doc.revisions.dirty() });
+const info = (doc) => ({ token: doc.token, name: doc.name, size: doc.revisions.current().size, dirty: doc.revisions.dirty(), canUndo: doc.revisions.canUndo(), canRedo: doc.revisions.canRedo() });
 const keyOf = (file) => path.resolve(file).toLowerCase();
 const metaOf = (values) => JSON.stringify(['title', 'author', 'subject', 'keywords'].map((key) => values[key] ?? ''));
 const driveOf = (where) => path.parse(path.resolve(where)).root.replace(/\\$/, '');

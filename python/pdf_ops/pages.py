@@ -24,3 +24,18 @@ def delete(doc, pages):
     if len(gone) == doc.page_count:
         raise ValueError("a PDF needs at least one page")
     doc.delete_pages(gone)
+
+
+def move(doc, pages, before):
+    """The pages keep their order and go in front of page `before`, counted before the move; one past the last page puts them at the end."""
+    moved = sorted(pick(doc, pages))
+    gone = set(moved)
+    if type(before) is not int or not 1 <= before <= doc.page_count + 1:
+        raise ValueError("there is no such place to move pages to")
+    # Each page goes in front of the same page, the first one from `before` on that is not moving, so they land side by side in order.
+    stay = next((i for i in range(before - 1, doc.page_count) if i not in gone), None)
+    order = list(range(doc.page_count))
+    for page in moved:
+        doc.move_page(order.index(page), -1 if stay is None else order.index(stay))
+        order.remove(page)
+        order.insert(len(order) if stay is None else order.index(stay), page)

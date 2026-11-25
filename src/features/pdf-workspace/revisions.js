@@ -27,8 +27,10 @@ function createRevisions(first) {
   const same = (a, b) => a === b || (!!a.meta && a.meta === b.meta && (a.base ?? a) === (b.base ?? b));
   const dirty = () => !same(list[at], saved);
 
-  function undo() { return at > 0 ? list[--at] : null; }
-  function redo() { return at < list.length - 1 ? list[++at] : null; }
+  const canUndo = () => at > 0;
+  const canRedo = () => at < list.length - 1;
+  function undo() { return canUndo() ? list[--at] : null; }
+  function redo() { return canRedo() ? list[++at] : null; }
 
   // Adds the next revision after the one on show and lets go of what that leaves behind: the redo tail, then the oldest revisions
   // after the first until there are at most MAX_REVISIONS and they fit in `budget` bytes.
@@ -53,7 +55,7 @@ function createRevisions(first) {
   const markSaved = () => { saved = list[at]; };
   const dispose = () => Promise.all(list.map(retire));
 
-  return { current, dirty, undo, redo, push, replaceFirst, markSaved, acquire, release, dispose };
+  return { current, dirty, canUndo, canRedo, undo, redo, push, replaceFirst, markSaved, acquire, release, dispose };
 }
 
 module.exports = { createRevisions, MAX_REVISIONS };
