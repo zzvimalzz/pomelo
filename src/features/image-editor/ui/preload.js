@@ -9,8 +9,11 @@ contextBridge.exposeInMainWorld('editorApi', {
   showInFolder: (token) => ipcRenderer.invoke('imged:show', token),
   setView: (patch) => ipcRenderer.invoke('imged:view', patch),
   fullScreen: (on) => ipcRenderer.invoke('imged:full-screen', on),
+  save: (token, rgba, options) => ipcRenderer.invoke('imged:save', token, rgba, options),
+  setDirty: (token, dirty) => ipcRenderer.invoke('imged:dirty', token, dirty),
   closeWindow: () => ipcRenderer.invoke('imged:close-window'),
   onFullScreen: (cb) => ipcRenderer.on('imged:full-screen-changed', (_e, on) => cb(on)),
+  onClosing: (cb) => ipcRenderer.on('imged:closing', () => cb()),
   onOpened: (cb) => ipcRenderer.on('imged:opened', (_e, images) => cb(images)),
 });
 

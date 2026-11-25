@@ -5,6 +5,7 @@ const path = require('path');
 const { createImages } = require('./images');
 const { MAX_TABS, PIECE, editable } = require('./limits');
 const { cleanView } = require('./view');
+const { createSave } = require('./save');
 const { registerEditorIpc } = require('./editor.ipc');
 
 const REASONS = {
@@ -19,13 +20,21 @@ const REFUSALS = {
 
 // asset(name): path of a file shipped in assets/. getSettings(), setSettings(patch): the stored settings. notify({ title, detail }): the
 // notice in the corner of the screen. log(...). readImage(file, { maxPixels, maxEdge }): decode a picture to upright RGBA. showInFolder(file):
-// show a file in Explorer. extOf(file): the format a file name stands for, with spellings like .jpeg folded in. solid: draw an opaque
-// window; by default only before Windows 11.
-function createEditor({ asset, getSettings, setSettings, notify, log, readImage, showInFolder, extOf, solid }) {
-  const images = createImages({ readImage });
+// show a file in Explorer. writeImage(rgba, out, format, options) and uniquePath(dir, base, ext): the conversion feature's. qualities: its
+// default quality for each format that has one. extOf(file): the format a file name stands for, with spellings like .jpeg folded in.
+// solid: draw an opaque window; by default only before Windows 11. chooseSavePath(suggested, format): where a copy goes, or null; by
+// default the Save dialog on the editor window.
+function createEditor({ asset, getSettings, setSettings, notify, log, readImage, writeImage, uniquePath, qualities, showInFolder, extOf, solid, chooseSavePath }) {
+  const images = createImages({ readImage, extOf });
   const canEdit = (file) => editable(extOf(file));
   let win = null;
   let queue = Promise.resolve();
+  let leaving = false;
+  const saver = createSave({
+    images, writeImage, uniquePath, notify, log,
+    show: async (file) => { await open([file]); return !!images.find(file); },
+    chooseSavePath: chooseSavePath ?? ((suggested, format) => require('./editor.window').chooseSavePath(win, suggested, format)),
+  });
 
   // Writes only what is valid and what differs from what is stored, so a page that repeats itself does not rewrite the file.
   function rememberView(patch) {
@@ -67,7 +76,13 @@ function createEditor({ asset, getSettings, setSettings, notify, log, readImage,
         asset, solid, saved: getSettings().imageView?.window,
         onBounds: (bounds) => setSettings({ imageView: { ...getSettings().imageView, window: bounds } }),
       });
-      win.on('closed', () => { win = null; images.closeAll(); });
+      // The page asks about each picture with changes before it lets the window go.
+      win.on('close', (e) => {
+        if (leaving || !images.anyDirty()) return;
+        e.preventDefault();
+        win.webContents.send('imged:closing');
+      });
+      win.on('closed', () => { win = null; leaving = false; images.closeAll(); });
     }
   }
 
@@ -85,13 +100,15 @@ function createEditor({ asset, getSettings, setSettings, notify, log, readImage,
 
   const registerIpc = () => registerEditorIpc({
     images,
-    state: () => ({ images: images.list(), view: cleanView(getSettings().imageView), piece: PIECE }),
+    state: () => ({ images: images.list(), view: cleanView(getSettings().imageView), piece: PIECE, quality: qualities }),
     closeImage,
     openDropped,
     showInFolder: (token) => showInFolder(images.fileOf(token)),
     setView: rememberView,
     setFullScreen: (on) => win?.setFullScreen(on),
-    closeWindow: () => win?.close(),
+    save: saver.save,
+    setDirty: (token, dirty) => images.setDirty(token, dirty === true),
+    closeWindow: () => { leaving = true; win?.close(); },
     isEditor: (sender) => !!win && !win.isDestroyed() && win.webContents === sender,
   });
 

@@ -35,3 +35,11 @@ kbd { padding: 0 6px; border-radius: 6px; border: 1px solid var(--line); border-
 .btn.primary:hover:not(:disabled) { background: #a32642; border-color: #a32642; }
 .btn.danger { background: #d92d20; border-color: #d92d20; color: #fff; }
 .btn.danger:hover:not(:disabled) { background: #b42318; border-color: #b42318; }
+
+.numfield { display: inline-flex; width: fit-content; align-items: stretch; height: 28px; border-radius: 8px; border: 1px solid var(--field-line); border-bottom-color: var(--field-edge); background: var(--field); overflow: hidden; }
+.numfield:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.numfield:has(.num-input[aria-invalid]) { border-color: var(--err); }
+.num-input { width: 5ch; min-width: 0; padding: 0; border: 0; background: none; color: var(--txt); font: inherit; font-variant-numeric: tabular-nums; text-align: center; outline: none; }
+.num-step { width: 22px; display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--muted); cursor: pointer; }
+.num-step:hover { background: var(--off); color: var(--txt); }
+.num-step .i { width: 13px; height: 13px; }

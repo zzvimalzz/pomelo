@@ -5,9 +5,11 @@ const { ipcMain } = require('electron');
 
 // images: the open pictures (images.js). state(): what the page starts from. closeImage(token): close a tab's picture, and the window
 // with the last one. openDropped(paths): open the pictures among the paths of a drop. showInFolder(token): show the file in Explorer.
-// setView(patch): keep the valid fields of the view (view.js). setFullScreen(on): enter or leave full screen. closeWindow(): close the window.
+// setView(patch): keep the valid fields of the view (view.js). setFullScreen(on): enter or leave full screen. save(token, rgba, options): write
+// the picture the page rendered (save.js). setDirty(token, dirty): whether the page has changes to save. closeWindow(): close the window now that
+// the page has dealt with unsaved changes.
 // isEditor(sender): is this the editor window's page.
-function registerEditorIpc({ images, state, closeImage, openDropped, showInFolder, setView, setFullScreen, closeWindow, isEditor }) {
+function registerEditorIpc({ images, state, closeImage, openDropped, showInFolder, setView, setFullScreen, save, setDirty, closeWindow, isEditor }) {
   const guard = (e) => { if (!isEditor(e.sender)) throw new Error('not the editor window'); };
   ipcMain.handle('imged:state', (e) => { guard(e); return state(); });
   ipcMain.handle('imged:pixels', (e, token, begin, end) => { guard(e); return images.pixels(token, begin, end); });
@@ -17,6 +19,8 @@ function registerEditorIpc({ images, state, closeImage, openDropped, showInFolde
   ipcMain.handle('imged:show', (e, token) => { guard(e); showInFolder(token); });
   ipcMain.handle('imged:view', (e, patch) => { guard(e); setView(patch); });
   ipcMain.handle('imged:full-screen', (e, on) => { guard(e); setFullScreen(on === true); });
+  ipcMain.handle('imged:save', (e, token, rgba, options) => { guard(e); return save(token, rgba, options); });
+  ipcMain.handle('imged:dirty', (e, token, dirty) => { guard(e); setDirty(token, dirty); });
   ipcMain.handle('imged:close-window', (e) => { guard(e); closeWindow(); });
 }
 
