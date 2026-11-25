@@ -60,14 +60,14 @@ async function encode(img, to, out, { quality = QUALITY[to], mozjpeg = true } = 
   else if (to === 'avif') await img.avif({ quality }).toFile(out);
   else if (to === 'tiff') await img.tiff({ compression: 'lzw' }).toFile(out);
   else if (to === 'gif') await img.gif({ effort: 7 }).toFile(out);
+  else if (to === 'pdf') await imageToPdf(img, out);
 }
 
 async function run({ src, from, to, dir, base }) {
   const moving = (from === 'gif' || from === 'webp') && (to === 'gif' || to === 'webp');   // keep every frame; other targets take the first
   const img = await sharpInput(src, from, moving);
   const out = uniquePath(dir, base, to);
-  if (to === 'pdf') await imageToPdf(img, out);
-  else await encode(img, to, out);
+  await encode(img, to, out);
   return [out];
 }
 

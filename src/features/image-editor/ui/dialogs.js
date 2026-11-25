@@ -3,7 +3,7 @@
 (() => {
   const { el } = window.pomeloUi;
   const { loop } = window.pomeloCard;
-  const FORMATS = [['same', 'Same'], ['jpg', 'JPG'], ['png', 'PNG'], ['webp', 'WebP'], ['avif', 'AVIF']];
+  const FORMATS = [['same', 'Same'], ['jpg', 'JPG'], ['png', 'PNG'], ['webp', 'WebP'], ['avif', 'AVIF'], ['heic', 'HEIC'], ['tiff', 'TIFF'], ['bmp', 'BMP'], ['gif', 'GIF'], ['pdf', 'PDF']];
   const WITH_QUALITY = ['jpg', 'webp', 'avif'];
   const MIN_EDGE = 16;
 

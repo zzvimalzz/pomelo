@@ -10,7 +10,10 @@ const lock = require('./engine-kit/lock');
 const { uniquePath } = require('./engine-kit/outputs');
 const { withContext } = require('./engine-kit/context');
 const { runHelper } = require('./engine-kit/python');
-const { readImage, writeImage, QUALITY } = require('./engines/builtin/images');
+const images = require('./engines/builtin/images');
+const { withTempFile } = require('#shared/node/fs');
+
+const { readImage, QUALITY } = images;
 
 // Every extension Pomelo can read (spellings like .jpeg included), for the right-click menu. Folders are registered on their own.
 const sourceExts = [...Object.keys(TARGET_ORDER).filter((e) => e !== 'folder'), ...Object.keys(ALIASES)];
@@ -28,6 +31,18 @@ function runPdfTool(script, args, { src, onProgress, signal, secrets } = {}) {
   const python = getEngines().pdf;
   if (!python) return Promise.reject(Object.assign(new Error('The PDF engine is not installed'), { code: 'NO_ENGINE' }));
   return withContext({ signal, outputs: [] }, () => runHelper(python, script, args, { src, onProgress, input: JSON.stringify(secrets || {}) + '\n' }));
+}
+
+// images.writeImage for every format sharp writes, and the HEIC helper for HEIC, which takes a PNG file. Throws code NO_ENGINE when the
+// helper is not installed.
+async function writeImage(rgba, out, to, options) {
+  if (to !== 'heic') return images.writeImage(rgba, out, to, options);
+  const python = getEngines().heic;
+  if (!python) throw Object.assign(new Error('The HEIC engine is not installed'), { code: 'NO_ENGINE' });
+  await withTempFile('png', async (png) => {
+    await images.writeImage(rgba, png, 'png', { ...options, metadataFrom: undefined });
+    await runHelper(python, 'image_to_heic.py', [png, out], { timeout: 300000 });
+  });
 }
 
 // What the jobs feature needs to time a conversion (it does not import this feature): the format of a file, and the groups of

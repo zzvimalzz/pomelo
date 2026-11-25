@@ -167,9 +167,8 @@
       return answer === 'copy' ? save(tab, true) : false;
     }
     if (!result.ok) return false;
-    if (result.copy) { close(tab.token); return true; }
-    tab.history.markSaved();
-    refresh();
+    if (result.copy === 'opened') { close(tab.token); return true; }
+    if (!result.copy) { tab.history.markSaved(); refresh(); }
     if (tab === active && tabs.length === 1) {
       savedNote.textContent = 'Saved';
       savedNote.classList.add('on');

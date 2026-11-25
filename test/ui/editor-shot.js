@@ -145,9 +145,10 @@ app.whenReady().then(async () => {
   await editor.open([files.photo]);
   await sleep(300);
   check('a picture that is open is shown, not opened twice', (await tabNames(win)) === 'photo.jpg*,glass.png');
-  await editor.open([files.still]);
+  check('a GIF is not offered the editor', editor.editable(files.still) === false && editor.editable(files.square) === true);
+  await editor.open([files.square]);
   await sleep(700);
-  check('a still GIF opens', (await tabNames(win)) === 'photo.jpg,glass.png,still.gif*', await tabNames(win));
+  check('another picture adds a tab', (await tabNames(win)) === 'photo.jpg,glass.png,square.png*', await tabNames(win));
   await js(win, `document.querySelector('#tabs .tab.on .x').click()`);
   await sleep(500);
   check('closing a tab shows its neighbour', (await tabNames(win)) === 'photo.jpg,glass.png*', await tabNames(win));
@@ -157,7 +158,7 @@ app.whenReady().then(async () => {
 
   console.log('pictures that are refused');
   await editor.open([files.moving]);
-  check('an animated GIF is refused with a notice, and no tab', notices.at(-1)?.title === "Can't edit an animated image" && (await tabNames(win)) === 'photo.jpg*', JSON.stringify(notices));
+  check('an animated picture is refused with a notice, and no tab', notices.at(-1)?.title === "Can't edit an animated image" && (await tabNames(win)) === 'photo.jpg*', JSON.stringify(notices));
   await editor.open([files.wide]);
   check('a picture over the edge limit is refused', notices.at(-1)?.title === 'This image is too large to edit', JSON.stringify(notices.at(-1)));
   await editor.open([path.join(root, 'gone.png')]);
@@ -323,7 +324,7 @@ app.whenReady().then(async () => {
   await js(win, `document.querySelector('#mmenu .mi').click()`);
   await sleep(500);
   const card = () => js(win, `(() => { const c = document.querySelector('.card'); return c && { title: c.querySelector('h3').textContent, chips: [...c.querySelectorAll('.chip')].map((b) => b.textContent + (b.classList.contains('on') ? '*' : '')).join(), quality: !c.querySelector('.range').closest('.field').hidden, buttons: [...c.querySelectorAll('.btn')].map((b) => b.textContent).join() }; })()`);
-  check('Save a copy asks for a format, a size and a quality', is(await card(), { title: 'Save a copy', chips: 'Same*,JPG,PNG,WebP,AVIF,Original*,Custom', quality: true, buttons: 'Cancel,Save…' }), JSON.stringify(await card()));
+  check('Save a copy asks for a format, a size and a quality', is(await card(), { title: 'Save a copy', chips: 'Same*,JPG,PNG,WebP,AVIF,HEIC,TIFF,BMP,GIF,PDF,Original*,Custom', quality: true, buttons: 'Cancel,Save…' }), JSON.stringify(await card()));
   await js(win, `[...document.querySelectorAll('.card .chip')].find((b) => b.textContent === 'PNG').click()`);
   await sleep(200);
   check('PNG has no quality', (await card()).quality === false && (await card()).chips.includes('PNG*'));

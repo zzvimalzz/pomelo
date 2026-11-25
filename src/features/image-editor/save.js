@@ -4,16 +4,17 @@
 const fs = require('fs');
 const path = require('path');
 const { fileIdentity, replaceFile, withTempFile } = require('#shared/node/fs');
-const { WRITABLE } = require('./limits');
+const { WRITABLE, editable } = require('./limits');
 const { check } = require('./save-options');
 
 const FREE_MARGIN = 64 * 1048576;
-const SPELLINGS = { jpg: ['jpg', 'jpeg'], tiff: ['tiff', 'tif'] };
+const SPELLINGS = { jpg: ['jpg', 'jpeg'], tiff: ['tiff', 'tif'], heic: ['heic', 'heif'] };
 
 const WHY_NOT_SAVED = {
   locked: ({ name }) => `${name} is open in another program. Close it there, or save a copy.`,
   'read-only': ({ name }) => `${name} is read-only. Save a copy instead.`,
   'no-space': ({ name, drive }) => `There is not enough free space on ${drive} to save ${name}.`,
+  engine: () => 'Saving as HEIC needs the PDF, OCR and HEIC components, which can be installed in Settings.',
 };
 
 const driveOf = (file) => path.parse(path.resolve(file)).root.replace(/\$/, '');
@@ -22,7 +23,8 @@ const driveOf = (file) => path.parse(path.resolve(file)).root.replace(/\$/, '');
 // feature's. chooseSavePath(suggested, format): ask the user where a copy goes, and resolve the path or null. show(file): open a file
 // as a tab and resolve whether it is open now. notify({ title, detail }) and log(...) as in index.js.
 function createSave({ images, writeImage, uniquePath, chooseSavePath, show, notify, log }) {
-  // Resolves { ok: true }, with `copy: true` when the copy is open as a tab of its own, or { stop } with 'changed' (another program changed the file: the page asks what to do), 'cancelled',
+  // Resolves { ok: true }, with `copy: 'opened'` when the copy is open as a tab of its own and `copy: 'written'` when it is a format the
+  // editor does not open, or { stop } with 'changed' (another program changed the file: the page asks what to do), 'cancelled',
   // 'busy' or 'failed'; a stop that needs saying has been said in the corner of the screen. Throws when the page sent nonsense.
   async function save(token, rgba, raw) {
     const image = images.get(token);
@@ -30,12 +32,13 @@ function createSave({ images, writeImage, uniquePath, chooseSavePath, show, noti
     if (!(rgba instanceof Uint8Array) || rgba.length !== options.width * options.height * 4) throw new Error('bad pixels');
     const format = options.format === 'same' ? image.ext : options.format;
     const replacing = options.mode === 'replace';
-    if (!WRITABLE.includes(format) || (replacing && (options.format !== 'same' || options.longEdge))) throw new Error('cannot save that way');
+    if ((options.format === 'same' && !WRITABLE.includes(image.ext)) || (replacing && (options.format !== 'same' || options.longEdge))) throw new Error('cannot save that way');
     if (image.saving) return { stop: 'busy' };
     image.saving = true;
     try {
       return await write(image, rgba, options, format, replacing);
     } catch (e) {
+      if (e.code === 'NO_ENGINE') return stopped('engine', image.name, image.file);
       log('cannot save image:', e.code || e.message);
       notify({ title: "Can't save", detail: `${image.name} could not be written.` });
       return { stop: 'failed' };
@@ -65,7 +68,8 @@ function createSave({ images, writeImage, uniquePath, chooseSavePath, show, noti
     });
     if (result.stop) return stopped(result.stop, name, target);
     if (original) { image.identity = result.identity; return { ok: true }; }
-    return { ok: true, copy: replacing ? undefined : await show(target) };
+    if (replacing) return { ok: true };
+    return { ok: true, copy: editable(format) && await show(target) ? 'opened' : 'written' };
   }
 
   function stopped(why, name, target) {

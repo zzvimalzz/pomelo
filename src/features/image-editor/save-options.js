@@ -3,7 +3,7 @@
 // or throws. No Electron in here.
 const { MAX_PIXELS, MAX_EDGE } = require('./limits');
 
-const FORMATS = ['same', 'jpg', 'png', 'webp', 'avif', 'tiff'];
+const FORMATS = ['same', 'jpg', 'png', 'webp', 'avif', 'heic', 'tiff', 'bmp', 'gif', 'pdf'];
 const MODES = ['replace', 'copy'];
 const MIN_LONG_EDGE = 16;
 

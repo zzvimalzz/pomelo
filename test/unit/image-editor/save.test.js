@@ -67,8 +67,13 @@ const threw = async (fn) => { try { await fn(); return false; } catch { return t
   console.log('a copy');
   ({ file, token } = await photo('copy.jpg'));
   nextPath = path.join(root, 'copy (edited).png');
-  expect('a copy in another format is written where the user chose, and is opened as a tab', (await save(token, pixels(200, 20, 20, 255), { mode: 'copy', format: 'png', ...sizes }))?.copy === true && (await look(nextPath)).format === 'png' && shown.at(-1) === nextPath);
+  expect('a copy in another format is written where the user chose, and is opened as a tab', (await save(token, pixels(200, 20, 20, 255), { mode: 'copy', format: 'png', ...sizes }))?.copy === 'opened' && (await look(nextPath)).format === 'png' && shown.at(-1) === nextPath);
   expect('and the original is as it was', (await look(file)).first[1] > 150);
+  for (const [format, signature, copy] of [['tiff', '49492a00', 'opened'], ['bmp', '424d', 'opened'], ['gif', '474946', 'written'], ['pdf', '255044462d', 'written']]) {
+    nextPath = path.join(root, `other.${format}`);
+    const result = await save(token, pixels(30, 60, 90), { mode: 'copy', format, ...sizes });
+    expect(`a copy as ${format.toUpperCase()} is written, and ${copy === 'opened' ? 'opens as a tab' : 'is not opened, because the editor does not open it'}`, result?.copy === copy && (shown.at(-1) === nextPath) === (copy === 'opened') && fs.readFileSync(nextPath).subarray(0, signature.length / 2).toString('hex') === signature);
+  }
   nextPath = path.join(root, 'small.webp');
   expect('a smaller long edge scales the picture', (await save(token, pixels(200, 20, 20), { mode: 'copy', format: 'webp', quality: 70, longEdge: 20, ...sizes }))?.ok === true && (await look(nextPath)).width === 20 && (await look(nextPath)).height === 15);
   nextPath = path.join(root, 'noext.txt');
@@ -90,6 +95,10 @@ const threw = async (fn) => { try { await fn(); return false; } catch { return t
   expect('a HEIC file cannot be written over, nor saved as "same"', await threw(() => save(phone, pixels(1, 2, 3), { mode: 'replace', format: 'same', ...sizes })) && await threw(() => save(phone, pixels(1, 2, 3), { mode: 'copy', format: 'same', ...sizes })));
   nextPath = path.join(root, 'phone.jpg');
   expect('but a copy of it as a JPG is fine', (await save(phone, pixels(1, 2, 3), { mode: 'copy', format: 'jpg', ...sizes }))?.ok === true && (await look(nextPath)).format === 'jpeg');
+
+  console.log('HEIC without its engine');
+  const noEngine = createSave({ images, writeImage: async () => { throw Object.assign(new Error('missing'), { code: 'NO_ENGINE' }); }, uniquePath, notify: (m) => notices.push(m), log: () => {}, chooseSavePath: async () => path.join(root, 'none.heic'), show: async () => true });
+  expect('a missing HEIC engine stops the save with a sentence that says what to install', (await noEngine.save(token, pixels(1, 2, 3), { mode: 'copy', format: 'heic', ...sizes }))?.stop === 'engine' && /HEIC components/.test(notices.at(-1)?.detail) && !fs.existsSync(path.join(root, 'none.heic')));
 
   console.log('a save at a time');
   const busy = images.get(token);
