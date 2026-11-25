@@ -329,10 +329,16 @@ app.whenReady().then(async () => {
   await sleep(200);
   check('PNG has no quality', (await card()).quality === false && (await card()).chips.includes('PNG*'));
   await js(win, `[...document.querySelectorAll('.card .chip')].find((b) => b.textContent === 'Custom').click()`);
-  await js(win, `(() => { const f = document.querySelector('.card input[type=number]'); f.value = '5000'; f.dispatchEvent(new Event('input')); })()`);
+  await js(win, `(() => { const f = document.querySelector('.card .num-input'); f.value = '5000'; f.dispatchEvent(new Event('input')); })()`);
   check('a long edge over the picture\'s own is not accepted', (await js(win, `document.querySelector('.card .btn.primary').disabled`)) === true);
-  await js(win, `(() => { const f = document.querySelector('.card input[type=number]'); f.value = '2000'; f.dispatchEvent(new Event('input')); })()`);
+  await js(win, `(() => { const f = document.querySelector('.card .num-input'); f.value = '2000'; f.dispatchEvent(new Event('input')); })()`);
   check('and a smaller one shows the size it makes', (await js(win, `[document.querySelector('.card .btn.primary').disabled, document.querySelectorAll('.card .level')[1].textContent]`)).join() === 'false,1500 × 2000', (await js(win, `document.querySelectorAll('.card .level')[1].textContent`)));
+  check('the long edge field has no browser spin arrows and takes only digits', (await js(win, `(() => { const f = document.querySelector('.card .num-input'); f.value = '12ab'; f.dispatchEvent(new Event('input')); return [f.type, f.value]; })()`)).join() === 'text,12');
+  await js(win, `(() => { const f = document.querySelector('.card .num-input'); f.value = '2000'; f.dispatchEvent(new Event('input')); f.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })); f.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', shiftKey: true, bubbles: true, cancelable: true })); })()`);
+  check('ArrowDown steps by 1 and Shift+ArrowDown by 10', (await js(win, `document.querySelector('.card .num-input').value`)) === '1989');
+  await js(win, `document.querySelectorAll('.card .num-step')[1].click()`);
+  check('the plus button steps up and never past the long edge of the picture', (await js(win, `document.querySelector('.card .num-input').value`)) === '1990' && (await js(win, `(() => { const f = document.querySelector('.card .num-input'); f.value = '4000'; f.dispatchEvent(new Event('input')); document.querySelectorAll('.card .num-step')[1].click(); return f.value; })()`)) === '4000');
+  await js(win, `(() => { const f = document.querySelector('.card .num-input'); f.value = '2000'; f.dispatchEvent(new Event('input')); })()`);
   await js(win, `[...document.querySelectorAll('.card .chip')].find((b) => b.textContent === 'Original').click()`);
   saveTo = path.join(root, 'flat-turned.png');
   await js(win, `document.querySelector('.card .btn.primary').click()`);
@@ -496,6 +502,9 @@ app.whenReady().then(async () => {
     console.log(`  (${theme} chip chosen ${pickedChip}, others ${otherChip}: contrast ${contrast(pickedChip, otherChip).toFixed(2)})`);
     check(`${theme}: the chosen chip is told from the others`, JSON.stringify(pickedChip) !== JSON.stringify(otherChip) && contrast(pickedChip, otherChip) >= 1.1, `${pickedChip} ${otherChip}`);
     await shot(win, `editor-${theme}-save-card.png`);
+    await js(win, `[...document.querySelectorAll('.card .chip')].find((b) => b.textContent === 'Custom').click()`);
+    await sleep(300);
+    await shot(win, `editor-${theme}-save-card-custom.png`);
     await closeAll(editor);
   }
   nativeTheme.themeSource = 'light';

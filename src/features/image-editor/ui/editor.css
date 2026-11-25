@@ -75,9 +75,6 @@ body.busy, body.busy * { cursor: progress; }
 .chip.on { background: var(--accent-2); color: #fff; }
 .range { width: 100%; margin: 0; accent-color: var(--accent); }
 .level { min-width: 44px; text-align: right; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.card .fld { width: 100px; height: 28px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--field-line); border-bottom-color: var(--field-edge); background: var(--field); color: var(--txt); font: inherit; outline: none; }
-.card .fld:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.card .fld[aria-invalid] { border-color: var(--err); }
 .card .level { text-align: left; }
 
 #panel { --rail: 320px; display: flex; justify-content: flex-end; transition: width .32s var(--out); }

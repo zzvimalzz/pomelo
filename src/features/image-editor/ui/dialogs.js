@@ -84,14 +84,9 @@
     const quality = field('Quality', slider, level);
     slider.oninput = () => { chosen.quality = Number(slider.value); level.textContent = slider.value; };
     const size = chips('Size', [['original', 'Original'], ['custom', 'Custom']], () => (chosen.custom ? 'custom' : 'original'), (value) => { chosen.custom = value === 'custom'; sync(); });
-    const edge = el('input', 'fld');
-    edge.type = 'number';
-    edge.min = String(MIN_EDGE);
-    edge.max = String(long);
-    edge.setAttribute('aria-label', 'Long edge');
+    const edge = window.pomeloUi.numberField({ label: 'Long edge', min: MIN_EDGE, max: long, value: chosen.edge, onInput: (text) => { chosen.edge = text; sync(); } });
     const result = el('span', 'level');
-    const custom = field('Long edge', edge, result);
-    edge.oninput = () => { chosen.edge = edge.value; sync(); };
+    const custom = field('Long edge', edge.el, result);
     const cancel = el('button', 'btn', 'Cancel');
     const save = el('button', 'btn primary', 'Save…');
     const row = el('div', 'row');
@@ -108,8 +103,8 @@
       level.textContent = slider.value;
       custom.hidden = !chosen.custom;
       const ok = !chosen.custom || edgeOk();
-      edge.value = chosen.edge;
-      edge.toggleAttribute('aria-invalid', !ok);
+      edge.input.value = chosen.edge;
+      edge.input.toggleAttribute('aria-invalid', !ok);
       result.textContent = chosen.custom && ok ? `${Math.round(width * edgeValue() / long)} × ${Math.round(height * edgeValue() / long)}` : '';
       save.disabled = !ok;
     }
@@ -122,7 +117,7 @@
       box.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { e.preventDefault(); done(null); }
         else if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); save.click(); }
-        else if (e.key === 'Tab') loop(e, [...box.querySelectorAll('button, input')].filter((n) => !n.closest('[hidden]')));
+        else if (e.key === 'Tab') loop(e, [...box.querySelectorAll('button:not(.num-step), input')].filter((n) => !n.closest('[hidden]')));
       });
       save.focus();
     });
