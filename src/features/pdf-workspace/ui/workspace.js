@@ -117,23 +117,25 @@
     release(tab.pdf);
   }
 
-  // Saves the tab's document over its file, or as a copy. The first save over a file asks once whether to replace it. Resolves true
-  // when what was asked is done, false when it was not (the user said no, or the main process said why in the corner notice).
-  async function save(tab, copy = false) {
+  // Saves the tab's document over its file, or as a copy. The first save over a file asks once whether to replace it. A copy is opened
+  // in a tab and this document is closed, unless the window is closing (`closing`). Resolves true when what was asked is done, false
+  // when it was not (the user said no, or the main process said why in the corner notice).
+  async function save(tab, copy = false, closing = false) {
     const { token, name: file } = tab.doc;
     if (!copy && !tab.replaceAsked) {
       const answer = await choose('Replace the original?', `Save over ${file}, or keep it as it is and save a copy.`, [{ label: 'Cancel', value: null }, { label: 'Save a copy', value: 'copy' }, { label: 'Replace', value: 'replace', primary: true }]);
       if (!answer) return false;
-      if (answer === 'copy') return save(tab, true);
+      if (answer === 'copy') return save(tab, true, closing);
       tab.replaceAsked = true;
     }
-    const result = await (copy ? window.workspaceApi.saveAs(token) : window.workspaceApi.save(token));
+    const result = await (copy ? window.workspaceApi.saveAs(token, !closing) : window.workspaceApi.save(token));
     if (result?.stop === 'changed') {
       const answer = await choose(`${file} was changed by another program.`, '', [{ label: 'Cancel', value: null }, { label: 'Reload', value: 'reload' }, { label: 'Save a copy', value: 'copy', primary: true }]);
       if (answer === 'reload') await window.workspaceApi.reload(token);
-      return answer === 'copy' ? save(tab, true) : false;
+      return answer === 'copy' ? save(tab, true, closing) : false;
     }
     if (!result || result.stop) return false;
+    if (result.copied) close(token);
     if (!copy && tab === active) {
       savedNote.textContent = 'Saved';
       savedNote.classList.add('on');
@@ -146,7 +148,7 @@
   // Resolves true when the tab's changes are saved or given up, false when the user cancels or saving fails.
   async function settle(tab) {
     const answer = await choose(`Save changes to ${tab.doc.name}?`, '', [{ label: 'Cancel', value: null }, { label: "Don't save", value: 'discard' }, { label: 'Save', value: 'save', primary: true }]);
-    return answer === 'discard' || (answer === 'save' && save(tab));
+    return answer === 'discard' || (answer === 'save' && save(tab, false, true));
   }
 
   async function closeTab(token) {

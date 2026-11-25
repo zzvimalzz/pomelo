@@ -33,7 +33,7 @@ function registerWorkspaceIpc({ documents, state, closeDocument, openDropped, pu
   ipcMain.handle('pdfws:undo', (e, token) => { guard(e); return undo(token); });
   ipcMain.handle('pdfws:redo', (e, token) => { guard(e); return redo(token); });
   ipcMain.handle('pdfws:save', (e, token) => { guard(e); return save(token); });
-  ipcMain.handle('pdfws:save-as', (e, token) => { guard(e); return saveAs(token); });
+  ipcMain.handle('pdfws:save-as', (e, token, openCopy) => { guard(e); return saveAs(token, openCopy === true); });
   ipcMain.handle('pdfws:reload', (e, token) => { guard(e); return reload(token); });
   ipcMain.handle('pdfws:close-window', (e) => { guard(e); closeWindow(); });
   ipcMain.handle('pdfws:drop', (e, paths) => { guard(e); openDropped(paths); });

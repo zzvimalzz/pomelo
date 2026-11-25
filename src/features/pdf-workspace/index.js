@@ -143,13 +143,19 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     }
   }
 
-  async function saveAs(token) {
+  // Saves a copy, and with `openCopy` shows it in a tab of its own: `copied` in the answer tells the page to close this document.
+  async function saveAs(token, openCopy) {
     const file = documents.fileOf(token);
     const suggested = uniquePath(path.dirname(file), `${path.basename(file, path.extname(file))} (edited)`, 'pdf');
     const target = await require('./workspace.window').chooseSavePath(win, suggested);
     if (!target) return { stop: 'cancelled' };
     const same = path.resolve(target).toLowerCase() === path.resolve(file).toLowerCase();
-    return revised(same ? documents.save(token) : documents.saveCopy(token, target), false);
+    const result = await revised(same ? documents.save(token) : documents.saveCopy(token, target), false);
+    if (!openCopy || same || !result?.info) return result;
+    const open = documents.find(target);
+    if (open) await revised(documents.reload(open.token), true);
+    await add([target]);
+    return { ...result, copied: !!documents.find(target) };
   }
 
   async function installPdfEngine() {

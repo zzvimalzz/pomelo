@@ -715,7 +715,7 @@
     eventBus.on('pagesinit', () => { installed(); if (wanted) show(); });
     eventBus.on('pagesdestroy', () => { if (pending) { thumbs?.release(); thumbs = null; } else teardown(); });
     api.leave = () => { if (wanted) leave(); };
-    api.use = (next) => { tab = next; enable(); };
+    api.use = (next) => { tab = next; markAdded(); enable(); };
     api.waiting = () => !!pending;
   }
 

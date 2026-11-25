@@ -2276,14 +2276,8 @@ app.whenReady().then(async () => {
     await js(win, `workspaceApi.redo(${JSON.stringify(token)})`);
     await until('nothing to save and the pages drawn', async () => { const now = await state(); return !now.button && now.pages > 0; });
 
-    const copy = path.join(root, `Copy-${theme}.pdf`);
-    dialog.showSaveDialog = async () => ({ canceled: false, filePath: copy });
     await put(edited);
     await until('the Save button', async () => (await state()).button);
-    await press(win, 'S', ['control', 'shift']);
-    await until('the copy', async () => fs.existsSync(copy));
-    st = await state();
-    check(`${theme}: Ctrl+Shift+S writes a copy, leaves the file as it was and keeps the changes`, fs.readFileSync(copy).equals(edited) && fs.readFileSync(file).equals(editedAgain) && st.dot && st.button, JSON.stringify(st));
 
     win.close();
     await until('the question', async () => !win.isDestroyed() && (await state()).card !== '');
@@ -2297,6 +2291,82 @@ app.whenReady().then(async () => {
     await js(win, `[...document.querySelectorAll('.veil .row button')].find((b) => b.textContent === "Don't save").click()`);
     await until('the window gone', () => win.isDestroyed());
     check(`${theme}: Don't save closes the window and leaves the file as it was`, win.isDestroyed() && fs.readFileSync(file).equals(editedAgain) && BrowserWindow.getAllWindows().length === 0);
+  }
+
+  console.log('saving a copy: it opens in place of the document');
+  {
+    const realSave = dialog.showSaveDialog;
+    const answerWith = (target) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: target }); };
+    const names = (win) => js(win, `workspaceApi.state()`).then((state) => state.documents.map((d) => d.name).join('|'));
+    const tokenOf = async (win, name) => (await js(win, `workspaceApi.state()`)).documents.find((d) => d.name === name).token;
+    const edit = (win, token, bytes) => js(win, `workspaceApi.putRevision(${JSON.stringify(token)}, Uint8Array.from(atob(${JSON.stringify(bytes.toString('base64'))}), (c) => c.charCodeAt(0)))`);
+    const buttons = (win) => js(win, `({ save: !document.getElementById('savebtn').hidden, dot: !document.getElementById('docdot').hidden, tabs: document.querySelectorAll('#tabs .tab').length })`);
+    for (const theme of ['light', 'dark']) {
+      nativeTheme.themeSource = theme;
+      const file = await makePdf(`Copy-source-${theme}.pdf`, 2);
+      const other = await makePdf(`Copy-other-${theme}.pdf`, 1);
+      const original = fs.readFileSync(file);
+      const edited = Buffer.concat([original, Buffer.from('\n% edited\n%%EOF\n')]);
+      const workspace = fresh();
+      const win = await openAndWait(workspace, other);
+      await workspace.open([file]);
+      await until('both documents', async () => (await names(win)) === `Copy-other-${theme}.pdf|Copy-source-${theme}.pdf`);
+      await edit(win, await tokenOf(win, `Copy-source-${theme}.pdf`), edited);
+      await until('the Save button', async () => (await buttons(win)).save);
+      const copy = path.join(root, `Copy-of-${theme}.pdf`);
+      answerWith(copy);
+      await press(win, 'S', ['control', 'shift']);
+      await until('the copy open', async () => (await names(win)) === `Copy-other-${theme}.pdf|Copy-of-${theme}.pdf`);
+      await until('the copy shown', () => js(win, `!!document.querySelector('.page[data-loaded="true"] canvas')`));
+      const now = await buttons(win);
+      check(`${theme}: Ctrl+Shift+S writes the copy, opens it in a tab of its own and closes the document it came from`, fs.readFileSync(copy).equals(edited) && fs.readFileSync(file).equals(original) && (await names(win)) === `Copy-other-${theme}.pdf|Copy-of-${theme}.pdf` && now.tabs === 2, JSON.stringify([await names(win), now]));
+      check(`${theme}: the copy is shown, with nothing to save, and the window says its name`, win.getTitle() === `Copy-of-${theme}.pdf - Pomelo` && !now.save && !now.dot, JSON.stringify([win.getTitle(), now]));
+      await closeAndWait(win);
+
+      const alone = await makePdf(`Copy-alone-${theme}.pdf`, 1);
+      const second = await openAndWait(fresh(), alone);
+      await edit(second, await tokenOf(second, `Copy-alone-${theme}.pdf`), Buffer.concat([fs.readFileSync(alone), Buffer.from('\n% edited\n%%EOF\n')]));
+      await until('the Save button', async () => (await buttons(second)).save);
+      const lone = path.join(root, `Copy-lone-${theme}.pdf`);
+      answerWith(lone);
+      await press(second, 'S', ['control', 'shift']);
+      await until('the copy open', async () => (await names(second)) === `Copy-lone-${theme}.pdf`);
+      check(`${theme}: with the one document in the window the copy takes its place and the window stays`, !second.isDestroyed() && fs.existsSync(lone) && fs.readFileSync(lone).length > 0, JSON.stringify(await names(second)));
+      await closeAndWait(second);
+
+      const first = await makePdf(`Copy-first-${theme}.pdf`, 1);
+      const target = await makePdf(`Copy-target-${theme}.pdf`, 3);
+      const workspaceTwo = fresh();
+      const third = await openAndWait(workspaceTwo, first);
+      await workspaceTwo.open([target]);
+      await until('both documents', async () => (await names(third)).split('|').length === 2);
+      const wrote = Buffer.concat([fs.readFileSync(first), Buffer.from('\n% mine\n%%EOF\n')]);
+      await js(third, `document.querySelector('#tabs .tab').click()`);
+      await until('the first tab', async () => third.getTitle() === `Copy-first-${theme}.pdf - Pomelo`);
+      await edit(third, await tokenOf(third, `Copy-first-${theme}.pdf`), wrote);
+      await until('the Save button', async () => (await buttons(third)).save);
+      answerWith(target);
+      await press(third, 'S', ['control', 'shift']);
+      await until('the document closed', async () => (await names(third)) === `Copy-target-${theme}.pdf`);
+      await until('the target shown again', () => js(third, `!!document.querySelector('.page[data-loaded="true"] canvas')`));
+      check(`${theme}: a copy saved over a file that is open in another tab shows that file as it is now, in that tab`, fs.readFileSync(target).equals(wrote) && third.getTitle() === `Copy-target-${theme}.pdf - Pomelo` && !(await buttons(third)).save, JSON.stringify([await names(third), third.getTitle()]));
+      await closeAndWait(third);
+
+      const closing = await makePdf(`Copy-closing-${theme}.pdf`, 1);
+      const fourth = await openAndWait(fresh(), closing);
+      await edit(fourth, await tokenOf(fourth, `Copy-closing-${theme}.pdf`), Buffer.concat([fs.readFileSync(closing), Buffer.from('\n% edited\n%%EOF\n')]));
+      const later = path.join(root, `Copy-closing-saved-${theme}.pdf`);
+      answerWith(later);
+      fourth.close();
+      await until('the question', () => js(fourth, `!!document.querySelector('.veil h3')`));
+      await js(fourth, `[...document.querySelectorAll('.veil .row button')].find((b) => b.textContent === 'Save').click()`);
+      await until('the replace question', () => js(fourth, `document.querySelector('.veil h3')?.textContent === 'Replace the original?'`));
+      await js(fourth, `[...document.querySelectorAll('.veil .row button')].find((b) => b.textContent === 'Save a copy').click()`);
+      await until('the window gone', () => fourth.isDestroyed());
+      check(`${theme}: a copy saved while the window is closing is written and the window closes, with nothing opened`, fs.existsSync(later) && BrowserWindow.getAllWindows().length === 0);
+    }
+    dialog.showSaveDialog = realSave;
+    nativeTheme.themeSource = 'light';
   }
 
   {
@@ -3070,6 +3140,22 @@ app.whenReady().then(async () => {
           check(`${theme}: a file dropped on the grid that is neither a PDF nor a picture changes nothing`, (await grid(win)).cells === 14 && (await tabs()) === tabsBefore);
           notices.length = 0;
           drops.detach();
+          await js(win, `document.querySelector('.cell').focus()`);
+          await press(win, 's', ['control']);
+          await until('the question', () => js(win, `document.querySelector('.veil h3')?.textContent === 'Replace the original?'`));
+          await js(win, `[...document.querySelectorAll('.veil .row button')].find((b) => b.textContent === 'Replace').click()`);
+          await until('the save', async () => !(await bar(win)).save);
+          await sleep(300);
+          check(`${theme}: Replace saves the file with its new pages, and the Added tags go, the grid staying as it is`, (await tagged(win)) === '' && (await grid(win)).cells === 14 && (await grid(win)).shown && (await PDFDocument.load(fs.readFileSync(doc), { ignoreEncryption: true, updateMetadata: false })).getPageCount() === 14, JSON.stringify([await tagged(win), (await grid(win)).cells]));
+          await clickCell(win, 3);
+          await insertMenu(win);
+          await choose(win, 'Blank page');
+          await until('the blank page', async () => (await grid(win)).cells === 15);
+          await settled(win);
+          check(`${theme}: a page put in after the save is the only one tagged`, (await tagged(win)) === '4', await tagged(win));
+          await push(win, 'Undo');
+          await settled(win);
+          check(`${theme}: undoing it goes back to the file as saved, with no tag and nothing to save`, (await tagged(win)) === '' && !(await bar(win)).save && (await grid(win)).cells === 14);
           dialog.showOpenDialog = realOpen;
           win.destroy();
           await sleep(500);

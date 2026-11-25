@@ -340,6 +340,14 @@ OK`; } });
   added4.push('[1]');
   const blanked = (await grid.apply(shelf.token, [{ op: 'pages.blank', before: 4 }])).info;
   expect('a blank page is a change to save too, and is added', blanked.dirty === true && JSON.stringify(blanked.added) === '[4]', JSON.stringify(blanked));
+  const shelfSaved = (await grid.save(shelf.token)).info;
+  expect('saving makes the pages put in part of the file, so none is added any more', shelfSaved.dirty === false && shelfSaved.added.length === 0, JSON.stringify(shelfSaved));
+  added4.push('[1]');
+  const after = (await grid.apply(shelf.token, [{ op: 'pages.blank', before: 1 }])).info;
+  expect('a page put in after a save is the only one added', after.dirty === true && JSON.stringify(after.added) === '[1]', JSON.stringify(after));
+  const atSave = (await grid.undo(shelf.token)).info;
+  expect('undoing to the file as saved has nothing to save and nothing added', atSave.dirty === false && atSave.added.length === 0, JSON.stringify(atSave));
+  expect('undoing past the save leaves something to save', (await grid.undo(shelf.token)).info.dirty === true);
   await grid.closeAll();
 
   const outputs = path.join(root, 'Taken.pdf');
