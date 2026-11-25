@@ -8,31 +8,8 @@
   let progress = null;
   window.workspaceApi.onInstallNote((p) => progress?.(p));
 
-  // A card over a veil in the document area, labelled by the element whose id is dialog-title. While it is up everything round it is
-  // inert, so nothing behind it can be clicked, selected or scrolled, and close() gives that back (a folded dock stays inert).
-  function frame() {
-    const box = el('div', 'card');
-    box.setAttribute('role', 'dialog');
-    box.setAttribute('aria-modal', 'true');
-    box.setAttribute('aria-labelledby', 'dialog-title');
-    const veil = el('div', 'veil');
-    veil.append(box);
-    veil.addEventListener('mousedown', (e) => { if (e.target === veil) e.preventDefault(); });
-    document.querySelector('.well').append(veil);
-    const idle = [];
-    for (let n = veil; n !== document.body; n = n.parentElement) {
-      for (const other of n.parentElement.children) if (other !== n && !other.inert) { other.inert = true; idle.push(other); }
-    }
-    const close = () => { veil.remove(); for (const n of idle) n.inert = false; };
-    return { box, close };
-  }
-
-  function loop(e, stops) {
-    const live = stops.filter((s) => !s.disabled);
-    const next = live[(live.indexOf(document.activeElement) + (e.shiftKey ? -1 : 1) + live.length) % live.length];
-    e.preventDefault();
-    next.focus();
-  }
+  const frame = () => window.pomeloCard.frame(document.querySelector('.well'));
+  const { loop } = window.pomeloCard;
 
   function build() {
     const { box, close } = frame();
@@ -353,5 +330,5 @@
     });
   }
 
-  window.workspaceDialogs = { askPassword, closePassword, confirmLink, engineCard, choose, chooseColours, isOpen: () => !!document.querySelector('[aria-modal="true"]') };
+  window.workspaceDialogs = { askPassword, closePassword, confirmLink, engineCard, choose, chooseColours, isOpen: window.pomeloCard.isOpen };
 })();

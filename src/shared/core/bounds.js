@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// Where the workspace window opens: the place it was left in the last 24 hours, or the middle of the main screen at the default size
+// Where an app window opens: the place it was left in the last 24 hours, or the middle of the main screen at the default size
 // when that place is older or is no longer on any screen. No Electron in here: the app hands in the screens' work areas.
 const DEFAULT = { width: 1200, height: 800 };
 const MIN = { width: 900, height: 600 };
