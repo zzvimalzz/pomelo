@@ -286,7 +286,9 @@ OK`;
   console.log('pages put in and written out');
   const runsOf = [];
   let added = '[2]';
+  const madeFrom = [];
   const inserting = createDocuments({
+    makePdf: async (file, folder) => { madeFrom.push({ file, folder }); fs.writeFileSync(path.join(folder, 'Made.pdf'), '%PDF-1.7 made'); return [path.join(folder, 'Made.pdf')]; },
     checkPassword: async (file, password) => password.toString() === 'right',
     runPdfTool: async (script, args, options) => {
       runsOf.push({ args, list: JSON.parse(fs.readFileSync(args[2], 'utf8')), secrets: options.secrets });
@@ -358,21 +360,21 @@ OK`; } });
   expect('the helper is asked for the pages in a list of one change, on the revision on show', runsOf.length === ran + 1 && JSON.stringify(runsOf.at(-1).list.ops) === '[{"op":"pages.extract","pages":[3,1]}]' && /revision-\d+\.pdf$/.test(runsOf.at(-1).args[0]));
   expect('what the helper wrote is not left in the temp folder', !fs.existsSync(runsOf.at(-1).args[1]));
   expect('pages that are not a list of pages are refused before the helper starts', (() => { try { inserting.extract(chapter.token, [], outputs); return false; } catch { return true; } })() && runsOf.length === ran + 1);
-  const joined = inserting.addSource(piece, 'pdf');
-  const combinedTo = path.join(root, 'Combined.pdf');
+  const letter = make('Letter.docx', 'a letter');
+  const asDocument = inserting.addSource(letter, 'document');
+  await inserting.apply(chapter.token, [insertAt(1, asDocument)]);
+  const madeAt = madeFrom.at(-1);
+  expect('a document is made into a PDF in a folder of its own, and the helper reads that PDF in its place', madeFrom.length === 1 && madeAt.file === letter && JSON.stringify(runsOf.at(-1).list.ops[0].sources) === JSON.stringify([{ id: asDocument, file: path.join(madeAt.folder, 'Made.pdf'), kind: 'pdf' }]));
+  expect('the PDF it was made into is removed once the change is made', !fs.existsSync(path.dirname(madeAt.folder)));
   const asBefore = JSON.stringify(inserting.list()[0]);
-  const combined = await inserting.merge(chapter.token, [joined], 1, combinedTo);
-  expect('combining writes the document and the files to the target and leaves the document and its revisions as they were', combined.done === true && fs.existsSync(combinedTo) && JSON.stringify(inserting.list()[0]) === asBefore);
-  expect('the helper is given the files by path and kind under their ids, and the place of the document', JSON.stringify(runsOf.at(-1).list.ops) === JSON.stringify([{ op: 'pages.merge', sources: [{ id: joined, file: piece, kind: 'pdf' }], at: 1 }]));
-  expect('a file is forgotten once it was combined', await inserting.merge(chapter.token, [joined], 1, combinedTo).then(() => '', (e) => e.message) === 'A file to insert is no longer available.');
-  expect('files that are not ids are refused before the helper starts', (() => { try { inserting.merge(chapter.token, [piece], 0, combinedTo); return false; } catch { return true; } })());
+  const nowhere = path.join(root, 'Other.pdf');
   const parted = [];
   const ranBefore = runsOf.length;
   const made = await inserting.split(chapter.token, [[1, 2], [3]], (pages) => { parted.push(pages); return path.join(root, `Taken ${pages.join('-')}.pdf`); });
   expect('a split writes each list of pages to the path it is given, and leaves the document as it was', made.done === true && JSON.stringify(made.files.map((f) => path.basename(f))) === '["Taken 1-2.pdf","Taken 3.pdf"]' && made.files.every((f) => fs.existsSync(f)) && JSON.stringify(inserting.list()[0]) === asBefore);
   expect('the helper is run once for each file, on the same revision', runsOf.length === ranBefore + 2 && JSON.stringify(runsOf.slice(-2).map((r) => r.list.ops)) === '[[{"op":"pages.extract","pages":[1,2]}],[{"op":"pages.extract","pages":[3]}]]' && runsOf.at(-1).args[0] === runsOf.at(-2).args[0]);
   expect('each name is asked for once, as that file is about to be written', JSON.stringify(parted) === '[[1,2],[3]]');
-  expect('a split with a list that is not pages is refused before any file is written', (() => { try { inserting.split(chapter.token, [[1], []], () => combinedTo); return false; } catch { return true; } })() && runsOf.length === ranBefore + 2);
+  expect('a split with a list that is not pages is refused before any file is written', (() => { try { inserting.split(chapter.token, [[1], []], () => nowhere); return false; } catch { return true; } })() && runsOf.length === ranBefore + 2);
   const clean = await createDocuments({ runPdfTool: async (script, args) => { fs.writeFileSync(args[1], '%PDF-1.7 out %%EOF'); runsOf.push({ source: args[0] }); return ''; } });
   const plain = await clean.open(make('Plain.pdf', '%PDF-1.7 plain'));
   await clean.extract(plain.token, [1], path.join(root, 'Plain out.pdf'));

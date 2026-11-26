@@ -5,6 +5,7 @@
   const { el } = window.pomeloUi;
   const SIDES = ['bottom', 'top', 'left', 'right'];
   const KEYS = { ArrowDown: 'bottom', ArrowUp: 'top', ArrowLeft: 'left', ArrowRight: 'right' };
+  const MARGIN = 16;
   const area = () => document.querySelector('.well');
   const calm = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -16,6 +17,23 @@
   function nearest(x, y, width, height) {
     const away = { bottom: [x - width / 2, y - height], top: [x - width / 2, y], left: [x, y - height / 2], right: [x - width, y - height / 2] };
     return SIDES.reduce((best, side) => (Math.hypot(...away[side]) < Math.hypot(...away[best]) ? side : best));
+  }
+
+  // The dock's size in a row and in a column, so each place marked while dragging is the size of the dock that lands there. Transitions
+  // are held off while the layout is switched to measure it, or the labels and the fold button would start to move. The page grid's
+  // padding follows the dock, so its scroll is put back in case the switch cut it short.
+  function sizes(dock) {
+    const was = area().dataset.dock;
+    const grid = document.querySelector('.pgrid');
+    const scrolled = grid.scrollTop;
+    dock.classList.add('measuring');
+    const measure = (side) => { area().dataset.dock = side; return [dock.offsetWidth, dock.offsetHeight]; };
+    const row = measure('bottom');
+    const column = measure('left');
+    area().dataset.dock = was;
+    grid.scrollTop = scrolled;
+    dock.classList.remove('measuring');
+    return { bottom: row, top: row, left: column, right: column };
   }
 
   // Puts the dock at `side` and eases it over from where it was, then tells the main process so the place is kept.
@@ -45,15 +63,20 @@
       const box = dock.getBoundingClientRect();
       const grabX = down.clientX - box.left;
       const grabY = down.clientY - box.top;
-      const spots = SIDES.map((side) => [side, el('div', `snap ${side}`)]);
+      const size = sizes(dock);
+      const spots = SIDES.map((side) => {
+        const spot = el('div', `snap ${side}`);
+        Object.assign(spot.style, { width: `${size[side][0]}px`, height: `${size[side][1]}px` });
+        return [side, spot];
+      });
       area().append(...spots.map(([, spot]) => spot));
       grip.setPointerCapture(down.pointerId);
       dock.classList.add('dragging');
       let side = null;
 
       const follow = (move) => {
-        dock.style.left = `${Math.min(Math.max(move.clientX - bounds.left - grabX, 0), bounds.width - box.width)}px`;
-        dock.style.top = `${Math.min(Math.max(move.clientY - bounds.top - grabY, 0), bounds.height - box.height)}px`;
+        dock.style.left = `${Math.min(Math.max(move.clientX - bounds.left - grabX, MARGIN), bounds.width - box.width - MARGIN)}px`;
+        dock.style.top = `${Math.min(Math.max(move.clientY - bounds.top - grabY, MARGIN), bounds.height - box.height - MARGIN)}px`;
         side = nearest(move.clientX - bounds.left, move.clientY - bounds.top, bounds.width, bounds.height);
         for (const [name, spot] of spots) spot.classList.toggle('on', name === side);
       };

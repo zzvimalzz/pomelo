@@ -15,18 +15,12 @@ expect('pages move before another page, or to the end, and edit in place', JSON.
 const ids = ['a'.repeat(32), 'b'.repeat(32)];
 expect('files are inserted before a page by the ids they were given, and a blank page needs only its place', JSON.stringify(check([{ op: 'pages.insert', before: 3, sources: ids }, { op: 'pages.blank', before: 1 }])) === JSON.stringify([{ op: 'pages.insert', before: 3, sources: ids }, { op: 'pages.blank', before: 1 }]));
 expect('inserting and a blank page add to the file, and extracting writes another one', OPS['pages.insert'].kind === 'new' && OPS['pages.blank'].kind === 'new' && OPS['pages.extract'].kind === 'output');
-expect('files are combined by their ids, with the place the open document takes among them, and make a new file', JSON.stringify(check([{ op: 'pages.merge', sources: ids, at: 1 }])) === JSON.stringify([{ op: 'pages.merge', sources: ids, at: 1 }]) && OPS['pages.merge'].kind === 'output' && !refused([{ op: 'pages.merge', sources: ids, at: 0 }]) && !refused([{ op: 'pages.merge', sources: ids, at: 50 }]));
 expect('pictures of the usual kinds can be inserted, and no program or archive', PICTURE_EXTENSIONS.includes('png') && PICTURE_EXTENSIONS.includes('jpg') && !PICTURE_EXTENSIONS.some((e) => ['exe', 'pdf', 'zip'].includes(e)));
 const info = { op: 'meta.set', title: 'Annual report', author: '', subject: 'Résumé 日本', keywords: 'a, b' };
 expect('the document information is set as four texts, which may be empty, and edits in place', JSON.stringify(check([info])) === JSON.stringify([info]) && OPS['meta.set'].kind === 'direct');
 expect('a text of 1000 characters is allowed', !refused([{ ...info, title: 'x'.repeat(1000) }]));
 
 console.log('what is refused');
-for (const [what, list] of Object.entries({
-  'combining with no files': [{ op: 'pages.merge', sources: [], at: 0 }], 'combining with a path in place of an id': [{ op: 'pages.merge', sources: ['C:/a.pdf'], at: 0 }],
-  'a place before the first file': [{ op: 'pages.merge', sources: ids, at: -1 }], 'a place that is not a whole number': [{ op: 'pages.merge', sources: ids, at: 1.5 }],
-  'combining with no place': [{ op: 'pages.merge', sources: ids }], 'combining with a target path': [{ op: 'pages.merge', sources: ids, at: 0, target: 'C:/x.pdf' }],
-})) expect(`${what} is refused`, refused(list));
 const bad = {
   'no list': undefined, 'a list that is not a list': { op: 'pages.delete', pages: [1] }, 'an empty list': [],
   'more than 1000 changes': Array.from({ length: 1001 }, () => ({ op: 'pages.delete', pages: [1] })),
@@ -89,7 +83,9 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
 expect('ranges, single pages and an open end each make a file', same(splitParts({ mode: 'ranges', text: '1-3, 7, 10-' }, 12).parts, [[1, 2, 3], [7], [10, 11, 12]]));
 expect('spaces round the numbers and the dash do not matter, and a range may repeat pages of another', same(splitParts({ mode: 'ranges', text: ' 1 - 2 ,2-3 ' }, 5).parts, [[1, 2], [2, 3]]));
-for (const text of ['', ' ', '0', '3-1', '1-13', '13', '1,,2', '1,', ',1', 'a', '1-3-5', '-3', '1;2', '1 2', '1.5', '١', '10-13']) expect(`the ranges "${text}" are refused with the sentence for page numbers`, splitParts({ mode: 'ranges', text }, 12).error === 'Use page numbers such as 1-3, 7');
+for (const text of ['', ' ', '0', '3-1', '1,,2', '1,', ',1', 'a', '1-3-5', '-3', '1;2', '1 2', '1.5', '١', '0-13']) expect(`the ranges "${text}" are refused with the sentence for page numbers`, splitParts({ mode: 'ranges', text }, 12).error === 'Use page numbers such as 1-3, 7');
+for (const text of ['1-13', '13', '10-13', '13-', '1-3, 9-20']) expect(`the ranges "${text}" in a document of 12 pages are refused with its page count`, splitParts({ mode: 'ranges', text }, 12).error === 'This document has 12 pages');
+expect('a document of one page says page, not pages', splitParts({ mode: 'ranges', text: '2' }, 1).error === 'This document has 1 page');
 expect('ranges that are not text, or too long, are refused', !!splitParts({ mode: 'ranges', text: 5 }, 12).error && !!splitParts({ mode: 'ranges', text: '1,'.repeat(600) }, 12).error);
 expect('every n pages makes files of n pages and a shorter last one', same(splitParts({ mode: 'every', n: 5 }, 12).parts, [range(1, 5), range(6, 10), [11, 12]]) && same(splitParts({ mode: 'every', n: 1 }, 3).parts, [[1], [2], [3]]));
 for (const n of [0, -1, 1.5, '5', null, 12, 13]) expect(`every ${JSON.stringify(n)} pages in a document of 12 is refused with the sentence for a number`, splitParts({ mode: 'every', n }, 12).error === 'Use a number of pages such as 5');

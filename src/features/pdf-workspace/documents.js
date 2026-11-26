@@ -32,8 +32,9 @@ const driveOf = (where) => path.parse(path.resolve(where)).root.replace(/\\$/, '
 const freeBytes = async (dir) => { const f = await fs.promises.statfs(dir); return f.bavail * f.bsize; };
 
 // runPdfTool(script, args, { src, signal, secrets }): runs a PDF editing helper (the app hands in the conversion feature's).
-// checkPassword(file, password): resolves whether a Buffer opens a PDF.
-function createDocuments({ runPdfTool, checkPassword } = {}) {
+// checkPassword(file, password): resolves whether a Buffer opens a PDF. makePdf(file, folder, signal): makes a PDF of a document in that
+// folder and resolves [its path].
+function createDocuments({ runPdfTool, checkPassword, makePdf } = {}) {
   const byToken = new Map();
   const passwords = new Map();
   const sources = new Map();
@@ -187,7 +188,8 @@ function createDocuments({ runPdfTool, checkPassword } = {}) {
     return (await Promise.all(files.map((file) => fs.promises.stat(file).then((stat) => stat.size)))).reduce((sum, size) => sum + size, 0);
   }
 
-  const withFiles = (op) => (op.sources ? { ...op, sources: op.sources.map((id) => ({ id, file: sources.get(id).file, kind: sources.get(id).kind })) } : op);
+  // `pdfs` holds the PDF each document was made into, which the helper reads in its place.
+  const withFiles = (op, pdfs) => (op.sources ? { ...op, sources: op.sources.map((id) => (pdfs.has(id) ? { id, file: pdfs.get(id), kind: 'pdf' } : { id, file: sources.get(id).file, kind: sources.get(id).kind })) } : op);
 
   const sourceSecrets = (token, ids) => {
     const locked = Object.fromEntries(ids.filter((id) => sources.get(id)?.password).map((id) => [id, sources.get(id).password.toString('utf8')]));
@@ -211,8 +213,15 @@ function createDocuments({ runPdfTool, checkPassword } = {}) {
       const pagesOnly = list.every((op) => op.op.startsWith('pages.'));
       const out = path.join(doc.session, `revision-${++doc.count}.pdf`);
       const listFile = path.join(doc.session, `ops-${doc.count}.json`);
+      const madeIn = path.join(doc.session, `made-${doc.count}`);
+      const pdfs = new Map();
       try {
-        await fs.promises.writeFile(listFile, JSON.stringify({ version: 1, ops: list.map(withFiles) }));
+        for (const id of taken.filter((t) => sources.get(t).kind === 'document')) {
+          const folder = path.join(madeIn, String(pdfs.size));
+          await fs.promises.mkdir(folder, { recursive: true });
+          pdfs.set(id, (await makePdf(sources.get(id).file, folder, doc.stop.signal))[0]);
+        }
+        await fs.promises.writeFile(listFile, JSON.stringify({ version: 1, ops: list.map((op) => withFiles(op, pdfs)) }));
         const said = await runPdfTool('pdf_edit.py', [source, out, listFile], { src: source, signal: doc.stop.signal, secrets: sourceSecrets(token, taken) });
         const count = Number(/"pages": (\d+)/.exec(said)?.[1]);
         const added = JSON.parse(/"added": (\[[\d, ]*\])/.exec(said)?.[1] ?? '[]');
@@ -228,6 +237,7 @@ function createDocuments({ runPdfTool, checkPassword } = {}) {
       } finally {
         forgetSources(taken);
         await fs.promises.rm(listFile, { force: true });
+        await fs.promises.rm(madeIn, { recursive: true, force: true });
       }
     });
   }
@@ -235,14 +245,13 @@ function createDocuments({ runPdfTool, checkPassword } = {}) {
   // Writes what a change of kind `output` makes from the revision on show as a new PDF at `target`, leaving the document and its revisions
   // as they are. Resolves { done } or { stop } like saveCopy, and rejects with the helper's reason when it fails. Runs inside the document's turn.
   async function writeOutput(doc, token, change, target) {
-    const taken = change.sources ?? [];
     const source = doc.revisions.current();
     const free = await freeBytes(os.tmpdir());
-    if (free < source.size + (await sourceBytes(taken)) + FREE_MARGIN) return stopped(doc, 'no-space', os.tmpdir());
+    if (free < source.size + FREE_MARGIN) return stopped(doc, 'no-space', os.tmpdir());
     const there = await fileIdentity(target).catch((e) => { if (e.code === 'ENOENT') return null; throw e; });
     return withTempFile('pdf', (out) => withTempFile('json', async (listFile) => {
-      await fs.promises.writeFile(listFile, JSON.stringify({ version: 1, ops: [withFiles(change)] }));
-      await runPdfTool('pdf_edit.py', [source.file, out, listFile], { src: source.file, signal: doc.stop.signal, secrets: sourceSecrets(token, taken) });
+      await fs.promises.writeFile(listFile, JSON.stringify({ version: 1, ops: [change] }));
+      await runPdfTool('pdf_edit.py', [source.file, out, listFile], { src: source.file, signal: doc.stop.signal, secrets: secretsOf(token) });
       const result = await replaceFile(out, target, there);
       return result.stop ? stopped(doc, result.stop, target) : { done: true };
     }));
@@ -253,19 +262,6 @@ function createDocuments({ runPdfTool, checkPassword } = {}) {
     const doc = get(token);
     return serial(doc, () => writeOutput(doc, token, change, target));
   };
-
-  // The document and the files named by id (in the order given, the document after the first `at` of them) as one new PDF at `target`.
-  function merge(token, ids, at, target) {
-    const [change] = check([{ op: 'pages.merge', sources: ids, at }]);
-    const doc = get(token);
-    return serial(doc, async () => {
-      try {
-        return await writeOutput(doc, token, change, target);
-      } finally {
-        forgetSources(ids);
-      }
-    });
-  }
 
   // Each list of pages as a new PDF, in one turn so they all come from the same revision. `nameFor(pages)` gives the path of the next
   // one. Resolves { done, files } or the { stop } that ended it; the files made before it stay.
@@ -411,7 +407,7 @@ function createDocuments({ runPdfTool, checkPassword } = {}) {
 
   const served = () => [...byToken.values()].reduce((sum, doc) => sum + doc.served, 0);
 
-  return { open, find, list, read, unlock, password, fileOf, putRevision, apply, addSource, unlockSource, extract, merge, split, facts, details, rename, undo, redo, save, saveCopy, reload, close, closeAll, served };
+  return { open, find, list, read, unlock, password, fileOf, putRevision, apply, addSource, unlockSource, extract, split, facts, details, rename, undo, redo, save, saveCopy, reload, close, closeAll, served };
 }
 
 const sweepSessions = () => sweepTempDirs(SESSION_TAG, 24 * 3600 * 1000);

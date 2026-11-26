@@ -11,7 +11,7 @@ const os = require('os');
 const path = require('path');
 const { PDFDocument, PDFName, PDFRawStream, PDFString, PDFHexString, StandardFonts, clip, endPath, popGraphicsState, pushGraphicsState, rectangle, rgb } = require('pdf-lib');
 const { createWorkspace } = require('../../src/features/pdf-workspace');
-const { uniquePath, runPdfTool, detectEngines, probeLocked, checkPassword } = require('../../src/features/conversion');
+const { uniquePath, runPdfTool, detectEngines, probeLocked, checkPassword, asPdf, pdfSourceExts, convertFile } = require('../../src/features/conversion');
 const { expect: check, failed } = require('../support/expect');
 const { encryptedPdf } = require('../support/encrypted-pdf');
 const finish = require('../support/finish');
@@ -40,8 +40,8 @@ const setSettings = (patch) => { writes++; settings = { ...settings, ...patch };
 const VIEW_KEYS = ['zoom', 'layout', 'sidebar', 'pageColours'];
 const fresh = ({ keepView = false, ...options } = {}) => {
   if (!keepView && settings.pdfView && typeof settings.pdfView === 'object') settings = { ...settings, pdfView: Object.fromEntries(Object.entries(settings.pdfView).filter(([key]) => !VIEW_KEYS.includes(key))) };
-  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'pdfws:put-revision', 'pdfws:apply', 'pdfws:undo', 'pdfws:redo', 'pdfws:save', 'pdfws:save-as', 'pdfws:choose-sources', 'pdfws:drop-sources', 'pdfws:unlock-source', 'pdfws:extract', 'pdfws:combine', 'pdfws:split', 'pdfws:reload', 'pdfws:close-window', 'pdfws:properties', 'pdfws:details', 'pdfws:rename', 'pdfws:show', 'pdfws:engine', 'pdfws:install-engine']) ipcMain.removeHandler(channel);
-  const workspace = createWorkspace({ hasPdfEngine: () => true, asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), uniquePath, runPdfTool, probeLocked, checkPassword, showInFolder: (file) => shown.push(file), ...options });
+  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'pdfws:put-revision', 'pdfws:apply', 'pdfws:undo', 'pdfws:redo', 'pdfws:save', 'pdfws:save-as', 'pdfws:choose-sources', 'pdfws:drop-sources', 'pdfws:unlock-source', 'pdfws:extract', 'pdfws:split-plan', 'pdfws:split', 'pdfws:reload', 'pdfws:close-window', 'pdfws:properties', 'pdfws:details', 'pdfws:rename', 'pdfws:show', 'pdfws:engine', 'pdfws:install-engine']) ipcMain.removeHandler(channel);
+  const workspace = createWorkspace({ hasPdfEngine: () => true, asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), uniquePath, runPdfTool, probeLocked, checkPassword, asPdf, pdfSourceExts, makePdf: (src, outDir, signal) => convertFile(src, 'pdf', { outDir, signal }), showInFolder: (file) => shown.push(file), ...options });
   workspace.registerIpc();
   return workspace;
 };
@@ -54,6 +54,20 @@ const until = async (what, fn, ms = 20000) => {
   return false;
 };
 
+// The ink in an element that differs most from the paper at its top left corner, against that paper, from a capture of the window, so
+// see-through colours are measured as they are shown.
+async function inkContrast(win, selector) {
+  const room = await js(win, `(() => { const c = document.querySelector(${JSON.stringify(selector)}); const r = c.getBoundingClientRect(); return { text: c.scrollWidth, box: c.clientWidth, rect: [r.left, r.top, r.right, r.bottom], width: innerWidth }; })()`);
+  const capture = await win.webContents.capturePage();
+  const bitmap = capture.toBitmap();
+  const k = capture.getSize().width / room.width;
+  const at = (x, y) => { const p = (Math.round(y * k) * capture.getSize().width + Math.round(x * k)) * 4; return [bitmap[p + 2], bitmap[p + 1], bitmap[p]]; };
+  const shade = (rgb) => rgb.map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }).reduce((sum, v, n) => sum + v * [0.2126, 0.7152, 0.0722][n], 0);
+  const paper = shade(at(room.rect[0] + 2, room.rect[1] + 2));
+  let ink = paper;
+  for (let y = room.rect[1]; y < room.rect[3]; y += 0.5) for (let x = room.rect[0]; x < room.rect[2]; x += 0.5) { const s = shade(at(x, y)); if (Math.abs(s - paper) > Math.abs(ink - paper)) ink = s; }
+  return { ...room, ratio: (Math.max(paper, ink) + 0.05) / (Math.min(paper, ink) + 0.05) };
+}
 async function makePdf(name, pages, { extraBytes = 0 } = {}) {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -922,12 +936,18 @@ app.whenReady().then(async () => {
     check('the page number and the total stand on the same line', Math.abs(digit.top - total.top) <= 1 && Math.abs(digit.bottom - total.bottom) <= 1, JSON.stringify([digit, total]));
     check('the dock starts at the bottom middle, 16 px up, in a row', v.side === 'bottom' && Math.abs(v.cx) < 2 && Math.abs(v.bottom - 16) < 2 && !v.column, JSON.stringify(v));
     check('a grip leads the dock, ahead of the page buttons, with a tooltip', (await js(win, `(() => { const g = document.querySelector('.dock').firstElementChild; return g.className === 'grip' && g.title === 'Drag to move' && g.getAttribute('aria-label') === 'Drag to move'; })()`)));
+    const dockSize = () => js(win, `(() => { const d = document.querySelector('.dockwrap'); return d.offsetWidth + 'x' + d.offsetHeight; })()`);
+    const row = await dockSize();
     await dragTo(...edges.left, true);
     v = await where();
     check('while it is dragged the dock follows the pointer and four places are marked, the nearest in the accent', v.dragging && v.ghosts === 4 && v.on.join() === 'left' && v.left < 120, JSON.stringify(v));
+    check(`held against the left edge it keeps the 16 px it rests at (it went to 0 before), so its corner and shadow are not cut (${v.left} px)`, Math.abs(v.left - 16) < 1, JSON.stringify(v));
+    const places = await js(win, `(() => { const s = (side) => { const r = document.querySelector('.snap.' + side).getBoundingClientRect(); return Math.round(r.width) + 'x' + Math.round(r.height); }; return { row: [s('bottom'), s('top')], column: [s('left'), s('right')] }; })()`);
     await shot(win, 'workspace-dock-dragging.png');
     mouse('mouseUp', ...edges.left);
     await sleep(800);
+    const upright = await dockSize();
+    check(`each place marked while dragging is the size of the dock that lands there, ${row} in a row and ${upright} in a column (they were 326x50 and 76x260)`, places.row.every((s) => s === row) && places.column.every((s) => s === upright), JSON.stringify([places, row, upright]));
     v = await where();
     check('dropped near the left edge it stands at the left middle, as a column', v.side === 'left' && v.column && Math.abs(v.left - 16) < 2 && Math.abs(v.cy) < 2 && v.ghosts === 0 && !v.dragging && v.opacity === '1' && v.inside, JSON.stringify(v));
     check('and the main process was told once, with the side', JSON.stringify(calls.filter((c) => c.channel === 'pdfws:dock').map((c) => c.args)) === '[["left"]]' && settings.pdfView.dock === 'left');
@@ -2451,7 +2471,7 @@ app.whenReady().then(async () => {
       return { shown: !g.hidden, organising: document.querySelector('.well').classList.contains('organising'), scroller: getComputedStyle(document.getElementById('scroller')).visibility, cells: cells.length,
         labels: cells.slice(0, 2).map((c) => c.getAttribute('aria-label')).join(), canvases: document.querySelectorAll('.cell canvas').length, selected: cells.filter((c) => c.classList.contains('sel')).map((c) => c.dataset.n).join(),
         aria: cells.filter((c) => c.getAttribute('aria-selected') === 'true').length, focused: document.activeElement.classList.contains('cell') ? document.activeElement.dataset.n : document.activeElement.id,
-        stops: cells.filter((c) => c.tabIndex === 0).length, bar: bar.hidden ? '' : bar.querySelector('.count').textContent, title: b.title, label: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'), on: b.classList.contains('on'),
+        stops: cells.filter((c) => c.tabIndex === 0).length, bar: bar.hidden ? '' : (() => { const s = bar.querySelector('.selchip'); return s.checkVisibility({ visibilityProperty: true }) ? s.querySelector('.count').textContent : bar.querySelector('.hint').textContent; })(), title: b.title, label: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'), on: b.classList.contains('on'),
         dot: !b.querySelector('.engdot').hidden, labelWidth: b.querySelector('.lbl').getBoundingClientRect().width, tooling: document.body.classList.contains('tooling'), page: workspaceViewer.viewer.currentPageNumber,
         card: document.querySelector('.card h3')?.textContent ?? '', role: g.getAttribute('role') }; })()`);
     const centre = (win, n) => js(win, `(() => { const c = document.querySelector('.cell[data-n="${n}"] .sheet'); c.scrollIntoView({ block: 'nearest' }); const r = c.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
@@ -2478,17 +2498,17 @@ app.whenReady().then(async () => {
       g = await grid(win);
       check(`${theme}: the button opens a grid of every page that takes the place of the reading view, with its name beside the icon`, g.shown && g.organising && g.scroller === 'hidden' && g.cells === 12 && g.labels === 'Page 1,Page 2' && g.pressed === 'true' && g.on && g.labelWidth > 20 && g.tooling, JSON.stringify(g));
       const ink = await js(win, `(() => { const c = document.querySelector('.cell[data-n="1"] canvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let dark = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 1] < 200) dark++; return dark; })()`);
-      check(`${theme}: every thumbnail is drawn, with ink on it, and the page in view has the focus as the one Tab stop`, g.canvases === 12 && g.focused === '1' && g.stops === 1 && g.selected === '' && g.bar === '- pages' && ink > 500, JSON.stringify([ink, g]));
+      check(`${theme}: every thumbnail is drawn, with ink on it, and the page in view has the focus as the one Tab stop`, g.canvases === 12 && g.focused === '1' && g.stops === 1 && g.selected === '' && g.bar === 'Select pages to turn, delete or extract' && ink > 500, JSON.stringify([ink, g]));
       const widths = await js(win, `[...document.querySelectorAll('.cell .sheet')].slice(0, 3).map((s) => Math.round(s.getBoundingClientRect().width)).join()`);
       check(`${theme}: a thumbnail is 160 px wide`, widths === '160,160,160', widths);
 
       await clickCell(win, 3);
       g = await grid(win);
-      check(`${theme}: a click selects one page and the bar says so`, g.selected === '3' && g.aria === 1 && g.bar === '1 selected' && g.focused === '3', JSON.stringify(g));
+      check(`${theme}: a click selects one page and the bar says so`, g.selected === '3' && g.aria === 1 && g.bar === '1 page' && g.focused === '3', JSON.stringify(g));
       await clickCell(win, 5, ['control']);
       await clickCell(win, 7, ['control']);
       g = await grid(win);
-      check(`${theme}: Ctrl and a click adds a page`, g.selected === '3,5,7' && g.bar === '3 selected', JSON.stringify(g));
+      check(`${theme}: Ctrl and a click adds a page`, g.selected === '3,5,7' && g.bar === '3 pages', JSON.stringify(g));
       await clickCell(win, 5, ['control']);
       check(`${theme}: Ctrl and a click on a selected page takes it out`, (await grid(win)).selected === '3,7');
       await clickCell(win, 9, ['shift']);
@@ -2499,7 +2519,7 @@ app.whenReady().then(async () => {
       check(`${theme}: Ctrl and Shift adds that range to what is selected`, g.aria >= 8 && g.selected.split(',').includes('2') && g.selected.split(',').includes('9'), JSON.stringify(g));
       await press(win, 'A', ['control']);
       g = await grid(win);
-      check(`${theme}: Ctrl+A selects every page`, g.aria === 12 && g.bar === '12 selected', JSON.stringify(g));
+      check(`${theme}: Ctrl+A selects every page`, g.aria === 12 && g.bar === '12 pages', JSON.stringify(g));
       await shot(win, `workspace-grid-all-${theme}.png`);
 
       await js(win, `document.querySelector('.pgrid').scrollTop = 0`);
@@ -2508,9 +2528,9 @@ app.whenReady().then(async () => {
       win.webContents.sendInputEvent({ type: 'mouseMove', x: hover.x, y: hover.y });
       await sleep(400);
       const looks = await js(win, `(() => { const o = (n) => getComputedStyle(document.querySelector('.cell[data-n="' + n + '"] .sheet')).outlineColor; const c = (n) => getComputedStyle(document.querySelector('.cell[data-n="' + n + '"]'));
-        return { selected: o(3), hovered: o(2), plain: o(1), label: c(3).color, plainLabel: c(1).color, weight: c(3).fontWeight, plainWeight: c(1).fontWeight, halo: getComputedStyle(document.querySelector('.cell[data-n="3"] .sheet')).boxShadow, width: getComputedStyle(document.querySelector('.cell[data-n="3"] .sheet')).outlineWidth }; })()`);
+        return { selected: o(3), hovered: o(2), plain: o(1), label: c(3).color, plainLabel: c(1).color, weight: c(3).fontWeight, plainWeight: c(1).fontWeight, halo: getComputedStyle(document.querySelector('.cell[data-n="3"] .sheet'), '::before').content, width: getComputedStyle(document.querySelector('.cell[data-n="3"] .sheet')).outlineWidth }; })()`);
       check(`${theme}: a selected page, one the pointer is over and one that is neither each look different: one accent ring and a bold accent number, a grey ring, and nothing`,
-        looks.selected !== looks.hovered && looks.hovered !== looks.plain && looks.selected !== looks.plain && looks.label !== looks.plainLabel && Number(looks.weight) > Number(looks.plainWeight) && !looks.halo.includes('7px') && looks.width === '3px', JSON.stringify(looks));
+        looks.selected !== looks.hovered && looks.hovered !== looks.plain && looks.selected !== looks.plain && looks.label !== looks.plainLabel && Number(looks.weight) > Number(looks.plainWeight) && looks.halo === 'none' && looks.width === '3px', JSON.stringify(looks));
       const image = await win.webContents.capturePage();
       const bitmap = image.toBitmap();
       const width = image.getSize().width;
@@ -2519,12 +2539,17 @@ app.whenReady().then(async () => {
       const lum = (rgb) => rgb.map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }).reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
       const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
       const probe = await js(win, `(() => { const s = document.querySelector('.cell[data-n="3"] .sheet').getBoundingClientRect(); const w = document.querySelector('.well').getBoundingClientRect(); const p = document.querySelector('.cell[data-n="1"] .sheet').getBoundingClientRect();
-        return { ring: [s.left - 4, s.top + s.height / 2], well: [w.left + 6, w.top + 12], plain: [p.left - 4, p.top + p.height / 2], label: getComputedStyle(document.querySelector('.cell[data-n="3"]')).color }; })()`);
+        const h = document.querySelector('.cell[data-n="2"] .sheet').getBoundingClientRect();
+        return { ring: [s.left - 4, s.top + s.height / 2], hover: [h.left - 3, h.top + h.height / 2], well: [w.left + 6, w.top + 12], plain: [p.left - 4, p.top + p.height / 2], label: getComputedStyle(document.querySelector('.cell[data-n="3"]')).color }; })()`);
       const wellPixel = pixel(...probe.well);
       const ringPixel = pixel(...probe.ring);
       const labelRgb = probe.label.match(/\d+/g).slice(0, 3).map(Number);
       check(`${theme}: the ring of a selected page is at least 3 to 1 against the area behind it, and its bold number at least 4.5 to 1`, ratio(ringPixel, wellPixel) >= 3 && ratio(labelRgb, wellPixel) >= 4.5, `ring ${ratio(ringPixel, wellPixel).toFixed(2)} label ${ratio(labelRgb, wellPixel).toFixed(2)} ${ringPixel} ${wellPixel}`);
       check(`${theme}: a page that is not selected has no ring`, ratio(pixel(...probe.plain), wellPixel) < 1.2, `${pixel(...probe.plain)} ${wellPixel}`);
+      const hoverPixel = pixel(...probe.hover);
+      check(`${theme}: the ring of a page under the pointer shows but is weaker than the selection ring and differs from it by more than hue (was 3.75 against 3.89 in light and 6.18 against 4.74 in dark, 1.04 and 1.31 apart)`,
+        ratio(hoverPixel, wellPixel) >= 1.5 && ratio(hoverPixel, wellPixel) < ratio(ringPixel, wellPixel) && ratio(hoverPixel, ringPixel) >= 1.5 && looks.width === '3px',
+        `hover ${ratio(hoverPixel, wellPixel).toFixed(2)} ring ${ratio(ringPixel, wellPixel).toFixed(2)} apart ${ratio(hoverPixel, ringPixel).toFixed(2)} ${hoverPixel}`);
       await shot(win, `workspace-grid-${theme}.png`);
 
       await clickCell(win, 4);
@@ -2538,7 +2563,15 @@ app.whenReady().then(async () => {
       await press(win, 'Right', ['shift']);
       await press(win, 'Right', ['shift']);
       g = await grid(win);
-      check(`${theme}: Shift and an arrow extends the selection from where it began`, g.aria === 3 && g.bar === '3 selected', JSON.stringify(g));
+      check(`${theme}: Shift and an arrow extends the selection from where it began`, g.aria === 3 && g.bar === '3 pages', JSON.stringify(g));
+      const halo = await js(win, `(() => { const r = document.activeElement.querySelector('.sheet').getBoundingClientRect(); const o = document.querySelector('.cell.sel:not(:focus) .sheet').getBoundingClientRect(); return { focus: [r.left - 8, r.top + 30], gap: [r.left - 6, r.top + 30], other: [o.left - 8, o.top + 30], selected: document.activeElement.classList.contains('sel') }; })()`);
+      const now = await win.webContents.capturePage();
+      const nowBitmap = now.toBitmap();
+      const seen = (x, y) => { const i = (Math.round(y * scale) * width + Math.round(x * scale)) * 4; return [nowBitmap[i + 2], nowBitmap[i + 1], nowBitmap[i]]; };
+      check(`${theme}: the page the keyboard is on stands out inside the selection, with a ring in the text colour outside the selection ring, apart from it, that the other selected pages do not have (its ring was the selection colour, the same pixel as theirs)`,
+        halo.selected && ratio(seen(...halo.focus), wellPixel) >= 3 && ratio(seen(...halo.focus), ringPixel) >= 3 && ratio(seen(...halo.gap), wellPixel) < 1.2 && ratio(seen(...halo.other), wellPixel) < 1.2,
+        `focus ${ratio(seen(...halo.focus), wellPixel).toFixed(2)} against the area, ${ratio(seen(...halo.focus), ringPixel).toFixed(2)} against the selection ring, gap ${ratio(seen(...halo.gap), wellPixel).toFixed(2)} against the area, other ${ratio(seen(...halo.other), wellPixel).toFixed(2)}`);
+      await shot(win, `workspace-grid-keyboard-${theme}.png`);
       await press(win, 'Home');
       g = await grid(win);
       await press(win, 'End');
@@ -2595,7 +2628,7 @@ app.whenReady().then(async () => {
       mouse('mouseUp', two.x, two.y);
       await sleep(200);
       g = await grid(win);
-      check('letting go keeps them selected and removes the rectangle', g.selected === '1,2' && (await js(win, `document.querySelector('.band').hidden`)) && g.bar === '2 selected', JSON.stringify(g));
+      check('letting go keeps them selected and removes the rectangle', g.selected === '1,2' && (await js(win, `document.querySelector('.band').hidden`)) && g.bar === '2 pages', JSON.stringify(g));
       await dragTo(six);
       mouse('mouseUp', six.x, six.y);
       await sleep(200);
@@ -2612,9 +2645,33 @@ app.whenReady().then(async () => {
       check('a band with Ctrl held adds to the selection', g.selected.split(',').includes('12') && g.selected.split(',').includes('1') && g.selected.split(',').includes('2'), g.selected);
       await click(win, box);
       g = await grid(win);
-      check('a click on empty paper clears the selection and the bar shows the count greyed out', g.selected === '' && g.bar === '- pages' && g.aria === 0, JSON.stringify(g));
+      check('a click on empty paper clears the selection and the bar shows its hint again', g.selected === '' && g.bar === 'Select pages to turn, delete or extract' && g.aria === 0, JSON.stringify(g));
       const bars = await js(win, `(() => { const l = document.querySelector('.pgrid'); return { overflow: getComputedStyle(l).overflowY, track: getComputedStyle(l).scrollbarColor }; })()`);
       check('the grid scrolls with the same thin scroll bar as the pages', bars.overflow === 'auto' && /transparent|rgba\(0, 0, 0, 0\)/.test(bars.track), JSON.stringify(bars));
+
+      const dock = () => js(win, `(() => { const z = document.querySelector('.dock .zoom'); return { widths: [...document.querySelectorAll('.cell .sheet')].slice(0, 2).map((s) => Math.round(s.getBoundingClientRect().width)).join(), zoom: z.textContent, off: z.disabled,
+        scale: workspaceViewer.viewer.currentScale, box: document.querySelector('.dock .pageno').value, reading: workspaceViewer.viewer.currentPageNumber, focused: document.activeElement.dataset?.n ?? '' }; })()`);
+      const pressDock = (label) => js(win, `document.querySelector('.dock [aria-label="${label}"]').click()`);
+      const reading = await dock();
+      check('while the grid is up the zoom value gives the size of the pages in it and does not open the View menu', reading.zoom === '100%' && reading.off && reading.widths === '160,160', JSON.stringify(reading));
+      await pressDock('Zoom in');
+      await sleep(400);
+      let d = await dock();
+      check(`Zoom in makes the pages in the grid bigger and leaves the reading view as it was (it zoomed the hidden view, from 0.477 to 0.6, while the cells stayed 160 px)`, d.widths === '200,200' && d.zoom === '125%' && d.scale === reading.scale, JSON.stringify(d));
+      for (let i = 0; i < 3; i++) await pressDock('Zoom out');
+      await sleep(400);
+      d = await dock();
+      check('Zoom out makes them smaller, down to 120 px', d.widths === '120,120' && d.zoom === '75%' && d.scale === reading.scale, JSON.stringify(d));
+      await pressDock('Zoom in');
+      await clickCell(win, 2);
+      await pressDock('Next page');
+      await sleep(200);
+      d = await dock();
+      check('the page buttons move through the grid and the page box shows the page they reach, leaving the reading view where it was (Next turned the hidden view a page)', d.focused === '3' && d.box === '3' && d.reading === reading.reading && d.widths === '160,160', JSON.stringify(d));
+      await press(win, 'Escape');
+      await sleep(400);
+      d = await dock();
+      check('leaving the grid gives the zoom value and the page box back to the reading view', !d.off && (/^Fit /.test(d.zoom) || d.zoom === `${Math.round(d.scale * 100)}%`) && d.box === String(d.reading), JSON.stringify(d));
       await closeAndWait(win);
     }
 
@@ -2651,12 +2708,47 @@ app.whenReady().then(async () => {
       for (const side of ['bottom', 'top', 'left', 'right']) {
         await js(win, `document.querySelector('.well').dataset.dock = '${side}'`);
         await sleep(700);
-        const place = await js(win, `(() => { const d = document.querySelector('.dock').getBoundingClientRect(); const o = document.querySelector('.optbar').getBoundingClientRect(); const w = document.querySelector('.well').getBoundingClientRect();
-          return { beside: { bottom: o.bottom <= d.top, top: o.top >= d.bottom, left: o.left >= d.right, right: o.right <= d.left }, inside: o.left >= w.left && o.right <= w.right && o.top >= w.top && o.bottom <= w.bottom,
-            centre: Math.abs((o.left + o.right) / 2 - (d.left + d.right) / 2) < 2, middle: Math.abs((o.top + o.bottom) / 2 - (d.top + d.bottom) / 2) < 2, label: document.querySelector('.dock .tool .lbl').getBoundingClientRect().width }; })()`);
-        const level = side === 'bottom' || side === 'top' ? place.centre : place.middle;
+        const place = await js(win, `(() => { const d = document.querySelector('.dock').getBoundingClientRect(); const o = document.querySelector('.optbar').getBoundingClientRect(); const w = document.querySelector('.well').getBoundingClientRect(); const s = document.querySelector('.optbar .sep').getBoundingClientRect();
+          return { above: o.bottom <= d.top, below: o.top >= d.bottom, apart: o.right <= d.left || o.left >= d.right || o.bottom <= d.top || o.top >= d.bottom, inside: o.left >= w.left && o.right <= w.right && o.top >= w.top && o.bottom <= w.bottom,
+            centre: Math.abs((o.left + o.right) / 2 - (d.left + d.right) / 2) < 2, wellCentre: Math.abs((o.left + o.right) / 2 - (w.left + w.right) / 2) < 2, low: Math.round(w.bottom - o.bottom), sep: Math.round(s.width) + 'x' + Math.round(s.height),
+            label: document.querySelector('.dock .tool .lbl').getBoundingClientRect().width }; })()`);
+        const placed = { bottom: place.above && place.centre, top: place.below && place.centre, left: place.wellCentre && place.low === 16, right: place.wellCentre && place.low === 16 }[side];
         const named = side === 'left' || side === 'right' ? place.label < 2 : place.label > 20;
-        check(`with the dock at the ${side}, the bar of selected pages stands ${{ bottom: 'above', top: 'below', left: 'beside', right: 'beside' }[side]} it, level with it, and the tool's name shows only in a row`, place.beside[side] && place.inside && level && named, JSON.stringify(place));
+        check(`with the dock at the ${side}, the bar of selected pages stands ${{ bottom: 'above it', top: 'below it', left: 'at the bottom middle, clear of the grid\'s middle (it floated across it, at y 297 to 339)', right: 'at the bottom middle' }[side]}, its divider upright (it lay flat, 22x1, beside a column), and the tool's name shows only in a row`,
+          placed && place.apart && place.inside && place.sep === '1x22' && named, JSON.stringify(place));
+      }
+      const slide = () => js(win, `(() => { const o = document.querySelector('.optbar'); const style = getComputedStyle(o); return { y: Math.round(new DOMMatrix(style.transform).m42), opacity: Number(style.opacity), clickable: style.pointerEvents !== 'none' }; })()`);
+      for (const side of ['bottom', 'top']) {
+        await js(win, `document.querySelector('.well').dataset.dock = '${side}'`);
+        await sleep(700);
+        await js(win, `document.querySelector('.fold').click()`);
+        await sleep(200);
+        const going = await slide();
+        await sleep(900);
+        const away = await slide();
+        await js(win, `document.querySelector('.fold').click()`);
+        await sleep(380);
+        const coming = await slide();
+        await sleep(1000);
+        const back = await slide();
+        const sign = side === 'top' ? -1 : 1;
+        check(`with the dock at the ${side}, hiding the controls slides the bar of selected pages away with the dock, toward that edge, as it fades, and showing them brings it back the same way (it went and came back at once)`,
+          going.y * sign > 0 && going.y * sign < 130 && away.y === 130 * sign && away.opacity === 0 && !away.clickable && coming.y * sign > 0 && coming.y * sign < 130 && back.y === 0 && back.opacity === 1 && back.clickable, JSON.stringify({ going, away, coming, back }));
+      }
+      await js(win, `document.querySelector('.well').dataset.dock = 'bottom'`);
+      win.setSize(900, 600);
+      await js(win, `document.getElementById('pagesbtn').click(); document.getElementById('docbtn').click()`);
+      await sleep(1200);
+      await press(win, 'A', ['control']);
+      for (const side of ['bottom', 'left']) {
+        await js(win, `document.querySelector('.well').dataset.dock = '${side}'`);
+        await sleep(900);
+        const fit = await js(win, `(() => { const w = document.querySelector('.well').getBoundingClientRect(); const box = (s) => document.querySelector(s).getBoundingClientRect(); const within = (r) => r.left >= w.left && r.right <= w.right && r.top >= w.top && r.bottom <= w.bottom;
+          const o = box('.optbar'); const d = box('.dock'); const f = box('.fold'); const meet = (a, b) => !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+          return { well: Math.round(w.width), bar: within(o), dock: within(d), fold: within(f), clear: !meet(o, d) && !meet(o, f) && !meet(d, f), words: getComputedStyle(document.querySelector('.optbar .opt')).fontSize }; })()`);
+        check(`at 900 x 600 with both side panels open (${fit.well} px between them) and the dock at the ${side}, the bar keeps its buttons as icons, and the bar, the dock and its fold button are all inside the area without meeting (the bar was cut by 128 and 149 px, the dock by 21 px with its fold button hidden)`,
+          fit.bar && fit.dock && fit.fold && fit.clear && fit.words === '0px', JSON.stringify(fit));
+        if (side === 'bottom') await shot(win, 'workspace-grid-narrow.png');
       }
       await js(win, `document.querySelector('.well').dataset.dock = 'bottom'`);
       await closeAndWait(win);
@@ -2674,7 +2766,7 @@ app.whenReady().then(async () => {
       check(`3 000 pages make 3 000 cells but draw only the few in view (${first.canvases} at the start, ${last.canvases} at the end)`, first.cells === 3000 && first.canvases > 0 && first.canvases < 80 && last.canvases < 80 && last.end, JSON.stringify([first, last]));
       await js(win, `document.querySelector('.cell[data-n="3000"]').click()`);
       await press(win, 'A', ['control']);
-      check('Ctrl+A on 3 000 pages selects them all', (await js(win, `document.querySelectorAll('.cell.sel').length`)) === 3000 && (await grid(win)).bar === '3000 selected');
+      check('Ctrl+A on 3 000 pages selects them all', (await js(win, `document.querySelectorAll('.cell.sel').length`)) === 3000 && (await grid(win)).bar === '3000 pages');
       await closeAndWait(win);
       fs.rmSync(big, { force: true });
     }
@@ -2743,8 +2835,8 @@ app.whenReady().then(async () => {
       const reading = (win, code) => Promise.race([js(win, code), new Promise((resolve) => setTimeout(() => resolve(''), 3000))]);
       const pages = (win) => reading(win, `(async () => { const d = workspaceViewer.viewer.pdfDocument; if (!d) return ''; const out = []; for (let i = 1; i <= d.numPages; i++) out.push((await (await d.getPage(i)).getTextContent()).items.map((x) => x.str).join('').match(/page (\\d+)/)[1]); return out.join(','); })()`);
       const turns = (win) => reading(win, `(async () => { const d = workspaceViewer.viewer.pdfDocument; if (!d) return ''; const out = []; for (let i = 1; i <= Math.min(d.numPages, 12); i++) out.push((await d.getPage(i)).rotate); return out.join(','); })()`);
-      const bar = (win) => js(win, `(() => { const b = document.querySelector('.optbar'); const buttons = [...b.querySelectorAll('button:not(.mi)')]; return { shown: !b.hidden, titles: buttons.map((x) => x.title).join('|'), disabled: buttons.map((x) => x.disabled ? 1 : 0).join(''),
-        count: b.querySelector('.count').textContent, busy: document.querySelector('.pgrid').classList.contains('busy'), save: !document.getElementById('savebtn').hidden, cells: document.querySelectorAll('.cell:not(.hole):not(.leaving)').length, shape: [...document.querySelectorAll('.cell:not(.hole):not(.leaving)')].map((c) => c.style.getPropertyValue('--r') < 1 ? 'w' : 't').join('') }; })()`);
+      const bar = (win) => js(win, `(() => { const b = document.querySelector('.optbar'); const buttons = [...b.querySelectorAll('button:not(.mi)')].filter((x) => x.checkVisibility({ visibilityProperty: true })); return { shown: !b.hidden, titles: buttons.map((x) => x.title).join('|'), disabled: buttons.map((x) => x.disabled ? 1 : 0).join(''),
+        count: (() => { const s = b.querySelector('.selchip'); return s.checkVisibility({ visibilityProperty: true }) ? s.querySelector('.count').textContent : b.querySelector('.hint').textContent; })(), busy: document.querySelector('.pgrid').classList.contains('busy'), save: !document.getElementById('savebtn').hidden, cells: document.querySelectorAll('.cell:not(.hole):not(.leaving)').length, shape: [...document.querySelectorAll('.cell:not(.hole):not(.leaving)')].map((c) => c.style.getPropertyValue('--r') < 1 ? 'w' : 't').join('') }; })()`);
       const settled = (win) => until('the change to be read back', () => js(win, `(() => { const g = document.querySelector('.pgrid'); return !g.hidden && !g.classList.contains('busy') && document.querySelectorAll('.cell').length > 0 && document.querySelectorAll('.cell canvas').length > 0; })()`));
       const push = (win, name) => js(win, `[...document.querySelectorAll('.optbar button')].find((b) => b.getAttribute('aria-label') === ${JSON.stringify(name)}).click()`);
       const mouse = (win, type, p, modifiers = []) => win.webContents.sendInputEvent({ type, x: Math.round(p.x), y: Math.round(p.y), button: 'left', clickCount: 1, modifiers: type === 'mouseUp' ? modifiers : ['leftButtonDown', ...modifiers] });
@@ -2789,27 +2881,27 @@ app.whenReady().then(async () => {
         await sheetsDrawn(win, 12);
         let b = await bar(win);
         const empty = await frame(win);
-        check(`${theme}: the bar is there with nothing selected, with Insert, Rotate left, Rotate right, Delete, Extract, Split, Combine files, Undo and Redo, and only the ones that need pages selected or something to undo off`, b.shown && b.titles === 'Insert…|Rotate left|Rotate right|Delete (Del)|Extract|Split…|Combine files…|Undo (Ctrl+Z)|Redo (Ctrl+Y)' && b.disabled === '011110011' && b.count === '- pages', JSON.stringify(b));
-        const room = await js(win, `(() => { const c = document.querySelector('.optbar .count'); return { text: c.scrollWidth, box: c.clientWidth, faint: Number(getComputedStyle(c).opacity) }; })()`);
-        check(`${theme}: "- pages" is greyed out and fits its place in the bar (${room.text} of ${room.box} px)`, room.text <= room.box && room.faint < 0.5, JSON.stringify(room));
+        check(`${theme}: with nothing selected the bar has Add, Split…, a hint and Undo and Redo, which are off`, b.shown && b.titles === 'Add|Split…|Undo (Ctrl+Z)|Redo (Ctrl+Y)' && b.disabled === '0011' && b.count === 'Select pages to turn, delete or extract', JSON.stringify(b));
+        const hintLook = await inkContrast(win, '.optbar .hint');
+        check(`${theme}: the hint fits its place in the bar and reads at ${hintLook.ratio.toFixed(2)}:1, at least 4.5`, hintLook.text <= hintLook.box && hintLook.ratio >= 4.5, JSON.stringify(hintLook));
 
         await press(win, 'Right');
-        const focus = await js(win, `(() => { const c = document.activeElement; const s = c.querySelector('.sheet'); return { cell: c.classList.contains('cell'), box: getComputedStyle(c).outlineStyle, ring: getComputedStyle(s).outlineStyle, focusVisible: c.matches(':focus-visible') }; })()`);
-        check(`${theme}: a page reached with the keyboard has the one ring round the sheet and no second box round the sheet and its number`, focus.cell && focus.focusVisible && focus.box === 'none' && focus.ring === 'solid', JSON.stringify(focus));
+        const focus = await js(win, `(() => { const c = document.activeElement; const s = c.querySelector('.sheet'); return { cell: c.classList.contains('cell'), box: getComputedStyle(c).outlineStyle, ring: getComputedStyle(s).outlineStyle, halo: getComputedStyle(s, '::before').border, inset: getComputedStyle(s, '::before').inset, text: getComputedStyle(document.body).color, focusVisible: c.matches(':focus-visible') }; })()`);
+        check(`${theme}: a page reached with the keyboard has its selection ring and, outside it, a ring in the text colour, with no box round the sheet and its number`, focus.cell && focus.focusVisible && focus.box === 'none' && focus.ring === 'solid' && focus.halo === `2px solid ${focus.text}` && focus.inset === '-9px', JSON.stringify(focus));
         await clickCell(win, 3);
         await clickCell(win, 5, ['control']);
         b = await bar(win);
-        check(`${theme}: with pages selected, turning and deleting are on and undo and redo are still off`, b.disabled === '000000011' && b.count === '2 selected', JSON.stringify(b));
+        check(`${theme}: with pages selected the hint gives way to a chip naming them, beside turning, extracting and deleting, all on, and undo and redo are still off`, b.titles === 'Add|Split…|Clear the selection|Rotate left|Rotate right|Extract|Delete (Del)|Undo (Ctrl+Z)|Redo (Ctrl+Y)' && b.disabled === '000000011' && b.count === '2 pages', JSON.stringify(b));
         const full = await frame(win);
         check(`${theme}: selecting pages does not change the bar's width or move Undo and Redo (${full.width} px, Undo at ${full.undo} px, as with nothing selected)`, full.width === empty.width && full.undo === empty.undo, JSON.stringify([empty, full]));
-        const tone = await js(win, `({ count: getComputedStyle(document.querySelector('.optbar .count')).color, text: getComputedStyle(document.body).color })`);
-        check(`${theme}: the count of selected pages is in the full text colour (the muted one measured 3.95:1 on the bar in light, below 4.5:1)`, tone.count === tone.text, JSON.stringify(tone));
+        const chipLook = await inkContrast(win, '.optbar .selchip .count');
+        check(`${theme}: the count in the chip fits and reads at ${chipLook.ratio.toFixed(2)}:1, at least 4.5`, chipLook.text <= chipLook.box && chipLook.ratio >= 4.5, JSON.stringify(chipLook));
         const before = applied();
         await js(win, `document.querySelector('.cell[data-n="2"]').__kept = true; window.__wiggles = 0; (() => { const original = Element.prototype.animate; Element.prototype.animate = function (keys, options) { if (Array.isArray(keys) && keys.some((k) => String(k.transform ?? '').includes('translateX'))) window.__wiggles++; return original.call(this, keys, options); }; })()`);
         await watching(win, 12);
         await push(win, 'Rotate right');
-        const working = await js(win, `({ busy: document.querySelector('.pgrid').classList.contains('busy'), look: [...document.querySelectorAll('.optbar button:not(.mi)')].map((x) => getComputedStyle(x).opacity + (x.disabled ? 'off' : '')).join(), shown: !document.querySelector('.optbar').hidden })`);
-        check(`${theme}: while the engine works the grid is marked busy and the bar keeps its look, with only the buttons that have nothing to do dimmed`, working.busy && working.shown && working.look === '1,1,1,1,1,1,1,0.35off,0.35off', JSON.stringify(working));
+        const working = await js(win, `({ busy: document.querySelector('.pgrid').classList.contains('busy'), aria: document.querySelector('.pgrid').getAttribute('aria-busy'), dims: getComputedStyle(document.querySelector('.pgrid .cells')).transitionDelay, look: [...document.querySelectorAll('.optbar button:not(.mi)')].map((x) => getComputedStyle(x).opacity + (x.disabled ? 'off' : '')).join(), shown: !document.querySelector('.optbar').hidden })`);
+        check(`${theme}: while the engine works the grid is marked busy, also for screen readers, its pages fade if it takes longer than 0.4 s (there was only the cursor), and the bar keeps its look, with only the buttons that have nothing to do dimmed`, working.busy && working.aria === 'true' && working.dims === '0.4s' && working.shown && working.look === '1,1,1,1,1,1,1,0.35off,0.35off', JSON.stringify(working));
         await settled(win);
         await until('the turned pages to be drawn turned', async () => (await bar(win)).shape === 'ttwtwttttttt');
         b = await bar(win);
@@ -2824,10 +2916,10 @@ app.whenReady().then(async () => {
         check(`${theme}: Rotate left turns them back, and with the pages as they were opened there is nothing left to save`, (await turns(win)) === '0,0,0,0,0,0,0,0,0,0,0,0' && (await bar(win)).shape === 'tttttttttttt' && !(await bar(win)).save, JSON.stringify(await bar(win)));
         await push(win, 'Undo');
         await settled(win);
-        check(`${theme}: Undo brings the turn back, with redo on`, (await turns(win)) === '0,0,90,0,90,0,0,0,0,0,0,0' && (await bar(win)).disabled === '011110000');
+        check(`${theme}: Undo brings the turn back, with redo on`, (await turns(win)) === '0,0,90,0,90,0,0,0,0,0,0,0' && (await bar(win)).disabled === '0000');
         await press(win, 'Z', ['control']);
         await settled(win);
-        check(`${theme}: Ctrl+Z goes back once more, to the file as it was opened, and there is nothing left to save`, (await turns(win)) === '0,0,0,0,0,0,0,0,0,0,0,0' && !(await bar(win)).save && (await bar(win)).disabled === '011110010');
+        check(`${theme}: Ctrl+Z goes back once more, to the file as it was opened, and there is nothing left to save`, (await turns(win)) === '0,0,0,0,0,0,0,0,0,0,0,0' && !(await bar(win)).save && (await bar(win)).disabled === '0010');
         await press(win, 'Y', ['control']);
         await settled(win);
         check(`${theme}: Ctrl+Y does the turn again`, (await turns(win)) === '0,0,90,0,90,0,0,0,0,0,0,0');
@@ -2921,6 +3013,21 @@ app.whenReady().then(async () => {
         await changed(win, '1,2,3,4,5,6,7,8,9,10,11,12');
         await settled(win);
         check(`${theme}: moving the page back where it was leaves the pages as they were opened, and the Save button goes`, !(await bar(win)).save && (await bar(win)).disabled === '000000001', JSON.stringify(await bar(win)));
+        await clickCell(win, 3);
+        await press(win, 'Right', ['control', 'shift']);
+        await changed(win, '1,2,4,3,5,6,7,8,9,10,11,12');
+        await settled(win);
+        let keyed = await grid(win);
+        check(`${theme}: Ctrl+Shift+Right moves the selected page one place on, and it keeps the selection and the focus (pages could only be moved with the pointer)`, keyed.selected === '4' && keyed.focused === '4', JSON.stringify(keyed));
+        await press(win, 'Home', ['control', 'shift']);
+        await changed(win, '3,1,2,4,5,6,7,8,9,10,11,12');
+        await settled(win);
+        keyed = await grid(win);
+        check(`${theme}: Ctrl+Shift+Home moves it to the front`, keyed.selected === '1' && keyed.focused === '1', JSON.stringify(keyed));
+        const still = applied();
+        await press(win, 'Left', ['control', 'shift']);
+        await sleep(400);
+        check(`${theme}: Ctrl+Shift+Left on the first page changes nothing`, applied() === still && (await pages(win)) === '3,1,2,4,5,6,7,8,9,10,11,12');
         win.destroy();
         await sleep(500);
         forgetSize();
@@ -2956,7 +3063,7 @@ app.whenReady().then(async () => {
         const secret = `Pw-${crypto.randomBytes(6).toString('hex')}`;
         const protectedFile = path.join(root, 'Grid protected.pdf');
         fs.writeFileSync(protectedFile, encryptedPdf(secret));
-        const notAPdf = path.join(root, 'Grid notes.txt');
+        const notAPdf = path.join(root, 'Grid notes.zip');
         fs.writeFileSync(notAPdf, 'not a pdf');
         const first = picture('Grid picture one.png', [200, 40, 40]);
         const second = picture('Grid picture two.png', [40, 40, 200]);
@@ -2968,42 +3075,75 @@ app.whenReady().then(async () => {
           const a = lum(tag.color); const b = lum(tag.backgroundColor); const sheetBox = sheet.getBoundingClientRect();
           return { text: tag.content, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05), label: cell.getAttribute('aria-label'), width: parseFloat(tag.width), fits: parseFloat(tag.width) + 14 < sheetBox.width }; })()`);
         const arrives = (win, wanted) => until(`the pages to be ${wanted}`, async () => (await order(win)) === wanted);
-        const menu = (win) => js(win, `(() => { const m = document.querySelector('.insertgroup .menu'); const b = document.querySelector('.insertgroup .opt'); const r = m.getBoundingClientRect(); return { open: !m.hidden, expanded: b.getAttribute('aria-expanded'), items: [...m.querySelectorAll('.mi')].map((x) => x.textContent).join('|'), focused: document.activeElement?.textContent ?? '',
+        const menu = (win) => js(win, `(() => { const m = document.querySelector('.addgroup .menu'); const b = document.querySelector('.addgroup .opt'); const r = m.getBoundingClientRect(); return { open: !m.hidden, expanded: b.getAttribute('aria-expanded'), items: [...m.querySelectorAll('.mi')].map((x) => x.textContent).join('|'), focused: document.activeElement?.textContent ?? '',
           inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight, wide: r.width }; })()`);
-        const choose = (win, label) => js(win, `[...document.querySelectorAll('.insertgroup .mi')].find((x) => x.textContent === ${JSON.stringify(label)}).click()`);
-        const insertMenu = (win) => js(win, `document.querySelector('.insertgroup .opt').click()`);
-        const extractButton = (win) => js(win, `[...document.querySelectorAll('.optbar .opt')].find((x) => x.title === 'Extract').click()`);
-        const submit = (win, text) => js(win, `(() => { const f = document.querySelector('.veil input'); f.value = ${JSON.stringify(text)}; f.dispatchEvent(new Event('input')); document.querySelector('.veil .primary').click(); })()`);
+        const choose = (win, label) => js(win, `[...document.querySelectorAll('.addgroup .mi')].find((x) => x.textContent === ${JSON.stringify(label)}).click()`);
+        const addMenu = (win) => js(win, `document.querySelector('.addgroup .opt').click()`);
+        const addFiles = async (win) => { await addMenu(win); await choose(win, 'Files…'); await until('the Add files card', () => js(win, `document.querySelector('.veil h3')?.textContent === 'Add files'`)); };
+        const CHOOSE = 'Drop PDFs, pictures or documents, or choose files';
+        const inCard = (win, label) => js(win, `[...document.querySelectorAll('.veil .btn, .veil .addfiles')].find((b) => b.textContent === ${JSON.stringify(label)}).click()`);
+        const listed = (win) => js(win, `[...document.querySelectorAll('.veil .cfile .cname')].map((n) => n.title).join('|')`);
+        const extractButton = (win) => js(win, `[...document.querySelectorAll('.optbar button')].find((x) => x.getAttribute('aria-label') === 'Extract').click()`);
+        const submit = (win, text) => js(win, `(() => { const f = document.querySelector('.veil input'); f.value = ${JSON.stringify(text)}; f.dispatchEvent(new Event('input')); f.closest('.card').querySelector('.primary').click(); })()`);
         const askedFor = (win) => until('the password card', () => js(win, `!!document.querySelector('.veil input') && !document.querySelector('.veil input').disabled`));
         const picked = [];
         const realOpen = dialog.showOpenDialog;
         const realSave = dialog.showSaveDialog;
         const answer = (...files) => { dialog.showOpenDialog = async (_win, options) => { picked.push(options); return files.length ? { canceled: false, filePaths: files } : { canceled: true, filePaths: [] }; }; };
+        let delay = 0;
+        const slowTool = async (...args) => { await sleep(delay); return runPdfTool(...args); };
+        const tapOn = async (win, selector) => {
+          const p = await js(win, `(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+          mouse(win, 'mouseMove', p);
+          mouse(win, 'mouseDown', p);
+          mouse(win, 'mouseUp', p);
+          await sleep(300);
+        };
+        const ring = (win) => js(win, `document.activeElement.matches(':focus-visible')`);
 
         for (const theme of ['light', 'dark']) {
           nativeTheme.themeSource = theme;
           const doc = await makePdf(`Grid insert ${theme}.pdf`, 6);
           const source = await makePdf(`Grid source ${theme}.pdf`, 2);
-          const win = await openAndWait(fresh({ solid: true }), doc);
+          const win = await openAndWait(fresh({ solid: true, runPdfTool: slowTool }), doc);
           win.setSize(900, 600);
           await sleep(600);
           await openGrid(win);
           await sheetsDrawn(win, 6);
 
-          const looks = await js(win, `(() => { const o = document.querySelector('.insertgroup .opt'); const e = [...document.querySelectorAll('.optbar .opt')].find((x) => x.title === 'Extract'); return { insert: o.textContent, insertColour: getComputedStyle(o).color, extract: e.textContent, extractColour: getComputedStyle(e).color, text: getComputedStyle(document.body).color, icons: o.querySelectorAll('svg').length + e.querySelectorAll('svg').length, height: o.getBoundingClientRect().height, haspopup: o.getAttribute('aria-haspopup') }; })()`);
-          check(`${theme}: Insert… and Extract carry an icon and their words, in the full text colour, 30 px high`, looks.insert === 'Insert…' && looks.extract === 'Extract' && looks.insertColour === looks.text && looks.extractColour === looks.text && looks.icons === 2 && looks.height === 30 && looks.haspopup === 'menu', JSON.stringify(looks));
+          const looks = await js(win, `(() => { const o = document.querySelector('.addgroup .opt'); const s = [...document.querySelectorAll('.optbar .opt')].find((x) => x.title === 'Split…'); return { add: o.textContent, addColour: getComputedStyle(o).color, split: s.textContent, splitColour: getComputedStyle(s).color, text: getComputedStyle(document.body).color, icons: o.querySelectorAll('svg').length + '+' + s.querySelectorAll('svg').length, height: o.getBoundingClientRect().height, haspopup: o.getAttribute('aria-haspopup') }; })()`);
+          check(`${theme}: Add and Split… carry an icon and their words, Add with a small arrow for its menu, in the full text colour, 30 px high`, looks.add === 'Add' && looks.split === 'Split…' && looks.addColour === looks.text && looks.splitColour === looks.text && looks.icons === '2+1' && looks.height === 30 && looks.haspopup === 'menu', JSON.stringify(looks));
 
-          await insertMenu(win);
-          await sleep(300);
+          await clickCell(win, 1);
+          await press(win, 'Right');
+          await tapOn(win, '.addgroup .opt');
           let m = await menu(win);
-          check(`${theme}: Insert… opens a menu with From a PDF…, From pictures… and Blank page inside the window, the first item focused`, m.open && m.expanded === 'true' && m.items === 'From a PDF…|From pictures…|Blank page' && m.focused === 'From a PDF…' && m.inside, JSON.stringify(m));
+          check(`${theme}: Add opens a menu with Files… and Blank page inside the window, the first item focused`, m.open && m.expanded === 'true' && m.items === 'Files…|Blank page' && m.focused === 'Files…' && m.inside, JSON.stringify(m));
+          check(`${theme}: opened with the mouse after the keyboard moved through the grid, the menu shows no focus ring (it took on the grid's)`, !(await ring(win)));
           await shot(win, `workspace-grid-insert-menu-${theme}.png`);
           await press(win, 'Down');
-          check(`${theme}: the arrow keys move through the items`, (await menu(win)).focused === 'From pictures…');
+          check(`${theme}: the arrow keys move through the items, and the ring shows once the keyboard is used`, (await menu(win)).focused === 'Blank page' && (await ring(win)));
+          await press(win, 'Escape');
+          check(`${theme}: Esc gives the focus back to Add`, await js(win, `document.activeElement === document.querySelector('.addgroup .opt')`));
+          await press(win, 'Space');
+          check(`${theme}: opened from the keyboard, the menu shows the ring on its first item`, (await menu(win)).focused === 'Files…' && (await ring(win)));
+          answer();
+          await press(win, 'Space');
+          await until('the Add files card', () => js(win, `document.querySelector('.veil h3')?.textContent === 'Add files'`));
+          check(`${theme}: Files… chosen from the keyboard opens the card with the ring on its first button`, (await js(win, `document.activeElement.textContent`)) === CHOOSE && (await ring(win)));
+          await press(win, 'Escape');
+          await until('the card to close', () => js(win, `!document.querySelector('.veil')`));
+          await tapOn(win, '.addgroup .opt');
+          await tapOn(win, '.addgroup .mi');
+          await until('the Add files card', () => js(win, `document.querySelector('.veil h3')?.textContent === 'Add files'`));
+          check(`${theme}: Files… chosen with the mouse opens the card with its first button focused but no ring`, (await js(win, `document.activeElement.textContent`)) === CHOOSE && !(await ring(win)));
+          await press(win, 'Escape');
+          await until('the card to close', () => js(win, `!document.querySelector('.veil')`));
+          await tapOn(win, '.addgroup .opt');
           await press(win, 'Escape');
           m = await menu(win);
           check(`${theme}: Esc closes the menu and the grid stays open`, !m.open && m.expanded === 'false' && (await grid(win)).shown, JSON.stringify(m));
-          await insertMenu(win);
+          await addMenu(win);
           mouse(win, 'mouseDown', { x: 450, y: 300 });
           mouse(win, 'mouseUp', { x: 450, y: 300 });
           await sleep(200);
@@ -3011,7 +3151,7 @@ app.whenReady().then(async () => {
 
           await clickCell(win, 2);
           let mark = applied();
-          await insertMenu(win);
+          await addMenu(win);
           await choose(win, 'Blank page');
           await arrives(win, '1,2,-,3,4,5,6');
           await settled(win);
@@ -3026,50 +3166,67 @@ app.whenReady().then(async () => {
           check(`${theme}: with the page gone no page wears the tag`, (await tagged(win)) === '');
 
           answer(source);
-          await clickCell(win, 4);
           mark = applied();
-          await insertMenu(win);
-          await choose(win, 'From a PDF…');
-          await arrives(win, '1,2,3,4,1s,2s,5,6');
+          await addFiles(win);
+          check(`${theme}: Files… opens the Add files card with the document listed and Add to document off`, (await listed(win)) === path.basename(doc) && (await js(win, `document.querySelector('.veil .primary').disabled`)), await listed(win));
+          await inCard(win, CHOOSE);
+          await until('the file in the list', async () => (await listed(win)).includes(path.basename(source)));
+          check(`${theme}: choosing files asks once for PDFs, pictures and documents, several at a time, and lists them after the document`, picked.at(-1).title === 'Add files' && picked.at(-1).properties.includes('multiSelections') && ['pdf', 'png', 'docx'].every((e) => picked.at(-1).filters[0].extensions.includes(e)) && (await listed(win)) === `${path.basename(doc)}|${path.basename(source)}`, JSON.stringify([picked.at(-1), await listed(win)]));
+          await inCard(win, 'Add to document');
+          await arrives(win, '1,2,3,4,5,6,1s,2s');
           await settled(win);
           g = await grid(win);
           last = calls.filter((c) => c.channel === 'pdfws:apply').at(-1);
-          check(`${theme}: From a PDF… asks for one PDF and puts its pages after the selected page, selects them, and sends the engine no path`, picked.at(-1).title === 'Insert pages from a PDF' && !picked.at(-1).properties.includes('multiSelections') && applied() === mark + 1 && last.args[1][0].op === 'pages.insert' && last.args[1][0].before === 5 && last.args[1][0].sources.length === 1 && !JSON.stringify(last.args).includes(source) && g.selected === '5,6' && g.cells === 8 && (await bar(win)).save, JSON.stringify([picked.at(-1), last.args, g]));
+          check(`${theme}: Add to document puts the pages of a file listed after the document at its end in one change, selects them, closes the card, and sends the engine no path`, applied() === mark + 1 && JSON.stringify(last.args[1].map((o) => [o.op, o.before, o.sources.length])) === '[["pages.insert",7,1]]' && !JSON.stringify(last.args).includes(source) && g.selected === '7,8' && g.cells === 8 && (await bar(win)).save && (await js(win, `!document.querySelector('.veil')`)), JSON.stringify([g, last.args]));
           await shot(win, `workspace-grid-inserted-${theme}.png`);
-          const tag = await tagLook(win, 5);
-          check(`${theme}: the pages put in from a PDF wear an Added tag and the pages round them do not; the tag reads at 4.5:1 or better and fits the page (${tag.ratio.toFixed(1)}:1)`, (await tagged(win)) === '5,6' && tag.text === '"Added"' && tag.ratio >= 4.5 && tag.fits && tag.label === 'Page 5, added' && (await js(win, `document.querySelector('.cell[data-n="4"]').getAttribute('aria-label')`)) === 'Page 4', JSON.stringify([await tagged(win), tag]));
+          const tag = await tagLook(win, 7);
+          check(`${theme}: the pages added from a PDF wear an Added tag and the pages before them do not; the tag reads at 4.5:1 or better and fits the page (${tag.ratio.toFixed(1)}:1)`, (await tagged(win)) === '7,8' && tag.text === '"Added"' && tag.ratio >= 4.5 && tag.fits && tag.label === 'Page 7, added' && (await js(win, `document.querySelector('.cell[data-n="6"]').getAttribute('aria-label')`)) === 'Page 6', JSON.stringify([await tagged(win), tag]));
 
           answer(first, second);
-          await insertMenu(win);
-          await choose(win, 'From pictures…');
-          await arrives(win, '1,2,3,4,1s,2s,-,-,5,6');
+          mark = applied();
+          await addFiles(win);
+          await inCard(win, CHOOSE);
+          await until('the pictures in the list', async () => (await listed(win)).split('|').length === 3);
+          await js(win, `document.querySelector('.veil .cfile.me .grip').focus()`);
+          await press(win, 'Down', ['alt']);
+          const moved = await js(win, `({ names: [...document.querySelectorAll('.veil .cfile .cname')].map((n) => n.title).join('|'), focused: document.activeElement === document.querySelector('.veil .cfile.me .grip') })`);
+          check(`${theme}: Alt+Down moves the document below the first picture and keeps the focus on its handle`, moved.names === [first, doc, second].map((f) => path.basename(f)).join('|') && moved.focused, JSON.stringify(moved));
+          await inCard(win, 'Add to document');
+          await arrives(win, '-,1,2,3,4,5,6,1s,2s,-');
           await settled(win);
-          g = await grid(win);
-          check(`${theme}: From pictures… takes several pictures and puts one page of each after the selected pages, in the order chosen`, picked.at(-1).title === 'Insert pictures' && picked.at(-1).properties.includes('multiSelections') && picked.at(-1).filters[0].extensions.includes('png') && g.selected === '7,8' && g.cells === 10, JSON.stringify([picked.at(-1), g]));
-          check(`${theme}: pictures put in wear the tag too, beside the pages from the PDF`, (await tagged(win)) === '5,6,7,8', await tagged(win));
+          last = calls.filter((c) => c.channel === 'pdfws:apply').at(-1);
+          check(`${theme}: a file above the document goes in front of page 1 and one below it at the end, both in one change`, applied() === mark + 1 && JSON.stringify(last.args[1].map((o) => [o.before, o.sources.length])) === '[[9,1],[1,1]]' && (await grid(win)).cells === 10, JSON.stringify(last.args));
+          check(`${theme}: pictures added wear the tag too, beside the pages from the PDF`, (await tagged(win)) === '1,8,9,10', await tagged(win));
+          await push(win, 'Undo');
+          await arrives(win, '1,2,3,4,5,6,1s,2s');
+          await settled(win);
+          check(`${theme}: one Undo takes both pictures away`, (await grid(win)).cells === 8 && (await tagged(win)) === '7,8', await tagged(win));
+          await push(win, 'Redo');
+          await arrives(win, '-,1,2,3,4,5,6,1s,2s,-');
+          await settled(win);
 
           mark = applied();
           answer();
-          await insertMenu(win);
-          await choose(win, 'From a PDF…');
+          await addFiles(win);
+          await inCard(win, CHOOSE);
           await sleep(400);
-          check(`${theme}: closing the file dialog with nothing chosen changes nothing`, applied() === mark && (await order(win)) === '1,2,3,4,1s,2s,-,-,5,6');
-
+          check(`${theme}: closing the file dialog with nothing chosen leaves only the document in the card, and Add to document off`, (await listed(win)) === path.basename(doc) && (await js(win, `document.querySelector('.veil .primary').disabled`)));
           notices.length = 0;
           answer(notAPdf);
-          await insertMenu(win);
-          await choose(win, 'From a PDF…');
+          await inCard(win, CHOOSE);
           await until('the notice', async () => notices.length > 0, 5000);
-          check(`${theme}: a file that is neither a PDF nor a picture says so in the corner and changes nothing`, notices.at(-1).title === "Can't insert these files" && notices.at(-1).detail === 'Only PDFs and pictures can be inserted.' && applied() === mark, JSON.stringify(notices));
+          check(`${theme}: a file that is not a PDF, a picture or a document says so in the corner and is not listed`, notices.at(-1).title === "Can't add these files" && notices.at(-1).detail === 'Only PDFs, pictures and documents can be added.' && (await listed(win)) === path.basename(doc), JSON.stringify(notices));
           notices.length = 0;
+          await inCard(win, 'Cancel');
+          await sleep(300);
+          check(`${theme}: Cancel closes the card and changes nothing`, (await js(win, `!document.querySelector('.veil')`)) && applied() === mark && (await order(win)) === '-,1,2,3,4,5,6,1s,2s,-');
 
-          await clickCell(win, 10);
           answer(protectedFile);
-          await insertMenu(win);
-          await choose(win, 'From a PDF…');
+          await addFiles(win);
+          await inCard(win, CHOOSE);
           await askedFor(win);
-          const ask = await js(win, `({ title: document.querySelector('.veil h3').textContent, type: document.querySelector('.veil input').type, buttons: [...document.querySelectorAll('.veil .btn')].map((b) => b.textContent).join() })`);
-          check(`${theme}: a protected PDF to insert asks for its password in the usual card, and nothing is sent yet`, ask.title === 'Password protected' && ask.type === 'password' && ask.buttons === 'Cancel,Open' && applied() === mark, JSON.stringify(ask));
+          const ask = await js(win, `(() => { const top = document.querySelector('.veil input').closest('.card'); const under = [...document.querySelectorAll('.veil .card')].find((c) => c !== top); return { title: top.querySelector('h3').textContent, type: top.querySelector('input').type, buttons: [...top.querySelectorAll('.btn')].map((b) => b.textContent).join(), under: under?.querySelector('h3').textContent, inert: !!under?.closest('[inert]') }; })()`);
+          check(`${theme}: a protected PDF asks for its password in the usual card, over the Add files card, which cannot be used meanwhile, and nothing is sent yet`, ask.title === 'Password protected' && ask.type === 'password' && ask.buttons === 'Cancel,Open' && ask.under === 'Add files' && ask.inert && applied() === mark, JSON.stringify(ask));
           const named = await js(win, `(() => { const n = document.querySelector('.veil .fname'); return { text: n.textContent, shown: !n.hidden, title: n.title, colour: getComputedStyle(n).color, body: getComputedStyle(document.body).color }; })()`);
           check(`${theme}: the card says which file it is asking about, in the full text colour, under the title`, named.shown && named.text === 'Grid protected.pdf' && named.title === 'Grid protected.pdf' && named.colour === named.body, JSON.stringify(named));
           await sleep(450);
@@ -3078,18 +3235,24 @@ app.whenReady().then(async () => {
           await until('the second ask', () => js(win, `!!document.querySelector('.veil .emsg.on') && !document.querySelector('.veil input').disabled`));
           check(`${theme}: a wrong password is answered in the same card`, (await js(win, `document.querySelector('.veil .emsg p').textContent`)) === 'Wrong Password' && applied() === mark);
           await submit(win, secret);
-          await arrives(win, '1,2,3,4,1s,2s,-,-,5,6,-');
+          await until('the protected file in the list', async () => (await listed(win)).endsWith('Grid protected.pdf'));
+          check(`${theme}: the right password closes its card and lists the file in the Add files card`, (await js(win, `document.querySelectorAll('.veil').length === 1 && !document.querySelector('.veil input')`)) && applied() === mark);
+          await inCard(win, 'Add to document');
+          await arrives(win, '-,1,2,3,4,5,6,1s,2s,-,-');
           await settled(win);
-          check(`${theme}: the right password puts the page in at the end, and the card is gone`, (await js(win, `!document.querySelector('.veil')`)) && (await grid(win)).cells === 11 && applied() === mark + 1, JSON.stringify(await grid(win)));
-          check(`${theme}: and that page wears the tag`, (await tagged(win)) === '5,6,7,8,11', await tagged(win));
+          check(`${theme}: Add to document puts its page in at the end`, (await grid(win)).cells === 11 && applied() === mark + 1, JSON.stringify(await grid(win)));
+          check(`${theme}: and that page wears the tag`, (await tagged(win)) === '1,8,9,10,11', await tagged(win));
 
           answer(protectedFile);
-          await insertMenu(win);
-          await choose(win, 'From a PDF…');
+          await addFiles(win);
+          await inCard(win, CHOOSE);
           await askedFor(win);
-          await js(win, `[...document.querySelectorAll('.veil .btn')].find((b) => !b.classList.contains('primary')).click()`);
+          await js(win, `[...document.querySelector('.veil input').closest('.card').querySelectorAll('.btn')].find((b) => !b.classList.contains('primary')).click()`);
           await sleep(500);
-          check(`${theme}: Cancel on the password card inserts nothing`, (await js(win, `!document.querySelector('.veil')`)) && applied() === mark + 1 && (await grid(win)).cells === 11);
+          check(`${theme}: Cancel on the password card leaves the file out of the list`, (await listed(win)) === path.basename(doc) && (await js(win, `document.querySelectorAll('.veil').length`)) === 1);
+          await inCard(win, 'Cancel');
+          await sleep(300);
+          check(`${theme}: and nothing is added`, (await js(win, `!document.querySelector('.veil')`)) && applied() === mark + 1 && (await grid(win)).cells === 11);
 
           await clickCell(win, 2);
           await clickCell(win, 3, ['control']);
@@ -3124,20 +3287,25 @@ app.whenReady().then(async () => {
           const tabs = () => js(win, `document.querySelectorAll('#tabs .tab').length`);
           const tabsBefore = await tabs();
           await dropOn(1, 'left', [first]);
-          await arrives(win, '-,1,2,3,4,1s,2s,-,-,5,6,-');
+          await arrives(win, '-,-,1,2,3,4,5,6,1s,2s,-,-');
           await settled(win);
           g = await grid(win);
           check(`${theme}: a picture dropped on the left half of page 1 goes in front of it, is selected, and no new tab opens`, g.selected === '1' && g.cells === 12 && (await tabs()) === tabsBefore, JSON.stringify([g, await tabs()]));
-          check(`${theme}: the tags follow the pages when more go in before them`, (await tagged(win)) === '1,6,7,8,9,12', await tagged(win));
+          check(`${theme}: the tags follow the pages when more go in before them`, (await tagged(win)) === '1,2,9,10,11,12', await tagged(win));
+          delay = 1500;
           await dropOn(12, 'right', [source]);
-          await arrives(win, '-,1,2,3,4,1s,2s,-,-,5,6,-,1s,2s');
+          const spinning = await js(win, `(() => { const b = document.querySelector('.addgroup .opt'); const s = getComputedStyle(b, '::before'); return { adding: b.classList.contains('adding'), turning: s.animationName, size: s.width, plus: getComputedStyle(b.querySelector('.i')).display, word: b.textContent }; })()`);
+          check(`${theme}: while a dropped file is added, the plus of Add turns into a spinner and the word stays`, spinning.adding && spinning.turning === 'rot' && spinning.size === '12px' && spinning.plus === 'none' && spinning.word === 'Add', JSON.stringify(spinning));
+          delay = 0;
+          await arrives(win, '-,-,1,2,3,4,5,6,1s,2s,-,-,1s,2s');
+          check(`${theme}: and turns back into the plus once the pages are in`, await js(win, `!document.querySelector('.addgroup .opt').classList.contains('adding') && getComputedStyle(document.querySelector('.addgroup .opt .i')).display !== 'none'`));
           await settled(win);
           check(`${theme}: a PDF dropped on the right half of the last page goes after it`, (await grid(win)).selected === '13,14' && (await grid(win)).cells === 14, JSON.stringify(await grid(win)));
-          check(`${theme}: and the pages dropped at the end are tagged`, (await tagged(win)) === '1,6,7,8,9,12,13,14', await tagged(win));
+          check(`${theme}: and the pages dropped at the end are tagged`, (await tagged(win)) === '1,2,9,10,11,12,13,14', await tagged(win));
           await shot(win, `workspace-grid-dropped-${theme}.png`);
           await dropOn(3, 'right', [notAPdf]);
           await sleep(500);
-          check(`${theme}: a file dropped on the grid that is neither a PDF nor a picture changes nothing`, (await grid(win)).cells === 14 && (await tabs()) === tabsBefore);
+          check(`${theme}: a file dropped on the grid that is not a PDF, a picture or a document changes nothing, and Add does not keep spinning`, (await grid(win)).cells === 14 && (await tabs()) === tabsBefore && (await js(win, `!document.querySelector('.addgroup .opt').classList.contains('adding')`)));
           notices.length = 0;
           drops.detach();
           await js(win, `document.querySelector('.cell').focus()`);
@@ -3148,7 +3316,7 @@ app.whenReady().then(async () => {
           await sleep(300);
           check(`${theme}: Replace saves the file with its new pages, and the Added tags go, the grid staying as it is`, (await tagged(win)) === '' && (await grid(win)).cells === 14 && (await grid(win)).shown && (await PDFDocument.load(fs.readFileSync(doc), { ignoreEncryption: true, updateMetadata: false })).getPageCount() === 14, JSON.stringify([await tagged(win), (await grid(win)).cells]));
           await clickCell(win, 3);
-          await insertMenu(win);
+          await addMenu(win);
           await choose(win, 'Blank page');
           await until('the blank page', async () => (await grid(win)).cells === 15);
           await settled(win);
@@ -3164,7 +3332,7 @@ app.whenReady().then(async () => {
         nativeTheme.themeSource = 'light';
       }
 
-      console.log('the grid: splitting and combining');
+      console.log('the grid: splitting and adding files');
       {
         const sized = async (name, pages, [width, height]) => {
           const made = await PDFDocument.create();
@@ -3173,19 +3341,27 @@ app.whenReady().then(async () => {
           fs.writeFileSync(file, await made.save({ useObjectStreams: false }));
           return file;
         };
-        const sizesOf = async (file) => (await PDFDocument.load(fs.readFileSync(file))).getPages().map((p) => `${Math.round(p.getWidth())}x${Math.round(p.getHeight())}`).join();
         const counted = async (file) => (await PDFDocument.load(fs.readFileSync(file))).getPageCount();
         const pushed = (win, title) => js(win, `[...document.querySelectorAll('.optbar .opt')].find((x) => x.title === ${JSON.stringify(title)}).click()`);
         const veil = (win) => js(win, `(() => { const c = document.querySelector('.veil .card'); if (!c) return null; const go = c.querySelector('.btn.primary'); const field = c.querySelector('input.fld');
-          return { title: c.querySelector('h3').textContent, files: [...c.querySelectorAll('.cfile')].map((f) => f.querySelector('.cname').textContent + ':' + [...f.querySelectorAll('button')].map((b) => (b.disabled ? 1 : 0)).join('')).join('|'),
+          return { title: c.querySelector('h3').textContent, files: [...c.querySelectorAll('.cfile:not(.loading)')].map((f) => f.querySelector('.cname').title + (f.classList.contains('me') ? '*' : '')).join('|'),
             radios: [...c.querySelectorAll('[role="radio"]')].map((r) => r.textContent + '=' + r.getAttribute('aria-checked')).join('|'), field: field ? [field.hidden, field.placeholder, field.value, field.getAttribute('aria-invalid')].join('|') : '',
-            go: go.textContent, goOff: go.disabled, note: c.querySelector('.note')?.textContent ?? '', error: c.querySelector('.emsg.on p')?.textContent ?? '', addOff: c.querySelector('.addfiles')?.disabled ?? null, focusedField: document.activeElement === field,
+            go: go.textContent, goOff: go.disabled, note: c.querySelector('.note')?.textContent ?? '', error: c.querySelector('.cnote.bad')?.textContent ?? '', line: c.querySelector('.cnote')?.textContent ?? '', addOff: c.querySelector('.addfiles')?.disabled ?? null, focusedField: document.activeElement === field,
+            height: Math.round(c.getBoundingClientRect().height), described: field ? document.getElementById(field.getAttribute('aria-describedby'))?.textContent ?? '' : '', mark: [...c.querySelectorAll('.cfile')].findIndex((f) => f.classList.contains('me')),
             wide: c.scrollWidth <= c.clientWidth, inside: c.getBoundingClientRect().left >= 0 && c.getBoundingClientRect().right <= innerWidth && c.getBoundingClientRect().bottom <= innerHeight }; })()`);
         const gone = (win) => until('the card to close', () => js(win, `!document.querySelector('.veil')`));
         const typed = (win, text) => js(win, `(() => { const f = document.querySelector('.veil input.fld'); f.value = ${JSON.stringify(text)}; f.dispatchEvent(new Event('input')); })()`);
         const radio = (win, label) => js(win, `[...document.querySelectorAll('.veil [role="radio"]')].find((r) => r.textContent === ${JSON.stringify(label)}).click()`);
         const cardButton = (win, label) => js(win, `[...document.querySelectorAll('.veil .btn, .veil .addfiles')].find((b) => b.textContent === ${JSON.stringify(label)}).click()`);
-        const rowButton = (win, name, act) => js(win, `[...document.querySelectorAll('.veil .cfile')].find((f) => f.querySelector('.cname').textContent === ${JSON.stringify(name)}).querySelector('[data-act="${act}"]').click()`);
+        const removeRow = (win, name) => js(win, `[...document.querySelectorAll('.veil .cfile')].find((f) => f.querySelector('.cname').title === ${JSON.stringify(name)}).querySelector('.cremove').click()`);
+        const addFiles = async (win) => { await js(win, `document.querySelector('.addgroup .opt').click()`); await js(win, `[...document.querySelectorAll('.addgroup .mi')].find((x) => x.textContent === 'Files…').click()`); await until('the Add files card', () => js(win, `document.querySelector('.veil h3')?.textContent === 'Add files'`)); };
+        const CHOOSE = 'Drop PDFs, pictures or documents, or choose files';
+        const strip = async (win) => { await sleep(250); return js(win, `(() => { const s = document.querySelector('.veil .sstrip'); const b = s.getBoundingClientRect(); const parts = [...s.children].map((p) => { const r = p.getBoundingClientRect(); return { text: p.textContent, left: (r.left - b.left) / b.width, width: r.width / b.width, px: r.width, top: Math.round(r.top - b.top), bottom: Math.round(b.bottom - r.bottom), colour: getComputedStyle(p).backgroundColor, ink: getComputedStyle(p).color }; });
+          const look = getComputedStyle(s); return { label: s.getAttribute('aria-label') ?? '', role: s.getAttribute('role'), parts, height: Math.round(b.height), shown: s.checkVisibility(), bare: look.backgroundColor === 'rgba(0, 0, 0, 0)' && look.boxShadow === 'none' && look.borderTopStyle === 'none' }; })()`); };
+        // Each part stands where its pages are in the document and is as wide as their share of it, within 1 % of the strip, in one row.
+        const spans = (s, total, ...expected) => s.parts.length === expected.length && s.parts.every((p) => p.top === 0 && p.bottom === 0) && expected.every(([from, to], i) => Math.abs(s.parts[i].left - (from - 1) / total) < 0.01 && Math.abs(s.parts[i].width - (to - from + 1) / total) < 0.01);
+        const lum = (css) => css.match(/[\d.]+/g).slice(0, 3).map((v) => { const x = Number(v) / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }).reduce((sum, v, n) => sum + v * [0.2126, 0.7152, 0.0722][n], 0);
+        const legible = (s) => s.parts.every((p) => { const [a, b] = [lum(p.colour), lum(p.ink)]; return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) >= 4.5; });
         const realOpen = dialog.showOpenDialog;
         const realSave = dialog.showSaveDialog;
         const secret = `Pw-${crypto.randomBytes(6).toString('hex')}`;
@@ -3203,24 +3379,63 @@ app.whenReady().then(async () => {
           await sleep(600);
           await openGrid(win);
           await sheetsDrawn(win, 6);
-          const buttons = await js(win, `[...document.querySelectorAll('.optbar .opt')].filter((x) => x.title === 'Split…' || x.title === 'Combine files…').map((x) => ({ text: x.textContent, icons: x.querySelectorAll('svg').length, off: x.disabled, height: x.getBoundingClientRect().height, colour: getComputedStyle(x).color === getComputedStyle(document.body).color }))`);
-          check(`${theme}: Split… and Combine files… stand after Extract, carry an icon and their words, and are on with nothing selected`, JSON.stringify(buttons) === JSON.stringify([{ text: 'Split…', icons: 1, off: false, height: 30, colour: true }, { text: 'Combine files…', icons: 1, off: false, height: 30, colour: true }]), JSON.stringify(buttons));
-          check(`${theme}: the bar with both still fits a 900 px window`, await js(win, `(() => { const b = document.querySelector('.optbar').getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth; })()`));
+          const buttons = await js(win, `[...document.querySelectorAll('.optbar .opt')].filter((x) => x.title === 'Split…').map((x) => ({ text: x.textContent, icons: x.querySelectorAll('svg').length, off: x.disabled, height: x.getBoundingClientRect().height, colour: getComputedStyle(x).color === getComputedStyle(document.body).color }))`);
+          check(`${theme}: Split… carries an icon and its word, and is on with nothing selected`, JSON.stringify(buttons) === JSON.stringify([{ text: 'Split…', icons: 1, off: false, height: 30, colour: true }]), JSON.stringify(buttons));
+          check(`${theme}: the bar fits a 900 px window`, await js(win, `(() => { const b = document.querySelector('.optbar').getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth; })()`));
 
           await pushed(win, 'Split…');
           await sleep(400);
           let c = await veil(win);
           check(`${theme}: Split opens a card with By ranges, Every N pages and At bookmarks, By ranges on, the field focused with its hint, and Split off until something is typed`, c.title === 'Split' && c.radios === 'By ranges=true|Every N pages=false|At bookmarks=false' && c.field === 'false|1-3, 4-9, 10-||' && c.focusedField && c.goOff && c.go === 'Split' && c.note === 'The files are saved in the same folder' && c.wide && c.inside, JSON.stringify(c));
+          check(`${theme}: under the field a line that stays while typing says what to type, and the field is described by it (the placeholder was the only hint)`, c.line === 'One file for each range, separated by commas' && c.described === c.line, JSON.stringify(c));
+          let s = await strip(win);
+          check(`${theme}: under the field an empty row is kept for the strip, read out as a picture, with nothing drawn in it (it looked like a second field)`, s.shown && s.role === 'img' && s.parts.length === 0 && s.height === 22 && s.bare, JSON.stringify(s));
+          const heights = [c.height];
           await shot(win, `workspace-split-${theme}.png`);
           await typed(win, 'x');
           await press(win, 'Return');
           await sleep(500);
           c = await veil(win);
+          heights.push(c.height);
           check(`${theme}: a range that is not page numbers is answered in the card, which stays, with the field marked and selected`, c.error === 'Use page numbers such as 1-3, 7' && c.field.endsWith('|x|true') && c.focusedField && !c.goOff, JSON.stringify(c));
           await shot(win, `workspace-split-error-${theme}.png`);
+          await typed(win, '1-3, 13-20');
+          await press(win, 'Return');
+          await sleep(500);
+          c = await veil(win);
+          check(`${theme}: ranges that run past the end are answered with the number of pages (they were told to use page numbers)`, c.error === 'This document has 12 pages' && c.field.endsWith('|true'), JSON.stringify(c));
+          s = await strip(win);
+          check(`${theme}: ranges the document cannot give draw nothing in the strip`, s.parts.length === 0, JSON.stringify(s));
+          await typed(win, '1-3, 4-9, 10-');
+          await sleep(80);
+          const coming = await js(win, `[...document.querySelectorAll('.veil .spart')].map((p) => p.getAnimations().length).join()`);
+          s = await strip(win);
+          check(`${theme}: the boxes fade in as the ranges are typed`, coming.split(',').some((n) => Number(n) > 0), coming);
+          check(`${theme}: as ranges are typed the strip shows a box for each file, in its own colour, over the pages it takes, with its pages written in it`, spans(s, 12, [1, 3], [4, 9], [10, 12]) && s.parts.map((p) => p.text).join('|') === '1-3|4-9|10-12' && new Set(s.parts.map((p) => p.colour)).size === 3 && s.label === '1-3, 4-9, 10-12', JSON.stringify(s));
+          check(`${theme}: the pages written in the boxes read at 4.5:1 or better on every colour`, legible(s), JSON.stringify(s.parts));
+          await shot(win, `workspace-split-preview-${theme}.png`);
+          await typed(win, '1-3, 4-9,');
+          await sleep(150);
+          const held = await js(win, `document.querySelectorAll('.veil .spart').length`);
+          await sleep(700);
+          const after = await js(win, `document.querySelectorAll('.veil .spart').length`);
+          check(`${theme}: half-typed ranges (\`1-3, 4-9,\`) keep the boxes a moment before they fade, so typing does not make them blink`, held >= 2 && after === 0, JSON.stringify([held, after]));
+          await typed(win, '2, 5-6');
+          s = await strip(win);
+          check(`${theme}: pages no file takes are left empty in the strip, and a box under 30 px carries no number`, spans(s, 12, [2, 2], [5, 6]) && s.parts[0].text === '' && s.parts[1].text === '5-6', JSON.stringify(s));
           await radio(win, 'Every N pages');
           c = await veil(win);
-          check(`${theme}: another way of splitting clears the message and changes the hint`, c.error === '' && c.radios === 'By ranges=false|Every N pages=true|At bookmarks=false' && c.field.startsWith('false|Pages in each file|'), JSON.stringify(c));
+          heights.push(c.height);
+          check(`${theme}: another way of splitting clears the message and changes the hint`, c.error === '' && c.radios === 'By ranges=false|Every N pages=true|At bookmarks=false' && c.field.startsWith('false|Pages in each file|') && c.line === 'The last file takes the pages left over', JSON.stringify(c));
+          await typed(win, '5');
+          s = await strip(win);
+          check(`${theme}: every 5 pages shows files of 5, 5 and 2 pages in the strip`, spans(s, 12, [1, 5], [6, 10], [11, 12]) && s.label === '1-5, 6-10, 11-12', JSON.stringify(s));
+          await radio(win, 'At bookmarks');
+          await sleep(400);
+          c = await veil(win);
+          heights.push(c.height);
+          check(`${theme}: At bookmarks in a document with none leaves the strip empty`, (await strip(win)).parts.length === 0);
+          check(`${theme}: the card keeps one height in every mode and with a message, so its buttons stay under the pointer (${heights.join(', ')} px; it was 239, 263, 239 and 207)`, heights.every((h) => h === heights[0]), JSON.stringify(heights));
           await press(win, 'Escape');
           await gone(win);
           check(`${theme}: Esc closes the card and writes nothing`, partsOf('Grid split').length === 0 && notices.length === 0);
@@ -3277,7 +3492,7 @@ app.whenReady().then(async () => {
           await radio(win, 'At bookmarks');
           await sleep(400);
           c = await veil(win);
-          check('At bookmarks in a document with none says so, hides the field and leaves Split off', c.note === 'No bookmarks to split at.' && c.field.startsWith('true|') && c.goOff, JSON.stringify(c));
+          check('At bookmarks in a document with none says so in place of the field, which it hides, and leaves Split off', c.line === 'No bookmarks to split at.' && c.note === 'The files are saved in the same folder' && c.field.startsWith('true|') && c.goOff, JSON.stringify(c));
           await press(win, 'Escape');
           await gone(win);
           win.destroy();
@@ -3294,9 +3509,11 @@ app.whenReady().then(async () => {
           await pushed(win, 'Split…');
           await sleep(300);
           await radio(win, 'At bookmarks');
-          await until('the bookmarks to be read', async () => (await veil(win)).note.startsWith('3 files'));
+          await until('the bookmarks to be read', async () => (await veil(win)).line.startsWith('3 files'));
           const c = await veil(win);
-          check('At bookmarks counts a file for each top-level bookmark that has a page, and the first file starts at page 1', c.note === '3 files, one for each top-level bookmark.' && !c.goOff && c.field.startsWith('true|'), JSON.stringify(c));
+          check('At bookmarks counts a file for each top-level bookmark that has a page, and the first file starts at page 1', c.line === '3 files, one for each top-level bookmark.' && !c.goOff && c.field.startsWith('true|'), JSON.stringify(c));
+          const s = await strip(win);
+          check('the strip shows the files the bookmarks make, where the field would be', spans(s, 5, [1, 1], [2, 3], [4, 5]) && s.parts.map((p) => p.text).join('|') === '1|2-3|4-5', JSON.stringify(s));
           await shot(win, 'workspace-split-bookmarks.png');
           await cardButton(win, 'Split');
           await gone(win);
@@ -3308,45 +3525,92 @@ app.whenReady().then(async () => {
           forgetSize();
         }
 
+        {
+          const long = await makePdf('Grid split long.pdf', 500);
+          const win = await openAndWait(fresh({ solid: true }), long);
+          win.setSize(900, 600);
+          await sleep(600);
+          await openGrid(win, 1500);
+          await pushed(win, 'Split…');
+          await sleep(300);
+          await typed(win, '1, 2-250, 251-');
+          const s = await strip(win);
+          check(`500 pages still make one row: a file of one page is a sliver in its place, too narrow for its number, and the others are true to their share (${s.parts.map((p) => p.px.toFixed(1)).join(', ')} px)`, spans(s, 500, [1, 1], [2, 250], [251, 500]) && s.parts[0].px >= 2 && s.parts[0].text === '' && s.parts[1].text === '2-250' && s.label === '1, 2-250, 251-500', JSON.stringify(s));
+          await shot(win, 'workspace-split-long.png');
+          await press(win, 'Escape');
+          await gone(win);
+          win.destroy();
+          await sleep(500);
+          forgetSize();
+          fs.rmSync(long, { force: true });
+        }
+
         for (const theme of ['light', 'dark']) {
           nativeTheme.themeSource = theme;
-          const doc = await makePdf(`Grid combine ${theme}.pdf`, 3);
+          const doc = await makePdf(`Grid add ${theme}.pdf`, 3);
           const first = await sized(`Grid join A ${theme}.pdf`, 2, [400, 300]);
           const second = await sized(`Grid join B ${theme}.pdf`, 2, [300, 400]);
-          const win = await openAndWait(fresh({ solid: true }), doc);
+          let lag = 0;
+          const win = await openAndWait(fresh({ solid: true, probeLocked: async (file) => { await sleep(lag); return probeLocked(file); }, runPdfTool: async (...args) => { await sleep(lag); return runPdfTool(...args); } }), doc);
           win.setSize(900, 600);
           await sleep(600);
           await openGrid(win);
           await sheetsDrawn(win, 3);
           const before = applied();
-          notices.length = 0;
-          await pushed(win, 'Combine files…');
-          await sleep(400);
+          await addFiles(win);
+          await sleep(300);
           let c = await veil(win);
-          check(`${theme}: Combine files opens a card with the open document alone, which cannot be moved or removed, and Combine off`, c.title === 'Combine files' && c.files === `Grid combine ${theme}.pdf:111` && c.goOff && c.go === 'Combine' && c.addOff === false && c.wide && c.inside, JSON.stringify(c));
+          check(`${theme}: Files… opens the Add files card with the open document alone, and Add to document off`, c.title === 'Add files' && c.files === `Grid add ${theme}.pdf*` && c.goOff && c.go === 'Add to document' && c.addOff === false && c.wide && c.inside, JSON.stringify(c));
+          const row = await js(win, `(() => { const r = document.querySelector('.veil .cfile.me'); return { edge: getComputedStyle(r).borderTopColor, current: r.getAttribute('aria-current'), tag: r.querySelector('.ctag')?.textContent, remove: !!r.querySelector('.cremove'), grip: r.querySelector('.grip').getAttribute('aria-label'), meta: r.querySelector('.cmeta').textContent }; })()`);
+          check(`${theme}: the document's row has an accent edge, the This document tag, its number of pages and a handle to move it, and no Remove button`, row.current === 'true' && row.edge === 'rgb(232, 77, 111)' && row.tag === 'This document' && !row.remove && row.grip === `Move Grid add ${theme}.pdf (Alt+Up, Alt+Down)` && row.meta === '3 pages', JSON.stringify(row));
+          const tagInk = await inkContrast(win, '.veil .cfile.me .ctag');
+          check(`${theme}: the tag fits and reads at ${tagInk.ratio.toFixed(2)}:1, at least 4.5`, tagInk.text <= tagInk.box && tagInk.ratio >= 4.5, JSON.stringify(tagInk));
           const picked = [];
           dialog.showOpenDialog = async (_win, options) => { picked.push(options); return { canceled: false, filePaths: [first, second] }; };
-          await cardButton(win, '+ Add files');
+          lag = 700;
+          await cardButton(win, CHOOSE);
+          await sleep(500);
+          const reading = await js(win, `(() => { const rows = [...document.querySelectorAll('.veil .cfile.loading')]; const go = document.querySelector('.veil .primary'); return { rows: rows.length, shown: rows.every((r) => Number(getComputedStyle(r).opacity) > 0.9), pulse: rows.every((r) => [...r.querySelectorAll('.sk')].length === 3 && getComputedStyle(r.querySelector('.sk')).animationName === 'pulse'), busy: document.querySelector('.veil .files').getAttribute('aria-busy'), goOff: go.disabled, chooseOff: document.querySelector('.veil .addfiles').disabled }; })()`);
+          check(`${theme}: while the files chosen are read, a pulsing row stands in for each, and Add to document and the choose button wait`, reading.rows === 2 && reading.shown && reading.pulse && reading.busy === 'true' && reading.goOff && reading.chooseOff, JSON.stringify(reading));
+          await shot(win, `workspace-add-files-reading-${theme}.png`);
           await until('the files to be listed', async () => (await veil(win)).files.split('|').length === 3);
+          lag = 0;
+          check(`${theme}: the rows give way to the files once they are read`, await js(win, `!document.querySelector('.veil .cfile.loading') && document.querySelector('.veil .files').getAttribute('aria-busy') === 'false'`));
           c = await veil(win);
-          check(`${theme}: Add files asks for several PDFs and puts them after the document, in the order they were chosen, with Combine on`, picked[0].title === 'Add files' && picked[0].properties.includes('multiSelections') && picked[0].filters[0].extensions.join() === 'pdf' && c.files === `Grid combine ${theme}.pdf:101|Grid join A ${theme}.pdf:000|Grid join B ${theme}.pdf:010` && !c.goOff, JSON.stringify([picked[0], c]));
-          await rowButton(win, `Grid combine ${theme}.pdf`, 'down');
+          check(`${theme}: the files chosen are listed after the document in the order chosen, with Add to document on`, c.files === `Grid add ${theme}.pdf*|Grid join A ${theme}.pdf|Grid join B ${theme}.pdf` && !c.goOff, JSON.stringify(c));
+          const icons = await js(win, `[...document.querySelectorAll('.veil .cfile')].map((r) => ({ shapes: r.querySelectorAll('.cicon .picon *').length, meta: r.querySelector('.cmeta').textContent, remove: r.querySelector('.cremove')?.getAttribute('aria-label') ?? '', whole: (() => { const n = r.querySelector('.cname'); const probe = document.createElement('span'); probe.style.cssText = 'position: absolute; white-space: pre; font: ' + getComputedStyle(n).font; probe.textContent = n.title; document.body.append(probe); const full = probe.getBoundingClientRect().width; probe.remove(); return Math.abs(full - (n.querySelector('.head').scrollWidth + n.querySelector('.tail').getBoundingClientRect().width)) < 1.5; })() }))`);
+          check(`${theme}: a name cut next to a space keeps the space (Grid add read Gridadd)`, icons.every((i) => i.whole), JSON.stringify(icons));
+          check(`${theme}: every row shows Pomelo's file icon, its number of pages, and a Remove button named for its file`, icons.every((i) => i.shapes > 2) && icons.map((i) => i.meta).join() === '3 pages,2 pages,2 pages' && icons[1].remove === `Remove: Grid join A ${theme}.pdf`, JSON.stringify(icons));
+          const gripAt = await js(win, `(() => { const r = document.querySelector('.veil .cfile.me .grip').getBoundingClientRect(); const rows = [...document.querySelectorAll('.veil .cfile')].map((x) => x.getBoundingClientRect()); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), step: Math.round(rows[1].top - rows[0].top) }; })()`);
+          mouse(win, 'mouseMove', gripAt);
+          mouse(win, 'mouseDown', gripAt);
+          for (let y = gripAt.y; y <= gripAt.y + gripAt.step + 8; y += 6) { mouse(win, 'mouseMove', { x: gripAt.x, y }); await sleep(16); }
+          await sleep(300);
+          const held = await js(win, `(() => { const r = document.querySelector('.veil .cfile.lift'); return { lifted: !!r, name: r?.querySelector('.cname').title, order: [...document.querySelectorAll('.veil .cfile .cname')].map((n) => n.title).join('|'), shadow: r ? getComputedStyle(r).boxShadow !== 'none' : false }; })()`);
+          check(`${theme}: the document's row follows the pointer, lifted with a shadow, and the row below makes way while it is dragged`, held.lifted && held.name === `Grid add ${theme}.pdf` && held.shadow && held.order === `Grid join A ${theme}.pdf|Grid add ${theme}.pdf|Grid join B ${theme}.pdf`, JSON.stringify(held));
+          await shot(win, `workspace-add-files-drag-${theme}.png`);
+          mouse(win, 'mouseUp', { x: gripAt.x, y: gripAt.y + gripAt.step + 8 });
+          await sleep(400);
           c = await veil(win);
-          check(`${theme}: Move down puts the document second`, c.files === `Grid join A ${theme}.pdf:100|Grid combine ${theme}.pdf:001|Grid join B ${theme}.pdf:010`, JSON.stringify(c));
-          await shot(win, `workspace-combine-${theme}.png`);
-          const saved = path.join(root, `Grid combined ${theme}.pdf`);
-          const asked = [];
-          dialog.showSaveDialog = async (_win, options) => { asked.push(options); return { canceled: true }; };
-          await cardButton(win, 'Combine');
-          await sleep(600);
-          c = await veil(win);
-          check(`${theme}: closing the save dialog leaves the card as it was and writes nothing`, asked[0].title === 'Combine files' && asked[0].defaultPath.endsWith(`Grid combine ${theme} (combined).pdf`) && c && !c.goOff && c.files.split('|').length === 3 && !fs.existsSync(saved) && notices.length === 0, JSON.stringify([asked[0], c]));
-          check(`${theme}: and Cancel still works, and each file has the PDF mark`, (await js(win, `!document.querySelector('.veil .row .btn').disabled && document.querySelectorAll('.veil .cfile .cicon svg').length === 3`)), '');
-          dialog.showSaveDialog = async () => ({ canceled: false, filePath: saved });
-          await cardButton(win, 'Combine');
+          check(`${theme}: letting go keeps the new order and nothing is lifted any more`, c.files === `Grid join A ${theme}.pdf|Grid add ${theme}.pdf*|Grid join B ${theme}.pdf` && (await js(win, `!document.querySelector('.veil .cfile.lift')`)), JSON.stringify(c));
+          await shot(win, `workspace-add-files-${theme}.png`);
+          lag = 1500;
+          await cardButton(win, 'Add to document');
+          await sleep(400);
+          const adding = await js(win, `(() => { const go = document.querySelector('.veil .primary'); return { open: !!go, spin: !!go?.querySelector('.spin'), word: go?.textContent, busy: go?.getAttribute('aria-busy'), focused: document.activeElement === go, still: document.querySelector('.veil .files').inert, dim: Number(getComputedStyle(document.querySelector('.veil .files')).opacity) < 0.7, cancelOff: [...document.querySelectorAll('.veil .btn')].find((b) => b.textContent === 'Cancel').disabled }; })()`);
+          check(`${theme}: while the files are added, the card stays with a spinner beside Add to document, the list dimmed and still, and Cancel off`, adding.open && adding.spin && adding.word === 'Add to document' && adding.busy === 'true' && adding.focused && adding.still && adding.dim && adding.cancelOff, JSON.stringify(adding));
+          await shot(win, `workspace-add-files-adding-${theme}.png`);
+          await press(win, 'Escape');
+          check(`${theme}: Esc does not close the card while the files are added`, await js(win, `!!document.querySelector('.veil .primary .spin')`));
+          lag = 0;
           await gone(win);
-          check(`${theme}: Combine writes the files and the document as one file in the order of the list, says so in the corner, and leaves the document alone`, (await sizesOf(saved)) === '400x300,400x300,595x842,595x842,595x842,300x400,300x400' && notices.at(-1)?.title === 'Files combined' && notices.at(-1).detail === path.basename(saved) && applied() === before && !(await bar(win)).save, JSON.stringify([await sizesOf(saved), notices]));
-          dialog.showSaveDialog = realSave;
+          await until('the pages to be added', async () => (await grid(win)).cells === 7);
+          await settled(win);
+          const last = calls.filter((x) => x.channel === 'pdfws:apply').at(-1);
+          const added = await js(win, `[...document.querySelectorAll('.cell.added')].map((x) => x.dataset.n).join()`);
+          check(`${theme}: Add to document puts the file above the document in front of page 1 and the one below it at the end, in one change, and those pages wear the Added tag`, applied() === before + 1 && JSON.stringify(last.args[1].map((o) => [o.op, o.before, o.sources.length])) === '[["pages.insert",4,1],["pages.insert",1,1]]' && added === '1,2,6,7' && (await bar(win)).save, JSON.stringify([last.args, added]));
+          const sizes = await js(win, `(async () => { const d = workspaceViewer.viewer.pdfDocument; const out = []; for (let i = 1; i <= d.numPages; i++) { const v = (await d.getPage(i)).view; out.push(Math.round(v[2] - v[0]) + 'x' + Math.round(v[3] - v[1])); } return out.join(); })()`);
+          check(`${theme}: and the pages keep their sizes, in the order of the list`, sizes === '400x300,400x300,595x842,595x842,595x842,300x400,300x400', sizes);
           dialog.showOpenDialog = realOpen;
           win.destroy();
           await sleep(500);
@@ -3355,44 +3619,114 @@ app.whenReady().then(async () => {
         nativeTheme.themeSource = 'light';
 
         {
-          const doc = await makePdf('Grid combine more.pdf', 2);
+          const doc = await makePdf('Grid add more.pdf', 2);
           const plain = await sized('Grid join C.pdf', 1, [500, 500]);
           const win = await openAndWait(fresh({ solid: true }), doc);
           win.setSize(900, 600);
           await sleep(600);
           await openGrid(win);
           await sheetsDrawn(win, 2);
-          await pushed(win, 'Combine files…');
+          await addFiles(win);
           await sleep(300);
           dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [protectedFile, plain] });
-          await cardButton(win, '+ Add files');
+          await cardButton(win, CHOOSE);
           await until('the password card', () => js(win, `!!document.querySelector('.veil input[type="password"]')`));
           check('a protected file asks for its password, by name, before it is listed', (await js(win, `document.querySelector('.veil .fname')?.textContent`)) === 'Grid join protected.pdf');
-          await js(win, `(() => { const f = document.querySelector('.veil input'); f.value = ${JSON.stringify(secret)}; f.dispatchEvent(new Event('input')); [...document.querySelectorAll('.veil .primary')].at(-1).click(); })()`);
+          await js(win, `(() => { const f = document.querySelector('.veil input'); f.value = ${JSON.stringify(secret)}; f.dispatchEvent(new Event('input')); f.closest('.card').querySelector('.primary').click(); })()`);
           await until('both files to be listed', async () => (await veil(win))?.files?.split('|').length === 3);
           let c = await veil(win);
-          check('with the right password it is listed, and the file after it as well', c.files === 'Grid combine more.pdf:101|Grid join protected.pdf:000|Grid join C.pdf:010', JSON.stringify(c));
-          await rowButton(win, 'Grid join protected.pdf', 'close');
+          check('with the right password it is listed, and the file after it as well', c.files === 'Grid add more.pdf*|Grid join protected.pdf|Grid join C.pdf', JSON.stringify(c));
+          await removeRow(win, 'Grid join protected.pdf');
           c = await veil(win);
-          check('Remove takes a file out of the list', c.files === 'Grid combine more.pdf:101|Grid join C.pdf:010', JSON.stringify(c));
+          check('Remove takes a file out of the list and the focus goes to the row now in its place', c.files === 'Grid add more.pdf*|Grid join C.pdf' && (await js(win, `document.activeElement.closest('.cfile')?.querySelector('.cname').title`)) === 'Grid join C.pdf', JSON.stringify(c));
+          await js(win, `document.querySelector('.veil .cfile:not(.me) .grip').focus()`);
+          await press(win, 'Up', ['alt']);
+          c = await veil(win);
+          check('Alt+Up moves a file above the document', c.files === 'Grid join C.pdf|Grid add more.pdf*', JSON.stringify(c));
+          const gripAt = await js(win, `(() => { const r = document.querySelector('.veil .cfile .grip').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+          mouse(win, 'mouseMove', gripAt);
+          mouse(win, 'mouseDown', gripAt);
+          for (let y = gripAt.y; y <= gripAt.y + 60; y += 6) { mouse(win, 'mouseMove', { x: gripAt.x, y }); await sleep(16); }
+          await press(win, 'Escape');
+          await sleep(300);
+          c = await veil(win);
+          check('Esc while dragging puts the rows back as they were and keeps the card open', c && c.files === 'Grid join C.pdf|Grid add more.pdf*' && (await js(win, `!document.querySelector('.veil .cfile.lift')`)), JSON.stringify(c));
+          mouse(win, 'mouseUp', { x: gripAt.x, y: gripAt.y + 60 });
+          await sleep(200);
+
           const debug = win.webContents.debugger;
           debug.attach('1.3');
-          const centre = await js(win, `(() => { const r = document.querySelector('.veil .addfiles').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
-          const dragged = (type) => debug.sendCommand('Input.dispatchDragEvent', { type, ...centre, data: { items: [], files: [plain], dragOperationsMask: 1 } });
-          await dragged('dragEnter');
-          await dragged('dragOver');
-          check('a file dragged over the card lights up Add files', await js(win, `document.querySelector('.veil .addfiles').classList.contains('over')`));
-          await dragged('drop');
+          const middle = await js(win, `(() => { const r = document.querySelector('.veil .card').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + 30) }; })()`);
+          const drag = (type, files, at = middle) => debug.sendCommand('Input.dispatchDragEvent', { type, ...at, data: { items: [], files, dragOperationsMask: 1 } });
+          const over = () => js(win, `(() => { const c = document.querySelector('.veil .card'); const o = c.querySelector('.dropover'); const a = c.getBoundingClientRect(); const b = o.getBoundingClientRect(); return { on: c.classList.contains('dropping'), text: o.textContent, opacity: getComputedStyle(o).opacity, covers: b.left - a.left <= 7 && a.right - b.right <= 7 && b.top - a.top <= 7 && a.bottom - b.bottom <= 7 }; })()`);
+          await drag('dragEnter', [plain]);
+          await drag('dragOver', [plain]);
+          await sleep(300);
+          let o = await over();
+          check('a file dragged over the card turns the whole card into one place that says Drop here', o.on && o.text === 'Drop here' && o.opacity === '1' && o.covers, JSON.stringify(o));
+          await shot(win, 'workspace-add-files-drop.png');
+          await drag('dragOver', [plain], { x: 60, y: middle.y });
+          await sleep(400);
+          o = await over();
+          check('a drag that moves off the card without dropping puts the card back as it was', !o.on && o.opacity === '0', JSON.stringify(o));
+          await drag('dragCancel', [plain]);
+          await drag('dragEnter', [plain]);
+          await drag('dragOver', [plain]);
+          await drag('dragCancel', [plain]);
+          await sleep(1500);
+          o = await over();
+          check('a drag cancelled over the card puts the card back within a second, though no dragleave comes', !o.on && o.opacity === '0', JSON.stringify(o));
+          await drag('dragEnter', [plain]);
+          await drag('dragOver', [plain]);
+          await drag('drop', [plain]);
           await until('the dropped file to be listed', async () => (await veil(win))?.files?.split('|').length === 3);
           c = await veil(win);
-          check('a PDF dropped on the card is listed after the others, and the light goes out', c.files === 'Grid combine more.pdf:101|Grid join C.pdf:000|Grid join C.pdf:010' && !(await js(win, `document.querySelector('.veil .addfiles').classList.contains('over')`)), JSON.stringify(c));
+          check('a PDF dropped on the card is listed last, the card is itself again, and nothing more is said', c.files === 'Grid join C.pdf|Grid add more.pdf*|Grid join C.pdf' && !(await over()).on && c.line === '', JSON.stringify(c));
+          const zipped = path.join(root, 'Grid join notes.zip');
+          fs.writeFileSync(zipped, 'not a pdf');
+          const letter = path.join(root, 'Grid join letter.docx');
+          const { Document, Packer, Paragraph } = require('docx');
+          fs.writeFileSync(letter, await Packer.toBuffer(new Document({ sections: [{ children: [new Paragraph('A letter in Word')] }] })));
+          await drag('dragEnter', [zipped, letter]);
+          await drag('dragOver', [zipped, letter]);
+          await drag('drop', [zipped, letter]);
+          await until('the document of the two to be listed', async () => (await veil(win))?.files?.split('|').length === 4);
+          c = await veil(win);
+          const word = await js(win, `(() => { const r = [...document.querySelectorAll('.veil .cfile')].at(-1); return { meta: r.querySelector('.cmeta').textContent, shapes: r.querySelectorAll('.cicon .picon *').length }; })()`);
+          check('a Word document is listed, with its icon, to be made into PDF pages', c.files.endsWith('|Grid join letter.docx') && word.meta === 'Made into PDF pages' && word.shapes > 2, JSON.stringify([c, word]));
+          check('a file that cannot be added, dropped with one that can, is left out and the card says so', c.line === 'Only PDFs, pictures and documents can be added', JSON.stringify(c));
           debug.detach();
-          await rowButton(win, 'Grid join C.pdf', 'close');
-          const out = path.join(root, 'Grid combined more.pdf');
-          dialog.showSaveDialog = async () => ({ canceled: false, filePath: out });
-          await cardButton(win, 'Combine');
+          await removeRow(win, 'Grid join C.pdf');
+          await removeRow(win, 'Grid join C.pdf');
+          const before = applied();
+          await cardButton(win, 'Add to document');
           await gone(win);
-          check('the file that was removed is not in the result', (await sizesOf(out)) === '595x842,595x842,500x500', await sizesOf(out));
+          await until('the pages of the letter', async () => (await grid(win)).cells > 2, 60000);
+          await settled(win);
+          const last = calls.filter((x) => x.channel === 'pdfws:apply').at(-1);
+          check('the document is made into a PDF and its pages go in at the end, tagged, and the engine is sent no path', applied() === before + 1 && last.args[1].length === 1 && last.args[1][0].before === 3 && !JSON.stringify(last.args).includes(letter) && (await js(win, `[...document.querySelectorAll('.cell.added')].map((x) => x.dataset.n).join()`)) === Array.from({ length: (await grid(win)).cells - 2 }, (_, i) => i + 3).join(), JSON.stringify([last.args, await grid(win)]));
+          check('the PDF it was made into is not left beside the letter', fs.readdirSync(root).filter((f) => f.startsWith('Grid join letter') && f.endsWith('.pdf')).length === 0);
+
+          const long = await sized('Annual statements and the auditors report for the year ended 31 December 2026 final.pdf', 1, [500, 500]);
+          const arabic = await sized('تقرير الميزانية السنوية للعام المالي ألفين وستة النهائي.pdf', 1, [500, 500]);
+          await addFiles(win);
+          await sleep(300);
+          dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [long, arabic, plain, plain, plain, plain] });
+          await cardButton(win, CHOOSE);
+          await until('the seven files to be listed', async () => (await veil(win))?.files?.split('|').length === 7);
+          const listed = () => js(win, `(() => { const l = document.querySelector('.veil .files'); const rows = [...l.children].map((r) => r.getBoundingClientRect()); const box = l.getBoundingClientRect(); const name = l.children[1].querySelector('.cname');
+            return { height: Math.round(l.clientHeight), whole: rows.filter((r) => r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5).length, cut: rows.filter((r) => r.top < box.bottom - 0.5 && r.bottom > box.bottom + 0.5).length, more: l.classList.contains('more'),
+              shown: name.querySelector('.tail').textContent, cutsMiddle: name.querySelector('.head').scrollWidth > name.querySelector('.head').clientWidth, full: name.textContent, title: name.title, rtl: (() => { const n = l.children[2].querySelector('.cname'); return n.querySelector('.head').getBoundingClientRect().left > n.querySelector('.tail').getBoundingClientRect().left; })() }; })()`);
+          let list = await listed();
+          check(`seven files show as five whole rows with the last fading, no row cut in half (232 px showed four rows and half of the fifth) (${list.height} px)`, list.whole === 5 && list.cut === 0 && list.more, JSON.stringify(list));
+          check('a long name loses its middle, so its end and the extension stay in view, and the whole name is in its tooltip and read out (the end was cut)', list.shown === '2026 final.pdf' && list.cutsMiddle && list.full === path.basename(long) && list.title === path.basename(long), JSON.stringify(list));
+          check('a long right-to-left name is cut in its middle too, with its start on the right, so it reads in order (the cut put its start on the left)', list.rtl, JSON.stringify(list));
+          await js(win, `document.querySelector('.veil .files').scrollTop = 10000`);
+          await sleep(200);
+          list = await listed();
+          check('scrolled to the end the last row no longer fades', !list.more, JSON.stringify(list));
+          await press(win, 'Escape');
+          await gone(win);
           dialog.showSaveDialog = realSave;
           dialog.showOpenDialog = realOpen;
           win.destroy();

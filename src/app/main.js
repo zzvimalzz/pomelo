@@ -50,6 +50,7 @@ const workspace = createWorkspace({
   runPdfTool: conversion.runPdfTool, showInFolder: (file) => shell.showItemInFolder(file),
   hasPdfEngine: () => !!conversion.getEngines().pdf, installEngine: (key, onNote) => setup.run(key, onNote),
   probeLocked: conversion.probeLocked, checkPassword: conversion.checkPassword,
+  asPdf: conversion.asPdf, pdfSourceExts: conversion.pdfSourceExts, makePdf: (src, outDir, signal) => conversion.convertFile(src, 'pdf', { outDir, signal }),
 });
 const showPdf = (paths) => workspace.open(paths).catch((e) => log('PDF window failed:', e.message));
 const editor = createEditor({

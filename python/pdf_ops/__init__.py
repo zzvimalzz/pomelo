@@ -25,7 +25,6 @@ OPS = {
     "pages.insert": ("new", pages.insert),
     "pages.blank": ("new", pages.blank),
     "pages.extract": ("output", pages.extract),
-    "pages.merge": ("output", pages.merge),
 }
 
 

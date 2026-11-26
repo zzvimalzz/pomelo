@@ -14,8 +14,6 @@ const isBefore = (v) => Number.isInteger(v) && v >= 1 && v <= MAX_PAGE + 1;
 
 const isSources = (v) => Array.isArray(v) && v.length > 0 && v.length <= MAX_SOURCES && v.every((id) => typeof id === 'string' && /^[0-9a-f]{32}$/.test(id)) && new Set(v).size === v.length;
 
-const isPosition = (v) => Number.isInteger(v) && v >= 0 && v <= MAX_SOURCES;
-
 const isText = (v) => typeof v === 'string' && v.length <= 1000 && !v.includes('\0');
 
 const OPS = {
@@ -26,7 +24,6 @@ const OPS = {
   'pages.insert': { kind: 'new', keys: { before: isBefore, sources: isSources } },
   'pages.blank': { kind: 'new', keys: { before: isBefore } },
   'pages.extract': { kind: 'output', keys: { pages: isPages } },
-  'pages.merge': { kind: 'output', keys: { sources: isSources, at: isPosition } },
 };
 
 // Where every page is after a list of page changes: [the page it was when the document began, degrees turned], in the order they now
@@ -83,7 +80,8 @@ function splitParts(request, total) {
       const m = RANGE.exec(item.trim());
       const from = m && Number(m[1]);
       const to = !m ? 0 : m[2] ? (m[3] === '' ? total : Number(m[3])) : from;
-      if (!m || from < 1 || to < from || to > total) return { error: SPLIT_WORDS.ranges };
+      if (m && from >= 1 && Math.max(from, to) > total) return { error: `This document has ${total} page${total === 1 ? '' : 's'}` };
+      if (!m || from < 1 || to < from) return { error: SPLIT_WORDS.ranges };
       spans.push([from, to]);
     }
   } else if (mode === 'every' && Number.isInteger(n) && n >= 1 && n < total) {

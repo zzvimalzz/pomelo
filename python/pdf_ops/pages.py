@@ -97,16 +97,6 @@ def insert(doc, before, sources, secrets):
     return added
 
 
-def merge(doc, sources, at, secrets):
-    """The document goes among the files: after the first `at` of them. The caller saves the result as a new file."""
-    if not isinstance(sources, list) or type(at) is not int or not 0 < len(sources) <= MAX_SOURCES or not 0 <= at <= len(sources):
-        raise ValueError("there are no files to combine")
-    if at:
-        insert(doc, 1, sources[:at], secrets)
-    if at < len(sources):
-        insert(doc, doc.page_count + 1, sources[at:], secrets)
-
-
 def extract(doc, pages):
     """Keeps only these pages, in their order. The caller saves the result as a new file."""
     doc.select(sorted(pick(doc, pages)))

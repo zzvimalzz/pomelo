@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The PDF workspace: a window that reads PDFs, one tab for each. The rest of the app uses only this file. The window code is loaded the first time a
 // PDF is opened, so a Pomelo that never opens one pays nothing for it.
+const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createDocuments, sweepSessions } = require('./documents');
@@ -15,6 +16,7 @@ const DOCKS = ['bottom', 'top', 'left', 'right'];
 const MAX_COPIED = 100000;
 const MAX_TABS = 10;
 const MAX_INSERTED = 50;
+const COUNTED_BYTES = 50 * 1048576;
 
 const WHY_NOT_SAVED = {
   locked: ({ name }) => `${name} is open in another program. Close it there, or save a copy.`,
@@ -33,9 +35,12 @@ const REASONS = {
 // copyText(text): put text on the clipboard. uniquePath(dir, base, ext): a path that does not exist yet. runPdfTool(script, args, { src, signal, secrets }): run a
 // PDF editing helper with the PDF engine. showInFolder(file): show a file in Explorer. hasPdfEngine(): is the PDF engine installed. installEngine(key, onNote):
 // install an engine as the Engines page does, calling onNote(note, fraction) as it goes, and resolve { ok, message }. probeLocked(file): does a PDF need a
-// password to open. checkPassword(file, password): does this Buffer open it. solid: draw an opaque window; by default only before Windows 11.
-function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, uniquePath, runPdfTool, showInFolder, hasPdfEngine, installEngine, probeLocked, checkPassword, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
-  const documents = createDocuments({ runPdfTool, checkPassword });
+// password to open. checkPassword(file, password): does this Buffer open it. asPdf(ext): { group, route } for a format, route being 'ready'
+// when a file of it can be made into a PDF now, 'soffice' once LibreOffice is installed, or null. pdfSourceExts(): the extensions asPdf
+// takes. makePdf(file, folder, signal): make a PDF of it in that folder and resolve [its path]. solid: draw an opaque window; by default
+// only before Windows 11.
+function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, uniquePath, runPdfTool, showInFolder, hasPdfEngine, installEngine, probeLocked, checkPassword, asPdf, pdfSourceExts, makePdf, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
+  const documents = createDocuments({ runPdfTool, checkPassword, makePdf });
   let win = null;
   let queue = Promise.resolve();
   let leaving = false;
@@ -158,28 +163,43 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     return { ...result, copied: !!documents.find(target) };
   }
 
-  async function installPdfEngine() {
-    const { ok, message } = await installEngine('pdf', (note, fraction) => win?.webContents.send('pdfws:install-note', { note, fraction }));
+  async function installFor(key) {
+    if (key !== 'pdf' && key !== 'soffice') return { ok: false, message: '' };
+    const { ok, message } = await installEngine(key, (note, fraction) => win?.webContents.send('pdfws:install-note', { key, note, fraction }));
     return { ok, message };
   }
 
-  // The PDFs and pictures among these paths, each as { id, name, kind, locked } for the page, which names a file by its id from then on.
+  // pdf-lib reads the page count without the PDF engine. Past this size it would keep the user waiting, so the count is left out.
+  async function pageCount(file) {
+    try {
+      if ((await fs.promises.stat(file)).size > COUNTED_BYTES) return null;
+      const { PDFDocument } = require('pdf-lib');
+      return (await PDFDocument.load(await fs.promises.readFile(file), { ignoreEncryption: true, updateMetadata: false })).getPageCount();
+    } catch {
+      return null;
+    }
+  }
+
+  // The PDFs, pictures and documents among these paths, each as { id, name, kind, ext, group, locked, pages, needs } for the page, which
+  // names a file by its id from then on. A document is made into a PDF when it is inserted; `needs` is 'soffice' until LibreOffice is there.
   async function sourcesOf(paths) {
     const found = [];
     for (const file of Array.isArray(paths) ? paths.slice(0, MAX_INSERTED) : []) {
       if (typeof file !== 'string' || !path.isAbsolute(file)) continue;
       const ext = path.extname(file).slice(1).toLowerCase();
-      const kind = ext === 'pdf' ? 'pdf' : PICTURE_EXTENSIONS.includes(ext) ? 'image' : null;
-      if (kind) found.push({ id: documents.addSource(file, kind), name: path.basename(file), kind, locked: kind === 'pdf' && !!(await probeLocked(file)) });
+      const { group, route } = ext === 'pdf' ? { group: 'pdf' } : asPdf(ext);
+      const kind = ext === 'pdf' ? 'pdf' : PICTURE_EXTENSIONS.includes(ext) ? 'image' : route ? 'document' : null;
+      if (!kind) continue;
+      const locked = kind === 'pdf' && !!(await probeLocked(file));
+      const pages = kind === 'image' ? 1 : kind === 'pdf' && !locked ? await pageCount(file) : null;
+      found.push({ id: documents.addSource(file, kind), name: path.basename(file), kind, ext, group, locked, pages, needs: route === 'soffice' ? 'soffice' : null });
     }
-    if (!found.length) notify({ title: "Can't insert these files", detail: 'Only PDFs and pictures can be inserted.' });
+    if (!found.length) notify({ title: "Can't add these files", detail: 'Only PDFs, pictures and documents can be added.' });
     return found;
   }
 
-  async function chooseSources(kind) {
-    if (kind !== 'pdf' && kind !== 'pdfs' && kind !== 'image') return [];
-    const files = await require('./workspace.window').chooseInsert(win, kind, startFolder(getSettings().pdfRecent));
-    return files.length ? sourcesOf(files) : [];
+  function chooseSources() {
+    return require('./workspace.window').chooseInsert(win, ['pdf', ...PICTURE_EXTENSIONS, ...pdfSourceExts()], startFolder(getSettings().pdfRecent));
   }
 
   // The pages go to a new file the user names; the document and its changes are as they were. Resolves { done } or { stop }.
@@ -192,19 +212,6 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     const result = await documents.extract(token, wanted, target).catch(applyFailed);
     if (!result.done) return revised(Promise.resolve(result), false);
     notify({ title: wanted.length === 1 ? 'Page extracted' : 'Pages extracted', detail: path.basename(target) });
-    return result;
-  }
-
-  // The document and the PDFs the page chose (by id, in the order of the list; the document stands after the first `at`) become a new file
-  // the user names. Resolves { done } or { stop }.
-  async function combine(token, ids, at) {
-    const file = documents.fileOf(token);
-    const suggested = uniquePath(path.dirname(file), `${path.basename(file, path.extname(file))} (combined)`, 'pdf');
-    const target = await require('./workspace.window').chooseSavePath(win, suggested, 'Combine files');
-    if (!target) return { stop: 'cancelled' };
-    const result = await documents.merge(token, ids, at, target).catch(applyFailed);
-    if (!result.done) return revised(Promise.resolve(result), false);
-    notify({ title: 'Files combined', detail: path.basename(target) });
     return result;
   }
 
@@ -251,13 +258,13 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     dropSources: sourcesOf,
     unlockSource: documents.unlockSource,
     extract,
-    combine,
     split,
+    splitPlan: (request, total) => { const made = splitParts(request, total); return made.parts ? { spans: made.parts.map((pages) => [pages[0], pages.at(-1)]) } : { error: made.error }; },
     details: documents.details,
     rename: (token, name) => revised(documents.rename(token, name), false),
     showInFolder: (token) => showInFolder(documents.fileOf(token)),
     engine: () => !!hasPdfEngine(),
-    installEngine: installPdfEngine,
+    installEngine: installFor,
     undo: (token) => revised(documents.undo(token), true),
     redo: (token) => revised(documents.redo(token), true),
     save: (token) => revised(documents.save(token), false),

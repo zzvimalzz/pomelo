@@ -4,7 +4,6 @@
 const path = require('path');
 const { dialog } = require('electron');
 const { createAppWindow } = require('#shared/electron/windows');
-const { PICTURE_EXTENSIONS } = require('./ops');
 
 // asset(name): path of a file shipped in assets/. solid: draw an opaque window. saved: the stored place of the window.
 // onBounds({ x, y, width, height, maximised, savedAt }): called, after a pause, whenever the user moved or resized it.
@@ -24,13 +23,8 @@ async function choosePdf(parent, folder) {
   return picked.canceled ? [] : picked.filePaths;
 }
 
-// One PDF ('pdf'), any number of PDFs ('pdfs') or any number of pictures ('image') to put among the pages or combine with the document.
-async function chooseInsert(parent, kind, folder) {
-  const pictures = kind === 'image';
-  const options = {
-    title: pictures ? 'Insert pictures' : kind === 'pdfs' ? 'Add files' : 'Insert pages from a PDF', defaultPath: folder, properties: kind === 'pdf' ? ['openFile'] : ['openFile', 'multiSelections'],
-    filters: [pictures ? { name: 'Pictures', extensions: PICTURE_EXTENSIONS } : { name: 'PDF files', extensions: ['pdf'] }],
-  };
+async function chooseInsert(parent, extensions, folder) {
+  const options = { title: 'Add files', defaultPath: folder, properties: ['openFile', 'multiSelections'], filters: [{ name: 'PDFs, pictures and documents', extensions }] };
   const picked = await dialog.showOpenDialog(parent, options);
   return picked.canceled ? [] : picked.filePaths;
 }

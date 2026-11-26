@@ -113,7 +113,7 @@
     return new Promise((resolve) => { c.pending = resolve; });
   }
 
-  // Asks for the password of a file to insert or combine until it is right. Resolves false when the user gives up.
+  // Asks for the password of a file to add until it is right. Resolves false when the user gives up.
   async function askSource(source) {
     let gaveUp = false;
     let wrong = false;
@@ -236,7 +236,7 @@
           line.classList.toggle('busy', typeof fraction !== 'number');
           if (typeof fraction === 'number') line.style.setProperty('--done', `${Math.round(fraction * 100)}%`);
         };
-        const result = await window.workspaceApi.installEngine();
+        const result = await window.workspaceApi.installEngine('pdf');
         if (result.ok) { done(true); return; }
         progress = null;
         rest(false);

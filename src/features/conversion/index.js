@@ -20,6 +20,15 @@ const sourceExts = [...Object.keys(TARGET_ORDER).filter((e) => e !== 'folder'), 
 
 const targetsFor = (files) => targetsForFiles(files, canConvert);
 
+// For the PDF window, which takes files as pages: a format's group, and whether a file of it can be made into a PDF now ('ready'), only
+// once LibreOffice is installed ('soffice'), or not at all (null). `ext` may be a spelling such as jpeg.
+function asPdf(ext) {
+  const format = ALIASES[ext] ?? ext;
+  const route = canConvert(format, 'pdf') ? 'ready' : plansFor(format, 'pdf', { ...getEngines(), soffice: 'soffice' }).length ? 'soffice' : null;
+  return { group: groupOf(format), route };
+}
+const pdfSourceExts = () => sourceExts.filter((ext) => asPdf(ext).route);
+
 // Protected files: why a file cannot be read as it is ('needed' | 'unsupported' | 'engine', or null), and whether a password opens it.
 const probeLocked = (file) => lock.probe(file, extOf(file), getEngines());
 const checkPassword = (file, password) => lock.verify(file, extOf(file), password, getEngines());
@@ -49,4 +58,4 @@ async function writeImage(rgba, out, to, options) {
 // extensions that start slowly (LibreOffice) or are pictures.
 const timingFormats = { extOf, kinds: { office: new Set(Object.values(OFFICE).flat()), picture: new Set(extsInGroup('image')) } };
 
-module.exports = { uniquePath, runPdfTool, readImage, writeImage, QUALITY, detectEngines, getEngines, targetsFor, canConvert, convertFile, probeLocked, checkPassword, plansFor, explainNoTargets, extOf, groupOf, labelOf, timingFormats, sourceExts };
+module.exports = { uniquePath, runPdfTool, readImage, writeImage, QUALITY, detectEngines, getEngines, targetsFor, canConvert, asPdf, pdfSourceExts, convertFile, probeLocked, checkPassword, plansFor, explainNoTargets, extOf, groupOf, labelOf, timingFormats, sourceExts };

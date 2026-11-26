@@ -16,6 +16,8 @@
   let flashTimer = null;
   let folded = false;
   let hide = () => {};
+  let grid = () => {};
+  let showPage = () => {};
   const focusReading = () => document.body.classList.contains('focus');
   const menuOpen = () => !!menu && !menu.hidden;
   const closeMenu = () => { if (menu) { menu.hidden = true; zoomButton.setAttribute('aria-expanded', 'false'); } };
@@ -113,10 +115,11 @@
     flash = el('div', 'flash');
     well().append(wrap, flash);
 
-    const zoomBy = (steps, at = middle(container)) => viewer.updateScale({ steps, origin: at });
-    const turn = (n) => { viewer.currentPageNumber = Math.min(Math.max(n, 1), viewer.pagesCount); };
-    previous.onclick = () => viewer.previousPage();
-    next.onclick = () => viewer.nextPage();
+    const pages = window.workspaceOrganise;
+    const zoomBy = (steps, at = middle(container)) => pages.zoom(steps) || viewer.updateScale({ steps, origin: at });
+    const turn = (n) => { if (!pages.go(n)) viewer.currentPageNumber = Math.min(Math.max(n, 1), viewer.pagesCount); };
+    previous.onclick = () => pages.step(-1) || viewer.previousPage();
+    next.onclick = () => pages.step(1) || viewer.nextPage();
 
     const setFolded = (on) => {
       folded = on;
@@ -142,7 +145,18 @@
     };
     // The box is as wide as its digits, so the number and the total sit in the middle between the arrows whatever the page.
     const fit = () => { page.style.width = `calc(${Math.max(page.value.length, 1)}ch + 10px)`; };
-    const sync = () => { page.value = viewer.currentPageNumber; fit(); };
+    let gridSize = null;
+    let scale = '';
+    const sync = () => { if (!gridSize) { page.value = viewer.currentPageNumber; fit(); } };
+    showPage = (n) => { if (document.activeElement !== page) { page.value = n; fit(); } };
+    // `size` is the grid's thumbnail size in words while it is up, and null once it is gone.
+    grid = (size) => {
+      gridSize = size;
+      closeMenu();
+      zoom.disabled = !!size;
+      zoom.textContent = size ?? scale;
+      sync();
+    };
     page.oninput = fit;
     page.onfocus = () => page.select();
     page.onblur = sync;
@@ -163,11 +177,13 @@
     // The dock stays up while the pages of a document just changed are read again, so it does not drop out and come back each time.
     eventBus.on('pagesdestroy', () => { if (!window.workspaceOrganise.waiting()) hide(); });
     eventBus.on('pagechanging', ({ pageNumber }) => {
+      if (gridSize) return;
       if (document.activeElement !== page) { page.value = pageNumber; fit(); }
       if (focusReading() || folded) showPill(`${pageNumber} / ${viewer.pagesCount}`);
     });
-    eventBus.on('scalechanging', ({ scale, presetValue }) => {
-      zoom.textContent = PRESETS[presetValue] ?? `${Math.round(scale * 100)}%`;
+    eventBus.on('scalechanging', (e) => {
+      scale = PRESETS[e.presetValue] ?? `${Math.round(e.scale * 100)}%`;
+      if (!gridSize) zoom.textContent = scale;
     });
 
     // Ctrl and the wheel zoom wherever the pointer is. A mouse notch is 100 and one step; a trackpad pinch sends many small turns,
@@ -204,5 +220,5 @@
 
   bind('escape', () => (menuOpen() ? (closeMenu(), true) : false));
 
-  window.workspaceDock = { watch, hide: () => hide() };
+  window.workspaceDock = { watch, hide: () => hide(), grid: (size) => grid(size), showPage: (n) => showPage(n) };
 })();
