@@ -2718,11 +2718,13 @@ app.whenReady().then(async () => {
           placed && place.apart && place.inside && place.sep === '1x22' && named, JSON.stringify(place));
       }
       const slide = () => js(win, `(() => { const o = document.querySelector('.optbar'); const style = getComputedStyle(o); return { y: Math.round(new DOMMatrix(style.transform).m42), opacity: Number(style.opacity), clickable: style.pointerEvents !== 'none' }; })()`);
-      // The transition is read as it starts, in the same turn as the click: a position sampled part way is lost on a slow runner, where the
-      // whole slide can be over before the sample is taken.
-      const fold = () => js(win, `(() => { document.querySelector('.fold').click(); const o = document.querySelector('.optbar'); getComputedStyle(o).transform;
-        const t = o.getAnimations().find((a) => a.transitionProperty === 'transform'); const k = t?.effect.getKeyframes() ?? []; const y = (f) => Math.round(new DOMMatrix(f?.transform ?? 'none').m42);
-        return t ? { ms: t.effect.getTiming().duration, from: y(k[0]), to: y(k.at(-1)) } : null; })()`);
+      // The transition is read as it starts, in the frames after the click: a position sampled part way is lost on a slow runner, where the
+      // whole slide can be over before the sample is taken, and there the style can change a frame after the click.
+      const fold = () => js(win, `(async () => { document.querySelector('.fold').click(); const o = document.querySelector('.optbar'); const y = (f) => Math.round(new DOMMatrix(f?.transform ?? 'none').m42);
+        for (let i = 0; i < 20; i++) { const style = getComputedStyle(o); const t = o.getAnimations().find((a) => a.transitionProperty === 'transform'); const k = t?.effect.getKeyframes() ?? [];
+          if (t) return { ms: t.effect.getTiming().duration, from: y(k[0]), to: y(k.at(-1)) };
+          if (i === 19) return { none: true, folded: document.querySelector('.dock').classList.contains('folded'), y: y(style), transition: style.transition, animations: o.getAnimations().map((a) => a.transitionProperty ?? a.animationName).join() };
+          await new Promise((resolve) => requestAnimationFrame(resolve)); } })()`);
       for (const side of ['bottom', 'top']) {
         await js(win, `document.querySelector('.well').dataset.dock = '${side}'`);
         await sleep(700);
