@@ -507,5 +507,7 @@ body.focus .scroller { top: 0; bottom: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .panel[data-turn] :is(.sideview, #thumbs, #outline), .cmark, .ccard, .tip, .pick, .pw.shake, .emsg, .dockwrap, .dock, .fold, .fold .i, .menu, .tool, .optbar, .cell .sheet, .dropover, .spart, .cfile.loading, .cfile.loading .sk, .findbar, .flash, .titlerow, .edgehint { animation: none; transition: none; }
+  /* The folded rules name their own transitions and outrank the list above, so the dock and the bar slid away and then jumped back. */
+  .dock.folded, .well:has(.dock.folded) .optbar { transition: none; }
 }
 .dockwrap.measuring, .dockwrap.measuring * { transition: none; }

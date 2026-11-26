@@ -2725,6 +2725,7 @@ app.whenReady().then(async () => {
           if (t) return { ms: t.effect.getTiming().duration, from: y(k[0]), to: y(k.at(-1)) };
           if (i === 19) return { none: true, folded: document.querySelector('.dock').classList.contains('folded'), y: y(style), transition: style.transition, animations: o.getAnimations().map((a) => a.transitionProperty ?? a.animationName).join() };
           await new Promise((resolve) => requestAnimationFrame(resolve)); } })()`);
+      const still = await js(win, `matchMedia('(prefers-reduced-motion: reduce)').matches`);
       for (const side of ['bottom', 'top']) {
         await js(win, `document.querySelector('.well').dataset.dock = '${side}'`);
         await sleep(700);
@@ -2736,8 +2737,23 @@ app.whenReady().then(async () => {
         const back = await slide();
         const sign = side === 'top' ? -1 : 1;
         check(`with the dock at the ${side}, hiding the controls slides the bar of selected pages away with the dock, toward that edge, as it fades, and showing them brings it back the same way (it went and came back at once)`,
-          going?.ms >= 400 && going.from === 0 && going.to === 130 * sign && away.y === 130 * sign && away.opacity === 0 && !away.clickable && coming?.ms >= 400 && coming.from === 130 * sign && coming.to === 0 && back.y === 0 && back.opacity === 1 && back.clickable, JSON.stringify({ going, away, coming, back }));
+          (still ? going?.none && coming?.none : going?.ms >= 400 && going.from === 0 && going.to === 130 * sign && coming?.ms >= 400 && coming.from === 130 * sign && coming.to === 0) && away.y === 130 * sign && away.opacity === 0 && !away.clickable && back.y === 0 && back.opacity === 1 && back.clickable, JSON.stringify({ still, going, away, coming, back }));
       }
+      const motion = win.webContents.debugger;
+      if (!motion.isAttached()) motion.attach('1.3');
+      await motion.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+      await js(win, `document.querySelector('.well').dataset.dock = 'bottom'`);
+      await sleep(700);
+      const calm = { going: await fold() };
+      await sleep(300);
+      calm.away = await slide();
+      calm.dock = await js(win, `getComputedStyle(document.querySelector('.dock')).transitionDuration`);
+      calm.coming = await fold();
+      await sleep(300);
+      calm.back = await slide();
+      check('with reduced motion the dock and the bar go and come back without sliding (they slid away and jumped back)', calm.going?.none && calm.away.y === 130 && calm.coming?.none && calm.back.y === 0 && calm.dock === '0s', JSON.stringify(calm));
+      await motion.sendCommand('Emulation.setEmulatedMedia', { features: [] });
+      motion.detach();
       await js(win, `document.querySelector('.well').dataset.dock = 'bottom'`);
       win.setSize(900, 600);
       await js(win, `document.getElementById('pagesbtn').click(); document.getElementById('docbtn').click()`);
