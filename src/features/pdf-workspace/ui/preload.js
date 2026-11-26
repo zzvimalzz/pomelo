@@ -37,18 +37,19 @@ contextBridge.exposeInMainWorld('workspaceApi', {
   extract: (token, pages) => ipcRenderer.invoke('pdfws:extract', token, pages),
   combine: (token, ids, at) => ipcRenderer.invoke('pdfws:combine', token, ids, at),
   split: (token, request, total) => ipcRenderer.invoke('pdfws:split', token, request, total),
-  onFilesDropped: (cb) => { dropped = cb; },
+  onFilesDropped: (cb) => { dropped.add(cb); return () => dropped.delete(cb); },
 });
 
 // A drop is read here and sent on, so the page never sees a path. A drop made up by a script has no file behind it. On the grid of pages
-// the files are offered to the page to insert; anywhere else they are opened.
-let dropped = null;
+// and in the Combine files card the files are offered to the page; anywhere else they are opened.
+const dropped = new Set();
 const carriesFiles = (e) => e.isTrusted && e.dataTransfer.types.includes('Files');
 document.addEventListener('dragover', (e) => { if (carriesFiles(e)) e.preventDefault(); });
 document.addEventListener('drop', (e) => {
   if (!carriesFiles(e)) return;
   e.preventDefault();
   const paths = [...e.dataTransfer.files].map((file) => webUtils.getPathForFile(file)).filter(Boolean);
-  if (e.target.closest?.('.pgrid')) ipcRenderer.invoke('pdfws:drop-sources', paths).then((sources) => dropped?.(sources));
+  const into = e.target.closest?.('[data-drops]') ? 'combine' : e.target.closest?.('.pgrid') ? 'grid' : null;
+  if (into) ipcRenderer.invoke('pdfws:drop-sources', paths).then((sources) => { for (const cb of dropped) cb(sources, into); });
   else ipcRenderer.invoke('pdfws:drop', paths);
 });

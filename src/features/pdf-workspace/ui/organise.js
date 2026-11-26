@@ -645,7 +645,8 @@
       const n = pageOf(e.target);
       droppedAt = n ? n + (e.clientX < cell(n).getBoundingClientRect().left + cell(n).getBoundingClientRect().width / 2 ? 0 : 1) : viewer.pagesCount + 1;
     });
-    window.workspaceApi.onFilesDropped((found) => {
+    window.workspaceApi.onFilesDropped((found, into) => {
+      if (into !== 'grid') return;
       const before = droppedAt ?? viewer.pagesCount + 1;
       droppedAt = null;
       insertSources(found, before);

@@ -30,7 +30,7 @@
     title.id = 'dialog-title';
     const head = el('div', 'uhead');
     head.append(badge, title);
-    const note = el('p', 'note', 'The files are saved next to this one.');
+    const note = el('p', 'note', 'The files are saved in the same folder');
     const modes = el('div', 'seg3');
     modes.setAttribute('role', 'radiogroup');
     modes.setAttribute('aria-label', 'Split by');
@@ -80,7 +80,7 @@
 
     function choose(next) {
       mode = next;
-      note.textContent = 'The files are saved next to this one.';
+      note.textContent = 'The files are saved in the same folder';
       sync();
       if (mode !== 'bookmarks') { field.focus(); return; }
       if (starts) { says(); return; }

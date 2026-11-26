@@ -22,6 +22,7 @@
     const go = el('button', 'btn primary', 'Combine');
     const row = el('div', 'row');
     row.append(cancel, go);
+    box.dataset.drops = '';
     box.append(head, list, add, row);
 
     const files = [{ name, current: true }];
@@ -32,9 +33,11 @@
     function draw(focus) {
       list.replaceChildren(...files.map((file, i) => {
         const item = el('li', 'cfile');
+        const mark = el('i', 'cicon');
+        mark.innerHTML = icon('file');
         const label = el('span', 'cname', file.name);
         label.title = file.name;
-        item.append(label);
+        item.append(mark, label);
         for (const [act, words] of BUTTONS) {
           const b = el('button');
           b.type = 'button';
@@ -58,26 +61,35 @@
 
     function rest(on) {
       working = on;
-      for (const b of box.querySelectorAll('button')) b.disabled = on || b.disabled;
       go.setAttribute('aria-busy', String(on));
       go.replaceChildren(on ? el('span', 'spin') : document.createTextNode('Combine'));
-      if (!on) draw();
+      if (on) { for (const b of box.querySelectorAll('button')) b.disabled = true; return; }
+      cancel.disabled = false;
+      draw();
+    }
+
+    async function take(found) {
+      for (const source of found.filter((s) => s.kind === 'pdf').slice(0, MAX_ADDED + 1 - files.length)) {
+        if (!source.locked || (await window.workspaceDialogs.askSource(source))) files.push(source);
+      }
+      draw();
     }
 
     return new Promise((resolve) => {
       const done = (answer) => {
+        stopListening();
         close();
         document.getElementById('scroller').focus();
         resolve(answer);
       };
       add.onclick = async () => {
-        const found = await window.workspaceApi.chooseSources('pdfs').catch(() => []);
-        for (const source of found.slice(0, MAX_ADDED + 1 - files.length)) {
-          if (!source.locked || (await window.workspaceDialogs.askSource(source))) files.push(source);
-        }
-        draw();
+        await take(await window.workspaceApi.chooseSources('pdfs').catch(() => []));
         add.focus();
       };
+      box.addEventListener('dragover', () => add.classList.add('over'));
+      box.addEventListener('dragleave', (e) => { if (!box.contains(e.relatedTarget)) add.classList.remove('over'); });
+      box.addEventListener('drop', () => add.classList.remove('over'));
+      const stopListening = window.workspaceApi.onFilesDropped((found, into) => { if (into === 'combine' && !working) take(found); });
       go.onclick = async () => {
         rest(true);
         const result = await window.workspaceApi.combine(token, files.filter((f) => !f.current).map((f) => f.id), files.findIndex((f) => f.current)).catch(() => null);

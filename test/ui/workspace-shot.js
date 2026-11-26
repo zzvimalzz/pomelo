@@ -3210,7 +3210,7 @@ app.whenReady().then(async () => {
           await pushed(win, 'Split…');
           await sleep(400);
           let c = await veil(win);
-          check(`${theme}: Split opens a card with By ranges, Every N pages and At bookmarks, By ranges on, the field focused with its hint, and Split off until something is typed`, c.title === 'Split' && c.radios === 'By ranges=true|Every N pages=false|At bookmarks=false' && c.field === 'false|1-3, 4-9, 10-||' && c.focusedField && c.goOff && c.go === 'Split' && c.note === 'The files are saved next to this one.' && c.wide && c.inside, JSON.stringify(c));
+          check(`${theme}: Split opens a card with By ranges, Every N pages and At bookmarks, By ranges on, the field focused with its hint, and Split off until something is typed`, c.title === 'Split' && c.radios === 'By ranges=true|Every N pages=false|At bookmarks=false' && c.field === 'false|1-3, 4-9, 10-||' && c.focusedField && c.goOff && c.go === 'Split' && c.note === 'The files are saved in the same folder' && c.wide && c.inside, JSON.stringify(c));
           await shot(win, `workspace-split-${theme}.png`);
           await typed(win, 'x');
           await press(win, 'Return');
@@ -3341,6 +3341,7 @@ app.whenReady().then(async () => {
           await sleep(600);
           c = await veil(win);
           check(`${theme}: closing the save dialog leaves the card as it was and writes nothing`, asked[0].title === 'Combine files' && asked[0].defaultPath.endsWith(`Grid combine ${theme} (combined).pdf`) && c && !c.goOff && c.files.split('|').length === 3 && !fs.existsSync(saved) && notices.length === 0, JSON.stringify([asked[0], c]));
+          check(`${theme}: and Cancel still works, and each file has the PDF mark`, (await js(win, `!document.querySelector('.veil .row .btn').disabled && document.querySelectorAll('.veil .cfile .cicon svg').length === 3`)), '');
           dialog.showSaveDialog = async () => ({ canceled: false, filePath: saved });
           await cardButton(win, 'Combine');
           await gone(win);
@@ -3374,6 +3375,19 @@ app.whenReady().then(async () => {
           await rowButton(win, 'Grid join protected.pdf', 'close');
           c = await veil(win);
           check('Remove takes a file out of the list', c.files === 'Grid combine more.pdf:101|Grid join C.pdf:010', JSON.stringify(c));
+          const debug = win.webContents.debugger;
+          debug.attach('1.3');
+          const centre = await js(win, `(() => { const r = document.querySelector('.veil .addfiles').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }; })()`);
+          const dragged = (type) => debug.sendCommand('Input.dispatchDragEvent', { type, ...centre, data: { items: [], files: [plain], dragOperationsMask: 1 } });
+          await dragged('dragEnter');
+          await dragged('dragOver');
+          check('a file dragged over the card lights up Add files', await js(win, `document.querySelector('.veil .addfiles').classList.contains('over')`));
+          await dragged('drop');
+          await until('the dropped file to be listed', async () => (await veil(win))?.files?.split('|').length === 3);
+          c = await veil(win);
+          check('a PDF dropped on the card is listed after the others, and the light goes out', c.files === 'Grid combine more.pdf:101|Grid join C.pdf:000|Grid join C.pdf:010' && !(await js(win, `document.querySelector('.veil .addfiles').classList.contains('over')`)), JSON.stringify(c));
+          debug.detach();
+          await rowButton(win, 'Grid join C.pdf', 'close');
           const out = path.join(root, 'Grid combined more.pdf');
           dialog.showSaveDialog = async () => ({ canceled: false, filePath: out });
           await cardButton(win, 'Combine');
