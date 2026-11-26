@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The well and what is round it: the picture's zoom and pan, the pill with the zoom buttons, the zoom menu, the panel that hides, and
 // full screen. Zoom is canvas pixels for each picture pixel, so 100 % is one picture pixel for each screen pixel. In the crop view the
-// whole turned picture is fitted and what the crop frame leaves out is darkened; the view glides between the two. A classic script that
-// adds window.editorView; show(tab) takes a tab { width, height, alpha, pixels, edit, view } and keeps its texture while it is on show.
+// crop frame is fitted in the middle of the well with the rest of the picture darkened round it, and the view glides between the two. A
+// classic script that adds window.editorView; show(tab) takes a tab { width, height, alpha, pixels, edit, view } and keeps its texture
+// while it is on show.
 (() => {
   const { icon, el } = window.pomeloUi;
   const { label, bind } = window.editorKeys;
@@ -13,6 +14,8 @@
   const body = document.body, panel = $('panel'), panelButton = $('panelbtn'), pill = $('pill');
 
   const AIR = 32;
+  const CROP_AIR = 48;
+  const GLIDE_MS = 450;
   const MAX_ZOOM = 8;
   const STEPS = [0.125, 0.25, 1 / 3, 0.5, 2 / 3, 1, 1.5, 2, 3, 4, 6, 8];
   const PRESETS = [0.25, 0.5, 1, 2, 4, 8];
@@ -30,15 +33,28 @@
   let cropping = false;
   let cropK = 0;
   let cropGlide = 0;
+  let held = null;
+  let settling = null;
+  let cropShown = null;
   const drawn = [];
 
   const geometry = (tab) => (comparing ? geometryOf.neutral() : tab.edit.geometry);
   const sizeOf = (tab) => geometryOf.outputSize(geometry(tab), tab.width, tab.height);
-  const fitFor = (w, h) => Math.max(0.01, Math.min(1, (canvas.width - 2 * AIR * dpr()) / w, (canvas.height - 2 * AIR * dpr()) / h));
-  const fitZoom = (tab) => fitFor(...sizeOf(tab));
+  const fitZoom = (tab) => { const [w, h] = sizeOf(tab); return Math.max(0.01, Math.min(1, (canvas.width - 2 * AIR * dpr()) / w, (canvas.height - 2 * AIR * dpr()) / h)); };
   const zoomOf = (tab) => (tab.view.fit ? fitZoom(tab) : tab.view.zoom);
-  const boxOf = (tab) => geometryOf.turnedSize(geometry(tab), tab.width, tab.height);
-  const viewZoom = (tab) => (cropping ? fitFor(...boxOf(tab)) : zoomOf(tab));
+  // The crop view fills its room with the frame, enlarging a small one.
+  const cropRoom = () => [canvas.width - 2 * CROP_AIR * dpr(), canvas.height - 2 * CROP_AIR * dpr()];
+  const cropZoom = (tab) => { const [w, h] = sizeOf(tab), [rw, rh] = cropRoom(); return Math.max(0.01, Math.min(MAX_ZOOM, rw / w, rh / h)); };
+  const viewZoom = (tab) => (cropping ? cropZoom(tab) : zoomOf(tab));
+  // Starts and ends at rest.
+  const ease = (t) => (t < 0.5 ? 4 * t ** 3 : 1 - (2 - 2 * t) ** 3 / 2);
+  // The view a share `t` of the way from a to b. The zoom changes evenly and the point (x, y) of the picture crosses the screen in a
+  // straight line; mixing the two centres instead makes a glide that zooms and moves at once swing off its path.
+  function mix(a, b, t, x, y) {
+    const zoom = a.zoom + (b.zoom - a.zoom) * t;
+    const along = (p, from, to) => p - ((p - from) * a.zoom * (1 - t) + (p - to) * b.zoom * t) / zoom;
+    return { zoom, cx: along(x, a.cx, b.cx), cy: along(y, a.cy, b.cy) };
+  }
 
   // How far the picture may be pushed from the middle: until its edge is 32 px inside the well on the far side.
   const reach = (extent, space) => Math.max(0, (extent - space) / 2 + AIR * dpr());
@@ -57,21 +73,70 @@
     Object.assign(checker.style, { left: `${x / dpr()}px`, top: `${y / dpr()}px`, width: `${w / dpr()}px`, height: `${h / dpr()}px` });
   }
 
-  // The crop view and the way to it: the whole turned picture is drawn, with what the frame leaves out darkened. `e`, from 0 to 1, is
-  // how far the view has glided from the cropped picture, at its own zoom and place, to the whole picture fitted in the well.
-  function drawCrop(tab, g) {
-    const [boxW, boxH] = geometryOf.turnedSize(g, tab.width, tab.height);
-    const e = 1 - (1 - cropK) ** 4;
-    const from = zoomOf(tab), c = g.crop, v = tab.view;
-    clampPan(tab, from);
-    const zoom = from + (fitFor(boxW, boxH) - from) * e;
-    const cx = ((c.x + c.w / 2) * boxW - v.panX / from) * (1 - e) + (boxW / 2) * e;
-    const cy = ((c.y + c.h / 2) * boxH - v.panY / from) * (1 - e) + (boxH / 2) * e;
-    const x = Math.round(canvas.width / 2 - cx * zoom), y = Math.round(canvas.height / 2 - cy * zoom);
-    renderer.draw(tab, { ...g, crop: { x: 0, y: 0, w: 1, h: 1 } }, zoom, x, y, false, { keep: [c.x, c.y, c.x + c.w, c.y + c.h], amount: e });
-    place(tab, x, y, boxW * zoom, boxH * zoom);
-    well.classList.remove('pan');
-    return { x: x / dpr(), y: y / dpr(), zoom: zoom / dpr(), box: [boxW, boxH], on: cropping && cropK === 1 };
+  // The frame's place in the turned picture, in picture pixels: its middle and half its size.
+  function frameOf(tab) {
+    const g = geometry(tab), [boxW, boxH] = geometryOf.turnedSize(g, tab.width, tab.height), c = g.crop;
+    return { left: c.x * boxW, top: c.y * boxH, cx: (c.x + c.w / 2) * boxW, cy: (c.y + c.h / 2) * boxH, halfW: c.w * boxW / 2, halfH: c.h * boxH / 2 };
+  }
+
+  // Where the crop view looks: at the frame, fitted. While a handle is held the view stays where it was, so the handle follows the
+  // pointer, and gives way only as far as it must to keep a growing frame in sight.
+  function framed(tab) {
+    const f = frameOf(tab), fit = cropZoom(tab);
+    if (!held) {
+      const target = { zoom: fit, cx: f.cx, cy: f.cy };
+      return settling ? mix(settling.from, target, ease(settling.t), f.cx, f.cy) : target;
+    }
+    const zoom = Math.min(held.zoom, fit), [rw, rh] = cropRoom();
+    const reachW = rw / 2 / zoom, reachH = rh / 2 / zoom;
+    return { zoom, cx: clamp(held.cx, f.cx + f.halfW - reachW, f.cx - f.halfW + reachW), cy: clamp(held.cy, f.cy + f.halfH - reachH, f.cy - f.halfH + reachH) };
+  }
+
+  // The crop view and the way to it: `e`, from 0 to 1, is how far the view has glided from the cropped picture at its own zoom and
+  // place to the crop view, while the rest of the picture comes into sight round the frame.
+  function drawCrop(tab) {
+    const f = frameOf(tab), e = ease(cropK), zoom = zoomOf(tab), v = tab.view;
+    clampPan(tab, zoom);
+    cropShown = mix({ zoom, cx: f.cx - v.panX / zoom, cy: f.cy - v.panY / zoom }, framed(tab), e, f.cx, f.cy);
+    // Left unrounded, unlike outside the crop view: snapping to whole pixels makes a glide shiver.
+    const x = canvas.width / 2 + (f.left - cropShown.cx) * cropShown.zoom, y = canvas.height / 2 + (f.top - cropShown.cy) * cropShown.zoom;
+    renderer.draw(tab, geometry(tab), cropShown.zoom, x, y, false, e);
+    const [w, h] = sizeOf(tab).map((side) => side * cropShown.zoom);
+    place(tab, x, y, w, h);
+    well.classList.toggle('pan', cropping);
+    return { x: x / dpr(), y: y / dpr(), w: w / dpr(), h: h / dpr(), zoom: cropShown.zoom / dpr(), on: cropping && cropK === 1 };
+  }
+
+  function stopGlide() {
+    cancelAnimationFrame(settling?.id);
+    settling = null;
+  }
+
+  // Eases the crop view from `from` to the frame as it is now.
+  function glideToFrame(from) {
+    stopGlide();
+    if (reduced() || !from) { want(); return; }
+    const mine = (settling = { from, t: 0, id: 0 }), started = performance.now();
+    const step = (now) => {
+      mine.t = Math.min(1, (now - started) / GLIDE_MS);
+      if (mine.t === 1) settling = null;
+      draw();
+      if (settling === mine) mine.id = requestAnimationFrame(step);
+    };
+    mine.id = requestAnimationFrame(step);
+    draw();
+  }
+
+  function holdView() {
+    if (!shown?.texture || !cropping) return;
+    held = framed(shown);
+    stopGlide();
+  }
+
+  function releaseView() {
+    if (!held) return;
+    held = null;
+    glideToFrame(cropShown);
   }
 
   function draw() {
@@ -79,7 +144,7 @@
     const tab = shown;
     if (!renderer || lost || !tab?.texture) { checker.hidden = true; readout(); return; }
     let layout = { on: false };
-    if (cropping || cropK > 0) layout = drawCrop(tab, geometry(tab));
+    if (cropping || cropK > 0) layout = drawCrop(tab);
     else {
       const zoom = zoomOf(tab);
       well.classList.toggle('pan', clampPan(tab, zoom));
@@ -116,6 +181,8 @@
     if (shown && shown !== tab && shown.texture) { renderer.drop(shown.texture); shown.texture = null; }
     shown = tab;
     comparing = false;
+    stopGlide();
+    held = null;
     if (tab && cropping) Object.assign(tab.view, { fit: true, panX: 0, panY: 0 });
     if (tab && !tab.texture && !tab.gpu) {
       if (renderer && !lost && renderer.fits(tab.width, tab.height)) tab.texture = renderer.upload(tab.width, tab.height, tab.pixels);
@@ -161,15 +228,19 @@
   // { flip: 'h' or 'v' }) so the picture can move from where it was to where it is, and a zoomed picture keeps what was in view.
   function change(update, how) {
     if (!shown?.texture) { update(); return; }
-    const before = viewZoom(shown), v = shown.view;
+    const before = viewZoom(shown), v = shown.view, from = cropShown;
     update();
     if (how?.turn) [v.panX, v.panY] = how.turn > 0 ? [-v.panY, v.panX] : [v.panY, -v.panX];
     if (how?.flip) v[how.flip === 'h' ? 'panX' : 'panY'] *= -1;
     cancelAnimationFrame(tween);
-    draw();
+    if (cropping && !how && !held) glideToFrame(from);
+    else {
+      if (how) stopGlide();
+      draw();
+    }
     if (reduced() || !how) return;
-    const from = how.turn ? { transform: `rotate(${-90 * how.turn}deg) scale(${before / viewZoom(shown)})` } : { transform: how.flip === 'h' ? 'scaleX(-1)' : 'scaleY(-1)' };
-    stage.animate([from, { transform: 'none' }], how.turn ? { duration: 320, easing: 'cubic-bezier(.2, .9, .25, 1.12)' } : { duration: 300, easing: 'cubic-bezier(.22, 1, .36, 1)' });
+    const first = how.turn ? { transform: `rotate(${-90 * how.turn}deg) scale(${before / viewZoom(shown)})` } : { transform: how.flip === 'h' ? 'scaleX(-1)' : 'scaleY(-1)' };
+    stage.animate([first, { transform: 'none' }], how.turn ? { duration: 320, easing: 'cubic-bezier(.2, .9, .25, 1.12)' } : { duration: 300, easing: 'cubic-bezier(.22, 1, .36, 1)' });
   }
 
   // The view that shows `zoom` ('fit' or a number) with the point (px, py), measured from the middle of the well in canvas pixels, held still.
@@ -349,6 +420,7 @@
     if (cropping === on) return;
     cropping = on;
     cancelAnimationFrame(cropGlide);
+    if (!on) held = null;
     pill.classList.toggle('away', on || !renderer || lost || !!shown?.gpu);
     const settle = () => {
       cropK = on ? 1 : 0;
@@ -358,7 +430,7 @@
     if (reduced() || !shown?.texture) { settle(); return; }
     const first = cropK, started = performance.now();
     const step = (now) => {
-      const t = Math.min(1, (now - started) / 320);
+      const t = Math.min(1, (now - started) / GLIDE_MS);
       if (t === 1) { settle(); return; }
       cropK = first + ((on ? 1 : 0) - first) * t;
       draw();
@@ -367,5 +439,5 @@
     cropGlide = requestAnimationFrame(step);
   }
 
-  window.editorView = { show, dispose, change, setCompare, setPanel, setCropping, redraw: want, onDraw: (listener) => drawn.push(listener), showPanel: () => { if (!panelOpen()) setPanel(true); } };
+  window.editorView = { show, dispose, change, setCompare, setPanel, setCropping, holdView, releaseView, ease, glideMs: GLIDE_MS, redraw: want, onDraw: (listener) => drawn.push(listener), showPanel: () => { if (!panelOpen()) setPanel(true); } };
 })();

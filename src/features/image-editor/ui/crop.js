@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The Crop tool: the frame over the picture (drag it, drag its handles), the aspect ratio chips, the Straighten ruler. The frame is
-// kept in the picture's edit as fractions of the turned picture, so the page shows, saves and undoes it like any other change. While
-// a drag or a glide runs, the frame is changed with `live`, which is not in the history; the change is committed when it ends. A
-// classic script that adds window.editorCrop.
+// The Crop tool: the frame in the middle of the well (drag its handles to resize it, drag anywhere else to move the picture under
+// it), the aspect ratio chips, the Straighten ruler. The frame is kept in the picture's edit as fractions of the turned picture, so the
+// page shows, saves and undoes it like any other change. While a drag or a glide runs, the frame is changed with `live`, which is not
+// in the history; the change is committed when it ends. A classic script that adds window.editorCrop.
 (() => {
   const geo = window.editorGeometry;
   const { el, icon } = window.pomeloUi;
@@ -13,11 +13,13 @@
   // tab(): the tab on show. live(geometry): shows a geometry for the tab without a history step. commit(geometry, key): makes it a step.
   function create({ tab, live, commit }) {
     const frame = document.getElementById('frame');
+    const well = document.getElementById('well');
     let layout = { on: false };
     let session = 0;
     let entry = null;
     let gliding = null;
     let glideFrame = 0;
+    let endDrag = null;
 
     const sizes = (t) => geo.turnedSize(t.edit.geometry, t.width, t.height);
     // A key per visit to the tool, so the steps of one visit never fold into those of an earlier one.
@@ -77,10 +79,7 @@
     window.editorView.onDraw((next) => {
       layout = next;
       frame.classList.toggle('on', next.on);
-      const t = tab();
-      if (!next.on || !t) return;
-      const c = t.edit.geometry.crop, [boxW, boxH] = next.box;
-      Object.assign(frame.style, { left: `${next.x + c.x * boxW * next.zoom}px`, top: `${next.y + c.y * boxH * next.zoom}px`, width: `${c.w * boxW * next.zoom}px`, height: `${c.h * boxH * next.zoom}px` });
+      if (next.on) Object.assign(frame.style, { left: `${next.x}px`, top: `${next.y}px`, width: `${next.w}px`, height: `${next.h}px` });
     });
 
     // Ends a running glide where it was going. A glide whose picture is no longer on show is dropped.
@@ -92,17 +91,39 @@
       if (tab() === picture) commit(next, keyed('crop'));
     }
 
-    // The frame eases to the geometry `next` in 240 ms, and the change is committed when it arrives.
-    function glideTo(next) {
+    // Finishes whatever is under way, a drag or a glide, before something else changes the picture.
+    function settle() {
+      endDrag?.();
       settleGlide();
+    }
+
+    // Follows the pointer from the press `e` on `target`. `done` runs once, when the pointer lets go (or its capture is lost some other
+    // way) or `settle` ends the drag first; it is told whether the same picture is still on show.
+    function drag(target, e, move, done) {
+      const picture = tab();
+      const end = () => {
+        endDrag = null;
+        target.removeEventListener('pointermove', move);
+        target.removeEventListener('lostpointercapture', end);
+        done(tab() === picture);
+      };
+      target.setPointerCapture(e.pointerId);
+      target.addEventListener('pointermove', move);
+      target.addEventListener('lostpointercapture', end);
+      endDrag = end;
+    }
+
+    // The frame eases to the geometry `next`, and the change is committed when it arrives.
+    function glideTo(next) {
+      settle();
       const from = tab().edit.geometry.crop;
       if (reduced()) { commit(next, keyed('crop')); return; }
       gliding = { picture: tab(), next };
       const started = performance.now();
       const step = (now) => {
-        const t = Math.min(1, (now - started) / 240);
+        const t = Math.min(1, (now - started) / window.editorView.glideMs);
         if (t === 1) { settleGlide(); return; }
-        live({ ...next, crop: geo.between(from, next.crop, 1 - (1 - t) ** 3) });
+        live({ ...next, crop: geo.between(from, next.crop, window.editorView.ease(t)) });
         glideFrame = requestAnimationFrame(step);
       };
       glideFrame = requestAnimationFrame(step);
@@ -111,7 +132,7 @@
     function chooseAspect(aspect, portrait) {
       const t = tab();
       if (!t) return;
-      settleGlide();
+      settle();
       const g = t.edit.geometry, [w, h] = sizes(t);
       const turned = portrait ?? (aspect === '4:5' || (aspect === 'original' && h > w));
       const next = { ...g, aspect, portrait: turned };
@@ -120,32 +141,30 @@
     }
     orient.onclick = () => { const g = tab()?.edit.geometry; if (g) chooseAspect(g.aspect, !g.portrait); };
 
-    frame.addEventListener('pointerdown', (e) => {
-      const t = tab();
-      if (!layout.on || !t || e.button !== 0) return;
+    well.addEventListener('pointerdown', (e) => {
+      if (!layout.on || !tab() || e.button !== 0 || e.target.closest('.pill, .zmenu, .veil, .gpu')) return;
       e.preventDefault();
-      settleGlide();
-      const handle = e.target.dataset.h ?? 'move';
-      const g = t.edit.geometry, [w, h] = sizes(t), start = g.crop;
+      settle();
+      const handle = e.target.dataset.h;
+      const g = tab().edit.geometry, [w, h] = sizes(tab()), start = g.crop;
       const ratio = geo.ratioOf(g, w, h) ?? (e.shiftKey ? (start.w * w) / (start.h * h) : null);
       const perPixel = 1 / layout.zoom;
-      frame.setPointerCapture(e.pointerId);
+      if (handle) window.editorView.holdView();
+      else well.classList.add('panning');
       frame.classList.add('dragging');
-      const move = (m) => {
+      drag(e.target, e, (m) => {
         const dx = (m.clientX - e.clientX) * perPixel, dy = (m.clientY - e.clientY) * perPixel;
-        const next = handle === 'move' ? geo.moveFrame(start, dx / w, dy / h) : geo.resizeFrame(start, handle, dx, dy, ratio, w, h);
-        live({ ...g, crop: geo.limit(tab().edit.geometry.crop, next, g.angle, w, h) });
-      };
-      const up = () => {
+        // The picture follows the pointer, so the frame goes the other way across it.
+        const next = handle
+          ? geo.limit(tab().edit.geometry.crop, geo.resizeFrame(start, handle, dx, dy, ratio, w, h), g.angle, w, h)
+          : geo.moveFrame(start, -dx / w, -dy / h, g.angle, w, h);
+        live({ ...g, crop: next });
+      }, (same) => {
+        well.classList.remove('panning');
         frame.classList.remove('dragging');
-        frame.removeEventListener('pointermove', move);
-        frame.removeEventListener('pointerup', up);
-        frame.removeEventListener('pointercancel', up);
-        commit(tab().edit.geometry, keyed('crop'));
-      };
-      frame.addEventListener('pointermove', move);
-      frame.addEventListener('pointerup', up);
-      frame.addEventListener('pointercancel', up);
+        if (same) commit(tab().edit.geometry, keyed('crop'));
+        window.editorView.releaseView();
+      });
     });
 
     // Levelling keeps the frame inside the turned picture, shrinking the frame from where it was when the drag began, so dragging back
@@ -158,21 +177,13 @@
     ruler.addEventListener('pointerdown', (e) => {
       const t = tab();
       if (!t || e.button !== 0) return;
-      settleGlide();
+      settle();
       const from = t.edit.geometry.angle, base = t.edit.geometry.crop;
-      ruler.setPointerCapture(e.pointerId);
       frame.classList.add('leveling');
-      const move = (m) => level(Math.round(Math.min(45, Math.max(-45, from - (m.clientX - e.clientX) / PX_PER_DEGREE)) * 10) / 10, base);
-      const up = () => {
+      drag(ruler, e, (m) => level(Math.round(Math.min(45, Math.max(-45, from - (m.clientX - e.clientX) / PX_PER_DEGREE)) * 10) / 10, base), (same) => {
         frame.classList.remove('leveling');
-        ruler.removeEventListener('pointermove', move);
-        ruler.removeEventListener('pointerup', up);
-        ruler.removeEventListener('pointercancel', up);
-        commit(tab().edit.geometry, keyed('angle'));
-      };
-      ruler.addEventListener('pointermove', move);
-      ruler.addEventListener('pointerup', up);
-      ruler.addEventListener('pointercancel', up);
+        if (same) commit(tab().edit.geometry, keyed('angle'));
+      });
     });
     ruler.addEventListener('dblclick', () => {
       const t = tab();
@@ -184,12 +195,12 @@
     return {
       controls: [aspectLabel, chips, levelLabel, ruler],
       paint,
-      settle: settleGlide,
+      settle,
       begin() { session++; entry = tab()?.edit.geometry ?? null; },
-      cancel() { settleGlide(); if (entry && tab()) commit(entry, null); },
+      cancel() { settle(); if (entry && tab()) commit(entry, null); },
       // Leaving the tool with the whole picture kept and no level drops the aspect, so choosing one alone is not a change.
       apply() {
-        settleGlide();
+        settle();
         const g = tab()?.edit.geometry;
         if (g && geo.isWhole(g.crop) && g.angle === 0 && (g.aspect !== 'free' || g.portrait)) commit({ ...g, aspect: 'free', portrait: false }, keyed('crop'));
       },

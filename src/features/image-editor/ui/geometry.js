@@ -106,7 +106,18 @@
   }
 
   const clamp = (v, low, high) => Math.min(Math.max(v, low), high);
-  const moveFrame = (c, dx, dy) => ({ ...c, x: clamp(c.x + dx, 0, 1 - c.w), y: clamp(c.y + dy, 0, 1 - c.h) });
+
+  // The frame moved by dx, dy (fractions of the turned picture), kept inside the levelled picture. Along the picture's own axes the
+  // places its centre may take form a rectangle, so a frame pushed against a tilted edge slides along it.
+  function moveFrame(c, dx, dy, angle, w, h) {
+    const a = angle * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
+    const halfW = c.w * w / 2, halfH = c.h * h / 2;
+    const roomU = Math.max(0, w / 2 - halfW * Math.abs(cos) - halfH * Math.abs(sin));
+    const roomV = Math.max(0, h / 2 - halfW * Math.abs(sin) - halfH * Math.abs(cos));
+    const px = (c.x + dx) * w + halfW - w / 2, py = (c.y + dy) * h + halfH - h / 2;
+    const u = clamp(px * cos + py * sin, -roomU, roomU), v = clamp(-px * sin + py * cos, -roomV, roomV);
+    return { x: (u * cos - v * sin + w / 2 - halfW) / w, y: (u * sin + v * cos + h / 2 - halfH) / h, w: c.w, h: c.h };
+  }
 
   // The frame after one of its handles ('nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w') is dragged by dx, dy pixels of the turned
   // picture. With a ratio, the opposite corner (or the middle of the opposite side) stays put and the frame keeps its shape.

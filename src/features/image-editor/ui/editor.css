@@ -8,7 +8,7 @@
 .well { position: relative; flex: 1; min-width: 0; margin: 0 0 8px 8px; border-radius: 12px; background: var(--well); overflow: hidden; transition: margin .32s var(--out); }
 .body.shut .well { margin-right: 8px; }
 .well.still, .panel.still { transition: none; }
-.well.pan { cursor: grab; }
+.well.pan { cursor: grab; touch-action: none; }
 .well.panning { cursor: grabbing; }
 .stage { position: absolute; inset: 0; }
 .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -96,7 +96,7 @@ body.busy, body.busy * { cursor: progress; }
 .ruler line.zero { stroke: var(--txt); stroke-width: 1.5; }
 .ruler .needle { position: absolute; left: 50%; top: 6px; bottom: 6px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--accent); }
 
-.frame { position: absolute; z-index: 2; border: 1px solid rgba(255, 255, 255, .95); box-shadow: 0 0 0 1px rgba(0, 0, 0, .25); opacity: 0; pointer-events: none; cursor: move; touch-action: none; transition: opacity .2s; }
+.frame { position: absolute; z-index: 2; border: 1px solid rgba(255, 255, 255, .95); box-shadow: 0 0 0 1px rgba(0, 0, 0, .25); opacity: 0; pointer-events: none; touch-action: none; transition: opacity .2s; }
 .frame.on { opacity: 1; pointer-events: auto; }
 .frame .grid, .frame .fine { position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity .15s; }
 .frame .grid { background: linear-gradient(90deg, transparent calc(33.33% - .5px), rgba(255, 255, 255, .55) 0 calc(33.33% + .5px), transparent 0 calc(66.66% - .5px), rgba(255, 255, 255, .55) 0 calc(66.66% + .5px), transparent 0),

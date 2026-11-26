@@ -294,14 +294,14 @@ app.whenReady().then(async () => {
     return { width: x1 - x0, height: y1 - y0 };
   };
   await js(win, `document.querySelector('#tools [data-tool="crop"]').click()`);
-  await sleep(500);
+  await sleep(800);
   const wide = await pixelRows();
   await js(win, `document.querySelector('#view-crop .tools4 button:nth-child(2)').click()`);
   await sleep(700);
   const tall = await pixelRows();
   check('Rotate right in the Crop panel turns a wide picture into a tall one', wide.width > wide.height && tall.height > tall.width, `${wide.width}x${wide.height} then ${tall.width}x${tall.height}`);
   await js(win, `document.querySelector('.textbtn').click()`);
-  await sleep(500);
+  await sleep(800);
   check('Reset puts it back', is(await pixelRows(), wide) && (await state()).dot === false);
   await key(win, 'R');
   await sleep(500);
@@ -472,14 +472,22 @@ app.whenReady().then(async () => {
   await closeAll(editor);
 
   console.log('crop: aspect ratio, apply, cancel');
-  const mouse = (type, x, y) => win.webContents.sendInputEvent({ type, x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1 });
+  // A move with the button down has to say so, or Chromium drops the pointer capture a drag holds.
+  const mouse = (type, x, y, down = false) => win.webContents.sendInputEvent({ type, x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1, modifiers: down ? ['leftbuttondown'] : [] });
   const rectOf = (selector) => js(win, `(() => { const r = document.querySelector('${selector}').getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height, dpr: devicePixelRatio }; })()`);
-  const drag = async (from, to) => {
+  const press = async (from, to) => {
     mouse('mouseMove', from[0], from[1]);
     mouse('mouseDown', from[0], from[1]);
-    for (let n = 1; n <= 8; n++) { mouse('mouseMove', from[0] + ((to[0] - from[0]) * n) / 8, from[1] + ((to[1] - from[1]) * n) / 8); await sleep(30); }
-    mouse('mouseUp', to[0], to[1]);
+    for (let n = 1; n <= 8; n++) { mouse('mouseMove', from[0] + ((to[0] - from[0]) * n) / 8, from[1] + ((to[1] - from[1]) * n) / 8, true); await sleep(30); }
     await sleep(300);
+  };
+  const release = async (to) => {
+    mouse('mouseUp', to[0], to[1]);
+    await sleep(600);
+  };
+  const drag = async (from, to) => {
+    await press(from, to);
+    await release(to);
   };
   const tool = () => js(win, `document.querySelector('#tools [aria-checked="true"]').dataset.tool`);
   const chipsOf = () => js(win, `[...document.querySelectorAll('#view-crop .chip')].map((b) => b.textContent + (b.classList.contains('on') ? '*' : '')).join()`);
@@ -562,19 +570,61 @@ app.whenReady().then(async () => {
   console.log('crop: the frame and its handles');
   await flatEditor(files.square);
   const start = await rectOf('#frame');
-  const corner = await rectOf('#frame .h.se');
-  await drag([corner.left + 6, corner.top + 6], [corner.left + 6 - 100, corner.top + 6 - 100]);
-  const smaller = await rectOf('#frame');
-  check('dragging the bottom right handle by 100 pixels shrinks the frame by 100 on both sides', Math.abs(start.width - smaller.width - 100) <= 3 && Math.abs(start.height - smaller.height - 100) <= 3 && Math.abs(smaller.left - start.left) <= 1, `${start.width}x${start.height} to ${smaller.width}x${smaller.height}`);
-  const inside = [smaller.left + smaller.width / 2, smaller.top + smaller.height / 2];
-  await drag(inside, [inside[0] - 5000, inside[1] - 5000]);
+  const room = await rectOf('#well');
+  const centred = (r) => Math.abs(r.left + r.width / 2 - room.left - room.width / 2) <= 2 && Math.abs(r.top + r.height / 2 - room.top - room.height / 2) <= 2;
+  const say = (r) => `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+  check('the frame starts in the middle of the well', centred(start), say(start));
+  // Where to press on the bottom right handle of the frame as it is now, and where a drag by (dx, dy) from there ends.
+  const handleDrag = async (dx, dy) => {
+    const corner = await rectOf('#frame .h.se');
+    return [[corner.left + 6, corner.top + 6], [corner.left + 6 + dx, corner.top + 6 + dy]];
+  };
+  const [from, to] = await handleDrag(-100, -100);
+  await press(from, to);
+  await key(win, 'Escape');
+  await sleep(700);
+  mouse('mouseMove', to[0] - 60, to[1] - 60, true);
+  await release([to[0] - 60, to[1] - 60]);
+  check('Esc during a drag gives the drag up, and the pointer changes nothing after it', (await tool()) === 'adjust' && (await state()).dot === false && (await state()).undo === false, JSON.stringify(await state()));
+  await key(win, 'c');
+  await sleep(700);
+  await press(...(await handleDrag(-100, -100)));
+  const held = await rectOf('#frame');
+  check('while the bottom right handle is dragged by 100 pixels the frame follows it and the other sides stay put', Math.abs(start.width - held.width - 100) <= 3 && Math.abs(start.height - held.height - 100) <= 3 && Math.abs(held.left - start.left) <= 1 && Math.abs(held.top - start.top) <= 1, `${say(start)} to ${say(held)}`);
+  // The frame's middle and width at every screen refresh for 900 ms.
+  const watching = js(win, `new Promise((done) => { const seen = [], from = performance.now(); const step = () => { const r = document.getElementById('frame').getBoundingClientRect(); seen.push([r.left + r.width / 2, r.top + r.height / 2, r.width]); if (performance.now() - from < 900) requestAnimationFrame(step); else done(seen); }; step(); })`);
+  await sleep(50);
+  await release([from[0] - 100, from[1] - 100]);
+  const refit = await rectOf('#frame');
+  check('let go, the smaller frame is enlarged and centred again', centred(refit) && Math.abs(refit.width - start.width) <= 2, say(refit));
+  const path2 = await watching;
+  const [first, last] = [path2[0], path2[path2.length - 1]];
+  const steps = path2.slice(1).map((at, n) => at[2] - path2[n][2]);
+  const moving = steps.filter((by) => by > 0.01).length;
+  const strays = Math.max(...path2.map(([x, y]) => Math.abs((x - first[0]) * (last[1] - first[1]) - (y - first[1]) * (last[0] - first[0])) / Math.hypot(last[0] - first[0], last[1] - first[1])));
+  check('and it gets there evenly: many small steps, never back, along a straight line', moving >= 10 && Math.min(...steps) > -1 && Math.max(...steps) < (last[2] - first[2]) / 4 && strays <= 2, `${moving} steps, largest ${Math.max(...steps).toFixed(1)} of ${(last[2] - first[2]).toFixed(1)}, ${strays.toFixed(1)} off the line`);
+  const outward = await handleDrag(2000, 2000);
+  await press(...outward);
+  const grown = await rectOf('#frame');
+  check('a frame dragged outward past the well stays in sight', grown.left >= room.left + 46 && grown.top >= room.top + 46 && grown.left + grown.width <= room.left + room.width - 46 && grown.top + grown.height <= room.top + room.height - 46 && Math.abs(grown.width - start.width) <= 2, say(grown));
+  await release(outward[1]);
+  await drag(...(await handleDrag(-100, -100)));
+  const middle = [room.left + room.width / 2, room.top + room.height / 2];
+  const cornerPixel = async () => (await pixelsOf(win)).at((refit.left + 4) * refit.dpr, (refit.top + 4) * refit.dpr);
+  const atCorner = await cornerPixel();
+  await press(middle, [middle[0] - 5000, middle[1] - 5000]);
   const moved = await rectOf('#frame');
-  check('dragging the frame far up and left stops it at the picture\'s corner', Math.abs(moved.left - start.left) <= 1.5 && Math.abs(moved.top - start.top) <= 1.5 && Math.abs(moved.width - smaller.width) <= 1, `${moved.left},${moved.top} against ${start.left},${start.top}`);
+  const across = await cornerPixel();
+  check('dragging the picture moves it under a frame that stays where it is', centred(moved) && Math.abs(moved.width - refit.width) <= 2 && !near(across, atCorner, 8), `${say(moved)}, ${atCorner} then ${across}`);
+  await release([middle[0] - 5000, middle[1] - 5000]);
+  await drag([room.left + 12, room.top + 12], [room.left + 5000, room.top + 5000]);
+  const back = await cornerPixel();
+  check('a drag beside the frame moves the picture too, and it stops at the picture\'s edge', near(back, atCorner, 3), `${back} against ${atCorner}`);
   await key(win, 'Enter');
   await sleep(700);
   await copyAsPng(path.join(root, 'square-cut.png'));
   const cut = await sharp(path.join(root, 'square-cut.png')).raw().toBuffer({ resolveWithObject: true });
-  const wantSize = Math.round(512 - 100 * start.dpr);
+  const wantSize = Math.round(512 - (100 * 512) / start.width);
   check('the saved file is the part inside the frame, cut from the corner', Math.abs(cut.info.width - wantSize) <= 3 && Math.abs(cut.info.height - wantSize) <= 3 && near([...cut.data.subarray(0, 3)], [0, 0, 0], 3), `${cut.info.width}x${cut.info.height}, first pixel ${[...cut.data.subarray(0, 3)]}`);
   await closeAll(editor);
 
@@ -585,12 +635,17 @@ app.whenReady().then(async () => {
   await drag([ruler.left + ruler.width / 2, ruler.top + ruler.height / 2], [ruler.left + ruler.width / 2 - 80, ruler.top + ruler.height / 2]);
   check('dragging the ruler 80 pixels to the left levels the picture by +10.0°', (await js(win, `document.querySelector('#view-crop .glabel:nth-of-type(3) span').textContent`)) === '+10.0°', await js(win, `document.querySelector('#view-crop .glabel:nth-of-type(3) span').textContent`));
   const levelled = await rectOf('#frame');
-  check('the frame has shrunk to stay inside the turned picture, in the same shape', levelled.width < whole.width * 0.95 && Math.abs(levelled.width / levelled.height - whole.width / whole.height) < 0.01, `${whole.width}x${whole.height} to ${levelled.width}x${levelled.height}`);
+  const radians = (10 * Math.PI) / 180, fit = Math.min(1, 4000 / (4000 * Math.cos(radians) + 3000 * Math.sin(radians)), 3000 / (4000 * Math.sin(radians) + 3000 * Math.cos(radians)));
+  check('the frame keeps its shape and its size on screen while the picture behind it is enlarged', Math.abs(levelled.width - whole.width) <= 2 && Math.abs(levelled.height - whole.height) <= 2, `${whole.width}x${whole.height} to ${levelled.width}x${levelled.height}`);
+  // A point above the box the picture filled before it was tilted, where one of its corners now reaches.
+  const perPixel = levelled.width / (4000 * fit);
+  const poking = (await pixelsOf(win)).at((levelled.left + levelled.width / 2 - 1500 * perPixel) * levelled.dpr, (levelled.top + levelled.height / 2 - 1600 * perPixel) * levelled.dpr);
+  check('the tilted picture is drawn whole, darkened round the frame', near(poking, [27, 63, 99], 4), `${poking}`);
+  await shot(win, 'editor-crop-tilted.png');
   await key(win, 'Enter');
   await sleep(700);
   await copyAsPng(path.join(root, 'flat-level.png'));
   const level = await sharp(path.join(root, 'flat-level.png')).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  const radians = (10 * Math.PI) / 180, fit = Math.min(1, 4000 / (4000 * Math.cos(radians) + 3000 * Math.sin(radians)), 3000 / (4000 * Math.sin(radians) + 3000 * Math.cos(radians)));
   check('a picture levelled by 10 degrees and saved is the largest frame that fits, in the same shape', Math.abs(level.info.width - 4000 * fit) <= 4 && Math.abs(level.info.height - 3000 * fit) <= 4, `${level.info.width}x${level.info.height}, wanted ${Math.round(4000 * fit)}x${Math.round(3000 * fit)}`);
   let clear = 0;
   const alphaAt = (x, y) => level.data[(y * level.info.width + x) * 4 + 3];
@@ -638,12 +693,9 @@ app.whenReady().then(async () => {
     await js(win, `[...document.querySelectorAll('#view-crop .chip')].find((b) => b.textContent === '3:2').click()`);
     await sleep(700);
     const levelRuler = await js(win, `(() => { const r = document.querySelector('#view-crop .ruler').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
-    win.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(levelRuler[0]), y: Math.round(levelRuler[1]), button: 'left', clickCount: 1 });
-    for (let n = 1; n <= 6; n++) { win.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(levelRuler[0] - 8 * n), y: Math.round(levelRuler[1]), button: 'left' }); await sleep(30); }
-    await sleep(300);
+    await press(levelRuler, [levelRuler[0] - 48, levelRuler[1]]);
     await shot(win, `editor-${theme}-crop-level.png`);
-    win.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(levelRuler[0] - 48), y: Math.round(levelRuler[1]), button: 'left', clickCount: 1 });
-    await sleep(300);
+    await release([levelRuler[0] - 48, levelRuler[1]]);
     await key(win, 'Escape');
     await sleep(800);
     await key(win, 'R');

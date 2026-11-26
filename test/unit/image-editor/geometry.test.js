@@ -84,7 +84,10 @@ expect('a level shrinks the frame of a set shape and keeps the shape', (() => { 
 
 console.log('dragging the frame');
 const box = frame(0.2, 0.2, 0.4, 0.4);
-expect('moving keeps the frame inside the picture', close(g.moveFrame(box, 0.9, 0.9), frame(0.6, 0.6, 0.4, 0.4)) && close(g.moveFrame(box, -0.9, -0.9), frame(0, 0, 0.4, 0.4)) && close(g.moveFrame(box, 0.1, 0), frame(0.3, 0.2, 0.4, 0.4)));
+const moved = (dx, dy) => g.moveFrame(box, dx, dy, 0, 1000, 1000);
+expect('moving keeps the frame inside the picture', close(moved(0.9, 0.9), frame(0.6, 0.6, 0.4, 0.4)) && close(moved(-0.9, -0.9), frame(0, 0, 0.4, 0.4)) && close(moved(0.1, 0), frame(0.3, 0.2, 0.4, 0.4)));
+const slid = g.moveFrame(frame(0.4, 0.4, 0.2, 0.2), 0.9, 0, 10, 1000, 1000);
+expect('on a levelled picture a frame pushed sideways slides along the tilted edge', g.inside(slid, 10, 1000, 1000) && near(slid.x, 0.8054) && near(slid.y, 0.3128) && slid.w === 0.2 && slid.h === 0.2, JSON.stringify(slid));
 expect('a free corner drag moves the two sides it touches', close(g.resizeFrame(box, 'se', 100, 50, null, 1000, 1000), frame(0.2, 0.2, 0.5, 0.45)) && close(g.resizeFrame(box, 'nw', -100, -50, null, 1000, 1000), frame(0.1, 0.15, 0.5, 0.45)));
 expect('a free side drag moves one side', close(g.resizeFrame(box, 'e', 100, 90, null, 1000, 1000), frame(0.2, 0.2, 0.5, 0.4)) && close(g.resizeFrame(box, 'n', 90, -100, null, 1000, 1000), frame(0.2, 0.1, 0.4, 0.5)));
 expect('a frame cannot be dragged out of the picture or smaller than 40 pixels', close(g.resizeFrame(box, 'se', 900, 900, null, 1000, 1000), frame(0.2, 0.2, 0.8, 0.8)) && g.resizeFrame(box, 'e', -900, 0, null, 1000, 1000).w * 1000 === 40);

@@ -39,7 +39,7 @@
   const edited = (g) => ({ ...active.edit, geometry: { ...g, crop: geometry.tidy(g.crop) } });
   const crop = window.editorCrop.create({
     tab: () => active,
-    live: (g) => { view.change(() => { active.edit = edited(g); }); paintGeometry(); },
+    live: (g) => { active.edit = edited(g); view.redraw(); paintGeometry(); },
     commit: (g, key) => commit(edited(g), key),
   });
 
@@ -112,7 +112,7 @@
     if (shown.length) activate(shown[shown.length - 1]);
   }
 
-  // A frame still easing to a new shape arrives first, so the next change starts from where it was going.
+  // A crop drag ends, and a frame still easing to a new shape arrives, before the next change starts from it.
   const ready = () => { crop.settle(); return !!active?.texture && !window.pomeloCard.isOpen(); };
 
   // Changes with the same key in a row fold into one undo step.
