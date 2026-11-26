@@ -27,7 +27,7 @@
     const gl = canvas.getContext('webgl2', { premultipliedAlpha: false, alpha: true, antialias: false, preserveDrawingBuffer: false });
     if (!gl) return null;
     const prog = program(gl);
-    const uniform = Object.fromEntries(['uSource', 'uCanvas', 'uOrigin', 'uOut', 'uZoom', 'uGeom', 'uFlip'].map((name) => [name, gl.getUniformLocation(prog, name)]));
+    const uniform = Object.fromEntries(['uSource', 'uCanvas', 'uOrigin', 'uOut', 'uZoom', 'uGeom', 'uFlip', 'uVeil'].map((name) => [name, gl.getUniformLocation(prog, name)]));
     const maxSide = gl.getParameter(gl.MAX_TEXTURE_SIZE);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
@@ -47,10 +47,10 @@
       return texture;
     }
 
-    // picture: { texture, width, height }; geometry: its turn and flips; zoom: canvas pixels for each picture pixel; x, y: the shown
-    // picture's top-left corner on the canvas; flip: draw the rows from the bottom, for reading the pixels back. A null picture clears
-    // the canvas.
-    function draw(picture, geometry, zoom, x, y, flip = false) {
+    // picture: { texture, width, height }; geometry: its turn, flips, level and crop; zoom: canvas pixels for each picture pixel; x, y: the
+    // shown picture's top-left corner on the canvas; flip: draw the rows from the bottom, for reading the pixels back; veil: how much of
+    // what the crop leaves out is drawn round it, darkened (0 to 1). A null picture clears the canvas.
+    function draw(picture, geometry, zoom, x, y, flip = false, veil = 0) {
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.clear(gl.COLOR_BUFFER_BIT);
       if (!picture) return;
@@ -58,10 +58,12 @@
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, zoom < MIPMAP_BELOW ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
       gl.uniform2f(uniform.uCanvas, canvas.width, canvas.height);
       gl.uniform2f(uniform.uOrigin, x, y);
-      gl.uniform2f(uniform.uOut, ...geometryOf.outputSize(geometry, picture.width, picture.height));
+      // In the crop view the frame is not rounded to whole pixels: at a large zoom it would move in steps.
+      gl.uniform2f(uniform.uOut, ...(veil ? geometryOf.cutSize : geometryOf.outputSize)(geometry, picture.width, picture.height));
       gl.uniform1f(uniform.uZoom, zoom);
-      gl.uniformMatrix3fv(uniform.uGeom, false, geometryOf.matrix(geometry));
+      gl.uniformMatrix3fv(uniform.uGeom, false, geometryOf.matrix(geometry, picture.width, picture.height));
       gl.uniform1f(uniform.uFlip, flip ? 1 : 0);
+      gl.uniform1f(uniform.uVeil, veil);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
 

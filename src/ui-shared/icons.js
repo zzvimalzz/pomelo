@@ -48,6 +48,8 @@ window.pomeloUi.icon = (() => {
     trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
     extract: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M12 18v-6M9 15l3 3 3-3"/>',
     insert: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M12 12v6M9 15h6"/>',
+    portrait: '<rect x="7" y="3.5" width="10" height="17" rx="2"/>',
+    landscape: '<rect x="3.5" y="7" width="17" height="10" rx="2"/>',
   };
   return (name) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
 })();
