@@ -2718,22 +2718,23 @@ app.whenReady().then(async () => {
           placed && place.apart && place.inside && place.sep === '1x22' && named, JSON.stringify(place));
       }
       const slide = () => js(win, `(() => { const o = document.querySelector('.optbar'); const style = getComputedStyle(o); return { y: Math.round(new DOMMatrix(style.transform).m42), opacity: Number(style.opacity), clickable: style.pointerEvents !== 'none' }; })()`);
+      // The transition is read as it starts, in the same turn as the click: a position sampled part way is lost on a slow runner, where the
+      // whole slide can be over before the sample is taken.
+      const fold = () => js(win, `(() => { document.querySelector('.fold').click(); const o = document.querySelector('.optbar'); getComputedStyle(o).transform;
+        const t = o.getAnimations().find((a) => a.transitionProperty === 'transform'); const k = t?.effect.getKeyframes() ?? []; const y = (f) => Math.round(new DOMMatrix(f?.transform ?? 'none').m42);
+        return t ? { ms: t.effect.getTiming().duration, from: y(k[0]), to: y(k.at(-1)) } : null; })()`);
       for (const side of ['bottom', 'top']) {
         await js(win, `document.querySelector('.well').dataset.dock = '${side}'`);
         await sleep(700);
-        await js(win, `document.querySelector('.fold').click()`);
-        await sleep(200);
-        const going = await slide();
-        await sleep(900);
+        const going = await fold();
+        await sleep(1100);
         const away = await slide();
-        await js(win, `document.querySelector('.fold').click()`);
-        await sleep(380);
-        const coming = await slide();
-        await sleep(1000);
+        const coming = await fold();
+        await sleep(1200);
         const back = await slide();
         const sign = side === 'top' ? -1 : 1;
         check(`with the dock at the ${side}, hiding the controls slides the bar of selected pages away with the dock, toward that edge, as it fades, and showing them brings it back the same way (it went and came back at once)`,
-          going.y * sign > 0 && going.y * sign < 130 && away.y === 130 * sign && away.opacity === 0 && !away.clickable && coming.y * sign > 0 && coming.y * sign < 130 && back.y === 0 && back.opacity === 1 && back.clickable, JSON.stringify({ going, away, coming, back }));
+          going?.ms >= 400 && going.from === 0 && going.to === 130 * sign && away.y === 130 * sign && away.opacity === 0 && !away.clickable && coming?.ms >= 400 && coming.from === 130 * sign && coming.to === 0 && back.y === 0 && back.opacity === 1 && back.clickable, JSON.stringify({ going, away, coming, back }));
       }
       await js(win, `document.querySelector('.well').dataset.dock = 'bottom'`);
       win.setSize(900, 600);
