@@ -571,6 +571,8 @@ app.whenReady().then(async () => {
   const motion = async (value) => {
     if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach('1.3');
     await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value }] });
+    // Turning animations on replays the first picture's entrance, which draws the frame smaller while it runs.
+    await sleep(500);
   };
   // The frame's middle and width at every screen refresh for 900 ms, during which `act` runs, and how often the width grew.
   const watched = async (act) => {
