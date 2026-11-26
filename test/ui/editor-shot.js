@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Opens the real image editor on pictures made here: that a rotated photo stands upright, that the chequerboard shows only under a
 // transparent picture, the tabs, the pictures that are refused, the zoom readout and menu, the panel that hides, full screen and the
-// notice when graphics acceleration is gone; then edits, undo, Compare and saving over a file or as a copy. Saves light and dark
-// screenshots.
+// notice when graphics acceleration is gone; then edits, undo, Compare and saving over a file or as a copy, and the Crop tool: the
+// frame, the aspect chips, Straighten, Esc and Enter. Saves light and dark screenshots.
 //   npx electron test/ui/editor-shot.js
 const { app, BrowserWindow, ipcMain, nativeTheme } = require('electron');
 const fs = require('fs');
@@ -232,7 +232,10 @@ app.whenReady().then(async () => {
   await key(win, 'F11');
   check('F11 enters full screen', await until('full screen', () => win.isFullScreen()) && await until('the page to know', () => js(win, `document.body.classList.contains('full')`)));
   await key(win, 'Escape');
-  check('Esc leaves it', await until('the window to leave full screen', () => !win.isFullScreen()) && await until('the page to know', () => js(win, `!document.body.classList.contains('full')`)));
+  await sleep(500);
+  check('the first Esc leaves Crop and keeps full screen', win.isFullScreen() && (await js(win, `document.querySelector('#tools [aria-checked="true"]').dataset.tool`)) === 'adjust');
+  await key(win, 'Escape');
+  check('the next Esc leaves full screen', await until('the window to leave full screen', () => !win.isFullScreen()) && await until('the page to know', () => js(win, `!document.body.classList.contains('full')`)));
   await closeAll(editor);
 
   console.log('a small picture is not enlarged to fit');
@@ -291,20 +294,22 @@ app.whenReady().then(async () => {
     return { width: x1 - x0, height: y1 - y0 };
   };
   await js(win, `document.querySelector('#tools [data-tool="crop"]').click()`);
-  await sleep(500);
+  await sleep(800);
   const wide = await pixelRows();
   await js(win, `document.querySelector('#view-crop .tools4 button:nth-child(2)').click()`);
   await sleep(700);
   const tall = await pixelRows();
   check('Rotate right in the Crop panel turns a wide picture into a tall one', wide.width > wide.height && tall.height > tall.width, `${wide.width}x${wide.height} then ${tall.width}x${tall.height}`);
   await js(win, `document.querySelector('.textbtn').click()`);
-  await sleep(500);
+  await sleep(800);
   check('Reset puts it back', is(await pixelRows(), wide) && (await state()).dot === false);
   await key(win, 'R');
   await sleep(500);
   const tooltips = await js(win, `[...document.querySelectorAll('#view-crop .tools4 button, #undo, #redo, #compare, #more, #savebtn')].map((b) => b.title).join('|')`);
   check('the tooltips name the control and its key', tooltips === 'Undo (Ctrl+Z)|Redo (Ctrl+Y)|Save (Ctrl+S)|More|Compare (\\)|Rotate left (Shift+R)|Rotate right (R)|Flip horizontal|Flip vertical', tooltips);
 
+  await key(win, 'a');
+  await sleep(600);
   await js(win, `document.getElementById('compare').dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true }))`);
   await sleep(500);
   const original = await pixelRows();
@@ -377,6 +382,8 @@ app.whenReady().then(async () => {
 
   await key(win, 'R');
   await sleep(500);
+  await key(win, 'a');
+  await sleep(600);
   await js(win, `document.getElementById('zoomval').click()`);
   await sleep(300);
   await js(win, `[...document.querySelectorAll('#zmenu .mi')].find((b) => b.firstChild.textContent === '800%').click()`);
@@ -441,6 +448,8 @@ app.whenReady().then(async () => {
   await sleep(300);
   await js(win, `document.querySelector('#view-crop .tools4 button:nth-child(2)').click()`);
   await sleep(500);
+  await key(win, 'a');
+  await sleep(600);
   await key(win, '1', true);
   await js(win, `document.getElementById('panelbtn').click()`);
   await sleep(1200);
@@ -460,6 +469,235 @@ app.whenReady().then(async () => {
     worst = Math.max(worst, Math.abs(shownPixel[0] - saved.data[i]), Math.abs(shownPixel[1] - saved.data[i + 1]), Math.abs(shownPixel[2] - saved.data[i + 2]));
   }
   check('the picture on screen and the file saved agree to within 2 of 255 in every channel', saved.info.width === 512 && worst <= 2, `worst ${worst}`);
+  await closeAll(editor);
+
+  console.log('crop: aspect ratio, apply, cancel');
+  // A move with the button down has to say so, or Chromium drops the pointer capture a drag holds.
+  const mouse = (type, x, y, down = false) => win.webContents.sendInputEvent({ type, x: Math.round(x), y: Math.round(y), button: 'left', clickCount: 1, modifiers: down ? ['leftbuttondown'] : [] });
+  const rectOf = (selector) => js(win, `(() => { const r = document.querySelector('${selector}').getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height, dpr: devicePixelRatio }; })()`);
+  const press = async (from, to) => {
+    mouse('mouseMove', from[0], from[1]);
+    mouse('mouseDown', from[0], from[1]);
+    for (let n = 1; n <= 8; n++) { mouse('mouseMove', from[0] + ((to[0] - from[0]) * n) / 8, from[1] + ((to[1] - from[1]) * n) / 8, true); await sleep(30); }
+    await sleep(300);
+  };
+  const release = async (to) => {
+    mouse('mouseUp', to[0], to[1]);
+    await sleep(600);
+  };
+  const drag = async (from, to) => {
+    await press(from, to);
+    await release(to);
+  };
+  const tool = () => js(win, `document.querySelector('#tools [aria-checked="true"]').dataset.tool`);
+  const chipsOf = () => js(win, `[...document.querySelectorAll('#view-crop .chip')].map((b) => b.textContent + (b.classList.contains('on') ? '*' : '')).join()`);
+  const chip = (name) => js(win, `[...document.querySelectorAll('#view-crop .chip')].find((b) => b.textContent === '${name}').click()`);
+  const copyAsPng = async (file) => {
+    saveTo = file;
+    await key(win, 'S', true, true);
+    await sleep(500);
+    await js(win, `[...document.querySelectorAll('.card .chip')].find((b) => b.textContent === 'PNG').click()`);
+    await js(win, `document.querySelector('.card .btn.primary').click()`);
+    await until('the copy', () => fs.existsSync(file));
+    await sleep(500);
+  };
+  const flatEditor = async (file, resize = true) => {
+    editor = fresh(async () => saveTo);
+    await editor.open([file]);
+    win = windowOf();
+    if (resize) win.setSize(1100, 760);
+    await firstShown(win);
+    await sleep(600);
+    await key(win, 'c');
+    await sleep(800);
+  };
+
+  await flatEditor(files.flat);
+  check('Crop shows the frame, and the aspect chips start on Free', (await js(win, `document.getElementById('frame').classList.contains('on')`)) === true && (await chipsOf()) === 'Free*,Original,Square,4:5,3:2,16:9', await chipsOf());
+  check('the frame starts on the whole picture, and the pill is gone', (await js(win, `document.getElementById('pill').classList.contains('away')`)) === true && (await state()).dot === false);
+  const veilSample = async () => {
+    const f = await rectOf('#frame');
+    const px = await pixelsOf(win);
+    return { outside: px.at((f.left - 14) * f.dpr, (f.top + f.height / 2) * f.dpr), inside: px.at((f.left + 14) * f.dpr, (f.top + f.height / 2) * f.dpr) };
+  };
+  await chip('Square');
+  await sleep(700);
+  const squareFrame = await rectOf('#frame');
+  check('Square makes the frame square, and the chip is on', Math.abs(squareFrame.width - squareFrame.height) <= 1.5 && (await chipsOf()).includes('Square*'), `${squareFrame.width}x${squareFrame.height}`);
+  const veil = await veilSample();
+  check('what the frame leaves out is darkened', luminance(veil.outside) < luminance(veil.inside) * 0.6, `${veil.outside} against ${veil.inside}`);
+  check('the choice makes a change: Save and the dot show', (await state()).dot === true && (await state()).undo === true);
+  check('the orientation button is off for Square', (await js(win, `document.querySelector('#view-crop .orient').disabled`)) === true);
+  await key(win, 'Enter');
+  await sleep(700);
+  check('Enter applies the crop and goes to Adjust', (await tool()) === 'adjust' && (await js(win, `document.getElementById('frame').classList.contains('on')`)) === false);
+  const croppedBox = await boxOf(win, [60, 140, 220]);
+  check('the picture is now shown square', Math.abs(croppedBox.width - croppedBox.height) <= 6, `${croppedBox.width}x${croppedBox.height}`);
+  await copyAsPng(path.join(root, 'flat-square.png'));
+  const squareMeta = await sharp(path.join(root, 'flat-square.png')).metadata();
+  check('a 4000 by 3000 picture cropped to a square and saved is 3000 by 3000', squareMeta.width === 3000 && squareMeta.height === 3000, `${squareMeta.width}x${squareMeta.height}`);
+  await closeAll(editor);
+
+  await flatEditor(files.flat);
+  await chip('16:9');
+  await sleep(600);
+  await key(win, 'Escape');
+  await sleep(700);
+  check('Esc puts back what Crop was entered with, and leaves nothing to undo', (await tool()) === 'adjust' && is(await state(), { undo: false, redo: false, save: false, dot: false, compare: false, reset: false }), JSON.stringify(await state()));
+  await key(win, 'c');
+  await sleep(700);
+  check('Crop shows Free again, and the frame is whole', (await chipsOf()).startsWith('Free*'));
+  await chip('3:2');
+  await sleep(600);
+  await key(win, 'a');
+  await sleep(700);
+  check('choosing another tool applies the crop', (await state()).dot === true);
+  await key(win, 'z', true);
+  await sleep(500);
+  check('and one Undo takes it back', (await state()).dot === false && (await state()).undo === false);
+  await editor.open([files.square]);
+  await sleep(700);
+  await key(win, 'c');
+  await sleep(700);
+  await js(win, `(() => { [...document.querySelectorAll('#view-crop .chip')].find((b) => b.textContent === '16:9').click(); document.querySelector('#tabs .tab:not(.on)').click(); })()`);
+  await sleep(700);
+  const otherTab = await state();
+  await js(win, `document.querySelector('#tabs .tab:not(.on)').click()`);
+  await sleep(700);
+  check('a tab picked while the frame is easing keeps its own picture, and the first one keeps its new shape', otherTab.dot === false && (await state()).dot === true && (await chipsOf()).includes('16:9*'), `${JSON.stringify(otherTab)} ${await chipsOf()}`);
+  await closeAll(editor);
+
+  // Whether anything glides follows a Windows setting, which is off on a build server, so a check that watches a glide says what it wants.
+  const motion = async (value) => {
+    if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach('1.3');
+    await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value }] });
+    // Turning animations on replays the first picture's entrance, which draws the frame smaller while it runs.
+    await sleep(500);
+  };
+  // The frame's middle and width at every screen refresh for 900 ms, during which `act` runs, and how often the width grew.
+  const watched = async (act) => {
+    const watching = js(win, `new Promise((done) => { const seen = [], from = performance.now(); const step = () => { const r = document.getElementById('frame').getBoundingClientRect(); seen.push([r.left + r.width / 2, r.top + r.height / 2, r.width]); if (performance.now() - from < 900) requestAnimationFrame(step); else done(seen); }; step(); })`);
+    await sleep(50);
+    await act();
+    const seen = await watching;
+    const steps = seen.slice(1).map((at, n) => at[2] - seen[n][2]);
+    return { seen, steps, moving: steps.filter((by) => by > 0.01).length };
+  };
+
+  console.log('crop: the frame and its handles');
+  await flatEditor(files.square);
+  await motion('no-preference');
+  const start = await rectOf('#frame');
+  const room = await rectOf('#well');
+  const centred = (r) => Math.abs(r.left + r.width / 2 - room.left - room.width / 2) <= 2 && Math.abs(r.top + r.height / 2 - room.top - room.height / 2) <= 2;
+  const say = (r) => `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+  check('the frame starts in the middle of the well', centred(start), say(start));
+  // Where to press on the bottom right handle of the frame as it is now, and where a drag by (dx, dy) from there ends.
+  const handleDrag = async (dx, dy) => {
+    const corner = await rectOf('#frame .h.se');
+    return [[corner.left + 6, corner.top + 6], [corner.left + 6 + dx, corner.top + 6 + dy]];
+  };
+  const [from, to] = await handleDrag(-100, -100);
+  await press(from, to);
+  await key(win, 'Escape');
+  await sleep(700);
+  mouse('mouseMove', to[0] - 60, to[1] - 60, true);
+  await release([to[0] - 60, to[1] - 60]);
+  check('Esc during a drag gives the drag up, and the pointer changes nothing after it', (await tool()) === 'adjust' && (await state()).dot === false && (await state()).undo === false, JSON.stringify(await state()));
+  await key(win, 'c');
+  await sleep(700);
+  await press(...(await handleDrag(-100, -100)));
+  const held = await rectOf('#frame');
+  check('while the bottom right handle is dragged by 100 pixels the frame follows it and the other sides stay put', Math.abs(start.width - held.width - 100) <= 3 && Math.abs(start.height - held.height - 100) <= 3 && Math.abs(held.left - start.left) <= 1 && Math.abs(held.top - start.top) <= 1, `${say(start)} to ${say(held)}`);
+  const { seen: path2, steps, moving } = await watched(() => release([from[0] - 100, from[1] - 100]));
+  const refit = await rectOf('#frame');
+  check('let go, the smaller frame is enlarged and centred again', centred(refit) && Math.abs(refit.width - start.width) <= 2, say(refit));
+  const [first, last] = [path2[0], path2[path2.length - 1]];
+  const strays = Math.max(...path2.map(([x, y]) => Math.abs((x - first[0]) * (last[1] - first[1]) - (y - first[1]) * (last[0] - first[0])) / Math.hypot(last[0] - first[0], last[1] - first[1])));
+  check('and it gets there evenly: many small steps, never back, along a straight line', moving >= 10 && Math.min(...steps) > -1 && Math.max(...steps) < (last[2] - first[2]) / 4 && strays <= 2, `${moving} steps, largest ${Math.max(...steps).toFixed(1)} of ${(last[2] - first[2]).toFixed(1)}, ${strays.toFixed(1)} off the line`);
+  const outward = await handleDrag(2000, 2000);
+  await press(...outward);
+  const grown = await rectOf('#frame');
+  check('a frame dragged outward past the well stays in sight', grown.left >= room.left + 46 && grown.top >= room.top + 46 && grown.left + grown.width <= room.left + room.width - 46 && grown.top + grown.height <= room.top + room.height - 46 && Math.abs(grown.width - start.width) <= 2, say(grown));
+  await release(outward[1]);
+  await motion('reduce');
+  const shrinking = await handleDrag(-100, -100);
+  await press(...shrinking);
+  const jumped = await watched(() => release(shrinking[1]));
+  check('with animations off the let go frame is there at once', jumped.moving === 1 && centred(await rectOf('#frame')), `${jumped.moving} steps`);
+  await motion('no-preference');
+  const middle = [room.left + room.width / 2, room.top + room.height / 2];
+  const cornerPixel = async () => (await pixelsOf(win)).at((refit.left + 4) * refit.dpr, (refit.top + 4) * refit.dpr);
+  const atCorner = await cornerPixel();
+  await press(middle, [middle[0] - 5000, middle[1] - 5000]);
+  const moved = await rectOf('#frame');
+  const across = await cornerPixel();
+  check('dragging the picture moves it under a frame that stays where it is', centred(moved) && Math.abs(moved.width - refit.width) <= 2 && !near(across, atCorner, 8), `${say(moved)}, ${atCorner} then ${across}`);
+  await release([middle[0] - 5000, middle[1] - 5000]);
+  await drag([room.left + 12, room.top + 12], [room.left + 5000, room.top + 5000]);
+  const back = await cornerPixel();
+  check('a drag beside the frame moves the picture too, and it stops at the picture\'s edge', near(back, atCorner, 3), `${back} against ${atCorner}`);
+  await key(win, 'Enter');
+  await sleep(700);
+  await copyAsPng(path.join(root, 'square-cut.png'));
+  const cut = await sharp(path.join(root, 'square-cut.png')).raw().toBuffer({ resolveWithObject: true });
+  const wantSize = Math.round(512 - (100 * 512) / start.width);
+  check('the saved file is the part inside the frame, cut from the corner', Math.abs(cut.info.width - wantSize) <= 3 && Math.abs(cut.info.height - wantSize) <= 3 && near([...cut.data.subarray(0, 3)], [0, 0, 0], 3), `${cut.info.width}x${cut.info.height}, first pixel ${[...cut.data.subarray(0, 3)]}`);
+  await closeAll(editor);
+
+  console.log('crop: Ctrl and the wheel');
+  await flatEditor(files.square);
+  await motion('no-preference');
+  const full = await rectOf('#frame');
+  // A point well away from the frame's middle, where zooming about the middle would bring another part of the picture.
+  const spot = [full.left + full.width * 0.75, full.top + full.height * 0.7];
+  const colours = async () => {
+    const { at } = await pixelsOf(win);
+    return { under: at(spot[0] * full.dpr, spot[1] * full.dpr), corner: at((full.left + 4) * full.dpr, (full.top + 4) * full.dpr) };
+  };
+  const wheel = async (deltaY) => {
+    await js(win, `document.getElementById('well').dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: ${deltaY}, clientX: ${spot[0]}, clientY: ${spot[1]}, bubbles: true, cancelable: true }))`);
+    await sleep(600);
+  };
+  const stays = (r) => Math.abs(r.width - full.width) <= 2 && Math.abs(r.height - full.height) <= 2 && Math.abs(r.left - full.left) <= 2 && Math.abs(r.top - full.top) <= 2;
+  const unzoomed = await colours();
+  await wheel(-200);
+  const nearer = await colours(), nearerFrame = await rectOf('#frame');
+  check('Ctrl and the wheel enlarge the picture about the pointer, under a frame that stays', stays(nearerFrame) && near(nearer.under, unzoomed.under, 4) && !near(nearer.corner, unzoomed.corner, 8) && (await state()).dot === true, `under ${unzoomed.under} then ${nearer.under}, corner ${unzoomed.corner} then ${nearer.corner}`);
+  for (let n = 0; n < 6; n++) await wheel(-1000);
+  const nearest = await rectOf('#frame');
+  check('turned on and on, it stops before the frame gets smaller on screen', stays(nearest), `${nearest.width}x${nearest.height} from ${full.width}x${full.height}`);
+  await wheel(2000);
+  await wheel(2000);
+  const restored = await colours();
+  check('turned the other way it stops at the whole picture, which leaves nothing to undo', stays(await rectOf('#frame')) && near(restored.corner, unzoomed.corner, 3) && (await state()).dot === false && (await state()).undo === false, JSON.stringify(await state()));
+  await closeAll(editor);
+
+  console.log('crop: straighten');
+  await flatEditor(files.flat);
+  const ruler = await rectOf('#view-crop .ruler');
+  const whole = await rectOf('#frame');
+  await drag([ruler.left + ruler.width / 2, ruler.top + ruler.height / 2], [ruler.left + ruler.width / 2 - 80, ruler.top + ruler.height / 2]);
+  check('dragging the ruler 80 pixels to the left levels the picture by +10.0°', (await js(win, `document.querySelector('#view-crop .glabel:nth-of-type(3) span').textContent`)) === '+10.0°', await js(win, `document.querySelector('#view-crop .glabel:nth-of-type(3) span').textContent`));
+  const levelled = await rectOf('#frame');
+  const radians = (10 * Math.PI) / 180, fit = Math.min(1, 4000 / (4000 * Math.cos(radians) + 3000 * Math.sin(radians)), 3000 / (4000 * Math.sin(radians) + 3000 * Math.cos(radians)));
+  check('the frame keeps its shape and its size on screen while the picture behind it is enlarged', Math.abs(levelled.width - whole.width) <= 2 && Math.abs(levelled.height - whole.height) <= 2, `${whole.width}x${whole.height} to ${levelled.width}x${levelled.height}`);
+  // A point above the box the picture filled before it was tilted, where one of its corners now reaches.
+  const perPixel = levelled.width / (4000 * fit);
+  const poking = (await pixelsOf(win)).at((levelled.left + levelled.width / 2 - 1500 * perPixel) * levelled.dpr, (levelled.top + levelled.height / 2 - 1600 * perPixel) * levelled.dpr);
+  check('the tilted picture is drawn whole, darkened round the frame', near(poking, [27, 63, 99], 4), `${poking}`);
+  await shot(win, 'editor-crop-tilted.png');
+  await key(win, 'Enter');
+  await sleep(700);
+  await copyAsPng(path.join(root, 'flat-level.png'));
+  const level = await sharp(path.join(root, 'flat-level.png')).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  check('a picture levelled by 10 degrees and saved is the largest frame that fits, in the same shape', Math.abs(level.info.width - 4000 * fit) <= 4 && Math.abs(level.info.height - 3000 * fit) <= 4, `${level.info.width}x${level.info.height}, wanted ${Math.round(4000 * fit)}x${Math.round(3000 * fit)}`);
+  let clear = 0;
+  const alphaAt = (x, y) => level.data[(y * level.info.width + x) * 4 + 3];
+  for (let x = 0; x < level.info.width; x += 5) clear += (alphaAt(x, 0) < 255) + (alphaAt(x, level.info.height - 1) < 255);
+  for (let y = 0; y < level.info.height; y += 5) clear += (alphaAt(0, y) < 255) + (alphaAt(level.info.width - 1, y) < 255);
+  clear += [[0, 0], [level.info.width - 1, 0], [0, level.info.height - 1], [level.info.width - 1, level.info.height - 1]].filter(([x, y]) => alphaAt(x, y) < 255).length;
+  check('no pixel along the edges or in the corners of the levelled picture is transparent', clear === 0, `${clear} clear`);
   await closeAll(editor);
 
   for (const theme of ['light', 'dark']) {
@@ -488,6 +726,23 @@ app.whenReady().then(async () => {
     await js(win, `document.querySelector('#tabs .tab:not(.on)').click()`);
     await sleep(600);
     await shot(win, `editor-${theme}-photo.png`);
+    await key(win, 'c');
+    await sleep(900);
+    const cropChips = await js(win, `(() => { const rect = (n) => { const r = n.getBoundingClientRect(); return [r.left, r.top + r.height / 2]; }; return [rect(document.querySelector('#view-crop .chip.on')), rect(document.querySelector('#view-crop .chip:not(.on)')), devicePixelRatio]; })()`);
+    const cropPixels = await pixelsOf(win);
+    const [onChip, offChip] = [cropPixels.at(cropChips[0][0] * cropChips[2] + 6, cropChips[0][1] * cropChips[2]), cropPixels.at(cropChips[1][0] * cropChips[2] + 6, cropChips[1][1] * cropChips[2])];
+    const ring = [0, 1, 2].map((n) => cropPixels.at(Math.floor(cropChips[0][0] * cropChips[2]) + n, cropChips[0][1] * cropChips[2])).sort((p, q) => contrast(q, offChip) - contrast(p, offChip))[0];
+    console.log(`  (${theme} aspect chip fill ${onChip}, others ${offChip}: contrast ${contrast(onChip, offChip).toFixed(2)}; its ring ${ring}: contrast ${contrast(ring, offChip).toFixed(2)})`);
+    check(`${theme}: the chosen aspect chip is told from the others by a tint and a ring`, JSON.stringify(onChip) !== JSON.stringify(offChip) && contrast(ring, offChip) >= 3, `${onChip} ${offChip} ${ring}`);
+    await shot(win, `editor-${theme}-crop.png`);
+    await js(win, `[...document.querySelectorAll('#view-crop .chip')].find((b) => b.textContent === '3:2').click()`);
+    await sleep(700);
+    const levelRuler = await js(win, `(() => { const r = document.querySelector('#view-crop .ruler').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
+    await press(levelRuler, [levelRuler[0] - 48, levelRuler[1]]);
+    await shot(win, `editor-${theme}-crop-level.png`);
+    await release([levelRuler[0] - 48, levelRuler[1]]);
+    await key(win, 'Escape');
+    await sleep(800);
     await key(win, 'R');
     await sleep(600);
     await js(win, `document.getElementById('more').click()`);

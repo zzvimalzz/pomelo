@@ -21,7 +21,9 @@
     </header>
     <div class="body" id="body">
       <main class="well" id="well">
-        <div class="stage" id="stage"><div class="checker" id="checker" hidden></div><canvas id="canvas"></canvas><canvas id="snap"></canvas></div>
+        <div class="stage" id="stage"><div class="checker" id="checker" hidden></div><canvas id="canvas"></canvas><canvas id="snap"></canvas>
+          <div class="frame" id="frame"><i class="grid"></i><i class="fine"></i><b class="h nw" data-h="nw"></b><b class="h ne" data-h="ne"></b><b class="h sw" data-h="sw"></b><b class="h se" data-h="se"></b><b class="h n" data-h="n"></b><b class="h s" data-h="s"></b><b class="h w" data-h="w"></b><b class="h e" data-h="e"></b></div>
+        </div>
         <div class="gpu" id="gpu" hidden><span id="gpuicon"></span><b>Can't show this image</b><span>Editing needs graphics acceleration, which is off on this PC.</span></div>
         <div class="pill" id="pill">
           <button class="ib" id="compare" type="button" disabled></button><i class="sep"></i>
@@ -52,6 +54,7 @@
   <script src="shaders.js"></script>
   <script src="render.js"></script>
   <script src="view.js"></script>
+  <script src="crop.js"></script>
   <script src="dialogs.js"></script>
   <script src="editor.js"></script>
 </body>
