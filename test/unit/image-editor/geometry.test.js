@@ -100,4 +100,14 @@ expect('a side drag with a ratio grows the frame about the middle of the opposit
 const top = g.resizeFrame(frame(0.3, 0.3, 0.4, 0.4), 'n', 0, -100, 16 / 9, 1000, 1000);
 expect('a top drag with a wide ratio grows the width about the middle and holds the bottom', near(top.w * 1000 / (top.h * 1000), 16 / 9) && near(top.y + top.h, 0.7) && near(top.x + top.w / 2, 0.5), JSON.stringify(top));
 expect('a drag with a ratio never leaves the picture', (() => { const f = g.resizeFrame(frame(0.1, 0.1, 0.4, 0.4), 'se', 2000, 2000, 3 / 2, 1000, 1000); return f.x + f.w <= 1.000001 && f.y + f.h <= 1.000001 && near(f.w * 1000 / (f.h * 1000), 3 / 2); })());
+
+console.log('zooming the frame');
+const zoom = (c, k, px, py, angle = 0, floor) => g.zoomFrame(c, k, px, py, angle, 1000, 1000, floor);
+expect('a frame is scaled about the point given, which stays where it is in it', close(zoom(box, 0.5, 0.3, 0.5), frame(0.25, 0.35, 0.2, 0.2)) && close(zoom(box, 1.5, 0.4, 0.4), frame(0.1, 0.1, 0.6, 0.6)));
+const biggest = zoom(frame(0.5, 0.5, 0.4, 0.2), 9, 0.9, 0.6);
+expect('it grows no larger than the picture, keeping its shape, and is slid back inside', close(biggest, frame(0, 0.35, 1, 0.5)), JSON.stringify(biggest));
+const levelled = zoom(frame(0.4, 0.4, 0.2, 0.2), 20, 0.9, 0.9, 10);
+expect('on a levelled picture it stops where it fills the tilted picture', g.inside(levelled, 10, 1000, 1000) && near(levelled.w, 1 / (Math.cos(Math.PI / 18) + Math.sin(Math.PI / 18))) && near(levelled.w, levelled.h), JSON.stringify(levelled));
+expect('it shrinks no further than 40 pixels a side, nor past the floor on both sides', near(zoom(box, 0.001, 0.4, 0.4).w * 1000, 40) && near(zoom(frame(0.2, 0.2, 0.4, 0.2), 0.001, 0.4, 0.3, 0, [100, 80]).w * 1000, 100));
+expect('a frame already under the floor is not made larger by zooming in', zoom(frame(0.4, 0.4, 0.05, 0.05), 0.5, 0.42, 0.42, 0, [100, 100]).w === 0.05);
 finish();

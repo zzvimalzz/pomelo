@@ -567,8 +567,24 @@ app.whenReady().then(async () => {
   check('a tab picked while the frame is easing keeps its own picture, and the first one keeps its new shape', otherTab.dot === false && (await state()).dot === true && (await chipsOf()).includes('16:9*'), `${JSON.stringify(otherTab)} ${await chipsOf()}`);
   await closeAll(editor);
 
+  // Whether anything glides follows a Windows setting, which is off on a build server, so a check that watches a glide says what it wants.
+  const motion = async (value) => {
+    if (!win.webContents.debugger.isAttached()) win.webContents.debugger.attach('1.3');
+    await win.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value }] });
+  };
+  // The frame's middle and width at every screen refresh for 900 ms, during which `act` runs, and how often the width grew.
+  const watched = async (act) => {
+    const watching = js(win, `new Promise((done) => { const seen = [], from = performance.now(); const step = () => { const r = document.getElementById('frame').getBoundingClientRect(); seen.push([r.left + r.width / 2, r.top + r.height / 2, r.width]); if (performance.now() - from < 900) requestAnimationFrame(step); else done(seen); }; step(); })`);
+    await sleep(50);
+    await act();
+    const seen = await watching;
+    const steps = seen.slice(1).map((at, n) => at[2] - seen[n][2]);
+    return { seen, steps, moving: steps.filter((by) => by > 0.01).length };
+  };
+
   console.log('crop: the frame and its handles');
   await flatEditor(files.square);
+  await motion('no-preference');
   const start = await rectOf('#frame');
   const room = await rectOf('#well');
   const centred = (r) => Math.abs(r.left + r.width / 2 - room.left - room.width / 2) <= 2 && Math.abs(r.top + r.height / 2 - room.top - room.height / 2) <= 2;
@@ -591,16 +607,10 @@ app.whenReady().then(async () => {
   await press(...(await handleDrag(-100, -100)));
   const held = await rectOf('#frame');
   check('while the bottom right handle is dragged by 100 pixels the frame follows it and the other sides stay put', Math.abs(start.width - held.width - 100) <= 3 && Math.abs(start.height - held.height - 100) <= 3 && Math.abs(held.left - start.left) <= 1 && Math.abs(held.top - start.top) <= 1, `${say(start)} to ${say(held)}`);
-  // The frame's middle and width at every screen refresh for 900 ms.
-  const watching = js(win, `new Promise((done) => { const seen = [], from = performance.now(); const step = () => { const r = document.getElementById('frame').getBoundingClientRect(); seen.push([r.left + r.width / 2, r.top + r.height / 2, r.width]); if (performance.now() - from < 900) requestAnimationFrame(step); else done(seen); }; step(); })`);
-  await sleep(50);
-  await release([from[0] - 100, from[1] - 100]);
+  const { seen: path2, steps, moving } = await watched(() => release([from[0] - 100, from[1] - 100]));
   const refit = await rectOf('#frame');
   check('let go, the smaller frame is enlarged and centred again', centred(refit) && Math.abs(refit.width - start.width) <= 2, say(refit));
-  const path2 = await watching;
   const [first, last] = [path2[0], path2[path2.length - 1]];
-  const steps = path2.slice(1).map((at, n) => at[2] - path2[n][2]);
-  const moving = steps.filter((by) => by > 0.01).length;
   const strays = Math.max(...path2.map(([x, y]) => Math.abs((x - first[0]) * (last[1] - first[1]) - (y - first[1]) * (last[0] - first[0])) / Math.hypot(last[0] - first[0], last[1] - first[1])));
   check('and it gets there evenly: many small steps, never back, along a straight line', moving >= 10 && Math.min(...steps) > -1 && Math.max(...steps) < (last[2] - first[2]) / 4 && strays <= 2, `${moving} steps, largest ${Math.max(...steps).toFixed(1)} of ${(last[2] - first[2]).toFixed(1)}, ${strays.toFixed(1)} off the line`);
   const outward = await handleDrag(2000, 2000);
@@ -608,7 +618,12 @@ app.whenReady().then(async () => {
   const grown = await rectOf('#frame');
   check('a frame dragged outward past the well stays in sight', grown.left >= room.left + 46 && grown.top >= room.top + 46 && grown.left + grown.width <= room.left + room.width - 46 && grown.top + grown.height <= room.top + room.height - 46 && Math.abs(grown.width - start.width) <= 2, say(grown));
   await release(outward[1]);
-  await drag(...(await handleDrag(-100, -100)));
+  await motion('reduce');
+  const shrinking = await handleDrag(-100, -100);
+  await press(...shrinking);
+  const jumped = await watched(() => release(shrinking[1]));
+  check('with animations off the let go frame is there at once', jumped.moving === 1 && centred(await rectOf('#frame')), `${jumped.moving} steps`);
+  await motion('no-preference');
   const middle = [room.left + room.width / 2, room.top + room.height / 2];
   const cornerPixel = async () => (await pixelsOf(win)).at((refit.left + 4) * refit.dpr, (refit.top + 4) * refit.dpr);
   const atCorner = await cornerPixel();
@@ -626,6 +641,34 @@ app.whenReady().then(async () => {
   const cut = await sharp(path.join(root, 'square-cut.png')).raw().toBuffer({ resolveWithObject: true });
   const wantSize = Math.round(512 - (100 * 512) / start.width);
   check('the saved file is the part inside the frame, cut from the corner', Math.abs(cut.info.width - wantSize) <= 3 && Math.abs(cut.info.height - wantSize) <= 3 && near([...cut.data.subarray(0, 3)], [0, 0, 0], 3), `${cut.info.width}x${cut.info.height}, first pixel ${[...cut.data.subarray(0, 3)]}`);
+  await closeAll(editor);
+
+  console.log('crop: Ctrl and the wheel');
+  await flatEditor(files.square);
+  await motion('no-preference');
+  const full = await rectOf('#frame');
+  // A point well away from the frame's middle, where zooming about the middle would bring another part of the picture.
+  const spot = [full.left + full.width * 0.75, full.top + full.height * 0.7];
+  const colours = async () => {
+    const { at } = await pixelsOf(win);
+    return { under: at(spot[0] * full.dpr, spot[1] * full.dpr), corner: at((full.left + 4) * full.dpr, (full.top + 4) * full.dpr) };
+  };
+  const wheel = async (deltaY) => {
+    await js(win, `document.getElementById('well').dispatchEvent(new WheelEvent('wheel', { ctrlKey: true, deltaY: ${deltaY}, clientX: ${spot[0]}, clientY: ${spot[1]}, bubbles: true, cancelable: true }))`);
+    await sleep(600);
+  };
+  const stays = (r) => Math.abs(r.width - full.width) <= 2 && Math.abs(r.height - full.height) <= 2 && Math.abs(r.left - full.left) <= 2 && Math.abs(r.top - full.top) <= 2;
+  const unzoomed = await colours();
+  await wheel(-200);
+  const nearer = await colours(), nearerFrame = await rectOf('#frame');
+  check('Ctrl and the wheel enlarge the picture about the pointer, under a frame that stays', stays(nearerFrame) && near(nearer.under, unzoomed.under, 4) && !near(nearer.corner, unzoomed.corner, 8) && (await state()).dot === true, `under ${unzoomed.under} then ${nearer.under}, corner ${unzoomed.corner} then ${nearer.corner}`);
+  for (let n = 0; n < 6; n++) await wheel(-1000);
+  const nearest = await rectOf('#frame');
+  check('turned on and on, it stops before the frame gets smaller on screen', stays(nearest), `${nearest.width}x${nearest.height} from ${full.width}x${full.height}`);
+  await wheel(2000);
+  await wheel(2000);
+  const restored = await colours();
+  check('turned the other way it stops at the whole picture, which leaves nothing to undo', stays(await rectOf('#frame')) && near(restored.corner, unzoomed.corner, 3) && (await state()).dot === false && (await state()).undo === false, JSON.stringify(await state()));
   await closeAll(editor);
 
   console.log('crop: straighten');

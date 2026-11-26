@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The Crop tool: the frame in the middle of the well (drag its handles to resize it, drag anywhere else to move the picture under
-// it), the aspect ratio chips, the Straighten ruler. The frame is kept in the picture's edit as fractions of the turned picture, so the
-// page shows, saves and undoes it like any other change. While a drag or a glide runs, the frame is changed with `live`, which is not
-// in the history; the change is committed when it ends. A classic script that adds window.editorCrop.
+// The Crop tool: the frame in the middle of the well (drag its handles to resize it, drag anywhere else to move the picture under it,
+// turn the wheel with Ctrl held to zoom it), the aspect ratio chips, the Straighten ruler. The frame is kept in the picture's edit as
+// fractions of the turned picture, so the page shows, saves and undoes it like any other change. While a drag or a glide runs, the frame
+// is changed with `live`, which is not in the history; the change is committed when it ends. A classic script that adds
+// window.editorCrop.
 (() => {
   const geo = window.editorGeometry;
   const { el, icon } = window.pomeloUi;
   const ASPECTS = [['free', 'Free'], ['original', 'Original'], ['1:1', 'Square'], ['4:5', '4:5'], ['3:2', '3:2'], ['16:9', '16:9']];
   const PX_PER_DEGREE = 8;
+  const WHEEL_MS = 160;
+  // Starts at full speed, so a wheel that keeps turning does not stutter as each turn takes over from the last.
+  const arrive = (t) => 1 - (1 - t) ** 3;
   const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // tab(): the tab on show. live(geometry): shows a geometry for the tab without a history step. commit(geometry, key): makes it a step.
@@ -113,17 +117,16 @@
       endDrag = end;
     }
 
-    // The frame eases to the geometry `next`, and the change is committed when it arrives.
-    function glideTo(next) {
-      settle();
+    // The frame goes to the geometry `next` in `ms` along `curve`, and the change is committed when it arrives.
+    function glideTo(next, ms = window.editorView.glideMs, curve = window.editorView.ease) {
       const from = tab().edit.geometry.crop;
       if (reduced()) { commit(next, keyed('crop')); return; }
       gliding = { picture: tab(), next };
       const started = performance.now();
       const step = (now) => {
-        const t = Math.min(1, (now - started) / window.editorView.glideMs);
+        const t = Math.min(1, Math.max(0, now - started) / ms);
         if (t === 1) { settleGlide(); return; }
-        live({ ...next, crop: geo.between(from, next.crop, window.editorView.ease(t)) });
+        live({ ...next, crop: geo.between(from, next.crop, curve(t)) });
         glideFrame = requestAnimationFrame(step);
       };
       glideFrame = requestAnimationFrame(step);
@@ -165,6 +168,21 @@
         if (same) commit(tab().edit.geometry, keyed('crop'));
         window.editorView.releaseView();
       });
+    });
+
+    // Zooming makes the frame smaller or larger about the point under the pointer, which the view, following the frame, shows as the
+    // picture growing or shrinking around that point.
+    well.addEventListener('wheel', (e) => {
+      if (!e.ctrlKey || !layout.on || !tab()) return;
+      endDrag?.();
+      // A turn of the wheel during a glide builds on where that glide was going.
+      const aim = gliding?.picture === tab() ? gliding.next : tab().edit.geometry;
+      cancelAnimationFrame(glideFrame);
+      gliding = null;
+      const seen = tab().edit.geometry.crop, [w, h] = sizes(tab()), box = frame.getBoundingClientRect();
+      const px = seen.x + seen.w * (e.clientX - box.left) / box.width, py = seen.y + seen.h * (e.clientY - box.top) / box.height;
+      const next = geo.zoomFrame(aim.crop, 1 / window.editorView.wheelZoom(e), px, py, aim.angle, w, h, window.editorView.cropFloor());
+      glideTo({ ...aim, crop: next }, WHEEL_MS, arrive);
     });
 
     // Levelling keeps the frame inside the turned picture, shrinking the frame from where it was when the drag began, so dragging back

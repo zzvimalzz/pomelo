@@ -44,8 +44,12 @@
   const zoomOf = (tab) => (tab.view.fit ? fitZoom(tab) : tab.view.zoom);
   // The crop view fills its room with the frame, enlarging a small one.
   const cropRoom = () => [canvas.width - 2 * CROP_AIR * dpr(), canvas.height - 2 * CROP_AIR * dpr()];
-  const cropZoom = (tab) => { const [w, h] = sizeOf(tab), [rw, rh] = cropRoom(); return Math.max(0.01, Math.min(MAX_ZOOM, rw / w, rh / h)); };
+  const cutSize = (tab) => geometryOf.cutSize(geometry(tab), tab.width, tab.height);
+  const cropZoom = (tab) => { const [w, h] = cutSize(tab), [rw, rh] = cropRoom(); return Math.max(0.01, Math.min(MAX_ZOOM, rw / w, rh / h)); };
   const viewZoom = (tab) => (cropping ? cropZoom(tab) : zoomOf(tab));
+  // The size, in picture pixels, of a frame that fills the room at the largest zoom.
+  const cropFloor = () => cropRoom().map((side) => side / MAX_ZOOM);
+  const wheelZoom = (e) => Math.exp(-e.deltaY * 0.0015);
   // Starts and ends at rest.
   const ease = (t) => (t < 0.5 ? 4 * t ** 3 : 1 - (2 - 2 * t) ** 3 / 2);
   // The view a share `t` of the way from a to b. The zoom changes evenly and the point (x, y) of the picture crosses the screen in a
@@ -101,7 +105,7 @@
     // Left unrounded, unlike outside the crop view: snapping to whole pixels makes a glide shiver.
     const x = canvas.width / 2 + (f.left - cropShown.cx) * cropShown.zoom, y = canvas.height / 2 + (f.top - cropShown.cy) * cropShown.zoom;
     renderer.draw(tab, geometry(tab), cropShown.zoom, x, y, false, e);
-    const [w, h] = sizeOf(tab).map((side) => side * cropShown.zoom);
+    const [w, h] = cutSize(tab).map((side) => side * cropShown.zoom);
     place(tab, x, y, w, h);
     well.classList.toggle('pan', cropping);
     return { x: x / dpr(), y: y / dpr(), w: w / dpr(), h: h / dpr(), zoom: cropShown.zoom / dpr(), on: cropping && cropK === 1 };
@@ -112,10 +116,13 @@
     settling = null;
   }
 
-  // Eases the crop view from `from` to the frame as it is now.
+  // Eases the crop view from `from` to the frame as it is now. A view already there, as after a drag of the picture, starts no glide:
+  // one would hold the view back from a frame that moves again while it runs.
   function glideToFrame(from) {
     stopGlide();
-    if (reduced() || !from) { want(); return; }
+    const to = from && shown && framed(shown);
+    const there = to && Math.abs(from.zoom / to.zoom - 1) < 0.01 && Math.hypot(from.cx - to.cx, from.cy - to.cy) * to.zoom < 4;
+    if (reduced() || !to || there) { want(); return; }
     const mine = (settling = { from, t: 0, id: 0 }), started = performance.now();
     const step = (now) => {
       mine.t = Math.min(1, (now - started) / GLIDE_MS);
@@ -291,7 +298,7 @@
     if (!e.ctrlKey || !shown?.texture) return;
     e.preventDefault();
     if (cropping) return;
-    zoomNow(here() * Math.exp(-e.deltaY * 0.0015), ...aboutPointer(e));
+    zoomNow(here() * wheelZoom(e), ...aboutPointer(e));
   }, { passive: false });
 
   well.addEventListener('dblclick', (e) => {
@@ -439,5 +446,5 @@
     cropGlide = requestAnimationFrame(step);
   }
 
-  window.editorView = { show, dispose, change, setCompare, setPanel, setCropping, holdView, releaseView, ease, glideMs: GLIDE_MS, redraw: want, onDraw: (listener) => drawn.push(listener), showPanel: () => { if (!panelOpen()) setPanel(true); } };
+  window.editorView = { show, dispose, change, setCompare, setPanel, setCropping, holdView, releaseView, cropFloor, wheelZoom, ease, glideMs: GLIDE_MS, redraw: want, onDraw: (listener) => drawn.push(listener), showPanel: () => { if (!panelOpen()) setPanel(true); } };
 })();

@@ -58,7 +58,8 @@
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, zoom < MIPMAP_BELOW ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
       gl.uniform2f(uniform.uCanvas, canvas.width, canvas.height);
       gl.uniform2f(uniform.uOrigin, x, y);
-      gl.uniform2f(uniform.uOut, ...geometryOf.outputSize(geometry, picture.width, picture.height));
+      // In the crop view the frame is not rounded to whole pixels: at a large zoom it would move in steps.
+      gl.uniform2f(uniform.uOut, ...(veil ? geometryOf.cutSize : geometryOf.outputSize)(geometry, picture.width, picture.height));
       gl.uniform1f(uniform.uZoom, zoom);
       gl.uniformMatrix3fv(uniform.uGeom, false, geometryOf.matrix(geometry, picture.width, picture.height));
       gl.uniform1f(uniform.uFlip, flip ? 1 : 0);

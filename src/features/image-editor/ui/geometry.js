@@ -8,10 +8,12 @@
   const isWhole = (c) => c.x === 0 && c.y === 0 && c.w === 1 && c.h === 1;
   const isNeutral = (g) => g.rotate === 0 && !g.flipH && !g.flipV && g.angle === 0 && isWhole(g.crop);
   const turnedSize = (g, width, height) => (g.rotate % 180 ? [height, width] : [width, height]);
-  const outputSize = (g, width, height) => {
+  // The size of the part the frame cuts out, in picture pixels: exact for the crop view, whole pixels for the picture that results.
+  const cutSize = (g, width, height) => {
     const [w, h] = turnedSize(g, width, height);
-    return [Math.max(1, Math.round(g.crop.w * w)), Math.max(1, Math.round(g.crop.h * h))];
+    return [g.crop.w * w, g.crop.h * h];
   };
+  const outputSize = (g, width, height) => cutSize(g, width, height).map((side) => Math.max(1, Math.round(side)));
 
   // Rows of a 3 x 3 matrix on (u, v, 1), where u and v run from 0 to 1 across the picture.
   const UNDO_TURN = {
@@ -119,10 +121,23 @@
     return { x: (u * cos - v * sin + w / 2 - halfW) / w, y: (u * sin + v * cos + h / 2 - halfH) / h, w: c.w, h: c.h };
   }
 
+  const leastSide = (w, h) => Math.min(40, w / 4, h / 4);
+
+  // The frame scaled by k about the point (px, py), keeping its shape. It stops growing where it fills the levelled picture and is slid
+  // back inside when scaling pushes it out. It stops shrinking at the shortest side, or once neither side is longer than `floor`
+  // ([width, height] in picture pixels).
+  function zoomFrame(c, k, px, py, angle, w, h, floor = [0, 0]) {
+    const a = angle * Math.PI / 180, cos = Math.abs(Math.cos(a)), sin = Math.abs(Math.sin(a));
+    const width = c.w * w, height = c.h * h;
+    const least = Math.min(1, Math.max(leastSide(w, h) / Math.min(width, height), Math.min(floor[0] / width, floor[1] / height)));
+    const s = clamp(k, least, Math.min(w / (width * cos + height * sin), h / (width * sin + height * cos)));
+    return moveFrame({ x: px + (c.x - px) * s, y: py + (c.y - py) * s, w: c.w * s, h: c.h * s }, 0, 0, angle, w, h);
+  }
+
   // The frame after one of its handles ('nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w') is dragged by dx, dy pixels of the turned
   // picture. With a ratio, the opposite corner (or the middle of the opposite side) stays put and the frame keeps its shape.
   function resizeFrame(c, handle, dx, dy, ratio, w, h) {
-    const least = Math.min(40, w / 4, h / 4);
+    const least = leastSide(w, h);
     let [x0, y0, x1, y1] = [c.x * w, c.y * h, (c.x + c.w) * w, (c.y + c.h) * h];
     const from = { x0, y0, x1, y1 };
     if (handle.includes('w')) x0 = clamp(x0 + dx, 0, x1 - least);
@@ -150,5 +165,5 @@
     return { x: x0 / w, y: y0 / h, w: width / w, h: height / h };
   }
 
-  window.editorGeometry = { neutral, isNeutral, isWhole, tidy, turnedSize, outputSize, matrix, rotate, flip, inside, between, limit, shrinkInside, ratioOf, fitRatio, moveFrame, resizeFrame };
+  window.editorGeometry = { neutral, isNeutral, isWhole, tidy, turnedSize, cutSize, outputSize, matrix, rotate, flip, inside, between, limit, shrinkInside, ratioOf, fitRatio, moveFrame, zoomFrame, resizeFrame };
 })();
