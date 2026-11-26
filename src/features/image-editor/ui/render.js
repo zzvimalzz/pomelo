@@ -27,7 +27,7 @@
     const gl = canvas.getContext('webgl2', { premultipliedAlpha: false, alpha: true, antialias: false, preserveDrawingBuffer: false });
     if (!gl) return null;
     const prog = program(gl);
-    const uniform = Object.fromEntries(['uSource', 'uCanvas', 'uOrigin', 'uOut', 'uZoom', 'uGeom', 'uFlip'].map((name) => [name, gl.getUniformLocation(prog, name)]));
+    const uniform = Object.fromEntries(['uSource', 'uCanvas', 'uOrigin', 'uOut', 'uZoom', 'uGeom', 'uFlip', 'uCrop', 'uVeil'].map((name) => [name, gl.getUniformLocation(prog, name)]));
     const maxSide = gl.getParameter(gl.MAX_TEXTURE_SIZE);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
@@ -47,10 +47,11 @@
       return texture;
     }
 
-    // picture: { texture, width, height }; geometry: its turn and flips; zoom: canvas pixels for each picture pixel; x, y: the shown
-    // picture's top-left corner on the canvas; flip: draw the rows from the bottom, for reading the pixels back. A null picture clears
-    // the canvas.
-    function draw(picture, geometry, zoom, x, y, flip = false) {
+    // picture: { texture, width, height }; geometry: its turn, flips, level and crop; zoom: canvas pixels for each picture pixel; x, y: the
+    // shown picture's top-left corner on the canvas; flip: draw the rows from the bottom, for reading the pixels back; veil: the part
+    // of the shown picture to keep as [x0, y0, x1, y1] from 0 to 1, with how far the rest is darkened and faded (0 to 1). A null
+    // picture clears the canvas.
+    function draw(picture, geometry, zoom, x, y, flip = false, veil = { keep: [0, 0, 1, 1], amount: 1 }) {
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.clear(gl.COLOR_BUFFER_BIT);
       if (!picture) return;
@@ -60,8 +61,10 @@
       gl.uniform2f(uniform.uOrigin, x, y);
       gl.uniform2f(uniform.uOut, ...geometryOf.outputSize(geometry, picture.width, picture.height));
       gl.uniform1f(uniform.uZoom, zoom);
-      gl.uniformMatrix3fv(uniform.uGeom, false, geometryOf.matrix(geometry));
+      gl.uniformMatrix3fv(uniform.uGeom, false, geometryOf.matrix(geometry, picture.width, picture.height));
       gl.uniform1f(uniform.uFlip, flip ? 1 : 0);
+      gl.uniform4f(uniform.uCrop, ...veil.keep);
+      gl.uniform1f(uniform.uVeil, veil.amount);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
 

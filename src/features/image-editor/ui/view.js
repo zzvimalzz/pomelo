@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The well and what is round it: the picture's zoom and pan, the pill with the zoom buttons, the zoom menu, the panel that hides, and
-// full screen. Zoom is canvas pixels for each picture pixel, so 100 % is one picture pixel for each screen pixel. A classic script that
+// full screen. Zoom is canvas pixels for each picture pixel, so 100 % is one picture pixel for each screen pixel. In the crop view the
+// whole turned picture is fitted and what the crop frame leaves out is darkened; the view glides between the two. A classic script that
 // adds window.editorView; show(tab) takes a tab { width, height, alpha, pixels, edit, view } and keeps its texture while it is on show.
 (() => {
   const { icon, el } = window.pomeloUi;
@@ -26,11 +27,18 @@
   let frame = 0;
   let tween = 0;
   let comparing = false;
+  let cropping = false;
+  let cropK = 0;
+  let cropGlide = 0;
+  const drawn = [];
 
   const geometry = (tab) => (comparing ? geometryOf.neutral() : tab.edit.geometry);
   const sizeOf = (tab) => geometryOf.outputSize(geometry(tab), tab.width, tab.height);
-  const fitZoom = (tab) => { const [w, h] = sizeOf(tab); return Math.max(0.01, Math.min(1, (canvas.width - 2 * AIR * dpr()) / w, (canvas.height - 2 * AIR * dpr()) / h)); };
+  const fitFor = (w, h) => Math.max(0.01, Math.min(1, (canvas.width - 2 * AIR * dpr()) / w, (canvas.height - 2 * AIR * dpr()) / h));
+  const fitZoom = (tab) => fitFor(...sizeOf(tab));
   const zoomOf = (tab) => (tab.view.fit ? fitZoom(tab) : tab.view.zoom);
+  const boxOf = (tab) => geometryOf.turnedSize(geometry(tab), tab.width, tab.height);
+  const viewZoom = (tab) => (cropping ? fitFor(...boxOf(tab)) : zoomOf(tab));
 
   // How far the picture may be pushed from the middle: until its edge is 32 px inside the well on the far side.
   const reach = (extent, space) => Math.max(0, (extent - space) / 2 + AIR * dpr());
@@ -44,18 +52,44 @@
 
   const want = () => { if (!frame) frame = requestAnimationFrame(draw); };
 
+  function place(tab, x, y, w, h) {
+    checker.hidden = !tab.alpha;
+    Object.assign(checker.style, { left: `${x / dpr()}px`, top: `${y / dpr()}px`, width: `${w / dpr()}px`, height: `${h / dpr()}px` });
+  }
+
+  // The crop view and the way to it: the whole turned picture is drawn, with what the frame leaves out darkened. `e`, from 0 to 1, is
+  // how far the view has glided from the cropped picture, at its own zoom and place, to the whole picture fitted in the well.
+  function drawCrop(tab, g) {
+    const [boxW, boxH] = geometryOf.turnedSize(g, tab.width, tab.height);
+    const e = 1 - (1 - cropK) ** 4;
+    const from = zoomOf(tab), c = g.crop, v = tab.view;
+    clampPan(tab, from);
+    const zoom = from + (fitFor(boxW, boxH) - from) * e;
+    const cx = ((c.x + c.w / 2) * boxW - v.panX / from) * (1 - e) + (boxW / 2) * e;
+    const cy = ((c.y + c.h / 2) * boxH - v.panY / from) * (1 - e) + (boxH / 2) * e;
+    const x = Math.round(canvas.width / 2 - cx * zoom), y = Math.round(canvas.height / 2 - cy * zoom);
+    renderer.draw(tab, { ...g, crop: { x: 0, y: 0, w: 1, h: 1 } }, zoom, x, y, false, { keep: [c.x, c.y, c.x + c.w, c.y + c.h], amount: e });
+    place(tab, x, y, boxW * zoom, boxH * zoom);
+    well.classList.remove('pan');
+    return { x: x / dpr(), y: y / dpr(), zoom: zoom / dpr(), box: [boxW, boxH], on: cropping && cropK === 1 };
+  }
+
   function draw() {
     frame = 0;
     const tab = shown;
     if (!renderer || lost || !tab?.texture) { checker.hidden = true; readout(); return; }
-    const zoom = zoomOf(tab);
-    well.classList.toggle('pan', clampPan(tab, zoom));
-    const [shownWidth, shownHeight] = sizeOf(tab);
-    const w = Math.round(shownWidth * zoom), h = Math.round(shownHeight * zoom);
-    const x = Math.round((canvas.width - w) / 2 + tab.view.panX), y = Math.round((canvas.height - h) / 2 + tab.view.panY);
-    renderer.draw(tab, geometry(tab), zoom, x, y);
-    checker.hidden = !tab.alpha;
-    Object.assign(checker.style, { left: `${x / dpr()}px`, top: `${y / dpr()}px`, width: `${w / dpr()}px`, height: `${h / dpr()}px` });
+    let layout = { on: false };
+    if (cropping || cropK > 0) layout = drawCrop(tab, geometry(tab));
+    else {
+      const zoom = zoomOf(tab);
+      well.classList.toggle('pan', clampPan(tab, zoom));
+      const [shownWidth, shownHeight] = sizeOf(tab);
+      const w = Math.round(shownWidth * zoom), h = Math.round(shownHeight * zoom);
+      const x = Math.round((canvas.width - w) / 2 + tab.view.panX), y = Math.round((canvas.height - h) / 2 + tab.view.panY);
+      renderer.draw(tab, geometry(tab), zoom, x, y);
+      place(tab, x, y, w, h);
+    }
+    for (const listener of drawn) listener(layout);
     readout();
   }
 
@@ -72,7 +106,7 @@
     well.classList.toggle('gpu-off', off);
     $('gpu').hidden = !off;
     panel.classList.toggle('off', off);
-    pill.classList.toggle('away', off);
+    pill.classList.toggle('away', off || cropping);
     panel.inert = off || !panelOpen();
   }
   canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); lost = true; gpuState(); });
@@ -82,6 +116,7 @@
     if (shown && shown !== tab && shown.texture) { renderer.drop(shown.texture); shown.texture = null; }
     shown = tab;
     comparing = false;
+    if (tab && cropping) Object.assign(tab.view, { fit: true, panX: 0, panY: 0 });
     if (tab && !tab.texture && !tab.gpu) {
       if (renderer && !lost && renderer.fits(tab.width, tab.height)) tab.texture = renderer.upload(tab.width, tab.height, tab.pixels);
       else tab.gpu = true;
@@ -112,7 +147,7 @@
 
   const compare = $('compare');
   function setCompare(on) {
-    if (comparing === on || !shown?.texture) return;
+    if (comparing === on || !shown?.texture || cropping) return;
     crossfade(120);
     comparing = on;
     compare.classList.toggle('held', on);
@@ -126,14 +161,14 @@
   // { flip: 'h' or 'v' }) so the picture can move from where it was to where it is, and a zoomed picture keeps what was in view.
   function change(update, how) {
     if (!shown?.texture) { update(); return; }
-    const before = zoomOf(shown), v = shown.view;
+    const before = viewZoom(shown), v = shown.view;
     update();
     if (how?.turn) [v.panX, v.panY] = how.turn > 0 ? [-v.panY, v.panX] : [v.panY, -v.panX];
     if (how?.flip) v[how.flip === 'h' ? 'panX' : 'panY'] *= -1;
     cancelAnimationFrame(tween);
     draw();
     if (reduced() || !how) return;
-    const from = how.turn ? { transform: `rotate(${-90 * how.turn}deg) scale(${before / zoomOf(shown)})` } : { transform: how.flip === 'h' ? 'scaleX(-1)' : 'scaleY(-1)' };
+    const from = how.turn ? { transform: `rotate(${-90 * how.turn}deg) scale(${before / viewZoom(shown)})` } : { transform: how.flip === 'h' ? 'scaleX(-1)' : 'scaleY(-1)' };
     stage.animate([from, { transform: 'none' }], how.turn ? { duration: 320, easing: 'cubic-bezier(.2, .9, .25, 1.12)' } : { duration: 300, easing: 'cubic-bezier(.22, 1, .36, 1)' });
   }
 
@@ -158,7 +193,7 @@
 
   // Zoom with a short glide, for the buttons, the keys and the double-click.
   function zoomTo(zoom, px, py) {
-    if (!shown?.texture) return;
+    if (!shown?.texture || cropping) return;
     cancelAnimationFrame(tween);
     const to = target(zoom, px, py);
     if (reduced()) { apply(to); return; }
@@ -184,16 +219,17 @@
   well.addEventListener('wheel', (e) => {
     if (!e.ctrlKey || !shown?.texture) return;
     e.preventDefault();
+    if (cropping) return;
     zoomNow(here() * Math.exp(-e.deltaY * 0.0015), ...aboutPointer(e));
   }, { passive: false });
 
   well.addEventListener('dblclick', (e) => {
-    if (e.target.closest('.pill, .zmenu, .veil') || !shown?.texture) return;
+    if (e.target.closest('.pill, .zmenu, .veil') || !shown?.texture || cropping) return;
     zoomTo(shown.view.fit ? 1 : 'fit', ...aboutPointer(e));
   });
 
   well.addEventListener('pointerdown', (e) => {
-    if (!well.classList.contains('pan') || e.button !== 0 || e.target.closest('.pill, .zmenu, .veil')) return;
+    if (!well.classList.contains('pan') || cropping || e.button !== 0 || e.target.closest('.pill, .zmenu, .veil')) return;
     cancelAnimationFrame(tween);
     well.setPointerCapture(e.pointerId);
     well.classList.add('panning');
@@ -301,10 +337,35 @@
   bind('zoomOut', zoomOut);
   bind('escape', () => {
     if (!zmenu.hidden) closeMenu();
+    else if (cropping) return false;
     else if (isFull()) api.fullScreen(false);
     else return false;
     return true;
   });
 
-  window.editorView = { show, dispose, change, setCompare, setPanel, showPanel: () => { if (!panelOpen()) setPanel(true); } };
+  // Glides the view to the crop view (on) or back to the cropped picture; the zoom and the pill follow. The view of a zoomed picture is
+  // let go when the crop view is reached, and stays at Fit afterwards.
+  function setCropping(on) {
+    if (cropping === on) return;
+    cropping = on;
+    cancelAnimationFrame(cropGlide);
+    pill.classList.toggle('away', on || !renderer || lost || !!shown?.gpu);
+    const settle = () => {
+      cropK = on ? 1 : 0;
+      if (on && shown) Object.assign(shown.view, { fit: true, panX: 0, panY: 0 });
+      draw();
+    };
+    if (reduced() || !shown?.texture) { settle(); return; }
+    const first = cropK, started = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - started) / 320);
+      if (t === 1) { settle(); return; }
+      cropK = first + ((on ? 1 : 0) - first) * t;
+      draw();
+      cropGlide = requestAnimationFrame(step);
+    };
+    cropGlide = requestAnimationFrame(step);
+  }
+
+  window.editorView = { show, dispose, change, setCompare, setPanel, setCropping, redraw: want, onDraw: (listener) => drawn.push(listener), showPanel: () => { if (!panelOpen()) setPanel(true); } };
 })();

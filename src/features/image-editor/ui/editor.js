@@ -36,12 +36,24 @@
   resetButton.type = 'button';
   resetButton.title = 'Reset';
 
+  const edited = (g) => ({ ...active.edit, geometry: { ...g, crop: geometry.tidy(g.crop) } });
+  const crop = window.editorCrop.create({
+    tab: () => active,
+    live: (g) => { view.change(() => { active.edit = edited(g); }); paintGeometry(); },
+    commit: (g, key) => commit(edited(g), key),
+  });
+
+  function paintGeometry() {
+    resetButton.disabled = !active || geometry.isNeutral(active.edit.geometry);
+    crop.paint();
+  }
+
   function refresh() {
     const history = active?.history;
     undoButton.disabled = !history?.canUndo();
     redoButton.disabled = !history?.canRedo();
     compare.disabled = !history || history.isNeutral();
-    resetButton.disabled = !history || geometry.isNeutral(active.edit.geometry);
+    paintGeometry();
     const changed = !!history?.dirty();
     dot.hidden = saveButton.hidden = !changed;
     line.hidden = tabs.length > 1;
@@ -60,7 +72,9 @@
 
   // Shows a tab once its pixels are here; a tab that was closed or replaced as the one on show meanwhile is left alone.
   async function activate(tab) {
+    crop.settle();
     active = tab;
+    if (tool === 'crop') crop.begin();
     savedNote.classList.remove('on');
     refresh();
     await tab.loading;
@@ -98,7 +112,8 @@
     if (shown.length) activate(shown[shown.length - 1]);
   }
 
-  const ready = () => !!active?.texture && !window.pomeloCard.isOpen();
+  // A frame still easing to a new shape arrives first, so the next change starts from where it was going.
+  const ready = () => { crop.settle(); return !!active?.texture && !window.pomeloCard.isOpen(); };
 
   // Changes with the same key in a row fold into one undo step.
   function commit(edit, key, how) {
@@ -135,12 +150,13 @@
     four.append(button);
   }
   resetButton.onclick = () => { if (ready()) commit({ ...active.edit, geometry: geometry.neutral() }, null); };
-  cropView.append(el('div', 'glabel', 'Rotate and flip'), four, resetButton);
+  cropView.append(...crop.controls, el('div', 'glabel', 'Rotate and flip'), four, resetButton);
 
   // Saves the tab's picture over its file, or as a copy. The first save over a file asks once whether to replace it. Resolves true when
   // what was asked is done, false when it was not (the user said no, or the main process said why in the corner notice).
   async function save(tab, copy = !tab.writable) {
     if (tab.saving || !tab.texture || window.pomeloCard.isOpen()) return false;
+    crop.settle();
     if (!copy && !tab.replaceAsked) {
       const answer = await choose('Replace the original?', `Save over ${tab.name}, or keep it as it is and save a copy.`, [{ label: 'Cancel', value: null }, { label: 'Save a copy', value: 'copy' }, { label: 'Replace', value: 'replace', primary: true }]);
       if (!answer) return false;
@@ -253,6 +269,9 @@
   function setTool(next) {
     view.showPanel();
     if (next === tool) return;
+    if (tool === 'crop') crop.apply();
+    if (next === 'crop') crop.begin();
+    view.setCropping(next === 'crop');
     views.dataset.turn = TOOLS.indexOf(next) > TOOLS.indexOf(tool) ? 'next' : 'prev';
     tool = next;
     for (const button of tools.children) button.setAttribute('aria-checked', String(button.dataset.tool === tool));
@@ -260,6 +279,15 @@
   }
   tools.addEventListener('click', (e) => { const button = e.target.closest('button'); if (button) setTool(button.dataset.tool); });
   for (const id of TOOLS) bind(id, () => setTool(id));
+  bind('escape', () => {
+    if (tool !== 'crop') return false;
+    crop.cancel();
+    setTool('adjust');
+  });
+  bind('apply', (e) => {
+    if (tool !== 'crop' || e.target.closest?.('button')) return false;
+    setTool('adjust');
+  });
 
   const state = await api.state();
   piece = state.piece;

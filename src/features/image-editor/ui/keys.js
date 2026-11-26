@@ -20,6 +20,7 @@
     panel: { keys: ['Ctrl+b', 'Ctrl+B'], label: 'Ctrl+B' },
     fullScreen: { keys: ['F11'], label: 'F11' },
     escape: { keys: ['Escape'], label: 'Esc' },
+    apply: { keys: ['Enter'], label: 'Enter' },
   };
   const actions = {};
 
