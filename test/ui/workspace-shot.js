@@ -2481,7 +2481,13 @@ app.whenReady().then(async () => {
       for (let clickCount = 1; clickCount <= times; clickCount++) for (const type of ['mouseDown', 'mouseUp']) win.webContents.sendInputEvent({ type, x: p.x, y: p.y, button: 'left', clickCount, modifiers });
       await sleep(200);
     };
-    const clickCell = async (win, n, modifiers = [], times = 1) => click(win, await centre(win, n), modifiers, times);
+    // Just after the grid is scrolled by script, Chromium can still hit-test sent input at the old scroll position, so a press meant
+    // for one page lands on the page that was there before. The pointer is moved over the page until it is the one under it.
+    const over = (win, n, p) => until(`page ${n} under the pointer`, async () => {
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y });
+      return js(win, `document.querySelector('.cell[data-n="${n}"]').matches(':hover')`);
+    }, 3000);
+    const clickCell = async (win, n, modifiers = [], times = 1) => { const p = await centre(win, n); await over(win, n, p); await click(win, p, modifiers, times); };
     const sheetsDrawn = (win, n) => until(`${n} thumbnails`, async () => (await grid(win)).canvases >= n);
     const across = (win) => js(win, `(() => { const top = document.querySelector('.cell').offsetTop; return [...document.querySelectorAll('.cell')].filter((c) => c.offsetTop === top).length; })()`);
     const openGrid = async (win, wait = 500) => { await js(win, `document.querySelector('.dock .tool').click()`); await sleep(wait); };
@@ -2867,6 +2873,7 @@ app.whenReady().then(async () => {
         win.webContents.focus();
         await edge(win, n, side);
         const start = await centre(win, from);
+        await over(win, from, start);
         await frames(win);
         await sleep(150);
         mouse(win, 'mouseMove', start);
