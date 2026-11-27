@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The dock: the page box with its arrows, a place for the tools (organise.js fills it), the zoom buttons and the View menu. A round button beside it slides it off the edge and, once
+// The dock: the page box with its arrows, a place for the tools (organise.js fills it), the More menu (workspace.js gives it its items), the zoom buttons and the View menu. A round button beside it slides it off the edge and, once
 // it is folded, takes the middle of the place it stood and brings it back. A grip at its start end moves it (dock-place.js). A classic
 // script that adds window.workspaceDock.
 (() => {
@@ -12,6 +12,9 @@
   let viewer = null;
   let menu = null;
   let zoomButton = null;
+  let moreMenu = null;
+  let moreButton = null;
+  let moreItems = [];
   let flash = null;
   let flashTimer = null;
   let folded = false;
@@ -19,8 +22,10 @@
   let grid = () => {};
   let showPage = () => {};
   const focusReading = () => document.body.classList.contains('focus');
-  const menuOpen = () => !!menu && !menu.hidden;
-  const closeMenu = () => { if (menu) { menu.hidden = true; zoomButton.setAttribute('aria-expanded', 'false'); } };
+  const menuOpen = () => [menu, moreMenu].some((m) => m && !m.hidden);
+  const closeMenu = () => {
+    for (const [m, b] of [[menu, zoomButton], [moreMenu, moreButton]]) if (m) { m.hidden = true; b.setAttribute('aria-expanded', 'false'); }
+  };
 
   const well = () => document.querySelector('.well');
   // pdf.js measures where to keep still from the container's offset parent, which is the well.
@@ -36,35 +41,20 @@
     return b;
   }
 
-  function item(text, id, run) {
+  function item(text, id, run, trail = id && label(id)) {
     const b = el('button', 'mi', text);
     b.type = 'button';
     b.setAttribute('role', 'menuitem');
-    if (id) b.append(el('kbd', '', label(id)));
+    if (trail) b.append(el('kbd', '', trail));
     b.onclick = () => { closeMenu(); run(); };
     return b;
   }
 
-  function buildMenu(layouts) {
+  function menuOf(...parts) {
     const m = el('div', 'menu');
     m.setAttribute('role', 'menu');
     m.hidden = true;
-    m.append(
-      el('div', 'cap', 'Zoom'),
-      item('Fit width', 'fitWidth', () => { viewer.currentScaleValue = 'page-width'; }),
-      item('Fit page', null, () => { viewer.currentScaleValue = 'page-fit'; }),
-      item('Actual size', 'actualSize', () => { viewer.currentScaleValue = '1'; }),
-      el('hr'),
-      el('div', 'cap', 'Layout'),
-      ...layouts.map(([text, mode]) => { const b = item(text, null, () => { viewer.spreadMode = mode; }); b.dataset.mode = String(mode); return b; }),
-      el('hr'),
-      el('div', 'cap', 'Page colour'),
-      ...COLOURS.map(([text, name]) => {
-        const b = item(text, null, () => (name === 'custom' ? window.workspaceColours.choose() : window.workspaceColours.set(name)));
-        b.dataset.colour = name;
-        return b;
-      }),
-    );
+    m.append(...parts);
     m.addEventListener('keydown', (e) => {
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
       const items = [...m.querySelectorAll('.mi')];
@@ -73,6 +63,23 @@
     });
     return m;
   }
+
+  const buildMenu = (layouts) => menuOf(
+    el('div', 'cap', 'Zoom'),
+    item('Fit width', 'fitWidth', () => { viewer.currentScaleValue = 'page-width'; }),
+    item('Fit page', null, () => { viewer.currentScaleValue = 'page-fit'; }),
+    item('Actual size', 'actualSize', () => { viewer.currentScaleValue = '1'; }),
+    el('hr'),
+    el('div', 'cap', 'Layout'),
+    ...layouts.map(([text, mode]) => { const b = item(text, null, () => { viewer.spreadMode = mode; }); b.dataset.mode = String(mode); return b; }),
+    el('hr'),
+    el('div', 'cap', 'Page colour'),
+    ...COLOURS.map(([text, name]) => {
+      const b = item(text, null, () => (name === 'custom' ? window.workspaceColours.choose() : window.workspaceColours.set(name)));
+      b.dataset.colour = name;
+      return b;
+    }),
+  );
 
   function showPill(text) {
     flash.textContent = text;
@@ -107,7 +114,14 @@
     menu = buildMenu([['Continuous', 0], ['Two pages side by side', 1]]);
     const zoomGroup = el('div', 'zoomgroup');
     zoomGroup.append(out, zoom, menu, into);
-    dock.append(grip, previous, box, next, el('span', 'sep'), el('span', 'tools'), el('span', 'sep'), zoomGroup);
+    const more = button('tool', 'more', 'More');
+    moreButton = more;
+    more.setAttribute('aria-haspopup', 'menu');
+    more.setAttribute('aria-expanded', 'false');
+    moreMenu = menuOf();
+    const moreGroup = el('span', 'moregroup');
+    moreGroup.append(more, moreMenu);
+    dock.append(grip, previous, box, next, el('span', 'sep'), el('span', 'tools'), moreGroup, el('span', 'sep'), zoomGroup);
     const fold = button('fold', 'right', 'Hide controls');
     const wrap = el('div', 'dockwrap');
     wrap.hidden = true;
@@ -135,13 +149,21 @@
     out.onclick = () => zoomBy(-1);
     into.onclick = () => zoomBy(1);
     zoom.onclick = () => {
-      const open = menuOpen();
+      const open = !menu.hidden;
       closeMenu();
       if (open) return;
       const colour = window.workspaceColours.current();
       for (const b of menu.querySelectorAll('.mi')) b.classList.toggle('on', b.dataset.mode === String(viewer.spreadMode) || b.dataset.colour === (typeof colour === 'object' ? 'custom' : colour));
       menu.hidden = false;
       zoom.setAttribute('aria-expanded', 'true');
+    };
+    more.onclick = () => {
+      const open = !moreMenu.hidden;
+      closeMenu();
+      if (open) return;
+      moreMenu.replaceChildren(...moreItems.map(({ text, key, arrow, run }) => item(text, key, run, arrow ? '›' : undefined)));
+      moreMenu.hidden = false;
+      more.setAttribute('aria-expanded', 'true');
     };
     // The box is as wide as its digits, so the number and the total sit in the middle between the arrows whatever the page.
     const fit = () => { page.style.width = `calc(${Math.max(page.value.length, 1)}ch + 10px)`; };
@@ -166,7 +188,7 @@
     };
     // Keys from here on act on the document, so a click on a button must not take the focus away from it.
     for (const part of [dock, fold]) part.addEventListener('mousedown', (e) => { if (e.target !== page) e.preventDefault(); });
-    document.addEventListener('pointerdown', (e) => { if (menuOpen() && !e.target.closest('.zoomgroup')) closeMenu(); });
+    document.addEventListener('pointerdown', (e) => { if (menuOpen() && !e.target.closest('.zoomgroup, .moregroup')) closeMenu(); });
 
     eventBus.on('pagesinit', () => {
       count.replaceChildren(el('span', 'of', '/ '), String(viewer.pagesCount));
@@ -220,5 +242,5 @@
 
   bind('escape', () => (menuOpen() ? (closeMenu(), true) : false));
 
-  window.workspaceDock = { watch, hide: () => hide(), grid: (size) => grid(size), showPage: (n) => showPage(n) };
+  window.workspaceDock = { watch, hide: () => hide(), grid: (size) => grid(size), showPage: (n) => showPage(n), setMore: (items) => { moreItems = items; } };
 })();

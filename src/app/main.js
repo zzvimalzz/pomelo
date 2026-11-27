@@ -51,6 +51,8 @@ const workspace = createWorkspace({
   hasPdfEngine: () => !!conversion.getEngines().pdf, installEngine: (key, onNote) => setup.run(key, onNote),
   probeLocked: conversion.probeLocked, checkPassword: conversion.checkPassword,
   asPdf: conversion.asPdf, pdfSourceExts: conversion.pdfSourceExts, makePdf: (src, outDir, signal) => conversion.convertFile(src, 'pdf', { outDir, signal }),
+  targetsFor: (file) => conversion.targetsFor([file]).map((t) => ({ ...t, group: conversion.groupOf(t.ext) })), explainNoTargets: conversion.explainNoTargets,
+  convert: (file, to) => jobs.addConversion(file, to, conversion.labelOf(to)),
 });
 const showPdf = (paths) => workspace.open(paths).catch((e) => log('PDF window failed:', e.message));
 const editor = createEditor({

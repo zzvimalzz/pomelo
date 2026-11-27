@@ -37,9 +37,10 @@ const REASONS = {
 // install an engine as the Engines page does, calling onNote(note, fraction) as it goes, and resolve { ok, message }. probeLocked(file): does a PDF need a
 // password to open. checkPassword(file, password): does this Buffer open it. asPdf(ext): { group, route } for a format, route being 'ready'
 // when a file of it can be made into a PDF now, 'soffice' once LibreOffice is installed, or null. pdfSourceExts(): the extensions asPdf
-// takes. makePdf(file, folder, signal): make a PDF of it in that folder and resolve [its path]. solid: draw an opaque window; by default
-// only before Windows 11.
-function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, uniquePath, runPdfTool, showInFolder, hasPdfEngine, installEngine, probeLocked, checkPassword, asPdf, pdfSourceExts, makePdf, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
+// takes. makePdf(file, folder, signal): make a PDF of it in that folder and resolve [its path]. targetsFor(file): the formats the wheel offers
+// for a file, as [{ id, label, sub }]. explainNoTargets(files): the notice for a file with none. convert(file, to): start converting it, as a drop
+// on the wheel does. solid: draw an opaque window; by default only before Windows 11.
+function createWorkspace({ asset, getSettings, setSettings, notify, log, openExternal, copyText, uniquePath, runPdfTool, showInFolder, hasPdfEngine, installEngine, probeLocked, checkPassword, asPdf, pdfSourceExts, makePdf, targetsFor, explainNoTargets, convert, solid = Number(os.release().split('.')[2]) < WINDOWS_11 }) {
   const documents = createDocuments({ runPdfTool, checkPassword, makePdf });
   let win = null;
   let queue = Promise.resolve();
@@ -160,7 +161,21 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     const open = documents.find(target);
     if (open) await revised(documents.reload(open.token), true);
     await add([target]);
-    return { ...result, copied: !!documents.find(target) };
+    return { ...result, copied: !!documents.find(target), copyToken: documents.find(target)?.token };
+  }
+
+  // What the wheel would offer for the document's file. A file with nothing to offer gets the wheel's explanation in the corner of the screen.
+  function convertTargets(token) {
+    const file = documents.fileOf(token);
+    const targets = targetsFor(file).map(({ id, ext, group, label }) => ({ id, ext, group, label }));
+    if (!targets.length) notify(explainNoTargets([file]));
+    return targets;
+  }
+
+  // Converts the file on disk, which is why the page saves changes first. Only a target the wheel offers for it starts a job.
+  function convertDocument(token, to) {
+    const file = documents.fileOf(token);
+    if (targetsFor(file).some((target) => target.id === to)) convert(file, to);
   }
 
   async function installFor(key) {
@@ -269,6 +284,8 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
     redo: (token) => revised(documents.redo(token), true),
     save: (token) => revised(documents.save(token), false),
     saveAs,
+    convertTargets,
+    convert: convertDocument,
     reload: (token) => revised(documents.reload(token), true),
     closeWindow: () => { leaving = true; win?.close(); },
     setFocus: (on) => win?.setFullScreen(on),

@@ -291,8 +291,8 @@ body.focus:not(.reveal-dock):not(.tooling) .dockwrap:not(:focus-within) :is(.doc
 .pageno { height: 24px; padding: 0 4px 2px; text-align: center; border: 1px solid transparent; border-radius: 6px; background: transparent; font: inherit; font-weight: 700; color: var(--txt); outline: none; }
 .pageno:hover { border-color: var(--field-line); background: var(--field); }
 .pageno:focus { border-color: var(--accent); background: var(--field); box-shadow: 0 0 0 3px var(--accent-soft); }
-.zoomgroup { position: relative; display: flex; align-items: center; gap: 2px; }
-.well[data-dock="left"] .zoomgroup, .well[data-dock="right"] .zoomgroup { align-self: stretch; flex-direction: column; }
+.zoomgroup, .moregroup { position: relative; display: flex; align-items: center; gap: 2px; }
+.well[data-dock="left"] .zoomgroup, .well[data-dock="right"] .zoomgroup, .well[data-dock="left"] .moregroup, .well[data-dock="right"] .moregroup { align-self: stretch; flex-direction: column; }
 .well[data-dock="left"] .pagebox, .well[data-dock="right"] .pagebox { height: auto; padding: 4px 0; flex-direction: column; gap: 3px; }
 .well[data-dock="left"] .pagecount, .well[data-dock="right"] .pagecount { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .well[data-dock="left"] .pagecount::before, .well[data-dock="right"] .pagecount::before { content: ''; width: 16px; height: 1px; background: var(--line); }
@@ -329,13 +329,14 @@ body.focus .well[data-dock="top"] .optbar { top: 116px; }
 .well:has(.dock.folded) .optbar { transform: var(--away); opacity: 0; pointer-events: none; transition: transform .5s var(--in-out), opacity .35s var(--in-out) .1s; }
 .well:has(.dockwrap.dragging) .optbar { opacity: 0; pointer-events: none; transition: opacity .2s; }
 /* With both side panels open the smallest window leaves 366 px for the document. Below 700 px the bar keeps only its icons and drops the
-   hint; below 440 px the chip shows only the number, and the fold button stands over the end of the dock instead of beside it. The bar
+   hint; below 440 px the chip shows only the number, the dock drops Previous and Next (the page box and the keys remain) so the More button fits, and the fold button stands over the end of the dock instead of beside it. The bar
    wraps rather than run off the edge. */
 @container (max-width: 700px) {
   .optbar .opt { gap: 0; padding: 0 7px; font-size: 0; }
   .optbar .hint, .optbar .picked:not(.some) .selgroup { display: none; }
 }
 @container (max-width: 440px) {
+  .dock .step { display: none; }
   .tool.on { gap: 0; }
   .tool.on .lbl { max-width: 0; }
   .selchip { padding: 0 9px; }
@@ -367,6 +368,11 @@ body.focus .well[data-dock="top"] .optbar { top: 116px; }
 .menu hr { height: 1px; margin: 5px 6px; border: 0; background: var(--line); }
 .menu .mi.on::after { content: '✓'; margin-left: auto; color: var(--accent-ink); font-weight: 700; }
 @keyframes menu-in { from { transform: var(--nudge) scale(.94); opacity: 0; } }
+.formats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+.btn.conv { height: auto; min-width: 0; padding: 10px 6px 8px; display: grid; gap: 5px; justify-items: center; }
+.btn.conv .cicon { width: 39px; height: 47px; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .2)); }
+.btn.conv small { font-size: 12px; font-weight: 600; }
+.btn.conv:hover:not(:disabled) { background: var(--accent-soft); }
 
 .findbar { position: absolute; top: 12px; left: 50%; z-index: 4; display: flex; align-items: center; gap: 2px; height: 42px; padding: 0 5px 0 12px; border-radius: 13px; transform: translateX(-50%);
   background: var(--bar); border: 1px solid var(--bar-line); backdrop-filter: blur(24px) saturate(160%);

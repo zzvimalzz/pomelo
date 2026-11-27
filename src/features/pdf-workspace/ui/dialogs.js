@@ -283,6 +283,45 @@
     });
   }
 
+  // Resolves with the id of the format the user picks from `targets` ({ id, ext, group, label }), or null on Cancel or Esc.
+  function chooseFormat(targets) {
+    const { box, close } = frame();
+    const heading = el('h3', '', 'Convert to');
+    heading.id = 'dialog-title';
+    const head = el('div', 'uhead');
+    head.append(heading);
+    const grid = el('div', 'formats');
+    const { svg } = window.pomeloWheelShapes;
+    const defs = svg('svg', { class: 'defs', width: 0, height: 0, 'aria-hidden': 'true' });
+    window.pomeloIcons.addDefs(svg, defs);
+    const formats = targets.map(({ ext, group, label }) => {
+      const b = el('button', 'btn conv');
+      const art = svg('svg', { class: 'cicon', viewBox: '0 0 52 62', 'aria-hidden': 'true' });
+      window.pomeloIcons.draw(svg, svg('g', { class: 'picon' }, art), { ext, group, count: 1 }, 26, 52);
+      b.append(art, el('small', '', label));
+      return b;
+    });
+    grid.append(...formats);
+    const cancel = el('button', 'btn', 'Cancel');
+    const row = el('div', 'row');
+    row.append(cancel);
+    box.append(defs, head, grid, row);
+    return new Promise((resolve) => {
+      const done = (answer) => {
+        close();
+        document.getElementById('scroller').focus();
+        resolve(answer);
+      };
+      formats.forEach((b, i) => { b.onclick = () => done(targets[i].id); });
+      cancel.onclick = () => done(null);
+      box.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); done(null); }
+        else if (e.key === 'Tab') loop(e, [...formats, cancel]);
+      });
+      formats[0].focus();
+    });
+  }
+
   // Resolves with { page, text } as #rrggbb when the user applies a pair, or null when they cancel. `current` is the pair now in use,
   // if it is one the user chose.
   function chooseColours(current) {
@@ -351,5 +390,5 @@
     });
   }
 
-  window.workspaceDialogs = { askPassword, askSource, closePassword, confirmLink, engineCard, choose, chooseColours, isOpen: window.pomeloCard.isOpen };
+  window.workspaceDialogs = { askPassword, askSource, closePassword, confirmLink, engineCard, choose, chooseFormat, chooseColours, isOpen: window.pomeloCard.isOpen };
 })();
