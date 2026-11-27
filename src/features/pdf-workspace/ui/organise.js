@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The Pages tool: a button in the dock that swaps the reading view for a grid of every page, with selection by click, Ctrl, Shift, Ctrl+A, the
-// keyboard and a rubber band, and an option bar that inserts pages (from a PDF, from pictures, or a blank one, also by dropping files on the grid), turns,
-// deletes, extracts and moves the selected pages (by dragging) and undoes and redoes. Each change is a list of operations for the PDF engine. The grid shows the result at once and keeps its pages while they are read again from the new version,
+// keyboard and a rubber band, and an option bar that adds pages (files through the Add files card or dropped on the grid, or a blank page), turns,
+// deletes, extracts and moves the selected pages (by dragging), opens the Split card, and undoes and redoes. Each change is a list of operations for the PDF engine. The grid shows the result at once and keeps its pages while they are read again from the new version,
 // so nothing is drawn twice. Without the engine the button shows the engine card first. A classic script that adds window.workspaceOrganise.
 (() => {
   const { el, icon } = window.pomeloUi;
   const { label, bind } = window.workspaceKeys;
-  const WIDTH = 160;
+  const SIZES = [120, 160, 200, 240];
   const EDGE = 28;
   const DRAG = 4;
   const QUEUE = 20;
@@ -30,8 +30,6 @@
     list.append(cells, band);
     const bar = el('div', 'optbar');
     bar.hidden = true;
-    const count = el('span', 'count');
-    count.setAttribute('role', 'status');
     const hole = el('div', 'cell hole');
     hole.append(el('span', 'sheet', 'Drop here'), el('span', 'num', ' '));
     const action = (name, title, key, run) => {
@@ -52,17 +50,18 @@
       b.onclick = run;
       return b;
     };
-    const insertButton = labelled('insert', 'Insert…', () => toggleMenu());
-    insertButton.setAttribute('aria-haspopup', 'menu');
-    insertButton.setAttribute('aria-expanded', 'false');
+    const addButton = labelled('plus', 'Add', (e) => toggleMenu(e.detail === 0));
+    addButton.insertAdjacentHTML('beforeend', icon('down'));
+    addButton.setAttribute('aria-haspopup', 'menu');
+    addButton.setAttribute('aria-expanded', 'false');
     const menu = el('div', 'menu');
     menu.setAttribute('role', 'menu');
     menu.hidden = true;
-    for (const [title, run] of [['From a PDF…', () => insertFrom('pdf')], ['From pictures…', () => insertFrom('image')], ['Blank page', () => blank()]]) {
+    for (const [title, run] of [['Files…', (keyboard) => addFiles([], keyboard)], ['Blank page', () => blank()]]) {
       const item = el('button', 'mi', title);
       item.type = 'button';
       item.setAttribute('role', 'menuitem');
-      item.onclick = () => { closeMenu(); run(); };
+      item.onclick = (e) => { closeMenu(); run(e.detail === 0); };
       menu.append(item);
     }
     menu.addEventListener('keydown', (e) => {
@@ -71,15 +70,30 @@
       items[(items.indexOf(document.activeElement) + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
       e.preventDefault();
     });
-    const insertGroup = el('div', 'insertgroup');
-    insertGroup.append(insertButton, menu);
+    const addGroup = el('div', 'addgroup');
+    addGroup.append(addButton, menu);
+    const splitButton = labelled('split', 'Split…', () => away(() => window.workspaceSplit.open(tab.doc.token, viewer)));
+    // The selection's actions are there only while pages are selected, beside a chip that names the selection and clears it.
+    const hint = el('span', 'hint', 'Select pages to turn, delete or extract');
+    const count = el('span', 'count');
+    const chip = el('button', 'selchip');
+    chip.type = 'button';
+    chip.title = 'Clear the selection';
+    chip.innerHTML = icon('close');
+    chip.prepend(count);
+    chip.onclick = () => { setSelection(new Set()); anchor = null; if (focused) focusCell(focused); };
     const turnLeft = action('rotl', 'Rotate left', '', () => rotate(270));
     const turnRight = action('rotr', 'Rotate right', '', () => rotate(90));
+    const extractButton = action('extract', 'Extract', '', () => extract());
     const trash = action('trash', 'Delete', label('deletePages'), () => remove());
+    const forSelection = el('span', 'selgroup');
+    forSelection.append(chip, turnLeft, turnRight, extractButton, trash);
+    const picked = el('span', 'picked');
+    picked.setAttribute('role', 'status');
+    picked.append(hint, forSelection);
     const undo = action('undo', 'Undo', label('undo'), () => step('undo'));
     const redo = action('redo', 'Redo', label('redo'), () => step('redo'));
-    const extractButton = labelled('extract', 'Extract', () => extract());
-    bar.append(insertGroup, turnLeft, turnRight, trash, extractButton, count, el('span', 'sep'), undo, redo);
+    bar.append(addGroup, splitButton, el('span', 'sep'), picked, el('span', 'sep'), undo, redo);
     bar.addEventListener('mousedown', (e) => e.preventDefault());
     const button = el('button', 'tool');
     button.type = 'button';
@@ -87,19 +101,20 @@
     button.title = `Pages (${label('pages')})`;
     button.setAttribute('aria-label', 'Pages');
     button.setAttribute('aria-pressed', 'false');
-    well.append(list);
-    document.querySelector('.dockwrap').append(bar);
+    well.append(list, bar);
     document.querySelector('.dock .tools').append(button);
     button.addEventListener('mousedown', (e) => e.preventDefault());
     window.workspaceViewer.restScrollbar(list);
 
     let wanted = false;
+    let size = 160;
     let thumbs = null;
     let selected = new Set();
     let anchor = null;
     let focused = null;
     let tab = null;
     let busy = false;
+    let adding = false;
     let pending = null;
     let drag = null;
     let dropped = false;
@@ -160,9 +175,12 @@
     }
 
     function enable() {
-      count.textContent = selected.size ? `${selected.size} selected` : '- pages';
-      count.classList.toggle('none', !selected.size);
-      turnLeft.disabled = turnRight.disabled = trash.disabled = extractButton.disabled = !selected.size;
+      count.replaceChildren(String(selected.size), el('span', 'word', selected.size === 1 ? ' page' : ' pages'));
+      chip.setAttribute('aria-label', `Clear the selection of ${count.textContent}`);
+      picked.classList.toggle('some', selected.size > 0);
+      list.classList.toggle('busy', busy);
+      addButton.classList.toggle('adding', adding);
+      list.setAttribute('aria-busy', String(busy));
       undo.disabled = !tab?.doc.canUndo;
       redo.disabled = !tab?.doc.canRedo;
     }
@@ -177,6 +195,7 @@
       focused = n;
       cell(n).tabIndex = 0;
       cell(n).focus();
+      window.workspaceDock.showPage(n);
     }
 
     function pick(n, e) {
@@ -205,6 +224,7 @@
     list.addEventListener('keydown', (e) => {
       if (busy) return;
       if (e.ctrlKey && e.key.toLowerCase() === 'a') { setSelection(new Set(span(1, viewer.pagesCount))); e.preventDefault(); return; }
+      if (e.ctrlKey && e.shiftKey && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { nudge(e.key); e.preventDefault(); return; }
       const total = viewer.pagesCount;
       const across = columns();
       const to = { ArrowLeft: focused - 1, ArrowRight: focused + 1, ArrowUp: focused - across, ArrowDown: focused + across, Home: 1, End: total }[e.key];
@@ -403,7 +423,7 @@
     }
 
     function build() {
-      thumbs = window.workspaceThumbs.create(viewer.pdfDocument, WIDTH);
+      thumbs = window.workspaceThumbs.create(viewer.pdfDocument, size);
       fill();
     }
 
@@ -419,7 +439,6 @@
       pending = null;
       busy = false;
       queued.length = 0;
-      list.classList.remove('busy');
       list.hidden = band.hidden = bar.hidden = true;
       closeMenu();
       well.classList.remove('organising');
@@ -428,7 +447,7 @@
     // The new version has been read: the cells the grid already has are kept and drawn again from it, each picture staying until its
     // replacement is ready.
     function reconcile() {
-      thumbs = window.workspaceThumbs.create(viewer.pdfDocument, WIDTH);
+      thumbs = window.workspaceThumbs.create(viewer.pdfDocument, size);
       const total = viewer.pagesCount;
       while (nodes.length > total) { const c = nodes.pop(); seen.unobserve(c); visible.delete(c); c.remove(); }
       while (nodes.length < total) makeCell(nodes.length + 1);
@@ -457,7 +476,6 @@
       const kept = !!back && nodes.length > 0;
       pending = null;
       busy = false;
-      list.classList.remove('busy');
       if (kept) reconcile();
       else build();
       list.hidden = bar.hidden = false;
@@ -494,7 +512,6 @@
       const { token, name } = tab.doc;
       const before = { select: chosen(), focus: focused ?? 1 };
       busy = true;
-      list.classList.add('busy');
       enable();
       pending = { token, top: list.scrollTop, ...after };
       if (apply) {
@@ -508,7 +525,6 @@
       pending = null;
       busy = false;
       queued.length = 0;
-      list.classList.remove('busy');
       if (apply) rebuild(before);
       enable();
       if (result?.stop === 'no-engine') await window.workspaceDialogs.engineCard();
@@ -581,82 +597,106 @@
       });
     }
 
+    function nudge(key) {
+      const pages = selected.size ? chosen() : [focused];
+      const total = viewer.pagesCount;
+      const before = { ArrowLeft: pages[0] - 1, ArrowRight: pages.at(-1) + 2, Home: 1, End: total + 1 }[key];
+      if (before < 1 || before > total + 1 || noop(pages, before)) return;
+      if (!selected.size) setSelection(new Set(pages));
+      gap(pages, before, true);
+      drop(pages, before);
+    }
+
+    function resize(steps) {
+      const next = SIZES[Math.min(Math.max(SIZES.indexOf(size) + Math.sign(steps), 0), SIZES.length - 1)];
+      if (next === size) return;
+      size = next;
+      cells.style.setProperty('--size', `${size}px`);
+      if (thumbs) {
+        thumbs.setWidth(size);
+        for (const c of visible) paint(c);
+      }
+      if (focused) cell(focused).scrollIntoView({ block: 'nearest' });
+      sync();
+    }
+
     const menuOpen = () => !menu.hidden;
     function closeMenu() {
       menu.hidden = true;
-      insertButton.setAttribute('aria-expanded', 'false');
+      addButton.setAttribute('aria-expanded', 'false');
     }
 
-    function toggleMenu() {
+    // A press on the bar leaves the focus in the grid, where the keyboard put it, and a focus moved by script would take on its ring;
+    // only a menu opened from the keyboard shows where the focus went.
+    function toggleMenu(keyboard) {
       if (menuOpen()) { closeMenu(); return; }
       menu.hidden = false;
-      insertButton.setAttribute('aria-expanded', 'true');
-      menu.querySelector('.mi').focus();
+      addButton.setAttribute('aria-expanded', 'true');
+      menu.querySelector('.mi').focus({ focusVisible: keyboard });
     }
 
-    document.addEventListener('pointerdown', (e) => { if (menuOpen() && !e.target.closest('.insertgroup')) closeMenu(); });
-
-    // New pages go after the last selected page, or at the end when none is selected.
-    const spot = () => (selected.size ? Math.max(...selected) + 1 : viewer.pagesCount + 1);
+    document.addEventListener('pointerdown', (e) => { if (menuOpen() && !e.target.closest('.addgroup')) closeMenu(); });
 
     function blank() {
-      const before = spot();
+      const before = selected.size ? Math.max(...selected) + 1 : viewer.pagesCount + 1;
       run((token) => window.workspaceApi.apply(token, [{ op: 'pages.blank', before }]), { select: [before], focus: before });
     }
 
-    // Asks for the password of a PDF to insert until it is right. Resolves false when the user gives up.
-    async function unlock(source) {
-      let gaveUp = false;
-      let wrong = false;
-      for (;;) {
-        const password = await window.workspaceDialogs.askPassword(wrong, () => { gaveUp = true; window.workspaceDialogs.closePassword(); }, source.name);
-        if (password === null) { window.workspaceDialogs.closePassword(); return false; }
-        const right = await window.workspaceApi.unlockSource(source.id, password).catch(() => false);
-        if (gaveUp) return false;
-        if (right) { window.workspaceDialogs.closePassword(); return true; }
-        wrong = true;
-      }
-    }
-
-    // `found` is what the main process made of the files chosen or dropped: { id, kind, locked } for each. They are put in front of page `before`.
+    // `found` is what the main process made of the files dropped: { id, kind, locked, needs } for each. They are put in front of page
+    // `before`; a document that needs LibreOffice first opens the Add files card, which offers to install it.
     async function insertSources(found, before) {
       if (!found?.length || busy || !tab || !open()) return;
-      for (const source of found) if (source.locked && !(await unlock(source))) return;
+      if (found.some((s) => s.needs)) { addFiles(found); return; }
+      for (const source of found) if (source.locked && !(await window.workspaceDialogs.askSource(source))) return;
       await run((token) => window.workspaceApi.apply(token, [{ op: 'pages.insert', before, sources: found.map((s) => s.id) }]), { grow: before, was: viewer.pagesCount, select: [], focus: before });
     }
 
-    async function insertFrom(kind) {
+    // The files listed before the document go in front of its first page and the ones after it at its end, in one change, so one Undo
+    // takes them all away. The inserts are made from the end so the first does not move the place of the second.
+    async function addFiles(found = [], keyboard = false) {
       if (busy || !tab) return;
-      const before = spot();
-      await insertSources(await window.workspaceApi.chooseSources(kind), before);
+      const total = viewer.pagesCount;
+      await window.workspaceAddFiles.open(tab.doc.name, total, found, keyboard, async ({ before, after }) => {
+        if (busy || !tab || !open()) return;
+        const ops = [...(after.length ? [{ op: 'pages.insert', before: total + 1, sources: after }] : []), ...(before.length ? [{ op: 'pages.insert', before: 1, sources: before }] : [])];
+        if (!ops.length) return;
+        const grow = before.length && after.length ? null : before.length ? 1 : total + 1;
+        await run((token) => window.workspaceApi.apply(token, ops), grow ? { grow, was: total, select: [], focus: grow } : { select: [], focus: 1 });
+      });
+      if (focused && !list.hidden) focusCell(focused);
     }
 
-    // The selected pages become a new file the user names. The document is not changed.
-    async function extract() {
-      const pages = chosen();
-      if (!pages.length || busy || !tab) return;
+    // Makes new files from the document, which is not changed: `make` resolves what the main process answered.
+    async function away(make) {
+      if (busy || !tab) return;
       busy = true;
-      list.classList.add('busy');
       enable();
-      const result = await window.workspaceApi.extract(tab.doc.token, pages).catch(() => null);
+      const result = await make().catch(() => null);
       busy = false;
-      list.classList.remove('busy');
       enable();
       if (result?.stop === 'no-engine') await window.workspaceDialogs.engineCard();
       if (focused && !list.hidden) focusCell(focused);
     }
 
+    function extract() {
+      const pages = chosen();
+      if (pages.length && tab) away(() => window.workspaceApi.extract(tab.doc.token, pages));
+    }
+
     // Files dropped on the grid go in front of the page the pointer is over, or after it in its right half; elsewhere in the grid, at the end.
     let droppedAt = null;
     list.addEventListener('drop', (e) => {
-      if (!e.dataTransfer?.types.includes('Files')) return;
+      if (!e.isTrusted || !e.dataTransfer?.types.includes('Files')) return;
+      adding = true;
+      enable();
       const n = pageOf(e.target);
       droppedAt = n ? n + (e.clientX < cell(n).getBoundingClientRect().left + cell(n).getBoundingClientRect().width / 2 ? 0 : 1) : viewer.pagesCount + 1;
     });
-    window.workspaceApi.onFilesDropped((found) => {
+    window.workspaceApi.onFilesDropped((found, into) => {
+      if (into !== 'grid') return;
       const before = droppedAt ?? viewer.pagesCount + 1;
       droppedAt = null;
-      insertSources(found, before);
+      insertSources(found, before).finally(() => { adding = false; enable(); });
     });
 
     // A press while the last change is still being read back waits its turn, so a run of presses on Undo goes back one step for
@@ -670,6 +710,7 @@
       button.classList.toggle('on', wanted);
       button.setAttribute('aria-pressed', String(wanted));
       document.body.classList.toggle('tooling', wanted);
+      window.workspaceDock.grid(wanted ? `${Math.round(size / 1.6)}%` : null);
     }
 
     function leave() {
@@ -708,7 +749,7 @@
     bind('deletePages', () => { if (!open() || !selected.size) return false; remove(); });
     escape = () => {
       if (drag) { drag.cancelled = true; drag(); return; }
-      if (menuOpen()) { closeMenu(); insertButton.focus(); return; }
+      if (menuOpen()) { closeMenu(); addButton.focus(); return; }
       if (!open()) return false;
       leave();
     };
@@ -717,9 +758,17 @@
     api.leave = () => { if (wanted) leave(); };
     api.use = (next) => { tab = next; markAdded(); enable(); };
     api.waiting = () => !!pending;
+    // While the grid is up the dock's zoom buttons size the pages and its page buttons move through them.
+    api.zoom = (steps) => { if (!open()) return false; resize(steps); return true; };
+    api.go = (n) => {
+      if (!open()) return false;
+      if (!busy) pick(Math.min(Math.max(n, 1), nodes.length), {});
+      return true;
+    };
+    api.step = (by) => api.go((focused ?? 1) + by);
   }
 
   bind('escape', () => escape());
-  const api = { watch, leave: () => {}, use: () => {}, waiting: () => false };
+  const api = { watch, leave: () => {}, use: () => {}, waiting: () => false, zoom: () => false, go: () => false, step: () => false };
   window.workspaceOrganise = api;
 })();

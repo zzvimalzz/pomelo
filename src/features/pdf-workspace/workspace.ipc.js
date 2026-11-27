@@ -6,13 +6,15 @@ const { ipcMain } = require('electron');
 // documents: the open documents (documents.js). state(): what the page starts from. closeDocument(token): close a tab's file, and the
 // window with the last one. openDropped(paths): open the PDFs among the paths of a drop. setFocus(on): enter or leave full screen.
 // putRevision(token, bytes), apply(token, ops), undo(token), redo(token), save(token), saveAs(token), reload(token): the document's revisions (index.js).
-// chooseSources(kind): ask for a PDF ('pdf') or pictures ('image') to insert and answer what the page needs to name them. dropSources(paths): the same for files
-// dropped on the page. unlockSource(id, password): does the password open the PDF to insert. extract(token, pages): save those pages as a new file.
+// chooseSources(): ask for PDFs, pictures and documents and resolve their paths, which the preload keeps. dropSources(paths): answer what the
+// page needs to name those files, chosen or dropped on the page. unlockSource(id, password): does the password open the PDF to insert. extract(token, pages): save those pages as a new file.
+// split(token, request, total): save the document's pages as several files. splitPlan(request, total): the first and last page of each file that would make.
 // properties(token): what the PDF engine reports about the document. details(token): its folder and when it was changed. rename(token, name): give the
-// file another name. showInFolder(token): show it in Explorer. engine(): is the PDF engine installed. installEngine(): install it and resolve { ok, message }.
+// file another name. showInFolder(token): show it in Explorer. engine(): is the PDF engine installed. installEngine(key): install the PDF engine ('pdf') or
+// LibreOffice ('soffice') and resolve { ok, message }.
 // closeWindow(): close the window now that the page has dealt with unsaved changes. setDock(side): keep the dock's place. setView(patch): keep the valid fields of the view (view.js). checkLink(url): the address a link may open, or null. openLink(url): open it. copyLink(url): put
 // it on the clipboard. copyLinks(urls): put the ones that may be opened on it, one to a line, and answer how many. isWorkspace(sender): is this the workspace window's page.
-function registerWorkspaceIpc({ documents, state, closeDocument, openDropped, putRevision, apply, properties, chooseSources, dropSources, unlockSource, extract, details, rename, showInFolder, engine, installEngine, undo, redo, save, saveAs, reload, closeWindow, setFocus, setDock, setView, checkLink, openLink, copyLink, copyLinks, isWorkspace }) {
+function registerWorkspaceIpc({ documents, state, closeDocument, openDropped, putRevision, apply, properties, chooseSources, dropSources, unlockSource, extract, split, splitPlan, details, rename, showInFolder, engine, installEngine, undo, redo, save, saveAs, reload, closeWindow, setFocus, setDock, setView, checkLink, openLink, copyLink, copyLinks, isWorkspace }) {
   const guard = (e) => { if (!isWorkspace(e.sender)) throw new Error('not the workspace window'); };
   ipcMain.handle('pdfws:state', (e) => { guard(e); return state(); });
   ipcMain.handle('pdfws:read', (e, token, begin, end) => { guard(e); return documents.read(token, begin, end); });
@@ -20,16 +22,18 @@ function registerWorkspaceIpc({ documents, state, closeDocument, openDropped, pu
   ipcMain.handle('pdfws:close', (e, token) => { guard(e); closeDocument(token); });
   ipcMain.handle('pdfws:put-revision', (e, token, bytes) => { guard(e); return putRevision(token, bytes); });
   ipcMain.handle('pdfws:apply', (e, token, ops) => { guard(e); return apply(token, ops); });
-  ipcMain.handle('pdfws:choose-sources', (e, kind) => { guard(e); return chooseSources(kind); });
+  ipcMain.handle('pdfws:choose-sources', (e) => { guard(e); return chooseSources(); });
   ipcMain.handle('pdfws:drop-sources', (e, paths) => { guard(e); return dropSources(paths); });
   ipcMain.handle('pdfws:unlock-source', (e, id, password) => { guard(e); return unlockSource(id, password); });
   ipcMain.handle('pdfws:extract', (e, token, pages) => { guard(e); return extract(token, pages); });
+  ipcMain.handle('pdfws:split', (e, token, request, total) => { guard(e); return split(token, request, total); });
+  ipcMain.handle('pdfws:split-plan', (e, request, total) => { guard(e); return splitPlan(request, total); });
   ipcMain.handle('pdfws:properties', (e, token) => { guard(e); return properties(token); });
   ipcMain.handle('pdfws:details', (e, token) => { guard(e); return details(token); });
   ipcMain.handle('pdfws:rename', (e, token, name) => { guard(e); return rename(token, name); });
   ipcMain.handle('pdfws:show', (e, token) => { guard(e); showInFolder(token); });
   ipcMain.handle('pdfws:engine', (e) => { guard(e); return engine(); });
-  ipcMain.handle('pdfws:install-engine', (e) => { guard(e); return installEngine(); });
+  ipcMain.handle('pdfws:install-engine', (e, key) => { guard(e); return installEngine(key); });
   ipcMain.handle('pdfws:undo', (e, token) => { guard(e); return undo(token); });
   ipcMain.handle('pdfws:redo', (e, token) => { guard(e); return redo(token); });
   ipcMain.handle('pdfws:save', (e, token) => { guard(e); return save(token); });

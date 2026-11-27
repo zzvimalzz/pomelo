@@ -72,23 +72,26 @@ def picture(file):
     return sheet
 
 
-def insert(doc, before, sources, secrets):
+def open_source(source, secrets):
     """Each source is {"id", "file", "kind"}: a PDF, which is opened with the password in secrets["sources"][id] when it has one, or a picture."""
+    if not isinstance(source, dict) or set(source) != {"id", "file", "kind"} or source["kind"] not in ("pdf", "image") or not os.path.isfile(source["file"]):
+        raise ValueError("a file to insert is not there")
+    if source["kind"] == "image":
+        return picture(source["file"])
+    part = pymupdf.open(source["file"])
+    if part.needs_pass and not part.authenticate(secrets.get("sources", {}).get(source["id"], "")):
+        part.close()
+        raise ValueError("a PDF to insert is password-protected")
+    return part
+
+
+def insert(doc, before, sources, secrets):
     at = place(doc, before)
     if not isinstance(sources, list) or not 0 < len(sources) <= MAX_SOURCES:
         raise ValueError("there are no files to insert")
     added = 0
     for source in sources:
-        if not isinstance(source, dict) or set(source) != {"id", "file", "kind"} or source["kind"] not in ("pdf", "image") or not os.path.isfile(source["file"]):
-            raise ValueError("a file to insert is not there")
-        if source["kind"] == "image":
-            part = picture(source["file"])
-        else:
-            part = pymupdf.open(source["file"])
-            if part.needs_pass and not part.authenticate(secrets.get("sources", {}).get(source["id"], "")):
-                part.close()
-                raise ValueError("a PDF to insert is password-protected")
-        with part:
+        with open_source(source, secrets) as part:
             doc.insert_pdf(part, start_at=at + added)
             added += part.page_count
     return added
