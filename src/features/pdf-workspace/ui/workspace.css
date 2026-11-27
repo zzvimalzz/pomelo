@@ -369,8 +369,9 @@ body.focus .well[data-dock="top"] .optbar { top: 116px; }
 .menu .mi.on::after { content: '✓'; margin-left: auto; color: var(--accent-ink); font-weight: 700; }
 @keyframes menu-in { from { transform: var(--nudge) scale(.94); opacity: 0; } }
 .formats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
-.btn.conv { height: auto; min-width: 0; padding: 9px 6px; display: grid; gap: 1px; justify-items: center; }
-.btn.conv small { font-size: 11px; font-weight: 500; color: var(--muted); }
+.btn.conv { height: auto; min-width: 0; padding: 10px 6px 8px; display: grid; gap: 5px; justify-items: center; }
+.btn.conv .cicon { width: 39px; height: 47px; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .2)); }
+.btn.conv small { font-size: 12px; font-weight: 600; }
 .btn.conv:hover:not(:disabled) { background: var(--accent-soft); }
 
 .findbar { position: absolute; top: 12px; left: 50%; z-index: 4; display: flex; align-items: center; gap: 2px; height: 42px; padding: 0 5px 0 12px; border-radius: 13px; transform: translateX(-50%);

@@ -283,7 +283,7 @@
     });
   }
 
-  // Resolves with the id of the format the user picks from `targets` ({ id, label, sub }), or null on Cancel or Esc.
+  // Resolves with the id of the format the user picks from `targets` ({ id, ext, group, label }), or null on Cancel or Esc.
   function chooseFormat(targets) {
     const { box, close } = frame();
     const heading = el('h3', '', 'Convert to');
@@ -291,16 +291,21 @@
     const head = el('div', 'uhead');
     head.append(heading);
     const grid = el('div', 'formats');
-    const formats = targets.map(({ label, sub }) => {
+    const { svg } = window.pomeloWheelShapes;
+    const defs = svg('svg', { class: 'defs', width: 0, height: 0, 'aria-hidden': 'true' });
+    window.pomeloIcons.addDefs(svg, defs);
+    const formats = targets.map(({ ext, group, label }) => {
       const b = el('button', 'btn conv');
-      b.append(el('b', '', label), el('small', '', sub));
+      const art = svg('svg', { class: 'cicon', viewBox: '0 0 52 62', 'aria-hidden': 'true' });
+      window.pomeloIcons.draw(svg, svg('g', { class: 'picon' }, art), { ext, group, count: 1 }, 26, 52);
+      b.append(art, el('small', '', label));
       return b;
     });
     grid.append(...formats);
     const cancel = el('button', 'btn', 'Cancel');
     const row = el('div', 'row');
     row.append(cancel);
-    box.append(head, grid, row);
+    box.append(defs, head, grid, row);
     return new Promise((resolve) => {
       const done = (answer) => {
         close();

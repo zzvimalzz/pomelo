@@ -167,7 +167,7 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
   // What the wheel would offer for the document's file. A file with nothing to offer gets the wheel's explanation in the corner of the screen.
   function convertTargets(token) {
     const file = documents.fileOf(token);
-    const targets = targetsFor(file).map(({ id, label, sub }) => ({ id, label, sub }));
+    const targets = targetsFor(file).map(({ id, ext, group, label }) => ({ id, ext, group, label }));
     if (!targets.length) notify(explainNoTargets([file]));
     return targets;
   }

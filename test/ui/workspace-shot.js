@@ -2393,9 +2393,9 @@ app.whenReady().then(async () => {
   console.log('convert: the More menu, the formats card and the question about changes');
   {
     const realSave = dialog.showSaveDialog;
-    const formats = [{ id: 'docx', label: 'DOCX', sub: 'Word' }, { id: 'png', label: 'PNG', sub: 'Image' }, { id: 'txt', label: 'TXT', sub: 'Plain text' }];
+    const formats = [{ id: 'docx', ext: 'docx', group: 'doc', label: 'DOCX' }, { id: 'png', ext: 'png', group: 'image', label: 'PNG' }, { id: 'txt', ext: 'txt', group: 'doc', label: 'TXT' }];
     const moreItems = (win) => js(win, `[...document.querySelectorAll('.moregroup .menu .mi')].map((b) => b.textContent)`);
-    const card = (win) => js(win, `({ title: document.querySelector('.veil h3')?.textContent ?? '', buttons: [...document.querySelectorAll('.veil .formats button, .veil .row button')].map((b) => b.textContent).join() })`);
+    const card = (win) => js(win, `({ title: document.querySelector('.veil h3')?.textContent ?? '', buttons: [...document.querySelectorAll('.veil .formats button, .veil .row button')].map((b) => b.textContent).join(), icons: document.querySelectorAll('.veil .formats .cicon .badge').length })`);
     const openMore = (win) => js(win, `document.querySelector('.moregroup .tool').click()`);
     const pickMore = (win, text) => js(win, `[...document.querySelectorAll('.moregroup .menu .mi')].find((b) => b.textContent.startsWith(${JSON.stringify(text)})).click()`);
     const pickCard = (win, text) => js(win, `[...document.querySelectorAll('.veil button')].find((b) => b.firstChild.textContent === ${JSON.stringify(text)}).click()`);
@@ -2428,7 +2428,7 @@ app.whenReady().then(async () => {
 
       await startConvert(win);
       let now = await card(win);
-      check(`${theme}: Convert to… opens a card with the formats the wheel offers, each with its label and kind, and Cancel`, now.title === 'Convert to' && now.buttons === 'DOCXWord,PNGImage,TXTPlain text,Cancel', JSON.stringify(now));
+      check(`${theme}: Convert to… opens a card with the formats the wheel offers, each drawn as its file icon with its name below, and Cancel`, now.title === 'Convert to' && now.buttons === 'DOCX,PNG,TXT,Cancel' && now.icons === 3, JSON.stringify(now));
       await sleep(700);
       await shot(win, `workspace-convert-${theme}.png`);
       await press(win, 'Escape');
@@ -2488,7 +2488,7 @@ app.whenReady().then(async () => {
 
     notices.length = 0;
     const real = await openAndWait(fresh(), plain);
-    const expected = targetsFor([plain]).map((t) => `${t.label}${t.sub}`);
+    const expected = targetsFor([plain]).map((t) => t.label);
     await openMore(real);
     await pickMore(real, 'Convert to');
     await until('the card or the notice', async () => (await card(real)).title !== '' || notices.length > 0, 5000);
