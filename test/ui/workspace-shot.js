@@ -2395,7 +2395,7 @@ app.whenReady().then(async () => {
     const realSave = dialog.showSaveDialog;
     const formats = [{ id: 'docx', ext: 'docx', group: 'doc', label: 'DOCX' }, { id: 'png', ext: 'png', group: 'image', label: 'PNG' }, { id: 'txt', ext: 'txt', group: 'doc', label: 'TXT' }];
     const moreItems = (win) => js(win, `[...document.querySelectorAll('.moregroup .menu .mi')].map((b) => b.textContent)`);
-    const card = (win) => js(win, `({ title: document.querySelector('.veil h3')?.textContent ?? '', buttons: [...document.querySelectorAll('.veil .formats button, .veil .row button')].map((b) => b.textContent).join(), icons: document.querySelectorAll('.veil .formats .cicon .badge').length })`);
+    const card = (win) => js(win, `({ title: document.querySelector('.veil h3')?.textContent ?? '', buttons: [...document.querySelectorAll('.veil .formats button, .veil .row button')].map((b) => b.querySelector('small')?.textContent ?? b.textContent).join(), icons: document.querySelectorAll('.veil .formats .cicon .badge').length })`);
     const openMore = (win) => js(win, `document.querySelector('.moregroup .tool').click()`);
     const pickMore = (win, text) => js(win, `[...document.querySelectorAll('.moregroup .menu .mi')].find((b) => b.textContent.startsWith(${JSON.stringify(text)})).click()`);
     const pickCard = (win, text) => js(win, `[...document.querySelectorAll('.veil button')].find((b) => b.firstChild.textContent === ${JSON.stringify(text)}).click()`);
