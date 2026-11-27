@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 /* The editor's own rules: the picture in its rounded well, the pill and zoom menu, the panel. The shared window rules are in ui-shared/window.css. */
-:root { --check-a: rgba(255, 255, 255, .55); --check-b: rgba(0, 0, 0, .06); }
-@media (prefers-color-scheme: dark) { :root { --check-a: rgba(255, 255, 255, .04); --check-b: rgba(255, 255, 255, .08); } }
+:root { --check-a: rgba(255, 255, 255, .55); --check-b: rgba(0, 0, 0, .06); --slider-track: rgba(0, 0, 0, .12); --thumb-ring: rgba(0, 0, 0, .18); }
+@media (prefers-color-scheme: dark) { :root { --check-a: rgba(255, 255, 255, .04); --check-b: rgba(255, 255, 255, .08); --slider-track: rgba(255, 255, 255, .16); --thumb-ring: rgba(0, 0, 0, .5); } }
 
 .imgname { min-width: 0; padding: 3px 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -132,6 +132,42 @@ body.full.reveal-top .titlerow { transform: none; }
 body.full .titletools { margin-right: 8px; }
 body.full .well { margin-top: 8px; }
 
+.hist { display: block; width: 288px; height: 72px; margin: 4px 0 6px; border-radius: 10px; background: var(--field); box-shadow: inset 0 0 0 1px var(--field-line); }
+.sec + .sec { border-top: 1px solid var(--line); }
+.sechead { display: flex; align-items: center; gap: 4px; height: 36px; }
+.sechead button { border: 0; background: none; color: var(--txt); font: inherit; cursor: pointer; }
+.sechead .tog { flex: 1; display: flex; align-items: center; gap: 6px; height: 100%; padding: 0; font-size: 13px; font-weight: 700; text-align: left; }
+.chev { width: 14px; height: 14px; color: var(--faint); transition: transform .28s var(--out); }
+.sec.open .chev { transform: rotate(90deg); }
+.sechead .auto { height: 24px; padding: 0 10px; border-radius: 7px; background: var(--hover); font-size: 12px; font-weight: 600; transition: background .15s; }
+.sechead .auto:hover { background: var(--tab-hover); box-shadow: inset 0 0 0 1px var(--line); }
+.sechead .rs { width: 26px; height: 26px; display: grid; place-items: center; padding: 0; border-radius: 7px; color: var(--faint); opacity: 0; visibility: hidden; transition: opacity .2s, visibility .2s, background .15s; }
+.sechead .rs .i { width: 14px; height: 14px; }
+.sechead .rs:hover { background: var(--hover); color: var(--txt); }
+.sec.changed .rs { opacity: 1; visibility: visible; }
+.sechead :is(.tog, .auto, .rs):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.secbody { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .28s var(--out); }
+.sec.open .secbody { grid-template-rows: 1fr; }
+.secbody > div { overflow: hidden; min-height: 0; opacity: 0; transition: opacity .2s; }
+.sec.open .secbody > div { opacity: 1; transition: opacity .28s .06s; }
+.secin { padding: 0 0 12px; }
+
+.srow { display: grid; grid-template-columns: 1fr auto; align-items: center; height: 40px; padding-top: 2px; user-select: none; }
+.srow label { font-size: 12.5px; font-weight: 600; color: var(--muted); transition: color .2s; user-select: none; }
+.srow.moved label { color: var(--txt); }
+.srow .val { justify-self: end; min-width: 34px; padding: 1px 4px; margin-right: -4px; border-radius: 5px; text-align: right; font: 600 12.5px var(--font); font-variant-numeric: tabular-nums; color: var(--txt); cursor: text; }
+.srow span.val:hover { background: var(--hover); }
+.srow input.val { user-select: text; width: 56px; height: 22px; border: 1px solid var(--accent); background: var(--field); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.track { grid-column: 1 / -1; position: relative; height: 20px; cursor: pointer; touch-action: none; outline: none; }
+.track::before { content: ''; position: absolute; left: 0; right: 0; top: 8px; height: 4px; border-radius: 2px; background: var(--track-rail, var(--slider-track)); }
+.track .fill { position: absolute; top: 8px; height: 4px; border-radius: 2px; background: var(--accent); }
+.track.grad .fill { display: none; }
+.track .notch { position: absolute; top: 6px; width: 2px; height: 8px; margin-left: -1px; border-radius: 1px; background: var(--faint); opacity: .55; }
+.track .knob { position: absolute; top: 3px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: #fff;
+  box-shadow: 0 0 0 1px var(--thumb-ring), 0 1px 3px rgba(0, 0, 0, .25); transition: transform .12s var(--out), box-shadow .15s; }
+.track:hover .knob, .track.drag .knob { transform: scale(1.143); }
+.track:focus-visible .knob { box-shadow: 0 0 0 1px var(--thumb-ring), 0 0 0 4px var(--accent-soft), 0 0 0 5.5px var(--accent); }
+
 @media (prefers-reduced-motion: reduce) {
-  .well, #panel, .pill, .zmenu, .stage.first, .mmenu, .views[data-turn] .view, body.full .titlerow, .frame, .frame .grid, .frame .fine { animation: none; transition: none; }
+  .well, #panel, .pill, .zmenu, .stage.first, .mmenu, .views[data-turn] .view, body.full .titlerow, .frame, .frame .grid, .frame .fine, .chev, .secbody, .secbody > div, .sec.open .secbody > div, .track .knob { animation: none; transition: none; }
 }

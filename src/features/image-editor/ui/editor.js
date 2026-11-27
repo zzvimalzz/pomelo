@@ -21,8 +21,10 @@
   const tabStrip = window.pomeloTabs.create($('tabs'));
   const tabs = [];
   let active = null;
-  let piece = 0;
-  let qualities = {};
+
+  const state = await api.state();
+  const piece = state.piece;
+  const qualities = state.quality;
 
   const find = (token) => tabs.find((t) => t.token === token);
 
@@ -43,6 +45,16 @@
     commit: (g, key) => commit(edited(g), key),
   });
 
+  const adjust = window.editorAdjust.create({
+    tab: () => active,
+    live: (patch) => { active.edit = { ...active.edit, ...patch }; view.redraw(); adjust.paint(); },
+    commit: (edit, key) => commit(edit, key),
+    sample: view.sample,
+    open: new Set(state.view.sections ?? ['light', 'colour']),
+    remember: (sections) => api.setView({ sections }),
+  });
+  const settleEdits = () => { crop.settle(); adjust.settle(); };
+
   function paintGeometry() {
     resetButton.disabled = !active || geometry.isNeutral(active.edit.geometry);
     crop.paint();
@@ -54,6 +66,7 @@
     redoButton.disabled = !history?.canRedo();
     compare.disabled = !history || history.isNeutral();
     paintGeometry();
+    adjust.paint();
     const changed = !!history?.dirty();
     dot.hidden = saveButton.hidden = !changed;
     line.hidden = tabs.length > 1;
@@ -72,7 +85,7 @@
 
   // Shows a tab once its pixels are here; a tab that was closed or replaced as the one on show meanwhile is left alone.
   async function activate(tab) {
-    crop.settle();
+    settleEdits();
     active = tab;
     if (tool === 'crop') crop.begin();
     savedNote.classList.remove('on');
@@ -82,6 +95,7 @@
     const first = !tabs.some((t) => t.shownBefore);
     tab.shownBefore = true;
     view.show(tab, first ? 'first' : 'switch');
+    adjust.edited();
   }
 
   function close(token) {
@@ -112,8 +126,9 @@
     if (shown.length) activate(shown[shown.length - 1]);
   }
 
-  // A crop drag ends, and a frame still easing to a new shape arrives, before the next change starts from it.
-  const ready = () => { crop.settle(); return !!active?.texture && !window.pomeloCard.isOpen(); };
+  // A crop drag ends, a frame still easing to a new shape arrives, and a slider moved with the keys is done, before the next change
+  // starts from it.
+  const ready = () => { settleEdits(); return !!active?.texture && !window.pomeloCard.isOpen(); };
 
   // Changes with the same key in a row fold into one undo step.
   function commit(edit, key, how) {
@@ -156,7 +171,7 @@
   // what was asked is done, false when it was not (the user said no, or the main process said why in the corner notice).
   async function save(tab, copy = !tab.writable) {
     if (tab.saving || !tab.texture || window.pomeloCard.isOpen()) return false;
-    crop.settle();
+    settleEdits();
     if (!copy && !tab.replaceAsked) {
       const answer = await choose('Replace the original?', `Save over ${tab.name}, or keep it as it is and save a copy.`, [{ label: 'Cancel', value: null }, { label: 'Save a copy', value: 'copy' }, { label: 'Replace', value: 'replace', primary: true }]);
       if (!answer) return false;
@@ -170,7 +185,7 @@
     document.body.classList.add('busy');
     let result;
     try {
-      const picture = window.editorRender.exportPixels({ width: tab.width, height: tab.height, pixels: tab.pixels }, tab.edit.geometry);
+      const picture = window.editorRender.exportPixels({ width: tab.width, height: tab.height, pixels: tab.pixels }, tab.edit);
       result = await api.save(tab.token, picture.rgba, { mode: copy ? 'copy' : 'replace', ...options, width: picture.width, height: picture.height });
     } catch {
       result = { stop: 'failed' };
@@ -276,6 +291,7 @@
     tool = next;
     for (const button of tools.children) button.setAttribute('aria-checked', String(button.dataset.tool === tool));
     for (const t of TOOLS) $(`view-${t}`).hidden = t !== tool;
+    if (tool === 'adjust') adjust.edited();
   }
   tools.addEventListener('click', (e) => { const button = e.target.closest('button'); if (button) setTool(button.dataset.tool); });
   for (const id of TOOLS) bind(id, () => setTool(id));
@@ -289,9 +305,6 @@
     setTool('adjust');
   });
 
-  const state = await api.state();
-  piece = state.piece;
-  qualities = state.quality;
   view.setPanel(state.view.panel !== false, { remember: false, still: true });
   open(state.images);
   api.onOpened(open);

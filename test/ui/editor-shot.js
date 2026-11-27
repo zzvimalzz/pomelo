@@ -65,7 +65,11 @@ async function makePictures() {
   for (let y = 0; y < 512; y++) for (let x = 0; x < 512; x++) square.set([x >> 1, y >> 1, (x + y) >> 2], (y * 512 + x) * 3);
   const dated = await sharp({ create: { width: 100, height: 60, channels: 3, background: { r: 90, g: 90, b: 200 } } }).withExif({ IFD0: { Make: 'Pomelo test camera', DateTime: '2024:05:17 14:03:00' } }).withMetadata({ orientation: 6 }).jpeg().toBuffer();
   const small = await sharp({ create: { width: 50, height: 50, channels: 3, background: { r: 200, g: 60, b: 90 } } }).png().toBuffer();
+  const dull = Buffer.alloc(200 * 100 * 3);
+  for (let y = 0; y < 100; y++) for (let x = 0; x < 200; x++) dull.fill(40 + Math.floor((x * 40) / 200), (y * 200 + x) * 3, (y * 200 + x) * 3 + 3);
   return {
+    grey: put('grey.png', await sharp({ create: { width: 64, height: 64, channels: 3, background: { r: 128, g: 128, b: 128 } } }).png().toBuffer()),
+    dull: put('dull.png', await sharp(dull, { raw: { width: 200, height: 100, channels: 3 } }).png().toBuffer()),
     photo: put('photo.jpg', photo),
     glass: put('glass.png', await sharp(glass, { raw: { width: 800, height: 600, channels: 4 } }).png().toBuffer()),
     still: put('still.gif', await sharp(Buffer.alloc(200 * 100 * 3, 128), { raw: { width: 200, height: 100, channels: 3 } }).gif().toBuffer()),
@@ -700,6 +704,125 @@ app.whenReady().then(async () => {
   check('no pixel along the edges or in the corners of the levelled picture is transparent', clear === 0, `${clear} clear`);
   await closeAll(editor);
 
+  console.log('light and colour');
+  const srgbOf = (linear) => (linear <= 0.0031308 ? linear * 12.92 : 1.055 * linear ** (1 / 2.4) - 0.055);
+  const linearOf = (s) => (s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4);
+  const rowOf = (label) => `[...document.querySelectorAll('#view-adjust .srow')].find((r) => r.querySelector('label').textContent === ${JSON.stringify(label)})`;
+  const valueOf = (label) => js(win, `${rowOf(label)}.querySelector('.val').textContent`);
+  const slideKey = (label, name, shift = false) => js(win, `(() => { const t = ${rowOf(label)}.querySelector('.track'); t.focus(); t.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(name)}, shiftKey: ${shift}, bubbles: true, cancelable: true })); })()`);
+  const typeValue = (label, text) => js(win, `(() => { ${rowOf(label)}.querySelector('.val').click(); const i = ${rowOf(label)}.querySelector('input.val'); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); })()`);
+  const sections = () => js(win, `[...document.querySelectorAll('#view-adjust .sec')].map((s) => s.querySelector('.tog span').textContent + ':' + [...s.querySelectorAll('label')].map((l) => l.textContent).join('/')).join()`);
+  const centre = async () => {
+    const room = await rectOf('#well');
+    return (await pixelsOf(win)).at((room.left + room.width / 2) * room.dpr, (room.top + room.height / 2) * room.dpr);
+  };
+  const adjustEditor = async (file) => {
+    editor = fresh(async () => saveTo);
+    await editor.open([file]);
+    win = windowOf();
+    win.setSize(1100, 760);
+    await firstShown(win);
+    await sleep(700);
+  };
+
+  await adjustEditor(files.grey);
+  check('Adjust shows Light and Colour with their sliders',(await sections()) === 'Light:Exposure/Contrast/Highlights/Shadows/Whites/Blacks,Colour:Temperature/Tint/Vibrance/Saturation', await sections());
+  check('both sections start open',(await js(win, `[...document.querySelectorAll('#view-adjust .sec')].map((s) => s.classList.contains('open')).join()`)) === 'true,true');
+  check('the histogram is drawn', await until('the histogram', () => js(win, `(() => { const c = document.querySelector('#view-adjust canvas.hist'); return c.getContext('2d').getImageData(0, 0, c.width, c.height).data.some((v, i) => i % 4 === 3 && v > 0); })()`)));
+  check('Auto and the section reset arrow carry their names', (await js(win, `[document.querySelector('#view-adjust .auto').title, document.querySelector('#view-adjust .rs').title].join()`)) === 'Auto,Reset');
+  check('a picture nobody touched shows every slider at its neutral value', (await js(win, `[...document.querySelectorAll('#view-adjust .val')].map((v) => v.textContent).join()`)) === '0.00,0,0,0,0,0,0,0,0,0');
+  await js(win, `document.querySelector('#view-adjust .sec .tog').click()`);
+  await sleep(200);
+  check('closing a section is remembered', JSON.stringify(settings.imageView.sections) === '["colour"]', JSON.stringify(settings.imageView));
+  await js(win, `document.querySelector('#view-adjust .sec .tog').click()`);
+  await sleep(200);
+  check('and opening it again', settings.imageView.sections.includes('light') && settings.imageView.sections.includes('colour'), JSON.stringify(settings.imageView));
+
+  check('a mid grey starts at 128', near(await centre(), [128, 128, 128], 2));
+  await typeValue('Exposure', '1');
+  await sleep(500);
+  const brighter = Math.round(srgbOf(linearOf(128 / 255) * 2) * 255);
+  const shownBright = await centre();
+  check('typing +1 into Exposure brightens the picture on screen to within 3 of the formula', await valueOf('Exposure') === '+1.00' && near(shownBright, [brighter, brighter, brighter], 3), `${await valueOf('Exposure')} ${shownBright} wanted ${brighter}`);
+  check('the edit makes Save, the dot and Compare wake up, and the section shows its reset arrow', is(await state(), { undo: true, redo: false, save: true, dot: true, compare: true, reset: false }) && (await js(win, `document.querySelector('#view-adjust .sec').classList.contains('changed')`)) === true, JSON.stringify(await state()));
+  await js(win, `document.getElementById('compare').dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true }))`);
+  await sleep(500);
+  check('holding Compare shows the grey as it was', near(await centre(), [128, 128, 128], 2));
+  await js(win, `document.getElementById('compare').dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))`);
+  await sleep(500);
+  await copyAsPng(path.join(root, 'grey-bright.png'));
+  const savedBright = await sharp(saveTo).removeAlpha().raw().toBuffer();
+  check('and the file saved agrees with the screen to within 2', near([...savedBright.subarray(0, 3)], [...shownBright], 2) && near([...savedBright.subarray(0, 3)], [brighter, brighter, brighter], 3), `${[...savedBright.subarray(0, 3)]} on screen ${shownBright}`);
+  await closeAll(editor);
+
+  await adjustEditor(files.grey);
+  await slideKey('Contrast', 'ArrowRight');
+  check('Right adds 1 to the slider that has the focus', (await valueOf('Contrast')) === '+1', await valueOf('Contrast'));
+  await slideKey('Contrast', 'ArrowRight', true);
+  check('Shift and Right add 10', (await valueOf('Contrast')) === '+11', await valueOf('Contrast'));
+  await slideKey('Contrast', 'ArrowLeft');
+  await slideKey('Contrast', 'PageUp');
+  check('Left subtracts 1 and Page Up adds 10', (await valueOf('Contrast')) === '+20', await valueOf('Contrast'));
+  await slideKey('Contrast', 'Home');
+  check('Home puts the slider back to neutral', (await valueOf('Contrast')) === '0');
+  await sleep(600);
+  check('the keys of one run are one history entry, and it is empty when the slider ends at neutral', (await state()).undo === false && (await state()).dot === false, JSON.stringify(await state()));
+  await slideKey('Tint', 'ArrowLeft', true);
+  check('a negative value is written with a true minus sign', (await valueOf('Tint')) === '−10', await valueOf('Tint'));
+  await sleep(600);
+  await js(win, `${rowOf('Tint')}.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+  await sleep(300);
+  check('a double-click on the row puts it back to neutral', (await valueOf('Tint')) === '0' && (await state()).undo === false, await valueOf('Tint'));
+  const track = await rectOf('#view-adjust .sec:nth-of-type(1) .srow .track');
+  const startAt = [track.left + track.width / 2, track.top + track.height / 2];
+  await press(startAt, [startAt[0] + track.width / 8, startAt[1]]);
+  await release([startAt[0] + track.width / 8, startAt[1]]);
+  const dragged = await valueOf('Exposure');
+  check('dragging the thumb an eighth of the track to the right makes Exposure +1', Math.abs(parseFloat(dragged) - 1) <= 0.05, dragged);
+  await press([startAt[0] + track.width / 8, startAt[1]], [startAt[0] + track.width / 4, startAt[1]]);
+  await release([startAt[0] + track.width / 4, startAt[1]]);
+  check('a second drag goes on from there', Math.abs(parseFloat(await valueOf('Exposure')) - 2) <= 0.05, await valueOf('Exposure'));
+  await key(win, 'z', true);
+  await sleep(400);
+  check('and the drags together are one history entry: one Undo and Exposure is neutral again', (await valueOf('Exposure')) === '0.00' && (await state()).undo === false, `${await valueOf('Exposure')} ${JSON.stringify(await state())}`);
+  await typeValue('Exposure', '0.5');
+  await typeValue('Exposure', '0.8');
+  await sleep(300);
+  await key(win, 'z', true);
+  await sleep(300);
+  check('Exposure typed twice in a row is one entry, which Undo takes back', (await valueOf('Exposure')) === '0.00');
+  await closeAll(editor);
+
+  await adjustEditor(files.square);
+  await typeValue('Saturation', '-100');
+  await sleep(500);
+  await typeValue('Temperature', '40');
+  await sleep(300);
+  check('Temperature is on the slider, and the picture on screen changed with it', (await valueOf('Temperature')) === '+40');
+  await typeValue('Temperature', '0');
+  await copyAsPng(path.join(root, 'square-grey.png'));
+  const grey = await sharp(saveTo).removeAlpha().raw().toBuffer();
+  let spread = 0;
+  for (let i = 0; i < grey.length; i += 3 * 97) spread = Math.max(spread, Math.abs(grey[i] - grey[i + 1]), Math.abs(grey[i + 1] - grey[i + 2]));
+  check('Saturation at -100 makes red, green and blue equal to within 1', spread <= 1, `spread ${spread}`);
+  await closeAll(editor);
+
+  await adjustEditor(files.dull);
+  await js(win, `document.querySelector('#view-adjust .auto').click()`);
+  await sleep(500);
+  const autoValues = await js(win, `[...document.querySelectorAll('#view-adjust .sec:nth-of-type(1) .val')].map((v) => v.textContent).join()`);
+  const [autoExposure, autoContrast, , , autoWhites, autoBlacks] = autoValues.split(',').map((v) => parseFloat(v.replace('−', '-')));
+  check('Auto on a dull, dark picture sets Exposure to about +2, Contrast to +10, Whites to +100 and Blacks to about -91', Math.abs(autoExposure - 1.98) <= 0.02 && autoContrast === 10 && autoWhites === 100 && Math.abs(autoBlacks + 91) <= 1, autoValues);
+  await key(win, 'z', true);
+  await sleep(400);
+  check('Auto is one history entry', (await js(win, `[...document.querySelectorAll('#view-adjust .val')].every((v) => parseFloat(v.textContent) === 0)`)) === true && (await state()).undo === false);
+  await js(win, `document.querySelector('#view-adjust .auto').click()`);
+  await sleep(500);
+  await js(win, `document.querySelector('#view-adjust .sec .rs').click()`);
+  await sleep(400);
+  check('the reset arrow of Light puts its sliders back and goes away', (await js(win, `[...document.querySelectorAll('#view-adjust .sec:nth-of-type(1) .val')].every((v) => parseFloat(v.textContent) === 0) && !document.querySelector('#view-adjust .sec').classList.contains('changed')`)) === true);
+  await closeAll(editor);
+
   for (const theme of ['light', 'dark']) {
     console.log(`${theme} screenshots`);
     nativeTheme.themeSource = theme;
@@ -726,6 +849,16 @@ app.whenReady().then(async () => {
     await js(win, `document.querySelector('#tabs .tab:not(.on)').click()`);
     await sleep(600);
     await shot(win, `editor-${theme}-photo.png`);
+    await typeValue('Exposure', '0.6');
+    await typeValue('Temperature', '-30');
+    await sleep(600);
+    const bar = await rectOf('#view-adjust .sec:nth-of-type(1) .srow:nth-of-type(1) .track');
+    const adjustPixels = await pixelsOf(win);
+    const onBar = (share, up = 10) => adjustPixels.at((bar.left + bar.width * share) * bar.dpr, (bar.top + up) * bar.dpr);
+    const [rail, filled, surface] = [onBar(0.9), onBar(0.535), onBar(0.9, 1)];
+    console.log(`  (${theme} slider track ${rail} on ${surface}: contrast ${contrast(rail, surface).toFixed(2)}; fill ${filled} against the track: ${contrast(filled, rail).toFixed(2)})`);
+    check(`${theme}: the slider track shows on the panel and the fill is told from the track`, contrast(rail, surface) >= (theme === 'light' ? 1.1 : 1.15) && contrast(filled, rail) >= 2, `${rail} ${filled} ${surface}`);
+    await shot(win, `editor-${theme}-adjust.png`);
     await key(win, 'c');
     await sleep(900);
     const cropChips = await js(win, `(() => { const rect = (n) => { const r = n.getBoundingClientRect(); return [r.left, r.top + r.height / 2]; }; return [rect(document.querySelector('#view-crop .chip.on')), rect(document.querySelector('#view-crop .chip:not(.on)')), devicePixelRatio]; })()`);

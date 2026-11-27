@@ -70,6 +70,19 @@ let steps = 0;
 while (h.canUndo()) { h.undo(); steps++; }
 expect('a hundred entries are kept', steps === 99, String(steps));
 
+console.log('the adjustments');
+const flat = model.neutral();
+expect('every adjustment starts at 0, inside a range that holds 0', Object.entries(model.RANGES).every(([key, [low, high]]) => flat[key] === 0 && low < 0 && high > 0));
+expect('Exposure runs from -4 to 4 by hundredths, the rest from -100 to 100 by ones', JSON.stringify(model.RANGES.exposure) === '[-4,4,0.01]' && Object.entries(model.RANGES).every(([key, range]) => key === 'exposure' || JSON.stringify(range) === '[-100,100,1]'));
+expect('a picture with an adjustment is not neutral, and putting it back is', (() => { const edited = model.createHistory(); edited.commit({ ...model.neutral(), saturation: -100 }, 'Saturation'); const was = edited.isNeutral(); edited.commit(model.neutral(), 'Saturation'); return !was && edited.isNeutral(); })());
+
+const ramp = Array.from({ length: 256 }, (_, n) => n / 255);
+const evenly = model.autoLight(ramp);
+expect('Auto on a picture that already spans the range barely moves anything', evenly.blacks === 11 && evenly.whites === -11 && evenly.exposure === -0.27 && evenly.contrast === 0, JSON.stringify(evenly));
+const dull = model.autoLight(Array.from({ length: 200 }, (_, n) => (40 + Math.floor(n / 5)) / 255));
+expect('Auto on a dark, flat picture lifts the exposure a long way, opens the white point and adds contrast', dull.exposure === 1.98 && dull.whites === 100 && dull.contrast === 10 && dull.blacks === -91, JSON.stringify(dull));
+expect('Auto keeps every value inside its range', Object.entries(dull).every(([key, value]) => value >= model.RANGES[key][0] && value <= model.RANGES[key][1]));
+
 console.log('changes');
 h = model.createHistory();
 turned(h, 1);

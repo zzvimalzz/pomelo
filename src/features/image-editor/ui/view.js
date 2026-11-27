@@ -38,7 +38,9 @@
   let cropShown = null;
   const drawn = [];
 
-  const geometry = (tab) => (comparing ? geometryOf.neutral() : tab.edit.geometry);
+  const NEUTRAL = window.editorModel.neutral();
+  const shownEdit = (tab) => (comparing ? NEUTRAL : tab.edit);
+  const geometry = (tab) => shownEdit(tab).geometry;
   const sizeOf = (tab) => geometryOf.outputSize(geometry(tab), tab.width, tab.height);
   const fitZoom = (tab) => { const [w, h] = sizeOf(tab); return Math.max(0.01, Math.min(1, (canvas.width - 2 * AIR * dpr()) / w, (canvas.height - 2 * AIR * dpr()) / h)); };
   const zoomOf = (tab) => (tab.view.fit ? fitZoom(tab) : tab.view.zoom);
@@ -104,7 +106,7 @@
     cropShown = mix({ zoom, cx: f.cx - v.panX / zoom, cy: f.cy - v.panY / zoom }, framed(tab), e, f.cx, f.cy);
     // Left unrounded, unlike outside the crop view: snapping to whole pixels makes a glide shiver.
     const x = canvas.width / 2 + (f.left - cropShown.cx) * cropShown.zoom, y = canvas.height / 2 + (f.top - cropShown.cy) * cropShown.zoom;
-    renderer.draw(tab, geometry(tab), cropShown.zoom, x, y, false, e);
+    renderer.draw(tab, { edit: shownEdit(tab), zoom: cropShown.zoom, x, y, veil: e });
     const [w, h] = cutSize(tab).map((side) => side * cropShown.zoom);
     place(tab, x, y, w, h);
     well.classList.toggle('pan', cropping);
@@ -158,7 +160,7 @@
       const [shownWidth, shownHeight] = sizeOf(tab);
       const w = Math.round(shownWidth * zoom), h = Math.round(shownHeight * zoom);
       const x = Math.round((canvas.width - w) / 2 + tab.view.panX), y = Math.round((canvas.height - h) / 2 + tab.view.panY);
-      renderer.draw(tab, geometry(tab), zoom, x, y);
+      renderer.draw(tab, { edit: shownEdit(tab), zoom, x, y });
       place(tab, x, y, w, h);
     }
     for (const listener of drawn) listener(layout);
@@ -446,5 +448,8 @@
     cropGlide = requestAnimationFrame(step);
   }
 
-  window.editorView = { show, dispose, change, setCompare, setPanel, setCropping, holdView, releaseView, cropFloor, wheelZoom, ease, glideMs: GLIDE_MS, redraw: want, onDraw: (listener) => drawn.push(listener), showPanel: () => { if (!panelOpen()) setPanel(true); } };
+  // A small copy of the picture on show as `edit` shows it, for the histogram and Auto; null while there is no picture to read.
+  const sample = (edit, longest) => (renderer && !lost && shown?.texture ? renderer.sample(shown, edit, longest) : null);
+
+  window.editorView = { show, dispose, change, sample, setCompare, setPanel, setCropping, holdView, releaseView, cropFloor, wheelZoom, ease, glideMs: GLIDE_MS, redraw: want, onDraw: (listener) => drawn.push(listener), showPanel: () => { if (!panelOpen()) setPanel(true); } };
 })();
