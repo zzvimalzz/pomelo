@@ -93,7 +93,7 @@
 
   // Width over height of the frame the aspect asks for, or null for a free one.
   function ratioOf(g, w, h) {
-    const base = { free: null, original: w / h, '1:1': 1, '4:5': 4 / 5, '3:2': 3 / 2, '16:9': 16 / 9 }[g.aspect];
+    const base = { free: null, original: w / h, '1:1': 1, '4:5': 4 / 5, '4:3': 4 / 3, '3:2': 3 / 2, '7:5': 7 / 5, '16:9': 16 / 9, '2:1': 2 }[g.aspect];
     if (!base || g.aspect === '1:1') return base;
     const wide = Math.max(base, 1 / base);
     return g.portrait ? 1 / wide : wide;

@@ -34,8 +34,7 @@
     button.setAttribute('aria-label', text);
   }
 
-  const resetButton = el('button', 'pillbtn reset', 'Reset');
-  resetButton.type = 'button';
+  const resetButton = $('cropreset');
   resetButton.title = 'Reset';
   let cropping = false;
 
@@ -158,22 +157,23 @@
 
   const cropButton = $('cropbtn');
   fill(cropButton, 'crop', 'Crop', 'crop');
-  const four = el('div', 'quad');
+  const four = [];
   for (const [glyph, text, keyId, run] of [['rotl', 'Rotate left', 'rotateLeft', () => turn(-1)], ['rotr', 'Rotate right', 'rotateRight', () => turn(1)], ['fliph', 'Flip horizontal', null, () => flip('h')], ['flipv', 'Flip vertical', null, () => flip('v')]]) {
-    const button = el('button', 'ib');
+    const button = el('button', 'ib tbtn');
     button.type = 'button';
     fill(button, glyph, text, keyId);
     button.onclick = run;
-    four.append(button);
+    four.push(button);
   }
   resetButton.onclick = () => { if (ready()) commit({ ...active.edit, geometry: geometry.neutral() }, null); };
-  const cancelButton = el('button', 'ib');
-  const doneButton = el('button', 'ib go');
-  for (const button of [cancelButton, doneButton]) button.type = 'button';
-  fill(cancelButton, 'close', 'Cancel', 'escape');
-  fill(doneButton, 'check', 'Done', 'apply');
-  const { aspect, orient, straighten } = crop.controls;
-  $('cropbar').append(aspect, orient, el('i', 'sep'), four, el('i', 'sep'), straighten, el('i', 'sep'), resetButton, el('i', 'sep'), cancelButton, doneButton);
+  const cancelButton = $('cropcancel');
+  const doneButton = $('cropdone');
+  cancelButton.title = `Cancel (${label('escape')})`;
+  doneButton.title = `Done (${label('apply')})`;
+  const group = (...buttons) => { const box = el('div', 'dgroup'); box.append(...buttons); return box; };
+  const dockRow = el('div', 'dockrow');
+  dockRow.append(group(four[0], four[1]), crop.aspect, group(four[2], four[3]));
+  $('cropdock').append(crop.main, dockRow);
 
   function startCrop() {
     if (cropping || !active?.texture) return;

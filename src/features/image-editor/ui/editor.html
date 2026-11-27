@@ -31,7 +31,9 @@
           <button class="ib" id="fullscreen" type="button"></button>
         </div>
         <div class="zmenu" id="zmenu" role="menu" aria-label="Zoom" hidden></div>
-        <div class="pill cropbar away" id="cropbar" role="toolbar" aria-label="Crop" inert></div>
+        <div class="cropdock cropui away" id="cropdock" role="toolbar" aria-label="Crop" inert></div>
+        <div class="corner l cropui away" inert><button class="pillbtn" id="cropreset" type="button">Reset</button></div>
+        <div class="corner r cropui away" inert><button class="pillbtn" id="cropcancel" type="button">Cancel</button><button class="pillbtn go" id="cropdone" type="button">Done</button></div>
       </main>
       <aside class="panel" id="panel"><div class="inner" id="inner">
         <div class="seg3" id="tools" role="radiogroup" aria-label="Tool">

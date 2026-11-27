@@ -11,10 +11,12 @@
   const geometryOf = window.editorGeometry;
   const $ = (id) => document.getElementById(id);
   const well = $('well'), canvas = $('canvas'), snap = $('snap'), stage = $('stage'), checker = $('checker'), zmenu = $('zmenu'), zoomval = $('zoomval');
-  const body = document.body, panel = $('panel'), panelButton = $('panelbtn'), pill = $('pill'), cropbar = $('cropbar');
+  const body = document.body, panel = $('panel'), panelButton = $('panelbtn'), pill = $('pill'), cropUi = document.querySelectorAll('.cropui');
 
   const AIR = 32;
   const CROP_AIR = 48;
+  // CSS pixels kept free at the bottom of the crop view for the dock of controls that floats over the well.
+  const CROP_DOCK = 100;
   const GLIDE_MS = 450;
   const MAX_ZOOM = 8;
   const STEPS = [0.125, 0.25, 1 / 3, 0.5, 2 / 3, 1, 1.5, 2, 3, 4, 6, 8];
@@ -36,7 +38,6 @@
   let held = null;
   let settling = null;
   let cropShown = null;
-  let reserved = 0;
   const drawn = [];
 
   const NEUTRAL = window.editorModel.neutral();
@@ -46,7 +47,7 @@
   const fitZoom = (tab) => { const [w, h] = sizeOf(tab); return Math.max(0.01, Math.min(1, (canvas.width - 2 * AIR * dpr()) / w, (canvas.height - 2 * AIR * dpr()) / h)); };
   const zoomOf = (tab) => (tab.view.fit ? fitZoom(tab) : tab.view.zoom);
   // The crop view fills its room with the frame, enlarging a small one.
-  const cropRoom = () => [canvas.width - 2 * CROP_AIR * dpr(), canvas.height - (2 * CROP_AIR + reserved) * dpr()];
+  const cropRoom = () => [canvas.width - 2 * CROP_AIR * dpr(), canvas.height - (2 * CROP_AIR + CROP_DOCK) * dpr()];
   const cutSize = (tab) => geometryOf.cutSize(geometry(tab), tab.width, tab.height);
   const cropZoom = (tab) => { const [w, h] = cutSize(tab), [rw, rh] = cropRoom(); return Math.max(0.01, Math.min(MAX_ZOOM, rw / w, rh / h)); };
   const viewZoom = (tab) => (cropping ? cropZoom(tab) : zoomOf(tab));
@@ -91,11 +92,11 @@
   function framed(tab) {
     const f = frameOf(tab), fit = cropZoom(tab);
     if (!held) {
-      const target = { zoom: fit, cx: f.cx, cy: f.cy + (reserved * dpr()) / 2 / fit };
+      const target = { zoom: fit, cx: f.cx, cy: f.cy + (CROP_DOCK * dpr()) / 2 / fit };
       return settling ? mix(settling.from, target, ease(settling.t), f.cx, f.cy) : target;
     }
     const zoom = Math.min(held.zoom, fit), [rw, rh] = cropRoom();
-    const reachW = rw / 2 / zoom, reachH = rh / 2 / zoom, down = (reserved * dpr()) / 2 / zoom;
+    const reachW = rw / 2 / zoom, reachH = rh / 2 / zoom, down = (CROP_DOCK * dpr()) / 2 / zoom;
     return { zoom, cx: clamp(held.cx, f.cx + f.halfW - reachW, f.cx - f.halfW + reachW), cy: clamp(held.cy, f.cy + f.halfH - reachH + down, f.cy - f.halfH + reachH + down) };
   }
 
@@ -183,8 +184,10 @@
     panel.classList.toggle('off', off || cropping);
     pill.classList.toggle('away', off || cropping);
     pill.inert = off || cropping;
-    cropbar.classList.toggle('away', off || !cropping);
-    cropbar.inert = off || !cropping;
+    for (const part of cropUi) {
+      part.classList.toggle('away', off || !cropping);
+      part.inert = off || !cropping;
+    }
     panel.inert = off || cropping || !panelOpen();
   }
   canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); lost = true; gpuState(); });
@@ -452,15 +455,8 @@
     cropGlide = requestAnimationFrame(step);
   }
 
-  function reserve(px) {
-    if (px === reserved) return;
-    reserved = px;
-    if (cropping && shown?.texture) glideToFrame(cropShown);
-    else want();
-  }
-
   // A small copy of the picture on show as `edit` shows it, for the histogram and Auto; null while there is no picture to read.
   const sample = (edit, longest) => (renderer && !lost && shown?.texture ? renderer.sample(shown, edit, longest) : null);
 
-  window.editorView = { show, dispose, change, sample, setCompare, setPanel, setCropping, reserve, holdView, releaseView, cropFloor, wheelZoom, ease, glideMs: GLIDE_MS, redraw: want, onDraw: (listener) => drawn.push(listener), showPanel: () => { if (!panelOpen()) setPanel(true); } };
+  window.editorView = { show, dispose, change, sample, setCompare, setPanel, setCropping, holdView, releaseView, cropFloor, wheelZoom, ease, glideMs: GLIDE_MS, redraw: want, onDraw: (listener) => drawn.push(listener), showPanel: () => { if (!panelOpen()) setPanel(true); } };
 })();

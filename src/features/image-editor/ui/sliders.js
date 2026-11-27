@@ -17,9 +17,10 @@
   const along = (share) => `calc(${share} * (100% - ${2 * INSET}px) + ${INSET}px)`;
 
   // label, min, max, step, neutral: what it controls. get(): the value now. set(v): show a new value. done(): the change is over.
-  // rail: a CSS gradient for the track instead of the accent fill. decimals: digits shown after the point. unit: written after the value.
+  // rail: a CSS gradient for the track instead of the accent fill. ticks: { count, major } draws a ruler of count steps with a longer mark
+  // at every major one, and the value above it, in place of the label and the fill. decimals: digits shown after the point. unit: written after the value.
   // Returns { el, paint, flush }: paint() shows get() again, flush() ends a change a key press has started and `done` has not run for.
-  function create({ label, min, max, step, neutral = 0, rail, decimals = 0, unit = '', get, set, done }) {
+  function create({ label, min, max, step, neutral = 0, rail, ticks, decimals = 0, unit = '', get, set, done }) {
     const row = el('div', 'srow');
     const text = el('label', '', label);
     const value = el('span', 'val');
@@ -29,6 +30,16 @@
     const knob = el('i', 'knob');
     if (rail) track.style.setProperty('--track-rail', rail);
     track.append(fill, notch, knob);
+    if (ticks) {
+      const marks = el('div', 'marks');
+      for (let n = 0; n <= ticks.count; n++) {
+        const mark = el('i', n % ticks.major ? 'mark' : 'mark major');
+        mark.style.left = along(n / ticks.count);
+        marks.append(mark);
+      }
+      track.prepend(marks);
+      row.classList.add('ticks');
+    }
     track.tabIndex = 0;
     track.setAttribute('role', 'slider');
     track.setAttribute('aria-label', label);

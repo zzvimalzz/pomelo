@@ -229,7 +229,7 @@ app.whenReady().then(async () => {
   await key(win, 'b', true);
   await sleep(700);
   check('and Ctrl+B shows it again', (await widths())[1] === true && Math.round((await widths())[0] - open) === 0);
-  const cropOn = () => js(win, `!document.getElementById('cropbar').classList.contains('away')`);
+  const cropOn = () => js(win, `!document.getElementById('cropdock').classList.contains('away')`);
   await key(win, 'c');
   await sleep(300);
   check('the C key opens the crop bar and dims the panel', (await cropOn()) === true && (await js(win, `document.getElementById('panel').classList.contains('off')`)) === true);
@@ -274,7 +274,7 @@ app.whenReady().then(async () => {
   win.setSize(1100, 760);
   await firstShown(win);
   await sleep(600);
-  const state = () => js(win, `({ undo: !document.getElementById('undo').disabled, redo: !document.getElementById('redo').disabled, save: !document.getElementById('savebtn').hidden, dot: !document.getElementById('imgdot').hidden, compare: !document.getElementById('compare').disabled, reset: !document.querySelector('#cropbar .reset').disabled })`);
+  const state = () => js(win, `({ undo: !document.getElementById('undo').disabled, redo: !document.getElementById('redo').disabled, save: !document.getElementById('savebtn').hidden, dot: !document.getElementById('imgdot').hidden, compare: !document.getElementById('compare').disabled, reset: !document.querySelector('#cropreset').disabled })`);
   const is = (got, want) => JSON.stringify(got) === JSON.stringify(want);
   check('a picture nobody touched has nothing to undo, save or compare', is(await state(), { undo: false, redo: false, save: false, dot: false, compare: false, reset: false }), JSON.stringify(await state()));
   await key(win, 'R');
@@ -301,16 +301,16 @@ app.whenReady().then(async () => {
   await js(win, `document.getElementById('cropbtn').click()`);
   await sleep(800);
   const wide = await pixelRows();
-  await js(win, `document.querySelector('#cropbar .quad button:nth-child(2)').click()`);
+  await js(win, `document.querySelectorAll('#cropdock .tbtn')[1].click()`);
   await sleep(700);
   const tall = await pixelRows();
   check('Rotate right in the crop bar turns a wide picture into a tall one', wide.width > wide.height && tall.height > tall.width, `${wide.width}x${wide.height} then ${tall.width}x${tall.height}`);
-  await js(win, `document.querySelector('#cropbar .reset').click()`);
+  await js(win, `document.querySelector('#cropreset').click()`);
   await sleep(800);
   check('Reset puts it back', is(await pixelRows(), wide) && (await state()).dot === false);
   await key(win, 'R');
   await sleep(500);
-  const tooltips = await js(win, `[...document.querySelectorAll('#cropbar .quad button, #undo, #redo, #cropbtn, #compare, #more, #savebtn')].map((b) => b.title).join('|')`);
+  const tooltips = await js(win, `[...document.querySelectorAll('#cropdock .tbtn, #undo, #redo, #cropbtn, #compare, #more, #savebtn')].map((b) => b.title).join('|')`);
   check('the tooltips name the control and its key', tooltips === 'Undo (Ctrl+Z)|Redo (Ctrl+Y)|Save (Ctrl+S)|More|Crop (C)|Compare (\\)|Rotate left (Shift+R)|Rotate right (R)|Flip horizontal|Flip vertical', tooltips);
 
   await key(win, 'a');
@@ -369,7 +369,7 @@ app.whenReady().then(async () => {
   await sleep(600);
   await js(win, `document.getElementById('cropbtn').click()`);
   await sleep(300);
-  await js(win, `document.querySelector('#cropbar .quad button:nth-child(3)').click()`);
+  await js(win, `document.querySelectorAll('#cropdock .tbtn')[2].click()`);
   await sleep(600);
   await key(win, 's', true);
   await sleep(500);
@@ -449,9 +449,9 @@ app.whenReady().then(async () => {
   await sleep(500);
   await js(win, `document.getElementById('cropbtn').click()`);
   await sleep(300);
-  await js(win, `document.querySelector('#cropbar .quad button:nth-child(4)').click()`);
+  await js(win, `document.querySelectorAll('#cropdock .tbtn')[3].click()`);
   await sleep(300);
-  await js(win, `document.querySelector('#cropbar .quad button:nth-child(2)').click()`);
+  await js(win, `document.querySelectorAll('#cropdock .tbtn')[1].click()`);
   await sleep(500);
   await key(win, 'a');
   await sleep(600);
@@ -495,8 +495,8 @@ app.whenReady().then(async () => {
     await release(to);
   };
   const tool = async () => ((await cropOn()) ? 'crop' : 'adjust');
-  const chipsOf = () => js(win, `[...document.querySelectorAll('.amenu .mi')].map((b) => b.textContent + (b.classList.contains('on') ? '*' : '')).join()`);
-  const chip = (name) => js(win, `[...document.querySelectorAll('.amenu .mi')].find((b) => b.textContent === '${name}').click()`);
+  const chipsOf = () => js(win, `[...document.querySelectorAll('#cropdock .tile')].map((b) => b.textContent + (b.classList.contains('on') ? '*' : '')).join()`);
+  const chip = (name) => js(win, `[...document.querySelectorAll('#cropdock .tile')].find((b) => b.textContent === '${name}').click()`);
   const copyAsPng = async (file) => {
     saveTo = file;
     await key(win, 'S', true, true);
@@ -518,17 +518,19 @@ app.whenReady().then(async () => {
   };
 
   await flatEditor(files.flat);
-  check('Crop shows the frame, and the aspect menu starts on Free', (await js(win, `document.getElementById('frame').classList.contains('on')`)) === true && (await chipsOf()) === 'Free*,Original,Square,4:5,3:2,16:9', await chipsOf());
+  check('Crop shows the frame, and the aspect strip starts on Free', (await js(win, `document.getElementById('frame').classList.contains('on')`)) === true && (await chipsOf()) === 'Free*,Original,Square,9:16,16:9,4:5,5:4,3:4,4:3,2:3,3:2,5:7,7:5,1:2,2:1', await chipsOf());
   check('the frame starts on the whole picture, and the crop bar takes the place of the pill', (await js(win, `document.getElementById('pill').classList.contains('away')`)) === true && (await cropOn()) === true && (await state()).dot === false);
-  const plain = await js(win, `[...document.querySelectorAll('#cropbar button:not(.go)')].filter((b) => getComputedStyle(b).backgroundColor !== 'rgba(0, 0, 0, 0)').map((b) => b.title)`);
-  check('the buttons of the crop bar have no background of their own', plain.length === 0, plain.join());
-  await js(win, `document.querySelector('#cropbar .aspectbtn').click()`);
+  const plain = await js(win, `[...document.querySelectorAll('.cropui .ib, .cropui .pillbtn:not(.go)')].filter((b) => getComputedStyle(b).backgroundColor !== 'rgba(0, 0, 0, 0)').map((b) => b.title)`);
+  check('the icon buttons of the crop dock have no background of their own', plain.length === 0, plain.join());
+  const ruler0 = await js(win, `(() => { const r = document.querySelector('.srow.ticks'), t = r.querySelector('.track'); return [!r.hidden, t.getAttribute('aria-label'), r.querySelectorAll('.mark').length, r.querySelectorAll('.mark.major').length]; })()`);
+  check('the Straighten ruler is in the dock with no button to press', is(ruler0, [true, 'Straighten', 91, 19]), JSON.stringify(ruler0));
+  await js(win, `document.querySelector('.dockbtn').click()`);
   await sleep(300);
-  const menuUp = await js(win, `(() => { const m = document.querySelector('.amenu'), b = document.querySelector('#cropbar .aspectbtn'); return [!m.hidden, b.textContent, m.getBoundingClientRect().bottom <= b.getBoundingClientRect().top, document.activeElement.textContent]; })()`);
-  check('the aspect button opens a menu above it that starts on the chosen ratio', is(menuUp, [true, 'Free', true, 'Free']), JSON.stringify(menuUp));
+  const stripUp = await js(win, `[!document.querySelector('.aspects').hidden, document.querySelector('.srow.ticks').hidden, document.querySelector('.dockbtn').textContent, document.activeElement.textContent, document.querySelectorAll('.tile').length]`);
+  check('the aspect button swaps the ruler for a strip of shapes that starts on the chosen one', is(stripUp, [true, true, 'Free', 'Free', 15]), JSON.stringify(stripUp));
   await key(win, 'Escape');
   await sleep(300);
-  check('Esc closes the menu and stays in Crop', (await js(win, `document.querySelector('.amenu').hidden`)) === true && (await cropOn()) === true);
+  check('Esc closes the strip, brings the ruler back and stays in Crop', (await js(win, `[document.querySelector('.aspects').hidden, document.querySelector('.srow.ticks').hidden]`)).join() === 'true,false' && (await cropOn()) === true);
   const veilSample = async () => {
     const f = await rectOf('#frame');
     const px = await pixelsOf(win);
@@ -541,7 +543,7 @@ app.whenReady().then(async () => {
   const veil = await veilSample();
   check('what the frame leaves out is darkened', luminance(veil.outside) < luminance(veil.inside) * 0.6, `${veil.outside} against ${veil.inside}`);
   check('the choice makes a change: Save and the dot show', (await state()).dot === true && (await state()).undo === true);
-  check('the orientation button is off for Square', (await js(win, `document.querySelector('#cropbar .orient').disabled`)) === true);
+  check('the aspect button names the shape', (await js(win, `document.querySelector('.dockbtn').textContent`)) === 'Square');
   await key(win, 'Enter');
   await sleep(700);
   check('Enter applies the crop and goes to Adjust', (await tool()) === 'adjust' && (await js(win, `document.getElementById('frame').classList.contains('on')`)) === false);
@@ -573,7 +575,7 @@ app.whenReady().then(async () => {
   await sleep(700);
   await key(win, 'c');
   await sleep(700);
-  await js(win, `(() => { [...document.querySelectorAll('.amenu .mi')].find((b) => b.textContent === '16:9').click(); document.querySelector('#tabs .tab:not(.on)').click(); })()`);
+  await js(win, `(() => { [...document.querySelectorAll('#cropdock .tile')].find((b) => b.textContent === '16:9').click(); document.querySelector('#tabs .tab:not(.on)').click(); })()`);
   await sleep(700);
   const otherTab = await state();
   await js(win, `document.querySelector('#tabs .tab:not(.on)').click()`);
@@ -603,8 +605,8 @@ app.whenReady().then(async () => {
   await motion('no-preference');
   const start = await rectOf('#frame');
   const room = await rectOf('#well');
-  // The crop view keeps 30 pixels at the bottom of the well free for the bar.
-  const centred = (r) => Math.abs(r.left + r.width / 2 - room.left - room.width / 2) <= 2 && Math.abs(r.top + r.height / 2 - room.top - (room.height - 30) / 2) <= 2;
+  // The crop view keeps 100 pixels at the bottom of the well free for the dock.
+  const centred = (r) => Math.abs(r.left + r.width / 2 - room.left - room.width / 2) <= 2 && Math.abs(r.top + r.height / 2 - room.top - (room.height - 100) / 2) <= 2;
   const say = (r) => `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`;
   check('the frame starts in the middle of the well', centred(start), say(start));
   // Where to press on the bottom right handle of the frame as it is now, and where a drag by (dx, dy) from there ends.
@@ -633,7 +635,7 @@ app.whenReady().then(async () => {
   const outward = await handleDrag(2000, 2000);
   await press(...outward);
   const grown = await rectOf('#frame');
-  check('a frame dragged outward past the well stays in sight', grown.left >= room.left + 46 && grown.top >= room.top + 46 && grown.left + grown.width <= room.left + room.width - 46 && grown.top + grown.height <= room.top + room.height - 76 && Math.abs(grown.width - start.width) <= 2, say(grown));
+  check('a frame dragged outward past the well stays in sight', grown.left >= room.left + 46 && grown.top >= room.top + 46 && grown.left + grown.width <= room.left + room.width - 46 && grown.top + grown.height <= room.top + room.height - 146 && Math.abs(grown.width - start.width) <= 2, say(grown));
   await release(outward[1]);
   await motion('reduce');
   const shrinking = await handleDrag(-100, -100);
@@ -649,7 +651,7 @@ app.whenReady().then(async () => {
   const across = await cornerPixel();
   check('dragging the picture moves it under a frame that stays where it is', centred(moved) && Math.abs(moved.width - refit.width) <= 2 && !near(across, atCorner, 8), `${say(moved)}, ${atCorner} then ${across}`);
   await release([middle[0] - 5000, middle[1] - 5000]);
-  await drag([room.left + 12, room.top + 12], [room.left + 5000, room.top + 5000]);
+  await drag([room.left + 12, room.top + 70], [room.left + 5000, room.top + 5000]);
   const back = await cornerPixel();
   check('a drag beside the frame moves the picture too, and it stops at the picture\'s edge', near(back, atCorner, 3), `${back} against ${atCorner}`);
   await key(win, 'Enter');
@@ -690,40 +692,24 @@ app.whenReady().then(async () => {
 
   console.log('crop: straighten');
   await flatEditor(files.flat);
-  const straightenButton = '#cropbar .pillbtn:not(.aspectbtn):not(.reset)';
-  const levelText = () => js(win, `document.querySelector('.straighten .val').textContent`);
-  check('the Straighten slider is closed until its button is pressed', (await js(win, `document.querySelector('.straighten').hidden`)) === true);
-  const closedFrame = await rectOf('#frame');
-  await js(win, `document.querySelector('${straightenButton}').click()`);
-  await sleep(900);
-  const opened = await js(win, `(() => { const bar = document.querySelector('.straighten').getBoundingClientRect(), pill = document.getElementById('cropbar').getBoundingClientRect(), label = document.querySelector('.straighten label').textContent; return [bar.bottom <= pill.top, label, document.querySelector('${straightenButton}').classList.contains('on')]; })()`);
-  check('pressing Straighten opens a slider above the bar, and the button shows it is on', is(opened, [true, 'Straighten', true]), JSON.stringify(opened));
-  const openFrame = await rectOf('#frame');
-  const barTop = (await rectOf('.straighten')).top;
-  check('the frame moves up to clear the slider, and stays above it', openFrame.top + openFrame.height < closedFrame.top + closedFrame.height && openFrame.top + openFrame.height + 8 <= barTop, `${closedFrame.top + closedFrame.height} then ${openFrame.top + openFrame.height}, slider at ${barTop}`);
-  const ruler = await rectOf('.straighten .track');
+  const levelText = () => js(win, `document.querySelector('.srow.ticks .val').textContent`);
+  const startFrame = await rectOf('#frame');
+  const ruler = await rectOf('.srow.ticks .track');
   await drag([ruler.left + ruler.width / 2, ruler.top + ruler.height / 2], [ruler.left + ruler.width / 2 + 30, ruler.top + ruler.height / 2]);
   const levelled30 = parseFloat((await levelText()).replace('−', '-'));
   check('dragging the thumb 30 pixels to the right levels the picture by that share of 45 degrees', Math.abs(levelled30 - (90 * 30) / (ruler.width - 18)) <= 0.15, await levelText());
-  await js(win, `document.querySelector('#cropbar .reset').click()`);
+  await js(win, `document.getElementById('cropreset').click()`);
   await sleep(800);
-  await js(win, `document.querySelector('.straighten .val').click()`);
-  await js(win, `(() => { const i = document.querySelector('.straighten input.val'); i.value = '10'; i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); })()`);
+  await js(win, `document.querySelector('.srow.ticks .val').click()`);
+  await js(win, `(() => { const i = document.querySelector('.srow.ticks input.val'); i.value = '10'; i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); })()`);
   await sleep(800);
   check('typing 10 levels the picture by +10.0°', (await levelText()) === '+10.0°', await levelText());
-  await js(win, `document.querySelector('${straightenButton}').click()`);
-  await sleep(900);
-  const shutFrame = await rectOf('#frame');
-  check('pressing Straighten again closes the slider and the frame comes back down', (await js(win, `document.querySelector('.straighten').hidden`)) === true && Math.abs(shutFrame.top + shutFrame.height - closedFrame.top - closedFrame.height) <= 2, `${shutFrame.top + shutFrame.height} against ${closedFrame.top + closedFrame.height}`);
   const levelled = await rectOf('#frame');
   const radians = (10 * Math.PI) / 180, fit = Math.min(1, 4000 / (4000 * Math.cos(radians) + 3000 * Math.sin(radians)), 3000 / (4000 * Math.sin(radians) + 3000 * Math.cos(radians)));
-  check('the frame keeps its shape and its size on screen while the picture behind it is enlarged', Math.abs(levelled.width - closedFrame.width) <= 2 && Math.abs(levelled.height - closedFrame.height) <= 2, `${closedFrame.width}x${closedFrame.height} to ${levelled.width}x${levelled.height}`);
-  // A point above the box the picture filled before it was tilted, where one of its corners now reaches.
-  const perPixel = levelled.width / (4000 * fit);
-  const poking = (await pixelsOf(win)).at((levelled.left + levelled.width / 2 - 1500 * perPixel) * levelled.dpr, (levelled.top + levelled.height / 2 - 1600 * perPixel) * levelled.dpr);
+  check('the frame keeps its shape and its size on screen while the picture behind it is enlarged', Math.abs(levelled.width - startFrame.width) <= 2 && Math.abs(levelled.height - startFrame.height) <= 2, `${startFrame.width}x${startFrame.height} to ${levelled.width}x${levelled.height}`);
+  // A point just left of the frame's middle, where the tilted picture is still drawn, darkened.
+  const poking = (await pixelsOf(win)).at((levelled.left - 8) * levelled.dpr, (levelled.top + levelled.height / 2) * levelled.dpr);
   check('the tilted picture is drawn whole, darkened round the frame', near(poking, [27, 63, 99], 4), `${poking}`);
-  await js(win, `document.querySelector('${straightenButton}').click()`);
-  await sleep(900);
   await shot(win, 'editor-crop-tilted.png');
   await key(win, 'Enter');
   await sleep(700);
@@ -903,27 +889,31 @@ app.whenReady().then(async () => {
     await key(win, 'c');
     await sleep(900);
     const spotOf = (selector, dx = 6) => js(win, `(() => { const r = document.querySelector('${selector}').getBoundingClientRect(); return [r.left + ${dx}, r.top + r.height / 2, devicePixelRatio]; })()`);
-    const barSpot = await spotOf('#cropbar', 3);
-    const doneSpot = await spotOf('#cropbar .go', 3);
+    const cornerSpot = await spotOf('.corner.r', 1);
+    const doneSpot = await spotOf('#cropdone', 5);
+    const markSpot = await js(win, `(() => { const r = document.querySelectorAll('.srow.ticks .mark.major')[6].getBoundingClientRect(); return [r.left, r.top + 3, r.top - 8, devicePixelRatio]; })()`);
+    const saveSpot = await spotOf('#savebtn', 6);
     const cropPixels = await pixelsOf(win);
-    const [barFill, doneFill] = [cropPixels.at(barSpot[0] * barSpot[2], barSpot[1] * barSpot[2]), cropPixels.at(doneSpot[0] * doneSpot[2], doneSpot[1] * doneSpot[2])];
-    console.log(`  (${theme} Done button ${doneFill} on the bar ${barFill}: contrast ${contrast(doneFill, barFill).toFixed(2)})`);
-    check(`${theme}: the Done button stands out from the crop bar`, contrast(doneFill, barFill) >= 3, `${doneFill} ${barFill}`);
+    const saveFill = cropPixels.at(saveSpot[0] * saveSpot[2], saveSpot[1] * saveSpot[2]);
+    const [cornerFill, doneFill] = [cropPixels.at(cornerSpot[0] * cornerSpot[2], cornerSpot[1] * cornerSpot[2]), cropPixels.at(doneSpot[0] * doneSpot[2], doneSpot[1] * doneSpot[2])];
+    console.log(`  (${theme} Done button ${doneFill} on its corner ${cornerFill}: contrast ${contrast(doneFill, cornerFill).toFixed(2)})`);
+    check(`${theme}: the Done button is the pink of Save, told from its corner, and its label can be read`, contrast(doneFill, cornerFill) >= 2 && contrast(doneFill, [255, 255, 255]) >= 4.5 && JSON.stringify(doneFill) === JSON.stringify(saveFill), `${doneFill} ${cornerFill} ${saveFill}`);
+    const [mark, wellFill] = [cropPixels.at(markSpot[0] * markSpot[3], markSpot[1] * markSpot[3]), cropPixels.at(markSpot[0] * markSpot[3], markSpot[2] * markSpot[3])];
+    console.log(`  (${theme} ruler mark ${mark} on the well ${wellFill}: contrast ${contrast(mark, wellFill).toFixed(2)})`);
+    check(`${theme}: the marks of the Straighten ruler show on the well`, contrast(mark, wellFill) >= 2, `${mark} ${wellFill}`);
     await shot(win, `editor-${theme}-crop.png`);
-    await js(win, `document.querySelector('#cropbar .aspectbtn').click()`);
+    await js(win, `document.querySelector('.dockbtn').click()`);
     await sleep(500);
+    const tiles = await js(win, `(() => { const rect = (n) => { const r = n.getBoundingClientRect(); return [r.left, r.top + r.height / 2]; }; return [rect(document.querySelector('.tile.on')), rect(document.querySelector('.tile:not(.on)')), devicePixelRatio]; })()`);
+    const stripPixels = await pixelsOf(win);
+    const [onTile, offTile] = [stripPixels.at(tiles[0][0] * tiles[2] + 6, tiles[0][1] * tiles[2]), stripPixels.at(tiles[1][0] * tiles[2] + 6, tiles[1][1] * tiles[2])];
+    const ring = [0, 1, 2].map((n) => stripPixels.at(Math.floor(tiles[0][0] * tiles[2]) + n, tiles[0][1] * tiles[2])).sort((p, q) => contrast(q, offTile) - contrast(p, offTile))[0];
+    console.log(`  (${theme} aspect tile on ${onTile}, others ${offTile}: contrast ${contrast(onTile, offTile).toFixed(2)}; its ring ${ring}: contrast ${contrast(ring, offTile).toFixed(2)})`);
+    check(`${theme}: the chosen aspect is told from the others by a tint and a ring`, JSON.stringify(onTile) !== JSON.stringify(offTile) && contrast(ring, offTile) >= 3, `${onTile} ${offTile} ${ring}`);
     await shot(win, `editor-${theme}-crop-aspect.png`);
-    await js(win, `[...document.querySelectorAll('.amenu .mi')].find((b) => b.textContent === '3:2').click()`);
-    await sleep(700);
-    await js(win, `document.querySelector('${straightenButton}').click()`);
+    await js(win, `[...document.querySelectorAll('#cropdock .tile')].find((b) => b.textContent === '3:2').click()`);
     await sleep(900);
-    const offSpot = await spotOf('#cropbar .aspectbtn', 3);
-    const onSpot = await spotOf(straightenButton, 3);
-    const levelPixels = await pixelsOf(win);
-    const [offFill, onFill] = [levelPixels.at(offSpot[0] * offSpot[2], offSpot[1] * offSpot[2]), levelPixels.at(onSpot[0] * onSpot[2], onSpot[1] * onSpot[2])];
-    console.log(`  (${theme} Straighten button on ${onFill}, other buttons ${offFill}: contrast ${contrast(onFill, offFill).toFixed(2)})`);
-    check(`${theme}: the Straighten button that is on is told from the others`, JSON.stringify(onFill) !== JSON.stringify(offFill) && contrast(onFill, offFill) >= 1.1, `${onFill} ${offFill}`);
-    const levelTrack = await js(win, `(() => { const r = document.querySelector('.straighten .track').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
+    const levelTrack = await js(win, `(() => { const r = document.querySelector('.srow.ticks .track').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
     await press(levelTrack, [levelTrack[0] + 48, levelTrack[1]]);
     await shot(win, `editor-${theme}-crop-level.png`);
     await release([levelTrack[0] + 48, levelTrack[1]]);
