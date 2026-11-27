@@ -283,6 +283,40 @@
     });
   }
 
+  // Resolves with the id of the format the user picks from `targets` ({ id, label, sub }), or null on Cancel or Esc.
+  function chooseFormat(targets) {
+    const { box, close } = frame();
+    const heading = el('h3', '', 'Convert to');
+    heading.id = 'dialog-title';
+    const head = el('div', 'uhead');
+    head.append(heading);
+    const grid = el('div', 'formats');
+    const formats = targets.map(({ label, sub }) => {
+      const b = el('button', 'btn conv');
+      b.append(el('b', '', label), el('small', '', sub));
+      return b;
+    });
+    grid.append(...formats);
+    const cancel = el('button', 'btn', 'Cancel');
+    const row = el('div', 'row');
+    row.append(cancel);
+    box.append(head, grid, row);
+    return new Promise((resolve) => {
+      const done = (answer) => {
+        close();
+        document.getElementById('scroller').focus();
+        resolve(answer);
+      };
+      formats.forEach((b, i) => { b.onclick = () => done(targets[i].id); });
+      cancel.onclick = () => done(null);
+      box.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); done(null); }
+        else if (e.key === 'Tab') loop(e, [...formats, cancel]);
+      });
+      formats[0].focus();
+    });
+  }
+
   // Resolves with { page, text } as #rrggbb when the user applies a pair, or null when they cancel. `current` is the pair now in use,
   // if it is one the user chose.
   function chooseColours(current) {
@@ -351,5 +385,5 @@
     });
   }
 
-  window.workspaceDialogs = { askPassword, askSource, closePassword, confirmLink, engineCard, choose, chooseColours, isOpen: window.pomeloCard.isOpen };
+  window.workspaceDialogs = { askPassword, askSource, closePassword, confirmLink, engineCard, choose, chooseFormat, chooseColours, isOpen: window.pomeloCard.isOpen };
 })();

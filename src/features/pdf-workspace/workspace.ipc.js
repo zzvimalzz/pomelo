@@ -6,6 +6,7 @@ const { ipcMain } = require('electron');
 // documents: the open documents (documents.js). state(): what the page starts from. closeDocument(token): close a tab's file, and the
 // window with the last one. openDropped(paths): open the PDFs among the paths of a drop. setFocus(on): enter or leave full screen.
 // putRevision(token, bytes), apply(token, ops), undo(token), redo(token), save(token), saveAs(token), reload(token): the document's revisions (index.js).
+// convertTargets(token): the formats the document's file can be converted to. convert(token, to): start converting its file to one of them.
 // chooseSources(): ask for PDFs, pictures and documents and resolve their paths, which the preload keeps. dropSources(paths): answer what the
 // page needs to name those files, chosen or dropped on the page. unlockSource(id, password): does the password open the PDF to insert. extract(token, pages): save those pages as a new file.
 // split(token, request, total): save the document's pages as several files. splitPlan(request, total): the first and last page of each file that would make.
@@ -14,7 +15,7 @@ const { ipcMain } = require('electron');
 // LibreOffice ('soffice') and resolve { ok, message }.
 // closeWindow(): close the window now that the page has dealt with unsaved changes. setDock(side): keep the dock's place. setView(patch): keep the valid fields of the view (view.js). checkLink(url): the address a link may open, or null. openLink(url): open it. copyLink(url): put
 // it on the clipboard. copyLinks(urls): put the ones that may be opened on it, one to a line, and answer how many. isWorkspace(sender): is this the workspace window's page.
-function registerWorkspaceIpc({ documents, state, closeDocument, openDropped, putRevision, apply, properties, chooseSources, dropSources, unlockSource, extract, split, splitPlan, details, rename, showInFolder, engine, installEngine, undo, redo, save, saveAs, reload, closeWindow, setFocus, setDock, setView, checkLink, openLink, copyLink, copyLinks, isWorkspace }) {
+function registerWorkspaceIpc({ documents, state, closeDocument, openDropped, putRevision, apply, properties, chooseSources, dropSources, unlockSource, extract, split, splitPlan, details, rename, showInFolder, engine, installEngine, undo, redo, save, saveAs, convertTargets, convert, reload, closeWindow, setFocus, setDock, setView, checkLink, openLink, copyLink, copyLinks, isWorkspace }) {
   const guard = (e) => { if (!isWorkspace(e.sender)) throw new Error('not the workspace window'); };
   ipcMain.handle('pdfws:state', (e) => { guard(e); return state(); });
   ipcMain.handle('pdfws:read', (e, token, begin, end) => { guard(e); return documents.read(token, begin, end); });
@@ -38,6 +39,8 @@ function registerWorkspaceIpc({ documents, state, closeDocument, openDropped, pu
   ipcMain.handle('pdfws:redo', (e, token) => { guard(e); return redo(token); });
   ipcMain.handle('pdfws:save', (e, token) => { guard(e); return save(token); });
   ipcMain.handle('pdfws:save-as', (e, token, openCopy) => { guard(e); return saveAs(token, openCopy === true); });
+  ipcMain.handle('pdfws:convert-targets', (e, token) => { guard(e); return convertTargets(token); });
+  ipcMain.handle('pdfws:convert', (e, token, to) => { guard(e); convert(token, to); });
   ipcMain.handle('pdfws:reload', (e, token) => { guard(e); return reload(token); });
   ipcMain.handle('pdfws:close-window', (e) => { guard(e); closeWindow(); });
   ipcMain.handle('pdfws:drop', (e, paths) => { guard(e); openDropped(paths); });

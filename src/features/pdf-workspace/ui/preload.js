@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('workspaceApi', {
   redo: (token) => ipcRenderer.invoke('pdfws:redo', token),
   save: (token) => ipcRenderer.invoke('pdfws:save', token),
   saveAs: (token, openCopy) => ipcRenderer.invoke('pdfws:save-as', token, openCopy),
+  convertTargets: (token) => ipcRenderer.invoke('pdfws:convert-targets', token),
+  convert: (token, to) => ipcRenderer.invoke('pdfws:convert', token, to),
   reload: (token) => ipcRenderer.invoke('pdfws:reload', token),
   closeWindow: () => ipcRenderer.invoke('pdfws:close-window'),
   setDock: (side) => ipcRenderer.invoke('pdfws:dock', side),

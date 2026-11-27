@@ -11,7 +11,7 @@
   const dot = document.getElementById('docdot');
   const savedNote = document.getElementById('docsaved');
   const saveButton = document.getElementById('savebtn');
-  const { choose, isOpen } = window.workspaceDialogs;
+  const { choose, chooseFormat, isOpen } = window.workspaceDialogs;
   const tabStrip = window.pomeloTabs.create(document.getElementById('tabs'));
   const tabs = [];
   let active = null;
@@ -118,13 +118,14 @@
   }
 
   // Saves the tab's document over its file, or as a copy. The first save over a file asks once whether to replace it. A copy is opened
-  // in a tab and this document is closed, unless the window is closing (`closing`). Resolves true when what was asked is done, false
-  // when it was not (the user said no, or the main process said why in the corner notice).
+  // in a tab and this document is closed, unless the window is closing (`closing`). Resolves the token of the document that now holds
+  // what was saved (the copy's, after a copy), or null when it was not done (the user said no, or the main process said why in the corner
+  // notice).
   async function save(tab, copy = false, closing = false) {
     const { token, name: file } = tab.doc;
     if (!copy && !tab.replaceAsked) {
       const answer = await choose('Replace the original?', `Save over ${file}, or keep it as it is and save a copy.`, [{ label: 'Cancel', value: null }, { label: 'Save a copy', value: 'copy' }, { label: 'Replace', value: 'replace', primary: true }]);
-      if (!answer) return false;
+      if (!answer) return null;
       if (answer === 'copy') return save(tab, true, closing);
       tab.replaceAsked = true;
     }
@@ -132,9 +133,9 @@
     if (result?.stop === 'changed') {
       const answer = await choose(`${file} was changed by another program.`, '', [{ label: 'Cancel', value: null }, { label: 'Reload', value: 'reload' }, { label: 'Save a copy', value: 'copy', primary: true }]);
       if (answer === 'reload') await window.workspaceApi.reload(token);
-      return answer === 'copy' ? save(tab, true, closing) : false;
+      return answer === 'copy' ? save(tab, true, closing) : null;
     }
-    if (!result || result.stop) return false;
+    if (!result || result.stop) return null;
     if (result.copied) close(token);
     if (!copy && tab === active) {
       savedNote.textContent = 'Saved';
@@ -142,7 +143,22 @@
       clearTimeout(tab.savedTimer);
       tab.savedTimer = setTimeout(() => savedNote.classList.remove('on'), 1400);
     }
-    return true;
+    return result.copyToken ?? token;
+  }
+
+  // Asks which format, then converts the tab's file, which the converter reads from disk: changes are saved first, and a copy made for
+  // that is the file converted.
+  async function convert(tab) {
+    const targets = await window.workspaceApi.convertTargets(tab.doc.token);
+    const to = targets.length ? await chooseFormat(targets) : null;
+    if (!to) return;
+    let token = tab.doc.token;
+    if (tab.doc.dirty) {
+      const answer = await choose('Save your changes before converting?', '', [{ label: 'Cancel', value: null }, { label: 'Save a copy', value: 'copy' }, { label: 'Save', value: 'save', primary: true }]);
+      token = answer && await save(tab, answer === 'copy');
+      if (!token) return;
+    }
+    window.workspaceApi.convert(token, to);
   }
 
   // Resolves true when the tab's changes are saved or given up, false when the user cancels or saving fails.
@@ -162,6 +178,10 @@
   saveButton.onclick = () => active && save(active);
   window.workspaceKeys.bind('save', () => { if (!active?.doc.dirty) return false; save(active); });
   window.workspaceKeys.bind('saveCopy', () => { if (!active) return false; save(active, true); });
+  window.workspaceDock.setMore([
+    { text: 'Convert to…', arrow: true, run: () => active && convert(active) },
+    { text: 'Save a copy', key: 'saveCopy', run: () => active && save(active, true) },
+  ]);
 
   window.workspaceApi.onChanged(({ reload, ...doc }) => {
     const tab = find(doc.token);

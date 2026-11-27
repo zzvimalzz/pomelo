@@ -11,7 +11,7 @@ const os = require('os');
 const path = require('path');
 const { PDFDocument, PDFName, PDFRawStream, PDFString, PDFHexString, StandardFonts, clip, endPath, popGraphicsState, pushGraphicsState, rectangle, rgb } = require('pdf-lib');
 const { createWorkspace } = require('../../src/features/pdf-workspace');
-const { uniquePath, runPdfTool, detectEngines, probeLocked, checkPassword, asPdf, pdfSourceExts, convertFile } = require('../../src/features/conversion');
+const { uniquePath, runPdfTool, detectEngines, probeLocked, checkPassword, asPdf, pdfSourceExts, convertFile, targetsFor, explainNoTargets } = require('../../src/features/conversion');
 const { expect: check, failed } = require('../support/expect');
 const { encryptedPdf } = require('../support/encrypted-pdf');
 const finish = require('../support/finish');
@@ -31,6 +31,7 @@ const errors = [];
 const calls = [];
 const opened = [];
 const shown = [];
+const converted = [];
 const handle = ipcMain.handle.bind(ipcMain);
 ipcMain.handle = (channel, fn) => handle(channel, (event, ...args) => { calls.push({ channel, args }); return fn(event, ...args); });
 let writes = 0;
@@ -40,8 +41,8 @@ const setSettings = (patch) => { writes++; settings = { ...settings, ...patch };
 const VIEW_KEYS = ['zoom', 'layout', 'sidebar', 'pageColours'];
 const fresh = ({ keepView = false, ...options } = {}) => {
   if (!keepView && settings.pdfView && typeof settings.pdfView === 'object') settings = { ...settings, pdfView: Object.fromEntries(Object.entries(settings.pdfView).filter(([key]) => !VIEW_KEYS.includes(key))) };
-  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'pdfws:put-revision', 'pdfws:apply', 'pdfws:undo', 'pdfws:redo', 'pdfws:save', 'pdfws:save-as', 'pdfws:choose-sources', 'pdfws:drop-sources', 'pdfws:unlock-source', 'pdfws:extract', 'pdfws:split-plan', 'pdfws:split', 'pdfws:reload', 'pdfws:close-window', 'pdfws:properties', 'pdfws:details', 'pdfws:rename', 'pdfws:show', 'pdfws:engine', 'pdfws:install-engine']) ipcMain.removeHandler(channel);
-  const workspace = createWorkspace({ hasPdfEngine: () => true, asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), uniquePath, runPdfTool, probeLocked, checkPassword, asPdf, pdfSourceExts, makePdf: (src, outDir, signal) => convertFile(src, 'pdf', { outDir, signal }), showInFolder: (file) => shown.push(file), ...options });
+  for (const channel of ['pdfws:state', 'pdfws:read', 'pdfws:unlock', 'pdfws:close', 'pdfws:drop', 'pdfws:focus', 'pdfws:dock', 'pdfws:view', 'pdfws:check-link', 'pdfws:open-link', 'pdfws:copy-link', 'pdfws:copy-links', 'pdfws:put-revision', 'pdfws:apply', 'pdfws:undo', 'pdfws:redo', 'pdfws:save', 'pdfws:save-as', 'pdfws:choose-sources', 'pdfws:drop-sources', 'pdfws:unlock-source', 'pdfws:extract', 'pdfws:split-plan', 'pdfws:split', 'pdfws:reload', 'pdfws:close-window', 'pdfws:properties', 'pdfws:details', 'pdfws:rename', 'pdfws:show', 'pdfws:engine', 'pdfws:install-engine', 'pdfws:convert-targets', 'pdfws:convert']) ipcMain.removeHandler(channel);
+  const workspace = createWorkspace({ hasPdfEngine: () => true, asset, getSettings: () => settings, setSettings, notify: (m) => notices.push(m), log: () => {}, openExternal: (url) => { opened.push(url); return Promise.resolve(); }, copyText: (text) => clipboard.writeText(text), uniquePath, runPdfTool, probeLocked, checkPassword, asPdf, pdfSourceExts, makePdf: (src, outDir, signal) => convertFile(src, 'pdf', { outDir, signal }), showInFolder: (file) => shown.push(file), targetsFor: (file) => targetsFor([file]), explainNoTargets, convert: (file, to) => converted.push([file, to]), ...options });
   workspace.registerIpc();
   return workspace;
 };
@@ -215,7 +216,7 @@ const DOCK_IN_VIEW = `(() => { const r = document.querySelector('.dock').getBoun
 const dockState = (win) => js(win, `(() => { const d = document.querySelector('.dock'); const own = [...d.querySelectorAll('button:not(.mi)')];
   return { titles: own.map((b) => b.title), page: d.querySelector('.pageno').value, count: d.querySelector('.pagecount').textContent, zoom: d.querySelector('.zoom').textContent,
     folded: d.classList.contains('folded'), opacity: getComputedStyle(d).opacity, current: workspaceViewer.viewer.currentPageNumber, scale: workspaceViewer.viewer.currentScaleValue,
-    menu: !d.querySelector('.menu').hidden, layout: workspaceViewer.viewer.spreadMode, full: document.body.classList.contains('focus') }; })()`);
+    menu: !d.querySelector('.zoomgroup .menu').hidden, layout: workspaceViewer.viewer.spreadMode, full: document.body.classList.contains('focus') }; })()`);
 
 const panelState = (win) => js(win, `(() => { const p = document.getElementById('rail'); const b = document.getElementById('pagesbtn'); const w = document.querySelector('.well').getBoundingClientRect(); const items = [...document.querySelectorAll('.thumb')];
   return { width: p.getBoundingClientRect().width, display: getComputedStyle(p).display, hidden: document.getElementById('railinner').hidden, title: b.title, label: b.getAttribute('aria-label'), pressed: b.getAttribute('aria-pressed'), disabled: b.disabled,
@@ -722,7 +723,7 @@ app.whenReady().then(async () => {
     const win = await openAndWait(fresh(), twelve);
     await sleep(900);
     let d = await dockState(win);
-    check(`${theme}: the dock holds the page group and the zoom group and nothing else`, d.titles.join('|') === 'Drag to move|Previous page (Page Up)|Next page (Page Down)|Pages (P)|Zoom out (Ctrl+−)|View options|Zoom in (Ctrl+=)'
+    check(`${theme}: the dock holds the page group, the tools, More and the zoom group and nothing else`, d.titles.join('|') === 'Drag to move|Previous page (Page Up)|Next page (Page Down)|Pages (P)|More|Zoom out (Ctrl+−)|View options|Zoom in (Ctrl+=)'
       && d.page === '1' && d.count === '/ 12' && d.zoom === 'Fit page' && d.opacity === '1', JSON.stringify(d));
     await js(win, `document.querySelector('.dock [aria-label="Next page"]').click()`);
     await sleep(400);
@@ -762,7 +763,7 @@ app.whenReady().then(async () => {
 
     await js(win, `document.querySelector('.dock .zoom').click()`);
     await sleep(500);
-    const menu = await js(win, `(() => { const m = document.querySelector('.menu'); return { shown: !m.hidden, caps: [...m.querySelectorAll('.cap')].map((n) => n.textContent), items: [...m.querySelectorAll('.mi')].map((n) => n.firstChild.textContent),
+    const menu = await js(win, `(() => { const m = document.querySelector('.zoomgroup .menu'); return { shown: !m.hidden, caps: [...m.querySelectorAll('.cap')].map((n) => n.textContent), items: [...m.querySelectorAll('.mi')].map((n) => n.firstChild.textContent),
       keys: [...m.querySelectorAll('kbd')].map((n) => n.textContent), expanded: document.querySelector('.dock .zoom').getAttribute('aria-expanded') }; })()`);
     check(`${theme}: the zoom value opens the View menu with Zoom, Layout and Page colour`, menu.shown && menu.expanded === 'true' && menu.caps.join() === 'Zoom,Layout,Page colour'
       && menu.items.join() === 'Fit width,Fit page,Actual size,Continuous,Two pages side by side,Original,Sepia,Dark,Custom colours…' && menu.keys.join() === 'Ctrl+0,Ctrl+1', JSON.stringify(menu));
@@ -958,7 +959,7 @@ app.whenReady().then(async () => {
     const menuBeside = async (side) => {
       await js(win, `document.querySelector('.dock .zoom').click()`);
       await sleep(500);
-      const m = await js(win, `(() => { const r = document.querySelector('.menu').getBoundingClientRect(); const d = document.querySelector('.dock').getBoundingClientRect(); const w = document.querySelector('.well').getBoundingClientRect();
+      const m = await js(win, `(() => { const r = document.querySelector('.zoomgroup .menu').getBoundingClientRect(); const d = document.querySelector('.dock').getBoundingClientRect(); const w = document.querySelector('.well').getBoundingClientRect();
         return { menu: { l: r.left, r: r.right, t: r.top, b: r.bottom }, dock: { l: d.left, r: d.right, t: d.top, b: d.bottom }, well: { l: w.left, r: w.right, t: w.top, b: w.bottom } }; })()`);
       if (side === 'left') return m.menu.l >= m.dock.r + 8 && m.menu.r <= m.well.r && m.menu.t >= m.well.t && m.menu.b <= m.well.b;
       if (side === 'right') return m.menu.r <= m.dock.l - 8 && m.menu.l >= m.well.l && m.menu.t >= m.well.t && m.menu.b <= m.well.b;
@@ -2387,6 +2388,109 @@ app.whenReady().then(async () => {
     }
     dialog.showSaveDialog = realSave;
     nativeTheme.themeSource = 'light';
+  }
+
+  console.log('convert: the More menu, the formats card and the question about changes');
+  {
+    const realSave = dialog.showSaveDialog;
+    const formats = [{ id: 'docx', label: 'DOCX', sub: 'Word' }, { id: 'png', label: 'PNG', sub: 'Image' }, { id: 'txt', label: 'TXT', sub: 'Plain text' }];
+    const moreItems = (win) => js(win, `[...document.querySelectorAll('.moregroup .menu .mi')].map((b) => b.textContent)`);
+    const card = (win) => js(win, `({ title: document.querySelector('.veil h3')?.textContent ?? '', buttons: [...document.querySelectorAll('.veil .formats button, .veil .row button')].map((b) => b.textContent).join() })`);
+    const openMore = (win) => js(win, `document.querySelector('.moregroup .tool').click()`);
+    const pickMore = (win, text) => js(win, `[...document.querySelectorAll('.moregroup .menu .mi')].find((b) => b.textContent.startsWith(${JSON.stringify(text)})).click()`);
+    const pickCard = (win, text) => js(win, `[...document.querySelectorAll('.veil button')].find((b) => b.firstChild.textContent === ${JSON.stringify(text)}).click()`);
+    const put = (win, token, bytes) => js(win, `workspaceApi.putRevision(${JSON.stringify(token)}, Uint8Array.from(atob(${JSON.stringify(bytes.toString('base64'))}), (c) => c.charCodeAt(0)))`);
+    const startConvert = async (win, format) => {
+      await openMore(win);
+      await pickMore(win, 'Convert to');
+      await until('the card', async () => (await card(win)).title !== '');
+      if (format) await pickCard(win, format);
+    };
+    for (const theme of ['light', 'dark']) {
+      nativeTheme.themeSource = theme;
+      const file = await makePdf(`Convert-${theme}.pdf`, 2);
+      const original = fs.readFileSync(file);
+      const edited = Buffer.concat([original, Buffer.from('\n% edited\n%%EOF\n')]);
+      converted.length = 0;
+      const win = await openAndWait(fresh({ targetsFor: () => formats }), file);
+      const token = (await js(win, `workspaceApi.state()`)).documents[0].token;
+      check(`${theme}: the dock has a More button, closed, with its menu hidden`, await js(win, `(() => { const b = document.querySelector('.moregroup .tool'); return b.title === 'More' && b.getAttribute('aria-expanded') === 'false' && document.querySelector('.moregroup .menu').hidden; })()`));
+      await openMore(win);
+      check(`${theme}: More lists Convert to… and Save a copy with its shortcut and nothing else`, JSON.stringify(await moreItems(win)) === JSON.stringify(['Convert to…›', 'Save a copyCtrl+Shift+S']), JSON.stringify(await moreItems(win)));
+      await sleep(700);
+      await shot(win, `workspace-more-${theme}.png`);
+      await press(win, 'Escape');
+      check(`${theme}: Esc closes the More menu`, await js(win, `document.querySelector('.moregroup .menu').hidden`));
+      await openMore(win);
+      await js(win, `document.querySelector('.zoom').click()`);
+      check(`${theme}: opening the View menu closes the More menu`, await js(win, `document.querySelector('.moregroup .menu').hidden && !document.querySelector('.zoomgroup .menu').hidden`));
+      await js(win, `document.querySelector('.zoom').click()`);
+
+      await startConvert(win);
+      let now = await card(win);
+      check(`${theme}: Convert to… opens a card with the formats the wheel offers, each with its label and kind, and Cancel`, now.title === 'Convert to' && now.buttons === 'DOCXWord,PNGImage,TXTPlain text,Cancel', JSON.stringify(now));
+      await sleep(700);
+      await shot(win, `workspace-convert-${theme}.png`);
+      await press(win, 'Escape');
+      check(`${theme}: Esc closes the card and nothing is converted`, (await card(win)).title === '' && converted.length === 0);
+
+      await startConvert(win, 'PNG');
+      await until('the job', () => converted.length === 1, 3000);
+      check(`${theme}: choosing a format converts the file as it is, with no question when nothing has changed`, JSON.stringify(converted) === JSON.stringify([[file, 'png']]) && (await card(win)).title === '', JSON.stringify(converted));
+      await js(win, `workspaceApi.convert(${JSON.stringify(token)}, 'exe')`);
+      await sleep(200);
+      check(`${theme}: a format the wheel does not offer for the file starts nothing`, converted.length === 1);
+
+      await put(win, token, edited);
+      await until('the Save button', () => js(win, `!document.getElementById('savebtn').hidden`));
+      await startConvert(win, 'DOCX');
+      await until('the question', async () => (await card(win)).title === 'Save your changes before converting?');
+      now = await card(win);
+      check(`${theme}: a changed document asks to save first, with Cancel, Save a copy and Save`, now.buttons === 'Cancel,Save a copy,Save', JSON.stringify(now));
+      await sleep(700);
+      await shot(win, `workspace-convert-save-${theme}.png`);
+      await pickCard(win, 'Cancel');
+      await sleep(200);
+      check(`${theme}: Cancel converts nothing and writes nothing`, converted.length === 1 && fs.readFileSync(file).equals(original) && (await card(win)).title === '');
+
+      const copy = path.join(root, `Convert-copy-${theme}.pdf`);
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: copy });
+      await startConvert(win, 'DOCX');
+      await until('the question', async () => (await card(win)).title === 'Save your changes before converting?');
+      await pickCard(win, 'Save a copy');
+      await until('the job', () => converted.length === 2, 8000);
+      check(`${theme}: Save a copy writes the copy, leaves the file as it was and converts the copy`, JSON.stringify(converted[1]) === JSON.stringify([copy, 'docx']) && fs.readFileSync(copy).equals(edited) && fs.readFileSync(file).equals(original), JSON.stringify(converted));
+      await closeAndWait(win);
+
+      const second = await openAndWait(fresh({ targetsFor: () => formats }), file);
+      await put(second, (await js(second, `workspaceApi.state()`)).documents[0].token, edited);
+      await until('the Save button', () => js(second, `!document.getElementById('savebtn').hidden`));
+      await startConvert(second, 'TXT');
+      await until('the question', async () => (await card(second)).title === 'Save your changes before converting?');
+      await pickCard(second, 'Save');
+      await until('the replace question', async () => (await card(second)).title === 'Replace the original?');
+      await pickCard(second, 'Replace');
+      await until('the job', () => converted.length === 3, 8000);
+      check(`${theme}: Save replaces the file and then converts it`, JSON.stringify(converted[2]) === JSON.stringify([file, 'txt']) && fs.readFileSync(file).equals(edited), JSON.stringify(converted));
+      await closeAndWait(second);
+    }
+    dialog.showSaveDialog = realSave;
+    nativeTheme.themeSource = 'light';
+
+    const plain = await makePdf('Convert-none.pdf', 1);
+    notices.length = 0;
+    const none = await openAndWait(fresh({ targetsFor: () => [], explainNoTargets: () => ({ title: 'No converter available for .pdf files', detail: 'Open Pomelo settings to see which engines to add.' }) }), plain);
+    await openMore(none);
+    await pickMore(none, 'Convert to');
+    await sleep(500);
+    check("with nothing to convert to, Convert to… shows the wheel's explanation in the corner and no card", (await card(none)).title === '' && notices.length === 1 && notices[0].title === 'No converter available for .pdf files', JSON.stringify([notices, await card(none)]));
+    await closeAndWait(none);
+
+    const real = await openAndWait(fresh(), plain);
+    await startConvert(real);
+    const offered = (await card(real)).buttons.split(',').slice(0, -1);
+    check('the card offers what the wheel offers for the same file under the engines installed here, in the same order', JSON.stringify(offered) === JSON.stringify(targetsFor([plain]).map((t) => `${t.label}${t.sub}`)), JSON.stringify([offered, targetsFor([plain])]));
+    await closeAndWait(real);
   }
 
   {
