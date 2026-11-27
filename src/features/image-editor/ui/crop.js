@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The Crop tool: the frame in the middle of the well (drag its handles to resize it, drag anywhere else to move the picture under it,
-// turn the wheel with Ctrl held to zoom it), the aspect ratio chips, the Straighten ruler. The frame is kept in the picture's edit as
+// turn the wheel with Ctrl held to zoom it), the aspect ratio menu and the Straighten slider that open from the crop bar. The frame is kept in the picture's edit as
 // fractions of the turned picture, so the page shows, saves and undoes it like any other change. While a drag or a glide runs, the frame
 // is changed with `live`, which is not in the history; the change is committed when it ends. A classic script that adds
 // window.editorCrop.
@@ -8,7 +8,9 @@
   const geo = window.editorGeometry;
   const { el, icon } = window.pomeloUi;
   const ASPECTS = [['free', 'Free'], ['original', 'Original'], ['1:1', 'Square'], ['4:5', '4:5'], ['3:2', '3:2'], ['16:9', '16:9']];
-  const PX_PER_DEGREE = 8;
+  // CSS pixels the crop view keeps free at the bottom of the well: the bar, and the bar with the Straighten slider above it.
+  const BAR_ROOM = 30;
+  const LEVEL_ROOM = 102;
   const WHEEL_MS = 160;
   // Starts at full speed, so a wheel that keeps turning does not stutter as each turn takes over from the last.
   const arrive = (t) => 1 - (1 - t) ** 3;
@@ -29,55 +31,104 @@
     // A key per visit to the tool, so the steps of one visit never fold into those of an earlier one.
     const keyed = (name) => `${name}${session}`;
 
-    const orient = el('button', 'orient');
+    const aspect = el('button', 'pillbtn aspectbtn');
+    aspect.type = 'button';
+    aspect.title = 'Aspect ratio';
+    aspect.setAttribute('aria-haspopup', 'menu');
+    aspect.setAttribute('aria-expanded', 'false');
+    const aspectName = el('span');
+    aspect.append(aspectName);
+    aspect.insertAdjacentHTML('beforeend', icon('down'));
+    const orient = el('button', 'ib orient');
     orient.type = 'button';
     orient.title = 'Portrait or landscape';
     orient.setAttribute('aria-label', 'Portrait or landscape');
-    const aspectLabel = el('div', 'glabel', 'Aspect ratio');
-    aspectLabel.append(orient);
-    const chips = el('div', 'chips three');
-    chips.setAttribute('role', 'radiogroup');
-    chips.setAttribute('aria-label', 'Aspect ratio');
+
+    const menu = el('div', 'zmenu amenu');
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', 'Aspect ratio');
+    menu.hidden = true;
     for (const [id, name] of ASPECTS) {
-      const chip = el('button', 'chip', name);
-      chip.type = 'button';
-      chip.setAttribute('role', 'radio');
-      chip.dataset.aspect = id;
-      chip.onclick = () => chooseAspect(id);
-      chips.append(chip);
+      const item = el('button', 'mi', name);
+      item.type = 'button';
+      item.setAttribute('role', 'menuitemradio');
+      item.dataset.aspect = id;
+      item.onclick = () => { closeMenu(); chooseAspect(id); };
+      menu.append(item);
     }
-    const angleText = el('span', '', '0.0°');
-    const levelLabel = el('div', 'glabel', 'Straighten');
-    levelLabel.append(angleText);
-    const ruler = el('div', 'ruler');
-    ruler.title = 'Straighten';
-    ruler.setAttribute('role', 'slider');
-    ruler.setAttribute('aria-label', 'Straighten');
-    ruler.setAttribute('aria-valuemin', '-45');
-    ruler.setAttribute('aria-valuemax', '45');
-    const ticks = Array.from({ length: 91 }, (_, n) => {
-      const degree = n - 45, x = 144 + n * PX_PER_DEGREE, long = degree % 5 === 0;
-      return `<line class="${degree === 0 ? 'zero' : long ? 'long' : ''}" x1="${x}" x2="${x}" y1="${long ? 12 : 17}" y2="${long ? 32 : 27}"/>`;
-    }).join('');
-    ruler.innerHTML = `<svg width="${90 * PX_PER_DEGREE + 288}" height="44" viewBox="0 0 ${90 * PX_PER_DEGREE + 288} 44" aria-hidden="true">${ticks}</svg><i class="needle"></i>`;
-    const scale = ruler.firstChild;
+    function closeMenu() {
+      if (menu.contains(document.activeElement)) aspect.focus({ preventScroll: true });
+      menu.hidden = true;
+      aspect.setAttribute('aria-expanded', 'false');
+    }
+    aspect.onclick = () => {
+      if (!menu.hidden) { closeMenu(); return; }
+      const box = aspect.getBoundingClientRect(), room = well.getBoundingClientRect();
+      menu.style.left = `${box.left + box.width / 2 - room.left}px`;
+      menu.hidden = false;
+      aspect.setAttribute('aria-expanded', 'true');
+      (menu.querySelector('.on') ?? menu.firstChild).focus({ preventScroll: true });
+    };
+    document.addEventListener('pointerdown', (e) => { if (!menu.hidden && !e.target.closest('.amenu, .aspectbtn')) closeMenu(); });
+    menu.addEventListener('keydown', (e) => {
+      const by = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+      if (!by) return;
+      const items = [...menu.children];
+      items[(items.indexOf(document.activeElement) + by + items.length) % items.length].focus({ preventScroll: true });
+      e.preventDefault();
+    });
+    window.editorKeys.bind('escape', () => {
+      if (menu.hidden) return false;
+      closeMenu();
+    });
+
+    // Levelling keeps the frame inside the turned picture, shrinking the frame from where it was when the change began, so moving back
+    // gives the frame back.
+    let base = null;
+    function level(angle) {
+      const t = tab(), g = t.edit.geometry, [w, h] = sizes(t);
+      base ??= g.crop;
+      frame.classList.add('leveling');
+      live({ ...g, angle, crop: geo.fitRatio(geo.shrinkInside(base, angle, w, h), geo.ratioOf(g, w, h), angle, w, h) });
+    }
+    const slider = window.editorSliders.create({
+      label: 'Straighten', min: -45, max: 45, step: 0.1, decimals: 1, unit: '°',
+      get: () => tab()?.edit.geometry.angle ?? 0,
+      set: level,
+      done: () => { base = null; frame.classList.remove('leveling'); if (tab()) commit(tab().edit.geometry, keyed('angle')); },
+    });
+    const levelBar = el('div', 'zmenu straighten');
+    levelBar.hidden = true;
+    levelBar.append(slider.el);
+    const straighten = el('button', 'pillbtn', 'Straighten');
+    straighten.type = 'button';
+    straighten.title = 'Straighten';
+    straighten.setAttribute('aria-expanded', 'false');
+    let levelOpen = false;
+    function showLevel(on) {
+      levelOpen = on;
+      levelBar.hidden = !on;
+      straighten.classList.toggle('on', on);
+      straighten.setAttribute('aria-expanded', String(on));
+      window.editorView.reserve(on ? LEVEL_ROOM : BAR_ROOM);
+    }
+    straighten.onclick = () => { closeMenu(); if (levelOpen) slider.flush(); showLevel(!levelOpen); };
+    well.append(menu, levelBar);
 
     function paint() {
       const t = tab();
       if (!t) return;
       const g = t.edit.geometry;
-      for (const chip of chips.children) {
-        const on = chip.dataset.aspect === g.aspect;
-        chip.classList.toggle('on', on);
-        chip.setAttribute('aria-checked', String(on));
+      for (const item of menu.children) {
+        const on = item.dataset.aspect === g.aspect;
+        item.classList.toggle('on', on);
+        item.setAttribute('aria-checked', String(on));
       }
+      aspectName.textContent = ASPECTS.find(([id]) => id === g.aspect)[1];
       orient.disabled = g.aspect === 'free' || g.aspect === '1:1';
       orient.innerHTML = icon(g.portrait ? 'portrait' : 'landscape');
-      scale.style.transform = `translateX(${-(g.angle + 45) * PX_PER_DEGREE}px)`;
-      const shown = `${g.angle > 0 ? '+' : g.angle < 0 ? '−' : ''}${Math.abs(g.angle).toFixed(1)}°`;
-      angleText.textContent = shown;
-      ruler.setAttribute('aria-valuenow', String(g.angle));
-      ruler.setAttribute('aria-valuetext', shown);
+      straighten.classList.toggle('moved', g.angle !== 0);
+      slider.paint();
     }
 
     window.editorView.onDraw((next) => {
@@ -95,8 +146,9 @@
       if (tab() === picture) commit(next, keyed('crop'));
     }
 
-    // Finishes whatever is under way, a drag or a glide, before something else changes the picture.
+    // Finishes whatever is under way, a drag, a glide or a slider moved with the keys, before something else changes the picture.
     function settle() {
+      slider.flush();
       endDrag?.();
       settleGlide();
     }
@@ -185,36 +237,12 @@
       glideTo({ ...aim, crop: next }, WHEEL_MS, arrive);
     });
 
-    // Levelling keeps the frame inside the turned picture, shrinking the frame from where it was when the drag began, so dragging back
-    // gives the frame back.
-    function level(angle, base) {
-      const t = tab(), g = t.edit.geometry, [w, h] = sizes(t);
-      live({ ...g, angle, crop: geo.fitRatio(geo.shrinkInside(base, angle, w, h), geo.ratioOf(g, w, h), angle, w, h) });
-    }
-
-    ruler.addEventListener('pointerdown', (e) => {
-      const t = tab();
-      if (!t || e.button !== 0) return;
-      settle();
-      const from = t.edit.geometry.angle, base = t.edit.geometry.crop;
-      frame.classList.add('leveling');
-      drag(ruler, e, (m) => level(Math.round(Math.min(45, Math.max(-45, from - (m.clientX - e.clientX) / PX_PER_DEGREE)) * 10) / 10, base), (same) => {
-        frame.classList.remove('leveling');
-        if (same) commit(tab().edit.geometry, keyed('angle'));
-      });
-    });
-    ruler.addEventListener('dblclick', () => {
-      const t = tab();
-      if (!t) return;
-      level(0, t.edit.geometry.crop);
-      commit(t.edit.geometry, keyed('angle'));
-    });
-
     return {
-      controls: [aspectLabel, chips, levelLabel, ruler],
+      controls: { aspect, orient, straighten },
       paint,
       settle,
-      begin() { session++; entry = tab()?.edit.geometry ?? null; },
+      begin() { session++; entry = tab()?.edit.geometry ?? null; window.editorView.reserve(levelOpen ? LEVEL_ROOM : BAR_ROOM); },
+      end() { closeMenu(); levelBar.hidden = true; levelOpen = false; straighten.classList.remove('on'); straighten.setAttribute('aria-expanded', 'false'); },
       cancel() { settle(); if (entry && tab()) commit(entry, null); },
       // Leaving the tool with the whole picture kept and no level drops the aspect, so choosing one alone is not a change.
       apply() {

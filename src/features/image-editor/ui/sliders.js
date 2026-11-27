@@ -5,18 +5,21 @@
 (() => {
   const { el } = window.pomeloUi;
   const KEY_PAUSE_MS = 400;
+  // The thumb stays this far inside the track at either end, so its ring and its growth on hover are not cut off by the section.
+  const INSET = 9;
   const clamp = (v, low, high) => Math.min(Math.max(v, low), high);
 
   // A number with a plus or the true minus sign, and zero as 0 however many decimals are shown.
-  function signed(v, decimals = 0) {
+  function signed(v, decimals = 0, unit = '') {
     const text = Math.abs(v).toFixed(decimals);
-    return Number(text) === 0 ? text : `${v > 0 ? '+' : '−'}${text}`;
+    return Number(text) === 0 ? `${text}${unit}` : `${v > 0 ? '+' : '−'}${text}${unit}`;
   }
+  const along = (share) => `calc(${share} * (100% - ${2 * INSET}px) + ${INSET}px)`;
 
   // label, min, max, step, neutral: what it controls. get(): the value now. set(v): show a new value. done(): the change is over.
-  // rail: a CSS gradient for the track instead of the accent fill. decimals: digits shown after the point.
+  // rail: a CSS gradient for the track instead of the accent fill. decimals: digits shown after the point. unit: written after the value.
   // Returns { el, paint, flush }: paint() shows get() again, flush() ends a change a key press has started and `done` has not run for.
-  function create({ label, min, max, step, neutral = 0, rail, decimals = 0, get, set, done }) {
+  function create({ label, min, max, step, neutral = 0, rail, decimals = 0, unit = '', get, set, done }) {
     const row = el('div', 'srow');
     const text = el('label', '', label);
     const value = el('span', 'val');
@@ -34,13 +37,13 @@
     row.append(text, value, track);
     let pause = 0;
 
-    const show = (v) => signed(v, decimals);
+    const show = (v) => signed(v, decimals, unit);
     function paint() {
       const v = get(), span = max - min, at = (v - min) / span, zero = (neutral - min) / span;
-      knob.style.left = `${at * 100}%`;
-      notch.style.left = `${zero * 100}%`;
-      fill.style.left = `${Math.min(at, zero) * 100}%`;
-      fill.style.width = `${Math.abs(at - zero) * 100}%`;
+      knob.style.left = along(at);
+      notch.style.left = along(zero);
+      fill.style.left = along(Math.min(at, zero));
+      fill.style.width = `calc(${Math.abs(at - zero)} * (100% - ${2 * INSET}px))`;
       value.textContent = show(v);
       row.classList.toggle('moved', v !== neutral);
       track.setAttribute('aria-valuenow', String(v));
@@ -58,7 +61,7 @@
       done();
     }
 
-    const fromX = (x) => { const box = track.getBoundingClientRect(); return min + clamp((x - box.left) / box.width, 0, 1) * (max - min); };
+    const fromX = (x) => { const box = track.getBoundingClientRect(); return min + clamp((x - box.left - INSET) / (box.width - 2 * INSET), 0, 1) * (max - min); };
     track.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
       flush();

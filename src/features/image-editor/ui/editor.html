@@ -26,18 +26,19 @@
         </div>
         <div class="gpu" id="gpu" hidden><span id="gpuicon"></span><b>Can't show this image</b><span>Editing needs graphics acceleration, which is off on this PC.</span></div>
         <div class="pill" id="pill">
-          <button class="ib" id="compare" type="button" disabled></button><i class="sep"></i>
+          <button class="ib" id="cropbtn" type="button"></button><button class="ib" id="compare" type="button" disabled></button><i class="sep"></i>
           <button class="ib" id="zoomout" type="button"></button><button class="zv" id="zoomval" type="button" title="Zoom" aria-haspopup="menu"></button><button class="ib" id="zoomin" type="button"></button><i class="sep"></i>
           <button class="ib" id="fullscreen" type="button"></button>
         </div>
         <div class="zmenu" id="zmenu" role="menu" aria-label="Zoom" hidden></div>
+        <div class="pill cropbar away" id="cropbar" role="toolbar" aria-label="Crop" inert></div>
       </main>
       <aside class="panel" id="panel"><div class="inner" id="inner">
         <div class="seg3" id="tools" role="radiogroup" aria-label="Tool">
-          <button type="button" role="radio" aria-checked="true" data-tool="adjust">Adjust</button><button type="button" role="radio" aria-checked="false" data-tool="presets">Presets</button><button type="button" role="radio" aria-checked="false" data-tool="crop">Crop</button>
+          <button type="button" role="radio" aria-checked="true" data-tool="adjust">Adjust</button><button type="button" role="radio" aria-checked="false" data-tool="presets">Presets</button>
         </div>
         <div class="views" id="views">
-          <div class="view" id="view-adjust"></div><div class="view" id="view-presets" hidden></div><div class="view" id="view-crop" hidden></div>
+          <div class="view" id="view-adjust"></div><div class="view" id="view-presets" hidden></div>
         </div>
       </div></aside>
     </div>

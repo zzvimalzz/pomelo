@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 /* The editor's own rules: the picture in its rounded well, the pill and zoom menu, the panel. The shared window rules are in ui-shared/window.css. */
-:root { --check-a: rgba(255, 255, 255, .55); --check-b: rgba(0, 0, 0, .06); --slider-track: rgba(0, 0, 0, .12); --thumb-ring: rgba(0, 0, 0, .18); }
-@media (prefers-color-scheme: dark) { :root { --check-a: rgba(255, 255, 255, .04); --check-b: rgba(255, 255, 255, .08); --slider-track: rgba(255, 255, 255, .16); --thumb-ring: rgba(0, 0, 0, .5); } }
+:root { --check-a: rgba(255, 255, 255, .55); --check-b: rgba(0, 0, 0, .06); --slider-track: rgba(0, 0, 0, .12); --thumb-ring: rgba(0, 0, 0, .18); --go: var(--accent-2); }
+@media (prefers-color-scheme: dark) { :root { --check-a: rgba(255, 255, 255, .04); --check-b: rgba(255, 255, 255, .08); --slider-track: rgba(255, 255, 255, .16); --thumb-ring: rgba(0, 0, 0, .5); --go: color-mix(in srgb, var(--accent-2) 80%, #fff); } }
 
 .imgname { min-width: 0; padding: 3px 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -26,12 +26,22 @@
   transform: translateX(-50%); transition: opacity .18s, transform .18s var(--out); }
 .pill.away { opacity: 0; transform: translate(-50%, 8px); pointer-events: none; }
 .pill .sep { width: 1px; height: 20px; margin: 0 5px; background: var(--line); }
-.pill .ib:hover, .zv:hover { background: var(--tab-hover); }
+.pill .ib:hover, .zv:hover, .pillbtn:hover:not(:disabled) { background: var(--tab-hover); }
+.pillbtn { display: flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: none; font: 600 12.5px var(--font); color: var(--txt); white-space: nowrap; cursor: pointer; }
+.pillbtn .i { width: 12px; height: 12px; color: var(--muted); }
+.pillbtn.on { background: var(--accent-soft); color: var(--accent-ink); }
+.pillbtn:disabled { opacity: .4; cursor: default; }
+.pillbtn.moved::after { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.quad { display: flex; gap: 2px; }
+.pill .ib.go, .pill .ib.go:hover { background: var(--go); color: #fff; }
+.pill .ib.go:hover { filter: brightness(1.1); }
 .zv { min-width: 54px; height: 30px; padding: 0 8px; border: 0; border-radius: 8px; background: none; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--txt); cursor: pointer; }
 .zv.on { background: var(--accent-soft); color: var(--accent-ink); }
 
 .zmenu { position: absolute; left: 50%; bottom: 62px; z-index: 5; min-width: 200px; padding: 6px; border-radius: 13px; background: #fff; border: 1px solid var(--bar-line);
   box-shadow: inset 0 1px 0 var(--bar-hi), 0 1px 2px rgba(0, 0, 0, .08), 0 12px 32px rgba(0, 0, 0, .16); transform: translateX(-50%); transform-origin: 50% 100%; animation: zmenu-in .24s var(--out); }
+.amenu { z-index: 6; }
+.zmenu.straighten { width: 320px; box-sizing: border-box; padding: 2px 16px 6px; }
 @keyframes zmenu-in { from { opacity: 0; transform: translate(-50%, 8px) scale(.96); } }
 :is(.zmenu, .mmenu) .mi { width: 100%; display: flex; align-items: center; height: 34px; padding: 0 10px; border: 0; border-radius: 8px; background: none; text-align: left; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--txt); cursor: pointer; }
 :is(.zmenu, .mmenu) .mi:hover:not(:disabled) { background: var(--hover); }
@@ -56,17 +66,7 @@ body.busy, body.busy * { cursor: progress; }
 .pill .ib.held { background: var(--accent-soft); color: var(--accent-ink); }
 .well:has(> .veil) .pill { opacity: 0; pointer-events: none; }
 
-.glabel { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 8px; color: var(--muted); font-size: 12.5px; font-weight: 600; }
-.glabel:first-child { margin-top: 6px; }
-.glabel span { color: var(--txt); font-variant-numeric: tabular-nums; }
-.tools4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.tools4 button { height: 40px; display: grid; place-items: center; border: 1px solid var(--field-line); border-radius: 10px; background: var(--field); color: var(--txt); cursor: pointer; }
-.tools4 button:hover { background: var(--tab-hover); }
-.tools4 button:focus-visible, .chip:focus-visible, .textbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.tools4 .i { width: 18px; height: 18px; }
-.textbtn { margin-top: 18px; height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: none; color: var(--accent-ink); font: 600 12.5px var(--font); cursor: pointer; }
-.textbtn:hover:not(:disabled) { background: var(--accent-soft); }
-.textbtn:disabled { opacity: .4; cursor: default; }
+.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .card .field { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-top: 12px; }
 .card .field[hidden] { display: none; }
@@ -79,22 +79,6 @@ body.busy, body.busy * { cursor: progress; }
 .level { min-width: 44px; text-align: right; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .card .level { text-align: left; }
 
-.view .chips { grid-column: auto; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.view .chip { background: var(--hover); color: var(--muted); }
-.view .chip:hover:not(.on) { background: var(--tab-hover); color: var(--txt); }
-.view .chip.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 700; box-shadow: inset 0 0 0 1px var(--accent-ink); }
-.chip:focus-visible, .orient:focus-visible, .ruler:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.orient { width: 24px; height: 24px; margin: -4px 0; display: grid; place-items: center; border: 0; border-radius: 8px; background: var(--hover); color: var(--muted); cursor: pointer; }
-.orient:hover:not(:disabled) { background: var(--tab-hover); color: var(--txt); }
-.orient:disabled { opacity: .4; cursor: default; }
-.orient .i { width: 14px; height: 14px; }
-.ruler { position: relative; width: 288px; height: 44px; overflow: hidden; border-radius: 10px; background: var(--field); box-shadow: inset 0 0 0 1px var(--field-line); cursor: ew-resize; touch-action: none;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent); }
-.ruler svg { position: absolute; left: 0; top: 0; }
-.ruler line { stroke: var(--faint); stroke-width: 1; }
-.ruler line.long { stroke: var(--txt); opacity: .7; }
-.ruler line.zero { stroke: var(--txt); stroke-width: 1.5; }
-.ruler .needle { position: absolute; left: 50%; top: 6px; bottom: 6px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--accent); }
 
 .frame { position: absolute; z-index: 2; border: 1px solid rgba(255, 255, 255, .95); box-shadow: 0 0 0 1px rgba(0, 0, 0, .25); opacity: 0; pointer-events: none; touch-action: none; transition: opacity .2s; }
 .frame.on { opacity: 1; pointer-events: auto; }
@@ -116,7 +100,7 @@ body.busy, body.busy * { cursor: progress; }
 .h.n::before, .h.s::before { left: 4px; top: 10px; width: 24px; height: 3px; } .h.e::before, .h.w::before { left: 10px; top: 4px; width: 3px; height: 24px; }
 .h.n::after, .h.s::after, .h.e::after, .h.w::after { display: none; }
 
-#panel { --rail: 320px; display: flex; justify-content: flex-end; transition: width .32s var(--out); }
+#panel { --rail: 320px; display: flex; justify-content: flex-end; transition: width .32s var(--out), opacity .2s; }
 #panel.still { transition: none; }
 #panel.off { opacity: .45; pointer-events: none; }
 #panel .inner { flex: none; padding: 2px 8px 8px; }
@@ -166,7 +150,8 @@ body.full .well { margin-top: 8px; }
 .track .knob { position: absolute; top: 3px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: #fff;
   box-shadow: 0 0 0 1px var(--thumb-ring), 0 1px 3px rgba(0, 0, 0, .25); transition: transform .12s var(--out), box-shadow .15s; }
 .track:hover .knob, .track.drag .knob { transform: scale(1.143); }
-.track:focus-visible .knob { box-shadow: 0 0 0 1px var(--thumb-ring), 0 0 0 4px var(--accent-soft), 0 0 0 5.5px var(--accent); }
+.track:focus-visible { outline: none; }
+.track:focus-visible .knob { transform: scale(1.143); }
 
 @media (prefers-reduced-motion: reduce) {
   .well, #panel, .pill, .zmenu, .stage.first, .mmenu, .views[data-turn] .view, body.full .titlerow, .frame, .frame .grid, .frame .fine, .chev, .secbody, .secbody > div, .sec.open .secbody > div, .track .knob { animation: none; transition: none; }

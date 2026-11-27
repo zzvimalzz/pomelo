@@ -34,9 +34,10 @@
     button.setAttribute('aria-label', text);
   }
 
-  const resetButton = el('button', 'textbtn', 'Reset');
+  const resetButton = el('button', 'pillbtn reset', 'Reset');
   resetButton.type = 'button';
   resetButton.title = 'Reset';
+  let cropping = false;
 
   const edited = (g) => ({ ...active.edit, geometry: { ...g, crop: geometry.tidy(g.crop) } });
   const crop = window.editorCrop.create({
@@ -87,7 +88,7 @@
   async function activate(tab) {
     settleEdits();
     active = tab;
-    if (tool === 'crop') crop.begin();
+    if (cropping) crop.begin();
     savedNote.classList.remove('on');
     refresh();
     await tab.loading;
@@ -155,17 +156,42 @@
   bind('compare', () => { if (compare.disabled) return false; view.setCompare(true); });
   window.addEventListener('keyup', (e) => { if (e.key === '\\') view.setCompare(false); });
 
-  const cropView = $('view-crop');
-  const four = el('div', 'tools4');
+  const cropButton = $('cropbtn');
+  fill(cropButton, 'crop', 'Crop', 'crop');
+  const four = el('div', 'quad');
   for (const [glyph, text, keyId, run] of [['rotl', 'Rotate left', 'rotateLeft', () => turn(-1)], ['rotr', 'Rotate right', 'rotateRight', () => turn(1)], ['fliph', 'Flip horizontal', null, () => flip('h')], ['flipv', 'Flip vertical', null, () => flip('v')]]) {
-    const button = el('button');
+    const button = el('button', 'ib');
     button.type = 'button';
     fill(button, glyph, text, keyId);
     button.onclick = run;
     four.append(button);
   }
   resetButton.onclick = () => { if (ready()) commit({ ...active.edit, geometry: geometry.neutral() }, null); };
-  cropView.append(...crop.controls, el('div', 'glabel', 'Rotate and flip'), four, resetButton);
+  const cancelButton = el('button', 'ib');
+  const doneButton = el('button', 'ib go');
+  for (const button of [cancelButton, doneButton]) button.type = 'button';
+  fill(cancelButton, 'close', 'Cancel', 'escape');
+  fill(doneButton, 'check', 'Done', 'apply');
+  const { aspect, orient, straighten } = crop.controls;
+  $('cropbar').append(aspect, orient, el('i', 'sep'), four, el('i', 'sep'), straighten, el('i', 'sep'), resetButton, el('i', 'sep'), cancelButton, doneButton);
+
+  function startCrop() {
+    if (cropping || !active?.texture) return;
+    cropping = true;
+    crop.begin();
+    view.setCropping(true);
+  }
+  function endCrop(keep) {
+    if (!cropping) return;
+    if (keep) crop.apply();
+    else crop.cancel();
+    cropping = false;
+    crop.end();
+    view.setCropping(false);
+  }
+  cropButton.onclick = startCrop;
+  cancelButton.onclick = () => endCrop(false);
+  doneButton.onclick = () => endCrop(true);
 
   // Saves the tab's picture over its file, or as a copy. The first save over a file asks once whether to replace it. Resolves true when
   // what was asked is done, false when it was not (the user said no, or the main process said why in the corner notice).
@@ -277,16 +303,14 @@
     e.preventDefault();
   });
 
-  const TOOLS = ['adjust', 'presets', 'crop'];
+  const TOOLS = ['adjust', 'presets'];
   const tools = $('tools');
   const views = $('views');
   let tool = 'adjust';
   function setTool(next) {
+    endCrop(true);
     view.showPanel();
     if (next === tool) return;
-    if (tool === 'crop') crop.apply();
-    if (next === 'crop') crop.begin();
-    view.setCropping(next === 'crop');
     views.dataset.turn = TOOLS.indexOf(next) > TOOLS.indexOf(tool) ? 'next' : 'prev';
     tool = next;
     for (const button of tools.children) button.setAttribute('aria-checked', String(button.dataset.tool === tool));
@@ -295,14 +319,14 @@
   }
   tools.addEventListener('click', (e) => { const button = e.target.closest('button'); if (button) setTool(button.dataset.tool); });
   for (const id of TOOLS) bind(id, () => setTool(id));
+  bind('crop', () => (cropping ? false : startCrop()));
   bind('escape', () => {
-    if (tool !== 'crop') return false;
-    crop.cancel();
-    setTool('adjust');
+    if (!cropping) return false;
+    endCrop(false);
   });
   bind('apply', (e) => {
-    if (tool !== 'crop' || e.target.closest?.('button')) return false;
-    setTool('adjust');
+    if (!cropping || e.target.closest?.('button')) return false;
+    endCrop(true);
   });
 
   view.setPanel(state.view.panel !== false, { remember: false, still: true });
