@@ -2486,11 +2486,16 @@ app.whenReady().then(async () => {
     check("with nothing to convert to, Convert to… shows the wheel's explanation in the corner and no card", (await card(none)).title === '' && notices.length === 1 && notices[0].title === 'No converter available for .pdf files', JSON.stringify([notices, await card(none)]));
     await closeAndWait(none);
 
+    notices.length = 0;
     const real = await openAndWait(fresh(), plain);
-    await startConvert(real);
-    const offered = (await card(real)).buttons.split(',').slice(0, -1);
-    check('the card offers what the wheel offers for the same file under the engines installed here, in the same order', JSON.stringify(offered) === JSON.stringify(targetsFor([plain]).map((t) => `${t.label}${t.sub}`)), JSON.stringify([offered, targetsFor([plain])]));
+    const expected = targetsFor([plain]).map((t) => `${t.label}${t.sub}`);
+    await openMore(real);
+    await pickMore(real, 'Convert to');
+    await until('the card or the notice', async () => (await card(real)).title !== '' || notices.length > 0, 5000);
+    const offered = (await card(real)).buttons.split(',').filter((text) => text && text !== 'Cancel');
+    check('the card offers what the wheel offers for the same file under the engines installed here, in the same order, or its explanation when there are none', JSON.stringify(offered) === JSON.stringify(expected) && notices.length === (expected.length ? 0 : 1), JSON.stringify([offered, expected, notices]));
     await closeAndWait(real);
+    notices.length = 0;
   }
 
   {
