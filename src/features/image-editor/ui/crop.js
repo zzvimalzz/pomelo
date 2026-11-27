@@ -1,14 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // The Crop tool: the frame in the middle of the well (drag its handles to resize it, drag anywhere else to move the picture under it,
-// turn the wheel with Ctrl held to zoom it), the aspect ratio chips, the Straighten ruler. The frame is kept in the picture's edit as
+// turn the wheel with Ctrl held to zoom it), and the dock under the picture: the Straighten ruler, the aspect ratio strip that takes its
+// place, and the aspect button. The frame is kept in the picture's edit as
 // fractions of the turned picture, so the page shows, saves and undoes it like any other change. While a drag or a glide runs, the frame
 // is changed with `live`, which is not in the history; the change is committed when it ends. A classic script that adds
 // window.editorCrop.
 (() => {
   const geo = window.editorGeometry;
   const { el, icon } = window.pomeloUi;
-  const ASPECTS = [['free', 'Free'], ['original', 'Original'], ['1:1', 'Square'], ['4:5', '4:5'], ['3:2', '3:2'], ['16:9', '16:9']];
-  const PX_PER_DEGREE = 8;
+  // id and portrait are what the edit keeps; the label is the ratio as it reads, width first. Free and Original show an icon, the rest a
+  // rectangle of their shape.
+  const TILES = [
+    ['free', null, 'Free'], ['original', null, 'Original'], ['1:1', null, 'Square'],
+    ['16:9', true, '9:16'], ['16:9', false, '16:9'], ['4:5', true, '4:5'], ['4:5', false, '5:4'], ['4:3', true, '3:4'], ['4:3', false, '4:3'],
+    ['3:2', true, '2:3'], ['3:2', false, '3:2'], ['7:5', true, '5:7'], ['7:5', false, '7:5'], ['2:1', true, '1:2'], ['2:1', false, '2:1'],
+  ];
+  const isTile = (tile, g) => tile[0] === g.aspect && (tile[1] === null || tile[1] === g.portrait);
+  function glyphOf([id, , label]) {
+    const glyph = el('span', 'glyph');
+    if (id === 'free' || id === 'original') { glyph.innerHTML = icon(id === 'free' ? 'cropfree' : 'image'); return glyph; }
+    const [w, h] = id === '1:1' ? [1, 1] : label.split(':').map(Number), scale = 18 / Math.max(w, h);
+    const shape = el('i', 'shape');
+    shape.style.width = `${w * scale}px`;
+    shape.style.height = `${h * scale}px`;
+    glyph.append(shape);
+    return glyph;
+  }
   const WHEEL_MS = 160;
   // Starts at full speed, so a wheel that keeps turning does not stutter as each turn takes over from the last.
   const arrive = (t) => 1 - (1 - t) ** 3;
@@ -29,55 +46,76 @@
     // A key per visit to the tool, so the steps of one visit never fold into those of an earlier one.
     const keyed = (name) => `${name}${session}`;
 
-    const orient = el('button', 'orient');
-    orient.type = 'button';
-    orient.title = 'Portrait or landscape';
-    orient.setAttribute('aria-label', 'Portrait or landscape');
-    const aspectLabel = el('div', 'glabel', 'Aspect ratio');
-    aspectLabel.append(orient);
-    const chips = el('div', 'chips three');
-    chips.setAttribute('role', 'radiogroup');
-    chips.setAttribute('aria-label', 'Aspect ratio');
-    for (const [id, name] of ASPECTS) {
-      const chip = el('button', 'chip', name);
-      chip.type = 'button';
-      chip.setAttribute('role', 'radio');
-      chip.dataset.aspect = id;
-      chip.onclick = () => chooseAspect(id);
-      chips.append(chip);
+    const aspect = el('button', 'dockbtn');
+    aspect.type = 'button';
+    aspect.title = 'Aspect ratio';
+    aspect.setAttribute('aria-expanded', 'false');
+
+    const strip = el('div', 'aspects');
+    strip.setAttribute('role', 'radiogroup');
+    strip.setAttribute('aria-label', 'Aspect ratio');
+    strip.hidden = true;
+    for (const tile of TILES) {
+      const button = el('button', 'tile');
+      button.type = 'button';
+      button.setAttribute('role', 'radio');
+      button.append(glyphOf(tile), el('span', '', tile[2]));
+      button.onclick = () => { chooseAspect(tile[0], tile[1] ?? undefined); showStrip(false); };
+      strip.append(button);
     }
-    const angleText = el('span', '', '0.0°');
-    const levelLabel = el('div', 'glabel', 'Straighten');
-    levelLabel.append(angleText);
-    const ruler = el('div', 'ruler');
-    ruler.title = 'Straighten';
-    ruler.setAttribute('role', 'slider');
-    ruler.setAttribute('aria-label', 'Straighten');
-    ruler.setAttribute('aria-valuemin', '-45');
-    ruler.setAttribute('aria-valuemax', '45');
-    const ticks = Array.from({ length: 91 }, (_, n) => {
-      const degree = n - 45, x = 144 + n * PX_PER_DEGREE, long = degree % 5 === 0;
-      return `<line class="${degree === 0 ? 'zero' : long ? 'long' : ''}" x1="${x}" x2="${x}" y1="${long ? 12 : 17}" y2="${long ? 32 : 27}"/>`;
-    }).join('');
-    ruler.innerHTML = `<svg width="${90 * PX_PER_DEGREE + 288}" height="44" viewBox="0 0 ${90 * PX_PER_DEGREE + 288} 44" aria-hidden="true">${ticks}</svg><i class="needle"></i>`;
-    const scale = ruler.firstChild;
+    function showStrip(on) {
+      if (!on && strip.contains(document.activeElement)) aspect.focus({ preventScroll: true });
+      strip.hidden = !on;
+      slider.el.hidden = on;
+      aspect.classList.toggle('on', on);
+      aspect.setAttribute('aria-expanded', String(on));
+      const chosen = strip.querySelector('.on');
+      if (on && chosen) strip.scrollLeft = chosen.offsetLeft - (strip.clientWidth - chosen.offsetWidth) / 2;
+      if (on) (chosen ?? strip.firstChild).focus({ preventScroll: true });
+    }
+    aspect.onclick = () => showStrip(strip.hidden);
+    strip.addEventListener('keydown', (e) => {
+      const by = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+      if (!by) return;
+      const tiles = [...strip.children];
+      tiles[Math.min(Math.max(tiles.indexOf(document.activeElement) + by, 0), tiles.length - 1)].focus({ preventScroll: true });
+      e.preventDefault();
+    });
+    window.editorKeys.bind('escape', () => {
+      if (strip.hidden) return false;
+      showStrip(false);
+    });
+
+    // Levelling keeps the frame inside the turned picture, shrinking the frame from where it was when the change began, so moving back
+    // gives the frame back.
+    let base = null;
+    function level(angle) {
+      const t = tab(), g = t.edit.geometry, [w, h] = sizes(t);
+      base ??= g.crop;
+      frame.classList.add('leveling');
+      live({ ...g, angle, crop: geo.fitRatio(geo.shrinkInside(base, angle, w, h), geo.ratioOf(g, w, h), angle, w, h) });
+    }
+    const slider = window.editorSliders.create({
+      label: 'Straighten', min: -45, max: 45, step: 0.1, decimals: 1, unit: '°', ticks: { count: 90, major: 5 },
+      get: () => tab()?.edit.geometry.angle ?? 0,
+      set: level,
+      done: () => { base = null; frame.classList.remove('leveling'); if (tab()) commit(tab().edit.geometry, keyed('angle')); },
+    });
+    const main = el('div', 'dockmain');
+    main.append(slider.el, strip);
 
     function paint() {
       const t = tab();
       if (!t) return;
       const g = t.edit.geometry;
-      for (const chip of chips.children) {
-        const on = chip.dataset.aspect === g.aspect;
-        chip.classList.toggle('on', on);
-        chip.setAttribute('aria-checked', String(on));
-      }
-      orient.disabled = g.aspect === 'free' || g.aspect === '1:1';
-      orient.innerHTML = icon(g.portrait ? 'portrait' : 'landscape');
-      scale.style.transform = `translateX(${-(g.angle + 45) * PX_PER_DEGREE}px)`;
-      const shown = `${g.angle > 0 ? '+' : g.angle < 0 ? '−' : ''}${Math.abs(g.angle).toFixed(1)}°`;
-      angleText.textContent = shown;
-      ruler.setAttribute('aria-valuenow', String(g.angle));
-      ruler.setAttribute('aria-valuetext', shown);
+      [...strip.children].forEach((button, n) => {
+        const on = isTile(TILES[n], g);
+        button.classList.toggle('on', on);
+        button.setAttribute('aria-checked', String(on));
+      });
+      const current = TILES.find((tile) => isTile(tile, g));
+      aspect.replaceChildren(glyphOf(current), el('span', '', current[2]));
+      slider.paint();
     }
 
     window.editorView.onDraw((next) => {
@@ -95,8 +133,9 @@
       if (tab() === picture) commit(next, keyed('crop'));
     }
 
-    // Finishes whatever is under way, a drag or a glide, before something else changes the picture.
+    // Finishes whatever is under way, a drag, a glide or a slider moved with the keys, before something else changes the picture.
     function settle() {
+      slider.flush();
       endDrag?.();
       settleGlide();
     }
@@ -137,15 +176,14 @@
       if (!t) return;
       settle();
       const g = t.edit.geometry, [w, h] = sizes(t);
-      const turned = portrait ?? (aspect === '4:5' || (aspect === 'original' && h > w));
+      const turned = portrait ?? (aspect === 'original' && h > w);
       const next = { ...g, aspect, portrait: turned };
       const base = aspect === 'original' ? geo.shrinkInside({ x: 0, y: 0, w: 1, h: 1 }, g.angle, w, h) : g.crop;
       glideTo({ ...next, crop: aspect === 'free' ? g.crop : geo.fitRatio(base, geo.ratioOf(next, w, h), g.angle, w, h) });
     }
-    orient.onclick = () => { const g = tab()?.edit.geometry; if (g) chooseAspect(g.aspect, !g.portrait); };
 
     well.addEventListener('pointerdown', (e) => {
-      if (!layout.on || !tab() || e.button !== 0 || e.target.closest('.pill, .zmenu, .veil, .gpu')) return;
+      if (!layout.on || !tab() || e.button !== 0 || e.target.closest('.pill, .cropui, .veil, .gpu')) return;
       e.preventDefault();
       settle();
       const handle = e.target.dataset.h;
@@ -185,36 +223,13 @@
       glideTo({ ...aim, crop: next }, WHEEL_MS, arrive);
     });
 
-    // Levelling keeps the frame inside the turned picture, shrinking the frame from where it was when the drag began, so dragging back
-    // gives the frame back.
-    function level(angle, base) {
-      const t = tab(), g = t.edit.geometry, [w, h] = sizes(t);
-      live({ ...g, angle, crop: geo.fitRatio(geo.shrinkInside(base, angle, w, h), geo.ratioOf(g, w, h), angle, w, h) });
-    }
-
-    ruler.addEventListener('pointerdown', (e) => {
-      const t = tab();
-      if (!t || e.button !== 0) return;
-      settle();
-      const from = t.edit.geometry.angle, base = t.edit.geometry.crop;
-      frame.classList.add('leveling');
-      drag(ruler, e, (m) => level(Math.round(Math.min(45, Math.max(-45, from - (m.clientX - e.clientX) / PX_PER_DEGREE)) * 10) / 10, base), (same) => {
-        frame.classList.remove('leveling');
-        if (same) commit(tab().edit.geometry, keyed('angle'));
-      });
-    });
-    ruler.addEventListener('dblclick', () => {
-      const t = tab();
-      if (!t) return;
-      level(0, t.edit.geometry.crop);
-      commit(t.edit.geometry, keyed('angle'));
-    });
-
     return {
-      controls: [aspectLabel, chips, levelLabel, ruler],
+      main,
+      aspect,
       paint,
       settle,
       begin() { session++; entry = tab()?.edit.geometry ?? null; },
+      end() { showStrip(false); },
       cancel() { settle(); if (entry && tab()) commit(entry, null); },
       // Leaving the tool with the whole picture kept and no level drops the aspect, so choosing one alone is not a change.
       apply() {

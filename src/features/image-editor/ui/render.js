@@ -5,6 +5,7 @@
   const { vertex, fragment } = window.editorShaders;
   const geometryOf = window.editorGeometry;
   const MIPMAP_BELOW = 0.5;
+  const ADJUSTMENTS = Object.keys(window.editorModel.RANGES);
 
   function program(gl) {
     const build = (type, source) => {
@@ -27,7 +28,7 @@
     const gl = canvas.getContext('webgl2', { premultipliedAlpha: false, alpha: true, antialias: false, preserveDrawingBuffer: false });
     if (!gl) return null;
     const prog = program(gl);
-    const uniform = Object.fromEntries(['uSource', 'uCanvas', 'uOrigin', 'uOut', 'uZoom', 'uGeom', 'uFlip', 'uVeil'].map((name) => [name, gl.getUniformLocation(prog, name)]));
+    const uniform = Object.fromEntries(['uSource', 'uCanvas', 'uOrigin', 'uOut', 'uZoom', 'uGeom', 'uFlip', 'uVeil', 'uOn', 'uGain', 'uTone', 'uContrast', 'uColour'].map((name) => [name, gl.getUniformLocation(prog, name)]));
     const maxSide = gl.getParameter(gl.MAX_TEXTURE_SIZE);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
@@ -47,16 +48,32 @@
       return texture;
     }
 
-    // picture: { texture, width, height }; geometry: its turn, flips, level and crop; zoom: canvas pixels for each picture pixel; x, y: the
-    // shown picture's top-left corner on the canvas; flip: draw the rows from the bottom, for reading the pixels back; veil: how much of
-    // what the crop leaves out is drawn round it, darkened (0 to 1). A null picture clears the canvas.
-    function draw(picture, geometry, zoom, x, y, flip = false, veil = 0) {
-      gl.viewport(0, 0, canvas.width, canvas.height);
+    // The adjustments of an edit as the shader wants them. White balance is scaled to keep the luminance, so Temperature and Tint change
+    // the colour and not the brightness.
+    function adjustments(edit) {
+      const t = edit.temperature / 100, n = edit.tint / 100;
+      const balance = [1 + 0.3 * t, 1 - 0.25 * n, 1 - 0.3 * t];
+      const scale = 2 ** edit.exposure / (0.2126 * balance[0] + 0.7152 * balance[1] + 0.0722 * balance[2]);
+      const black = -edit.blacks / 100 * 0.15;
+      gl.uniform1f(uniform.uOn, ADJUSTMENTS.some((key) => edit[key] !== 0) ? 1 : 0);
+      gl.uniform3f(uniform.uGain, ...balance.map((v) => v * scale));
+      gl.uniform4f(uniform.uTone, edit.highlights / 100 * 0.35, edit.shadows / 100 * 0.35, black, 1 - edit.whites / 100 * 0.15);
+      gl.uniform1f(uniform.uContrast, edit.contrast / 100);
+      gl.uniform2f(uniform.uColour, edit.vibrance / 100, 1 + edit.saturation / 100);
+    }
+
+    // picture: { texture, width, height }; edit: the picture's turn, flips, level and crop (its geometry) and its adjustments; zoom: target
+    // pixels for each picture pixel; x, y: the shown picture's top-left corner on the target; flip: draw the rows from the bottom, for
+    // reading the pixels back; veil: how much of what the crop leaves out is drawn round it, darkened (0 to 1); size: the target, the
+    // canvas unless given. A null picture clears the canvas.
+    function draw(picture, { edit, zoom, x, y, flip = false, veil = 0, size = [canvas.width, canvas.height] }) {
+      gl.viewport(0, 0, size[0], size[1]);
       gl.clear(gl.COLOR_BUFFER_BIT);
       if (!picture) return;
+      const { geometry } = edit;
       gl.bindTexture(gl.TEXTURE_2D, picture.texture);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, zoom < MIPMAP_BELOW ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
-      gl.uniform2f(uniform.uCanvas, canvas.width, canvas.height);
+      gl.uniform2f(uniform.uCanvas, size[0], size[1]);
       gl.uniform2f(uniform.uOrigin, x, y);
       // In the crop view the frame is not rounded to whole pixels: at a large zoom it would move in steps.
       gl.uniform2f(uniform.uOut, ...(veil ? geometryOf.cutSize : geometryOf.outputSize)(geometry, picture.width, picture.height));
@@ -64,6 +81,7 @@
       gl.uniformMatrix3fv(uniform.uGeom, false, geometryOf.matrix(geometry, picture.width, picture.height));
       gl.uniform1f(uniform.uFlip, flip ? 1 : 0);
       gl.uniform1f(uniform.uVeil, veil);
+      adjustments(edit);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
 
@@ -73,19 +91,40 @@
       return pixels;
     }
 
+    // The picture as the edit shows it, at most `longest` pixels along its long side, as { width, height, rgba } with the top row first.
+    // It is drawn off screen, so the canvas is left as it was.
+    function sample(picture, edit, longest) {
+      const [w, h] = geometryOf.outputSize(edit.geometry, picture.width, picture.height);
+      const k = Math.min(1, longest / Math.max(w, h));
+      const width = Math.max(1, Math.round(w * k)), height = Math.max(1, Math.round(h * k));
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      const target = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      draw(picture, { edit, zoom: width / w, x: 0, y: 0, flip: true, size: [width, height] });
+      const rgba = read(width, height);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(target);
+      gl.deleteTexture(texture);
+      return { width, height, rgba };
+    }
+
     const release = () => gl.getExtension('WEBGL_lose_context')?.loseContext();
-    return { fits: (width, height) => width <= maxSide && height <= maxSide, upload, drop: (texture) => gl.deleteTexture(texture), draw, read, release };
+    return { fits: (width, height) => width <= maxSide && height <= maxSide, upload, drop: (texture) => gl.deleteTexture(texture), draw, read, sample, release };
   }
 
   // picture: { width, height, pixels }. Returns the picture as it is shown, as { width, height, rgba } with the top row first. The
   // pixels are read in the task that draws them, because the browser may clear a canvas after it has been shown.
-  function exportPixels(picture, geometry) {
-    const [width, height] = geometryOf.outputSize(geometry, picture.width, picture.height);
+  function exportPixels(picture, edit) {
+    const [width, height] = geometryOf.outputSize(edit.geometry, picture.width, picture.height);
     const renderer = create(new OffscreenCanvas(width, height));
     if (!renderer) throw new Error('no WebGL2');
     try {
       const texture = renderer.upload(picture.width, picture.height, picture.pixels);
-      renderer.draw({ texture, width: picture.width, height: picture.height }, geometry, 1, 0, 0, true);
+      renderer.draw({ texture, width: picture.width, height: picture.height }, { edit, zoom: 1, x: 0, y: 0, flip: true });
       return { width, height, rgba: renderer.read(width, height) };
     } finally {
       renderer.release();

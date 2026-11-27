@@ -74,6 +74,7 @@ expect('a frame dragged to a place that fits is let through as it is', g.limit(f
 console.log('aspect ratios');
 const ratio = (aspect, portrait = false, w = 4000, h = 3000) => g.ratioOf({ ...g.neutral(), aspect, portrait }, w, h);
 expect('free has no ratio, square is 1, and the others are wide or tall', ratio('free') === null && ratio('1:1') === 1 && ratio('1:1', true) === 1 && ratio('3:2') === 1.5 && near(ratio('3:2', true), 2 / 3) && near(ratio('16:9'), 16 / 9) && near(ratio('4:5', true), 0.8) && near(ratio('4:5'), 1.25));
+expect('the other shapes are wide, and tall when portrait is on', near(ratio('4:3'), 4 / 3) && near(ratio('4:3', true), 3 / 4) && near(ratio('7:5'), 1.4) && near(ratio('7:5', true), 5 / 7) && ratio('2:1') === 2 && ratio('2:1', true) === 0.5);
 expect('the original ratio is the turned picture\'s, and tall when portrait is on', near(ratio('original'), 4 / 3) && near(ratio('original', true), 3 / 4) && near(ratio('original', false, 3000, 4000), 4 / 3));
 const square = g.fitRatio(whole, 1, 0, 4000, 3000);
 expect('the largest square in a 4000 by 3000 picture is 3000 by 3000, centred', close(square, frame(0.125, 0, 0.75, 1)) && is(g.outputSize({ ...g.neutral(), crop: square }, 4000, 3000), [3000, 3000]));
