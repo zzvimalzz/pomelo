@@ -19,7 +19,8 @@
   // label, min, max, step, neutral: what it controls. get(): the value now. set(v): show a new value. done(): the change is over.
   // rail: a CSS gradient for the track instead of the accent fill. ticks: { count, major } draws a ruler of count steps with a longer mark
   // at every major one, and the value above it, in place of the label and the fill. decimals: digits shown after the point. unit: written after the value.
-  // Returns { el, paint, flush }: paint() shows get() again, flush() ends a change a key press has started and `done` has not run for.
+  // Returns { el, paint, flush, setRail }: paint() shows get() again, flush() ends a change a key press has started and `done` has not run
+  // for, setRail(gradient) changes the gradient of a track that has one.
   function create({ label, min, max, step, neutral = 0, rail, ticks, decimals = 0, unit = '', get, set, done }) {
     const row = el('div', 'srow');
     const text = el('label', '', label);
@@ -138,7 +139,7 @@
     });
 
     paint();
-    return { el: row, paint, flush };
+    return { el: row, paint, flush, setRail: (gradient) => track.style.setProperty('--track-rail', gradient) };
   }
 
   window.editorSliders = { create };

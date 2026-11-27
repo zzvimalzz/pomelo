@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The Adjust tool: the histogram, then the sections of sliders (Light with its Auto button, Colour), each of which opens and closes and
-// shows a reset arrow while it differs from neutral. The values live in the picture's edit, so the page shows, saves and undoes them like
+// The Adjust tool: the histogram, then the sections (Light with its Auto button, Colour, Colour grading, Curve, Colour mixer), each of
+// which opens and closes and shows a reset arrow while it differs from neutral. The values live in the picture's edit, so the page shows, saves and undoes them like
 // any other change. While a slider moves, `live` shows the value without a history step; the step is made when the change ends. A
 // classic script that adds window.editorAdjust.
 (() => {
@@ -13,9 +13,13 @@
     tint: 'linear-gradient(90deg, #3fae5a, #cfd3d8 50%, #c64fc0)',
     colour: 'linear-gradient(90deg, #8e8e93, #c9c9cc 50%, #ff5a5f 78%, #ffb33a)',
   };
+  // A section is rows of sliders, or a tool that builds its own controls with `build`. `keys` are the parts of the edit it changes.
   const SECTIONS = [
     { id: 'light', title: 'Light', auto: true, rows: [['exposure', 'Exposure'], ['contrast', 'Contrast'], ['highlights', 'Highlights'], ['shadows', 'Shadows'], ['whites', 'Whites'], ['blacks', 'Blacks']] },
     { id: 'colour', title: 'Colour', rows: [['temperature', 'Temperature', RAILS.temperature], ['tint', 'Tint', RAILS.tint], ['vibrance', 'Vibrance', RAILS.colour], ['saturation', 'Saturation', RAILS.colour]] },
+    { id: 'grading', title: 'Colour grading', keys: ['grading'], build: window.editorGrading.create },
+    { id: 'curve', title: 'Curve', keys: ['curve'], build: window.editorCurveEditor.create },
+    { id: 'mixer', title: 'Colour mixer', keys: ['mixer'], build: window.editorMixer.create },
   ];
 
   // tab(): the tab on show. live(patch): shows a change to the tab's edit without a history step. commit(edit, key): makes it a step.
@@ -27,12 +31,29 @@
     const histogram = window.editorHistogram.create(canvas);
     const sliders = [];
     const sections = [];
+    const tools = [];
+    const blank = neutral();
     let timer = 0;
+
+    // A slider that changes the part of the edit that `set(edit, value)` answers with, and reads it with `get(edit)`. `key` names the
+    // control in the history, or is a function that does.
+    function slider({ label, key, min, max, step, rail, decimals = 0, get, set }) {
+      const made = window.editorSliders.create({
+        label, min, max, step, rail, decimals,
+        get: () => (tab() ? get(tab().edit) : 0),
+        set: (value) => { if (tab()) live(set(tab().edit, value)); },
+        done: () => { if (tab()) commit(tab().edit, typeof key === 'function' ? key() : key); },
+      });
+      sliders.push(made);
+      return made;
+    }
 
     function refreshHistogram() {
       timer = 0;
       const t = tab();
-      histogram.show(t && !root.hidden ? sample(t.edit, SAMPLE)?.rgba ?? null : null);
+      const rgba = t && !root.hidden ? sample(t.edit, SAMPLE)?.rgba ?? null : null;
+      histogram.show(rgba);
+      for (const tool of tools) tool.backdrop?.(rgba);
     }
     // The histogram follows the edit 80 ms after the last change, so a drag is not slowed down by it.
     function edited() {
@@ -51,6 +72,7 @@
 
     root.append(canvas);
     for (const section of SECTIONS) {
+      const keys = section.keys ?? section.rows.map(([key]) => key);
       const block = el('div', 'sec');
       const head = el('div', 'sechead');
       const toggle = el('button', 'tog');
@@ -70,22 +92,20 @@
       reset.title = 'Reset';
       reset.setAttribute('aria-label', `Reset ${section.title}`);
       reset.innerHTML = icon('rotl');
-      reset.onclick = () => { const t = tab(); if (t) commit({ ...t.edit, ...Object.fromEntries(section.rows.map(([key]) => [key, 0])) }, null); };
+      reset.onclick = () => { const t = tab(); if (t) commit({ ...t.edit, ...Object.fromEntries(keys.map((key) => [key, blank[key]])) }, null); };
       head.append(reset);
 
       const body = el('div', 'secbody');
       const clip = el('div');
       const inner = el('div', 'secin');
-      for (const [key, label, rail] of section.rows) {
+      for (const [key, label, rail] of section.rows ?? []) {
         const [min, max, step] = RANGES[key];
-        const slider = window.editorSliders.create({
-          label, min, max, step, rail, decimals: key === 'exposure' ? 2 : 0,
-          get: () => tab()?.edit[key] ?? 0,
-          set: (value) => { if (tab()) live({ [key]: value }); },
-          done: () => { if (tab()) commit(tab().edit, label); },
-        });
-        sliders.push(slider);
-        inner.append(slider.el);
+        inner.append(slider({ label, key: label, min, max, step, rail, decimals: key === 'exposure' ? 2 : 0, get: (edit) => edit[key], set: (edit, value) => ({ [key]: value }) }).el);
+      }
+      if (section.build) {
+        const tool = section.build({ tab, live, commit, slider });
+        tools.push(tool);
+        inner.append(tool.el);
       }
       clip.append(inner);
       body.append(clip);
@@ -104,20 +124,21 @@
         remember([...open]);
       };
       shut(open.has(section.id));
-      sections.push({ block, keys: section.rows.map(([key]) => key) });
+      sections.push({ block, keys });
     }
 
     return {
       // Shows the values of the tab on show again, after it changed or another tab came.
       paint() {
         const t = tab();
-        for (const slider of sliders) slider.paint();
-        for (const { block, keys } of sections) block.classList.toggle('changed', !!t && keys.some((key) => t.edit[key] !== 0));
+        for (const made of sliders) made.paint();
+        for (const tool of tools) tool.paint();
+        for (const { block, keys } of sections) block.classList.toggle('changed', !!t && keys.some((key) => JSON.stringify(t.edit[key]) !== JSON.stringify(blank[key])));
         edited();
       },
       edited,
       // Ends a change a key press started, before something else changes the picture or the tab.
-      settle() { for (const slider of sliders) slider.flush(); },
+      settle() { for (const made of sliders) made.flush(); },
     };
   }
 

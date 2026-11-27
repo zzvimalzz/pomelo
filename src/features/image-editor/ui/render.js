@@ -5,7 +5,11 @@
   const { vertex, fragment } = window.editorShaders;
   const geometryOf = window.editorGeometry;
   const MIPMAP_BELOW = 0.5;
-  const ADJUSTMENTS = Object.keys(window.editorModel.RANGES);
+  const { BANDS, REGIONS, neutral, adjusted } = window.editorModel;
+  const { lut } = window.editorCurves;
+  const NEUTRAL_CURVE = JSON.stringify(neutral().curve);
+  const luma = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const hueColour = (hue) => [5, 3, 1].map((n) => { const k = (n + hue / 60) % 6; return 1 - Math.max(0, Math.min(k, 4 - k, 1)); });
 
   function program(gl) {
     const build = (type, source) => {
@@ -28,12 +32,13 @@
     const gl = canvas.getContext('webgl2', { premultipliedAlpha: false, alpha: true, antialias: false, preserveDrawingBuffer: false });
     if (!gl) return null;
     const prog = program(gl);
-    const uniform = Object.fromEntries(['uSource', 'uCanvas', 'uOrigin', 'uOut', 'uZoom', 'uGeom', 'uFlip', 'uVeil', 'uOn', 'uGain', 'uTone', 'uContrast', 'uColour'].map((name) => [name, gl.getUniformLocation(prog, name)]));
+    const uniform = Object.fromEntries(['uSource', 'uCanvas', 'uOrigin', 'uOut', 'uZoom', 'uGeom', 'uFlip', 'uVeil', 'uOn', 'uGain', 'uTone', 'uContrast', 'uColour', 'uUse', 'uLut', 'uMixer', 'uShade', 'uBalance'].map((name) => [name, gl.getUniformLocation(prog, name)]));
     const maxSide = gl.getParameter(gl.MAX_TEXTURE_SIZE);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
     gl.useProgram(prog);
     gl.uniform1i(uniform.uSource, 0);
+    gl.uniform1i(uniform.uLut, 1);
     gl.clearColor(0, 0, 0, 0);
 
     // Mipmaps are built once; below 50 % zoom plain linear filtering aliases badly, above it the mipmaps only blur.
@@ -48,6 +53,28 @@
       return texture;
     }
 
+    // The curves live in a texture of their own, on unit 1, which is made again only when a curve changes.
+    const lutTexture = gl.createTexture();
+    let lutShown = null;
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, lutTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.activeTexture(gl.TEXTURE0);
+
+    function curves(curve) {
+      const key = JSON.stringify(curve);
+      if (key !== lutShown) {
+        lutShown = key;
+        gl.activeTexture(gl.TEXTURE1);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, lut(curve));
+        gl.activeTexture(gl.TEXTURE0);
+      }
+      return key !== NEUTRAL_CURVE;
+    }
+
     // The adjustments of an edit as the shader wants them. White balance is scaled to keep the luminance, so Temperature and Tint change
     // the colour and not the brightness.
     function adjustments(edit) {
@@ -55,11 +82,19 @@
       const balance = [1 + 0.3 * t, 1 - 0.25 * n, 1 - 0.3 * t];
       const scale = 2 ** edit.exposure / (0.2126 * balance[0] + 0.7152 * balance[1] + 0.0722 * balance[2]);
       const black = -edit.blacks / 100 * 0.15;
-      gl.uniform1f(uniform.uOn, ADJUSTMENTS.some((key) => edit[key] !== 0) ? 1 : 0);
+      gl.uniform1f(uniform.uOn, adjusted(edit) ? 1 : 0);
       gl.uniform3f(uniform.uGain, ...balance.map((v) => v * scale));
       gl.uniform4f(uniform.uTone, edit.highlights / 100 * 0.35, edit.shadows / 100 * 0.35, black, 1 - edit.whites / 100 * 0.15);
       gl.uniform1f(uniform.uContrast, edit.contrast / 100);
       gl.uniform2f(uniform.uColour, edit.vibrance / 100, 1 + edit.saturation / 100);
+      const { grading, mixer } = edit;
+      // What each region adds is its colour with the brightness taken out, so grading tints and does not lighten or darken.
+      const shade = REGIONS.map((region) => { const c = hueColour(grading[region].hue), l = luma(c); return c.map((v) => (v - l) * grading[region].amount / 100 * 0.25); });
+      const moves = BANDS.flatMap((band) => [mixer[band].hue, mixer[band].sat, mixer[band].lum]);
+      gl.uniform3f(uniform.uUse, curves(edit.curve) ? 1 : 0, moves.some((v) => v !== 0) ? 1 : 0, REGIONS.some((region) => grading[region].amount > 0) ? 1 : 0);
+      gl.uniform3fv(uniform.uMixer, moves);
+      gl.uniform3fv(uniform.uShade, shade.flat());
+      gl.uniform1f(uniform.uBalance, grading.balance);
     }
 
     // picture: { texture, width, height }; edit: the picture's turn, flips, level and crop (its geometry) and its adjustments; zoom: target
