@@ -94,13 +94,6 @@ for (const hue of [10, 20, 30]) h.commit({ ...base, grading: { ...base.grading, 
 h.undo();
 expect('three drags of one wheel in a row are one step', !h.canUndo() && h.isNeutral());
 
-const ramp = Array.from({ length: 256 }, (_, n) => n / 255);
-const evenly = model.autoLight(ramp);
-expect('Auto on a picture that already spans the range barely moves anything', evenly.blacks === 11 && evenly.whites === -11 && evenly.exposure === -0.27 && evenly.contrast === 0, JSON.stringify(evenly));
-const dull = model.autoLight(Array.from({ length: 200 }, (_, n) => (40 + Math.floor(n / 5)) / 255));
-expect('Auto on a dark, flat picture lifts the exposure a long way, opens the white point and adds contrast', dull.exposure === 1.98 && dull.whites === 100 && dull.contrast === 10 && dull.blacks === -91, JSON.stringify(dull));
-expect('Auto keeps every value inside its range', Object.entries(dull).every(([key, value]) => value >= model.RANGES[key][0] && value <= model.RANGES[key][1]));
-
 console.log('changes');
 h = model.createHistory();
 turned(h, 1);

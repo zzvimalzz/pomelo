@@ -23,22 +23,6 @@
   const NEUTRAL = JSON.stringify({ ...neutral(), geometry: 0 });
   // Whether anything but the geometry is off its neutral value.
   const adjusted = (edit) => JSON.stringify({ ...edit, geometry: 0 }) !== NEUTRAL;
-  const clamp = (v, low, high) => Math.min(Math.max(v, low), high);
-  const toLinear = (s) => (s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4);
-
-  // The Light values that Auto sets, from the luminance (0 to 1) of every pixel of the picture as it is shown: the darkest and lightest
-  // half percent go to the black and white points, the middle goes to a mid grey, and a flat picture gets a little contrast.
-  function autoLight(lumas) {
-    const sorted = Float32Array.from(lumas).sort();
-    const at = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
-    const whole = (value, key) => clamp(Math.round(value), RANGES[key][0], RANGES[key][1]);
-    return {
-      blacks: whole(-(at(0.005) - 0.02) / 0.15 * 100, 'blacks'),
-      whites: whole((0.98 - at(0.995)) / 0.15 * 100, 'whites'),
-      exposure: Math.round(clamp(Math.log2(toLinear(0.46) / Math.max(1e-4, toLinear(at(0.5)))), -2, 2) * 100) / 100,
-      contrast: at(0.75) - at(0.25) < 0.25 ? 10 : 0,
-    };
-  }
 
   // Undo steps through results, not through every move. A change made with the same control as the last one folds into the last
   // entry, and arriving back at an earlier snapshot (four quarter turns) drops the entries in between.
@@ -77,5 +61,5 @@
     };
   }
 
-  window.editorModel = { RANGES, BANDS, REGIONS, CHANNELS, neutral, adjusted, autoLight, createHistory };
+  window.editorModel = { RANGES, BANDS, REGIONS, CHANNELS, neutral, adjusted, createHistory };
 })();

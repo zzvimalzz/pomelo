@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The Adjust tool: the histogram, then the sections (Light with its Auto button, Colour, Colour grading, Curve, Colour mixer), each of
+// The Adjust tool: the histogram, then the sections (Light, Colour, Colour grading, Curve, Colour mixer), each of
 // which opens and closes and shows a reset arrow while it differs from neutral. The values live in the picture's edit, so the page shows, saves and undoes them like
 // any other change. While a slider moves, `live` shows the value without a history step; the step is made when the change ends. A
 // classic script that adds window.editorAdjust.
 (() => {
   const { el, icon } = window.pomeloUi;
-  const { RANGES, neutral, autoLight } = window.editorModel;
+  const { RANGES, neutral } = window.editorModel;
   const HISTOGRAM_MS = 80;
   const SAMPLE = 256;
   const RAILS = {
@@ -15,7 +15,7 @@
   };
   // A section is rows of sliders, or a tool that builds its own controls with `build`. `keys` are the parts of the edit it changes.
   const SECTIONS = [
-    { id: 'light', title: 'Light', auto: true, rows: [['exposure', 'Exposure'], ['contrast', 'Contrast'], ['highlights', 'Highlights'], ['shadows', 'Shadows'], ['whites', 'Whites'], ['blacks', 'Blacks']] },
+    { id: 'light', title: 'Light', rows: [['exposure', 'Exposure'], ['contrast', 'Contrast'], ['highlights', 'Highlights'], ['shadows', 'Shadows'], ['whites', 'Whites'], ['blacks', 'Blacks']] },
     { id: 'colour', title: 'Colour', rows: [['temperature', 'Temperature', RAILS.temperature], ['tint', 'Tint', RAILS.tint], ['vibrance', 'Vibrance', RAILS.colour], ['saturation', 'Saturation', RAILS.colour]] },
     { id: 'grading', title: 'Colour grading', keys: ['grading'], build: window.editorGrading.create },
     { id: 'curve', title: 'Curve', keys: ['curve'], build: window.editorCurveEditor.create },
@@ -61,15 +61,6 @@
       if (!root.hidden) timer = setTimeout(refreshHistogram, HISTOGRAM_MS);
     }
 
-    function auto() {
-      const t = tab();
-      const small = t && sample({ ...neutral(), geometry: t.edit.geometry }, SAMPLE);
-      if (!small) return;
-      const lumas = [];
-      for (let i = 0; i < small.rgba.length; i += 4) if (small.rgba[i + 3] >= 128) lumas.push((0.2126 * small.rgba[i] + 0.7152 * small.rgba[i + 1] + 0.0722 * small.rgba[i + 2]) / 255);
-      if (lumas.length) commit({ ...t.edit, ...autoLight(lumas) }, 'auto');
-    }
-
     root.append(canvas);
     for (const section of SECTIONS) {
       const keys = section.keys ?? section.rows.map(([key]) => key);
@@ -80,13 +71,6 @@
       toggle.innerHTML = `${icon('right')}<span>${section.title}</span>`;
       toggle.firstChild.classList.add('chev');
       head.append(toggle);
-      if (section.auto) {
-        const button = el('button', 'auto', 'Auto');
-        button.type = 'button';
-        button.title = 'Auto';
-        button.onclick = auto;
-        head.append(button);
-      }
       const reset = el('button', 'rs');
       reset.type = 'button';
       reset.title = 'Reset';

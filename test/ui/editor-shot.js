@@ -65,15 +65,12 @@ async function makePictures() {
   for (let y = 0; y < 512; y++) for (let x = 0; x < 512; x++) square.set([x >> 1, y >> 1, (x + y) >> 2], (y * 512 + x) * 3);
   const dated = await sharp({ create: { width: 100, height: 60, channels: 3, background: { r: 90, g: 90, b: 200 } } }).withExif({ IFD0: { Make: 'Pomelo test camera', DateTime: '2024:05:17 14:03:00' } }).withMetadata({ orientation: 6 }).jpeg().toBuffer();
   const small = await sharp({ create: { width: 50, height: 50, channels: 3, background: { r: 200, g: 60, b: 90 } } }).png().toBuffer();
-  const dull = Buffer.alloc(200 * 100 * 3);
-  for (let y = 0; y < 100; y++) for (let x = 0; x < 200; x++) dull.fill(40 + Math.floor((x * 40) / 200), (y * 200 + x) * 3, (y * 200 + x) * 3 + 3);
   const halves = Buffer.alloc(200 * 100 * 3);
   for (let y = 0; y < 100; y++) for (let x = 0; x < 200; x++) halves.fill(x < 100 ? 50 : 205, (y * 200 + x) * 3, (y * 200 + x) * 3 + 3);
   return {
     red: put('red.png', await sharp({ create: { width: 64, height: 64, channels: 3, background: { r: 255, g: 0, b: 0 } } }).png().toBuffer()),
     halves: put('halves.png', await sharp(halves, { raw: { width: 200, height: 100, channels: 3 } }).png().toBuffer()),
     grey: put('grey.png', await sharp({ create: { width: 64, height: 64, channels: 3, background: { r: 128, g: 128, b: 128 } } }).png().toBuffer()),
-    dull: put('dull.png', await sharp(dull, { raw: { width: 200, height: 100, channels: 3 } }).png().toBuffer()),
     photo: put('photo.jpg', photo),
     glass: put('glass.png', await sharp(glass, { raw: { width: 800, height: 600, channels: 4 } }).png().toBuffer()),
     still: put('still.gif', await sharp(Buffer.alloc(200 * 100 * 3, 128), { raw: { width: 200, height: 100, channels: 3 } }).gif().toBuffer()),
@@ -609,8 +606,8 @@ app.whenReady().then(async () => {
   await motion('no-preference');
   const start = await rectOf('#frame');
   const room = await rectOf('#well');
-  // The crop view keeps 100 pixels at the bottom of the well free for the dock.
-  const centred = (r) => Math.abs(r.left + r.width / 2 - room.left - room.width / 2) <= 2 && Math.abs(r.top + r.height / 2 - room.top - (room.height - 100) / 2) <= 2;
+  // The crop view keeps 112 pixels at the bottom of the well free for the dock.
+  const centred = (r) => Math.abs(r.left + r.width / 2 - room.left - room.width / 2) <= 2 && Math.abs(r.top + r.height / 2 - room.top - (room.height - 112) / 2) <= 2;
   const say = (r) => `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`;
   check('the frame starts in the middle of the well', centred(start), say(start));
   // Where to press on the bottom right handle of the frame as it is now, and where a drag by (dx, dy) from there ends.
@@ -639,7 +636,7 @@ app.whenReady().then(async () => {
   const outward = await handleDrag(2000, 2000);
   await press(...outward);
   const grown = await rectOf('#frame');
-  check('a frame dragged outward past the well stays in sight', grown.left >= room.left + 46 && grown.top >= room.top + 46 && grown.left + grown.width <= room.left + room.width - 46 && grown.top + grown.height <= room.top + room.height - 146 && Math.abs(grown.width - start.width) <= 2, say(grown));
+  check('a frame dragged outward past the well stays in sight', grown.left >= room.left + 46 && grown.top >= room.top + 46 && grown.left + grown.width <= room.left + room.width - 46 && grown.top + grown.height <= room.top + room.height - 158 && Math.abs(grown.width - start.width) <= 2, say(grown));
   await release(outward[1]);
   await motion('reduce');
   const shrinking = await handleDrag(-100, -100);
@@ -753,7 +750,7 @@ app.whenReady().then(async () => {
   check('Adjust shows its five sections with their sliders',(await sections()) === 'Light:Exposure/Contrast/Highlights/Shadows/Whites/Blacks,Colour:Temperature/Tint/Vibrance/Saturation,Colour grading:Balance,Curve:,Colour mixer:Hue/Saturation/Luminance', await sections());
   check('Light and Colour start open and the rest shut',(await js(win, `[...document.querySelectorAll('#view-adjust .sec')].map((s) => s.classList.contains('open')).join()`)) === 'true,true,false,false,false');
   check('the histogram is drawn', await until('the histogram', () => js(win, `(() => { const c = document.querySelector('#view-adjust canvas.hist'); return c.getContext('2d').getImageData(0, 0, c.width, c.height).data.some((v, i) => i % 4 === 3 && v > 0); })()`)));
-  check('Auto and the section reset arrow carry their names', (await js(win, `[document.querySelector('#view-adjust .auto').title, document.querySelector('#view-adjust .rs').title].join()`)) === 'Auto,Reset');
+  check('the section reset arrow carries its name', (await js(win, `document.querySelector('#view-adjust .rs').title`)) === 'Reset');
   check('a picture nobody touched shows every slider at its neutral value', (await js(win, `[...document.querySelectorAll('#view-adjust .val')].map((v) => v.textContent).join()`)) === '0.00,0,0,0,0,0,0,0,0,0,0,0,0,0');
   await js(win, `document.querySelector('#view-adjust .sec .tog').click()`);
   await sleep(200);
@@ -838,22 +835,13 @@ app.whenReady().then(async () => {
   check('Saturation at -100 makes red, green and blue equal to within 1', spread <= 1, `spread ${spread}`);
   await closeAll(editor);
 
-  await adjustEditor(files.dull);
-  await js(win, `document.querySelector('#view-adjust .auto').click()`);
-  await sleep(500);
-  const autoValues = await js(win, `[...document.querySelectorAll('#view-adjust .sec:nth-of-type(1) .val')].map((v) => v.textContent).join()`);
-  const [autoExposure, autoContrast, , , autoWhites, autoBlacks] = autoValues.split(',').map((v) => parseFloat(v.replace('−', '-')));
-  check('Auto on a dull, dark picture sets Exposure to about +2, Contrast to +10, Whites to +100 and Blacks to about -91', Math.abs(autoExposure - 1.98) <= 0.02 && autoContrast === 10 && autoWhites === 100 && Math.abs(autoBlacks + 91) <= 1, autoValues);
-  await key(win, 'z', true);
-  await sleep(400);
-  check('Auto is one history entry', (await js(win, `[...document.querySelectorAll('#view-adjust .val')].every((v) => parseFloat(v.textContent) === 0)`)) === true && (await state()).undo === false);
-  await js(win, `document.querySelector('#view-adjust .auto').click()`);
+  await adjustEditor(files.grey);
+  await typeValue('Exposure', '1');
   await sleep(500);
   await js(win, `document.querySelector('#view-adjust .sec .rs').click()`);
   await sleep(400);
   check('the reset arrow of Light puts its sliders back and goes away', (await js(win, `[...document.querySelectorAll('#view-adjust .sec:nth-of-type(1) .val')].every((v) => parseFloat(v.textContent) === 0) && !document.querySelector('#view-adjust .sec').classList.contains('changed')`)) === true);
   await closeAll(editor);
-
 
   console.log('curves, colour mixer and colour grading');
   const section = (title) => `[...document.querySelectorAll('#view-adjust .sec')].find((s) => s.querySelector('.tog span').textContent === ${JSON.stringify(title)})`;
