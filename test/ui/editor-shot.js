@@ -65,11 +65,12 @@ async function makePictures() {
   for (let y = 0; y < 512; y++) for (let x = 0; x < 512; x++) square.set([x >> 1, y >> 1, (x + y) >> 2], (y * 512 + x) * 3);
   const dated = await sharp({ create: { width: 100, height: 60, channels: 3, background: { r: 90, g: 90, b: 200 } } }).withExif({ IFD0: { Make: 'Pomelo test camera', DateTime: '2024:05:17 14:03:00' } }).withMetadata({ orientation: 6 }).jpeg().toBuffer();
   const small = await sharp({ create: { width: 50, height: 50, channels: 3, background: { r: 200, g: 60, b: 90 } } }).png().toBuffer();
-  const dull = Buffer.alloc(200 * 100 * 3);
-  for (let y = 0; y < 100; y++) for (let x = 0; x < 200; x++) dull.fill(40 + Math.floor((x * 40) / 200), (y * 200 + x) * 3, (y * 200 + x) * 3 + 3);
+  const halves = Buffer.alloc(200 * 100 * 3);
+  for (let y = 0; y < 100; y++) for (let x = 0; x < 200; x++) halves.fill(x < 100 ? 50 : 205, (y * 200 + x) * 3, (y * 200 + x) * 3 + 3);
   return {
+    red: put('red.png', await sharp({ create: { width: 64, height: 64, channels: 3, background: { r: 255, g: 0, b: 0 } } }).png().toBuffer()),
+    halves: put('halves.png', await sharp(halves, { raw: { width: 200, height: 100, channels: 3 } }).png().toBuffer()),
     grey: put('grey.png', await sharp({ create: { width: 64, height: 64, channels: 3, background: { r: 128, g: 128, b: 128 } } }).png().toBuffer()),
-    dull: put('dull.png', await sharp(dull, { raw: { width: 200, height: 100, channels: 3 } }).png().toBuffer()),
     photo: put('photo.jpg', photo),
     glass: put('glass.png', await sharp(glass, { raw: { width: 800, height: 600, channels: 4 } }).png().toBuffer()),
     still: put('still.gif', await sharp(Buffer.alloc(200 * 100 * 3, 128), { raw: { width: 200, height: 100, channels: 3 } }).gif().toBuffer()),
@@ -605,8 +606,8 @@ app.whenReady().then(async () => {
   await motion('no-preference');
   const start = await rectOf('#frame');
   const room = await rectOf('#well');
-  // The crop view keeps 100 pixels at the bottom of the well free for the dock.
-  const centred = (r) => Math.abs(r.left + r.width / 2 - room.left - room.width / 2) <= 2 && Math.abs(r.top + r.height / 2 - room.top - (room.height - 100) / 2) <= 2;
+  // The crop view keeps 112 pixels at the bottom of the well free for the dock.
+  const centred = (r) => Math.abs(r.left + r.width / 2 - room.left - room.width / 2) <= 2 && Math.abs(r.top + r.height / 2 - room.top - (room.height - 112) / 2) <= 2;
   const say = (r) => `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`;
   check('the frame starts in the middle of the well', centred(start), say(start));
   // Where to press on the bottom right handle of the frame as it is now, and where a drag by (dx, dy) from there ends.
@@ -635,7 +636,7 @@ app.whenReady().then(async () => {
   const outward = await handleDrag(2000, 2000);
   await press(...outward);
   const grown = await rectOf('#frame');
-  check('a frame dragged outward past the well stays in sight', grown.left >= room.left + 46 && grown.top >= room.top + 46 && grown.left + grown.width <= room.left + room.width - 46 && grown.top + grown.height <= room.top + room.height - 146 && Math.abs(grown.width - start.width) <= 2, say(grown));
+  check('a frame dragged outward past the well stays in sight', grown.left >= room.left + 46 && grown.top >= room.top + 46 && grown.left + grown.width <= room.left + room.width - 46 && grown.top + grown.height <= room.top + room.height - 158 && Math.abs(grown.width - start.width) <= 2, say(grown));
   await release(outward[1]);
   await motion('reduce');
   const shrinking = await handleDrag(-100, -100);
@@ -746,11 +747,12 @@ app.whenReady().then(async () => {
   };
 
   await adjustEditor(files.grey);
-  check('Adjust shows Light and Colour with their sliders',(await sections()) === 'Light:Exposure/Contrast/Highlights/Shadows/Whites/Blacks,Colour:Temperature/Tint/Vibrance/Saturation', await sections());
-  check('both sections start open',(await js(win, `[...document.querySelectorAll('#view-adjust .sec')].map((s) => s.classList.contains('open')).join()`)) === 'true,true');
+  check('Adjust shows its five sections with their sliders',(await sections()) === 'Light:Exposure/Contrast/Highlights/Shadows/Whites/Blacks,Colour:Temperature/Tint/Vibrance/Saturation,Colour grading:Balance,Curve:,Colour mixer:Hue/Saturation/Luminance', await sections());
+  check('Light and Colour start open and the rest shut',(await js(win, `[...document.querySelectorAll('#view-adjust .sec')].map((s) => s.classList.contains('open')).join()`)) === 'true,true,false,false,false');
   check('the histogram is drawn', await until('the histogram', () => js(win, `(() => { const c = document.querySelector('#view-adjust canvas.hist'); return c.getContext('2d').getImageData(0, 0, c.width, c.height).data.some((v, i) => i % 4 === 3 && v > 0); })()`)));
-  check('Auto and the section reset arrow carry their names', (await js(win, `[document.querySelector('#view-adjust .auto').title, document.querySelector('#view-adjust .rs').title].join()`)) === 'Auto,Reset');
-  check('a picture nobody touched shows every slider at its neutral value', (await js(win, `[...document.querySelectorAll('#view-adjust .val')].map((v) => v.textContent).join()`)) === '0.00,0,0,0,0,0,0,0,0,0');
+  check('the panel scrolls with a thin bar that shows only while the pointer is over it', (await js(win, `(() => { const s = getComputedStyle(document.getElementById('view-adjust')); return [s.scrollbarWidth, s.scrollbarColor.startsWith('rgba(0, 0, 0, 0)')].join(); })()`)) === 'thin,true');
+  check('the section reset arrow carries its name', (await js(win, `document.querySelector('#view-adjust .rs').title`)) === 'Reset');
+  check('a picture nobody touched shows every slider at its neutral value', (await js(win, `[...document.querySelectorAll('#view-adjust .val')].map((v) => v.textContent).join()`)) === '0.00,0,0,0,0,0,0,0,0,0,0,0,0,0');
   await js(win, `document.querySelector('#view-adjust .sec .tog').click()`);
   await sleep(200);
   check('closing a section is remembered', JSON.stringify(settings.imageView.sections) === '["colour"]', JSON.stringify(settings.imageView));
@@ -834,21 +836,106 @@ app.whenReady().then(async () => {
   check('Saturation at -100 makes red, green and blue equal to within 1', spread <= 1, `spread ${spread}`);
   await closeAll(editor);
 
-  await adjustEditor(files.dull);
-  await js(win, `document.querySelector('#view-adjust .auto').click()`);
-  await sleep(500);
-  const autoValues = await js(win, `[...document.querySelectorAll('#view-adjust .sec:nth-of-type(1) .val')].map((v) => v.textContent).join()`);
-  const [autoExposure, autoContrast, , , autoWhites, autoBlacks] = autoValues.split(',').map((v) => parseFloat(v.replace('−', '-')));
-  check('Auto on a dull, dark picture sets Exposure to about +2, Contrast to +10, Whites to +100 and Blacks to about -91', Math.abs(autoExposure - 1.98) <= 0.02 && autoContrast === 10 && autoWhites === 100 && Math.abs(autoBlacks + 91) <= 1, autoValues);
-  await key(win, 'z', true);
-  await sleep(400);
-  check('Auto is one history entry', (await js(win, `[...document.querySelectorAll('#view-adjust .val')].every((v) => parseFloat(v.textContent) === 0)`)) === true && (await state()).undo === false);
-  await js(win, `document.querySelector('#view-adjust .auto').click()`);
+  await adjustEditor(files.grey);
+  await typeValue('Exposure', '1');
   await sleep(500);
   await js(win, `document.querySelector('#view-adjust .sec .rs').click()`);
   await sleep(400);
   check('the reset arrow of Light puts its sliders back and goes away', (await js(win, `[...document.querySelectorAll('#view-adjust .sec:nth-of-type(1) .val')].every((v) => parseFloat(v.textContent) === 0) && !document.querySelector('#view-adjust .sec').classList.contains('changed')`)) === true);
   await closeAll(editor);
+
+  console.log('curves, colour mixer and colour grading');
+  const section = (title) => `[...document.querySelectorAll('#view-adjust .sec')].find((s) => s.querySelector('.tog span').textContent === ${JSON.stringify(title)})`;
+  const openOnly = async (title) => {
+    for (const name of ['Light', 'Colour', 'Colour grading', 'Curve', 'Colour mixer']) await js(win, `(() => { const s = ${section(name)}; if (s.classList.contains('open') !== (${JSON.stringify(name)} === ${JSON.stringify(title)})) s.querySelector('.tog').click(); })()`);
+    await sleep(500);
+  };
+  const toView = async (selector) => { await js(win, `document.querySelector('${selector}').scrollIntoView({ block: 'center' })`); await sleep(200); return rectOf(selector); };
+  const hueOf = ([r, g, b]) => { const hi = Math.max(r, g, b), lo = Math.min(r, g, b), d = hi - lo; return d === 0 ? 0 : (60 * (hi === r ? ((g - b) / d + 6) % 6 : hi === g ? (b - r) / d + 2 : (r - g) / d + 4)); };
+  const pointsOf = () => js(win, `document.querySelectorAll('#view-adjust .curve circle').length`);
+  const shownAt = async (dx) => { const room = await rectOf('#well'); return (await pixelsOf(win)).at((room.left + room.width / 2 + dx) * room.dpr, (room.top + room.height / 2) * room.dpr); };
+
+  await adjustEditor(files.grey);
+  await openOnly('Curve');
+  check('the Curve section has the chips RGB, Red, Green and Blue, with RGB chosen', (await js(win, `[...document.querySelectorAll('.curvechips .chip')].map((c) => c.textContent + (c.classList.contains('on') ? '*' : '')).join()`)) === 'RGB*,Red,Green,Blue');
+  const curveBox = await toView('#view-adjust .curve');
+  check('the box is 288 by 220 and holds the two ends of a straight curve', Math.round(curveBox.width) === 288 && Math.round(curveBox.height) === 220 && (await pointsOf()) === 2, `${curveBox.width} by ${curveBox.height}`);
+  const lineAt = (share) => [curveBox.left + curveBox.width * share, curveBox.top + curveBox.height * (1 - share)];
+  await press(lineAt(0.5), [curveBox.left + curveBox.width * 0.5, curveBox.top + curveBox.height * 0.25]);
+  await release([curveBox.left + curveBox.width * 0.5, curveBox.top + curveBox.height * 0.25]);
+  check('a click on the line adds a point and a drag lifts it: three points', (await pointsOf()) === 3);
+  const lifted = Math.round(255 * 0.75);
+  const curved = await centre();
+  check('a curve through (0.5, 0.75) takes the mid grey 128 to about 191 on screen', near(curved, [lifted, lifted, lifted], 3), `${curved}`);
+  check('the Curve section shows its reset arrow and the picture can be saved', (await js(win, `${section('Curve')}.classList.contains('changed')`)) === true && (await state()).save === true);
+  await press(lineAt(0.2), [curveBox.left + curveBox.width * 0.2, curveBox.top - 70]);
+  await release([curveBox.left + curveBox.width * 0.2, curveBox.top - 70]);
+  check('a point dragged out of the box is taken away', (await pointsOf()) === 3);
+  await js(win, `document.querySelector('#view-adjust .curve circle[data-i="1"]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+  await sleep(300);
+  check('a double click on a point takes it away, and a straight curve is a picture nobody touched', (await pointsOf()) === 2 && (await state()).undo === false && near(await centre(), [128, 128, 128], 2));
+  await js(win, `document.querySelectorAll('.curvechips .chip')[1].click()`);
+  await sleep(200);
+  await press(lineAt(0.5), [curveBox.left + curveBox.width * 0.5, curveBox.top + curveBox.height * 0.25]);
+  await release([curveBox.left + curveBox.width * 0.5, curveBox.top + curveBox.height * 0.25]);
+  const redCurve = await centre();
+  check('the Red curve moves red and leaves green and blue', redCurve[0] > 170 && near([0, redCurve[1], redCurve[2]], [0, 128, 128], 2), `${redCurve}`);
+  await key(win, 'z', true);
+  await sleep(500);
+  check('one Undo takes the whole drag back', near(await centre(), [128, 128, 128], 2));
+  await key(win, 'y', true);
+  await sleep(500);
+  await copyAsPng(path.join(root, 'grey-curve.png'));
+  const curveFile = await sharp(saveTo).removeAlpha().raw().toBuffer();
+  check('and the file saved agrees with the screen to within 2', near([...curveFile.subarray(0, 3)], redCurve, 2), `${[...curveFile.subarray(0, 3)]} on screen ${redCurve}`);
+  await closeAll(editor);
+
+  await adjustEditor(files.red);
+  await openOnly('Colour mixer');
+  check('the mixer has eight colours, named in their tooltips, with Red chosen', (await js(win, `[...document.querySelectorAll('#view-adjust .sw')].map((s) => s.title + (s.classList.contains('on') ? '*' : '')).join()`)) === 'Red*,Orange,Yellow,Green,Aqua,Blue,Purple,Magenta');
+  const railOf = () => js(win, `document.querySelector('#view-adjust .swatches').parentNode.querySelector('.srow .track').style.getPropertyValue('--track-rail')`);
+  const redRail = await railOf();
+  await js(win, `document.querySelectorAll('#view-adjust .sw')[5].click()`);
+  await sleep(200);
+  check('choosing Blue gives Hue its own track, and its own value', (await railOf()) !== redRail && (await railOf()).includes('hsl(210 ') && (await valueOf('Hue')) === '0', await railOf());
+  await typeValue('Hue', '100');
+  await sleep(400);
+  check('Blue moved by 100 leaves a pure red picture alone', near(await centre(), [255, 0, 0], 2), `${await centre()}`);
+  await js(win, `document.querySelectorAll('#view-adjust .sw')[0].click()`);
+  await sleep(200);
+  check('and Red still has no move', (await valueOf('Hue')) === '0');
+  await typeValue('Hue', '100');
+  await sleep(500);
+  const orange = await centre();
+  check('Red hue at +100 turns pure red by 30 degrees', Math.abs(hueOf(orange) - 30) <= 2, `${orange} hue ${hueOf(orange)}`);
+  await copyAsPng(path.join(root, 'red-hue.png'));
+  const hued = await sharp(saveTo).removeAlpha().raw().toBuffer();
+  check('and the file saved agrees with the screen to within 2', near([...hued.subarray(0, 3)], orange, 2), `${[...hued.subarray(0, 3)]} on screen ${orange}`);
+  await closeAll(editor);
+
+  await adjustEditor(files.halves);
+  await openOnly('Colour grading');
+  const colourWheel = await toView('#view-adjust .disc');
+  const heart = [colourWheel.left + colourWheel.width / 2, colourWheel.top + colourWheel.height / 2];
+  const [darkSide, lightSide] = [-50, 50];
+  const [darkBefore, lightBefore] = [await shownAt(darkSide), await shownAt(lightSide)];
+  await press([heart[0] + 30, heart[1]], [heart[0] + 30, heart[1]]);
+  await release([heart[0] + 30, heart[1]]);
+  const [darkAfter, lightAfter] = [await shownAt(darkSide), await shownAt(lightSide)];
+  check('a red shadows wheel tints the dark half red', darkAfter[0] - darkBefore[0] >= 15 && darkAfter[1] <= darkBefore[1], `${darkBefore} to ${darkAfter}`);
+  check('and leaves the light half as it was', near(lightAfter, lightBefore, 1), `${lightBefore} to ${lightAfter}`);
+  await typeValue('Balance', '100');
+  await sleep(400);
+  check('Balance at +100 pushes the shadows up over the light half', (await shownAt(lightSide))[0] - lightBefore[0] >= 2, `${await shownAt(lightSide)}`);
+  await typeValue('Balance', '-100');
+  await sleep(400);
+  check('and at -100 leaves even the dark half alone', near(await shownAt(darkSide), darkBefore, 1), `${await shownAt(darkSide)}`);
+  await typeValue('Balance', '0');
+  await js(win, `document.querySelector('#view-adjust .disc').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+  await sleep(400);
+  check('a double click on the wheel puts it back, and with it every step', near(await shownAt(darkSide), darkBefore, 1) && (await state()).undo === false);
+  await closeAll(editor);
+  settings = { imageView: { window: null } };
 
   for (const theme of ['light', 'dark']) {
     console.log(`${theme} screenshots`);
@@ -886,6 +973,38 @@ app.whenReady().then(async () => {
     console.log(`  (${theme} slider track ${rail} on ${surface}: contrast ${contrast(rail, surface).toFixed(2)}; fill ${filled} against the track: ${contrast(filled, rail).toFixed(2)})`);
     check(`${theme}: the slider track shows on the panel and the fill is told from the track`, contrast(rail, surface) >= (theme === 'light' ? 1.1 : 1.15) && contrast(filled, rail) >= 2, `${rail} ${filled} ${surface}`);
     await shot(win, `editor-${theme}-adjust.png`);
+    await openOnly('Curve');
+    await js(win, `document.querySelector('.curvechips .chip[data-c="r"]').click()`);
+    const curveRoom = await toView('#view-adjust .curve');
+    await press([curveRoom.left + curveRoom.width * 0.4, curveRoom.top + curveRoom.height * 0.6], [curveRoom.left + curveRoom.width * 0.4, curveRoom.top + curveRoom.height * 0.45]);
+    await release([curveRoom.left + curveRoom.width * 0.4, curveRoom.top + curveRoom.height * 0.45]);
+    await sleep(300);
+    const chipSpots = await js(win, `(() => { const rect = (n) => { const r = n.getBoundingClientRect(); return [r.left, r.top + r.height / 2]; }; return [rect(document.querySelector('.curvechips .chip.on')), rect(document.querySelector('.curvechips .chip[data-c="g"]')), devicePixelRatio]; })()`);
+    const chipPixels = await pixelsOf(win);
+    const offChip = chipPixels.at(chipSpots[1][0] * chipSpots[2] + 5, chipSpots[1][1] * chipSpots[2]);
+    const chipRing = [0, 1, 2].map((n) => chipPixels.at(Math.floor(chipSpots[0][0] * chipSpots[2]) + n, chipSpots[0][1] * chipSpots[2])).sort((p, q) => contrast(q, offChip) - contrast(p, offChip))[0];
+    console.log(`  (${theme} chosen curve chip ring ${chipRing} against the others ${offChip}: contrast ${contrast(chipRing, offChip).toFixed(2)})`);
+    check(`${theme}: the chosen curve chip is told from the others by a tint and a ring`, contrast(chipRing, offChip) >= 3, `${chipRing} ${offChip}`);
+    await shot(win, `editor-${theme}-curve.png`);
+    await openOnly('Colour grading');
+    const discRoom = await toView('#view-adjust .disc');
+    await press([discRoom.left + discRoom.width / 2 + 28, discRoom.top + discRoom.height / 2 - 8], [discRoom.left + discRoom.width / 2 + 28, discRoom.top + discRoom.height / 2 - 8]);
+    await release([discRoom.left + discRoom.width / 2 + 28, discRoom.top + discRoom.height / 2 - 8]);
+    await shot(win, `editor-${theme}-grading.png`);
+    await openOnly('Colour mixer');
+    await js(win, `document.querySelectorAll('#view-adjust .sw')[1].click()`);
+    await typeValue('Hue', '40');
+    await toView('#view-adjust .swatches');
+    const swatch = await js(win, `(() => { const r = document.querySelector('#view-adjust .sw.on').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, devicePixelRatio]; })()`);
+    const swatchPixels = await pixelsOf(win);
+    const panelFill = swatchPixels.at((swatch[0] - 19) * swatch[2], swatch[1] * swatch[2]);
+    const swatchRing = [13, 14, 15].map((n) => swatchPixels.at((swatch[0] - n) * swatch[2], swatch[1] * swatch[2])).sort((p, q) => contrast(q, panelFill) - contrast(p, panelFill))[0];
+    console.log(`  (${theme} chosen colour ring ${swatchRing} on the panel ${panelFill}: contrast ${contrast(swatchRing, panelFill).toFixed(2)})`);
+    check(`${theme}: the chosen colour of the mixer has a ring that shows on the panel`, contrast(swatchRing, panelFill) >= 3, `${swatchRing} ${panelFill}`);
+    await shot(win, `editor-${theme}-mixer.png`);
+    await openOnly('Light');
+    await js(win, `${section('Colour')}.querySelector('.tog').click()`);
+    await sleep(500);
     await key(win, 'c');
     await sleep(900);
     const spotOf = (selector, dx = 6) => js(win, `(() => { const r = document.querySelector('${selector}').getBoundingClientRect(); return [r.left + ${dx}, r.top + r.height / 2, devicePixelRatio]; })()`);

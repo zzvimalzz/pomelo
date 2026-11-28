@@ -6,6 +6,7 @@ const { expect } = require('../../support/expect');
 const finish = require('../../support/finish');
 
 const { editorGeometry: g, editorModel: model } = loadPageScripts('src/features/image-editor/ui/geometry.js', 'src/features/image-editor/ui/model.js');
+const pushed = (edit) => { const h2 = model.createHistory(); h2.commit(edit, 'x'); return h2; };
 
 const turned = (history, dir) => history.commit({ ...history.current(), geometry: g.rotate(history.current().geometry, dir) }, 'rotate');
 const flipped = (history, axis) => history.commit({ ...history.current(), geometry: g.flip(history.current().geometry, axis) }, `flip-${axis}`);
@@ -76,12 +77,22 @@ expect('every adjustment starts at 0, inside a range that holds 0', Object.entri
 expect('Exposure runs from -4 to 4 by hundredths, the rest from -100 to 100 by ones', JSON.stringify(model.RANGES.exposure) === '[-4,4,0.01]' && Object.entries(model.RANGES).every(([key, range]) => key === 'exposure' || JSON.stringify(range) === '[-100,100,1]'));
 expect('a picture with an adjustment is not neutral, and putting it back is', (() => { const edited = model.createHistory(); edited.commit({ ...model.neutral(), saturation: -100 }, 'Saturation'); const was = edited.isNeutral(); edited.commit(model.neutral(), 'Saturation'); return !was && edited.isNeutral(); })());
 
-const ramp = Array.from({ length: 256 }, (_, n) => n / 255);
-const evenly = model.autoLight(ramp);
-expect('Auto on a picture that already spans the range barely moves anything', evenly.blacks === 11 && evenly.whites === -11 && evenly.exposure === -0.27 && evenly.contrast === 0, JSON.stringify(evenly));
-const dull = model.autoLight(Array.from({ length: 200 }, (_, n) => (40 + Math.floor(n / 5)) / 255));
-expect('Auto on a dark, flat picture lifts the exposure a long way, opens the white point and adds contrast', dull.exposure === 1.98 && dull.whites === 100 && dull.contrast === 10 && dull.blacks === -91, JSON.stringify(dull));
-expect('Auto keeps every value inside its range', Object.entries(dull).every(([key, value]) => value >= model.RANGES[key][0] && value <= model.RANGES[key][1]));
+console.log('curves, colour mixer and colour grading');
+const base = model.neutral();
+expect('a picture starts with straight curves, no colour moved and no grading', JSON.stringify(base.curve) === JSON.stringify({ rgb: [[0, 0], [1, 1]], r: [[0, 0], [1, 1]], g: [[0, 0], [1, 1]], b: [[0, 0], [1, 1]] }) && model.BANDS.length === 8 && model.BANDS.every((band) => JSON.stringify(base.mixer[band]) === '{"hue":0,"sat":0,"lum":0}') && model.REGIONS.every((region) => base.grading[region].amount === 0) && base.grading.balance === 0);
+expect('the parts of one neutral edit are not shared with another', model.neutral().curve.rgb !== base.curve.rgb && model.neutral().mixer.red !== base.mixer.red);
+expect('only the geometry is left out when asking whether an edit is adjusted', !model.adjusted(base) && !model.adjusted({ ...base, geometry: { ...base.geometry, rotate: 90 } }));
+expect('a curve point, a mixer move, a grading amount and a balance each make it adjusted', [
+  { ...base, curve: { ...base.curve, g: [[0, 0], [0.5, 0.6], [1, 1]] } },
+  { ...base, mixer: { ...base.mixer, aqua: { hue: 0, sat: 5, lum: 0 } } },
+  { ...base, grading: { ...base.grading, shadows: { hue: 200, amount: 30 } } },
+  { ...base, grading: { ...base.grading, balance: -20 } },
+].every(model.adjusted));
+expect('a curve point makes the picture changed, and taking it out makes it neutral again', (() => { const edited = pushed({ ...base, curve: { ...base.curve, rgb: [[0, 0], [0.5, 0.6], [1, 1]] } }); const was = !edited.isNeutral() && edited.dirty(); edited.commit(base, 'x'); return was && edited.isNeutral(); })());
+h = model.createHistory();
+for (const hue of [10, 20, 30]) h.commit({ ...base, grading: { ...base.grading, highlights: { hue, amount: 40 } } }, 'grading-highlights');
+h.undo();
+expect('three drags of one wheel in a row are one step', !h.canUndo() && h.isNeutral());
 
 console.log('changes');
 h = model.createHistory();

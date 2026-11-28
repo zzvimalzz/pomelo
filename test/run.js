@@ -51,6 +51,7 @@ const SUITES = [
   { name: 'editor-save', file: 'unit/image-editor/save.test.js', tier: 'unit' },
   { name: 'editor-geometry', file: 'unit/image-editor/geometry.test.js', tier: 'unit' },
   { name: 'editor-model', file: 'unit/image-editor/model.test.js', tier: 'unit' },
+  { name: 'editor-curves', file: 'unit/image-editor/curves.test.js', tier: 'unit' },
   { name: 'app-start', file: 'integration/app/start.test.js', tier: 'integration', timeout: 120 },
   { name: 'matrix', file: 'integration/conversion/matrix.test.js', tier: 'integration', electron: true, timeout: 600 },
   { name: 'edge-cases', file: 'integration/conversion/edge-cases.test.js', tier: 'integration', electron: true, timeout: 300 },
