@@ -14,7 +14,7 @@
   const SIZES = { min: 6, max: 72 };
   const FONTS = ['Helvetica', 'Times', 'Courier'];
   const TOO_LARGE = 'Saving changes to a file this large needs the PDF engine.';
-  const TOOLS = [['select', 'Select', 'cursor'], ['highlight', 'Highlight', 'highlight'], ['draw', 'Draw', 'pen'], ['text', 'Text', 'type']];
+  const TOOLS = [['select', 'Select', 'cursor'], ['highlight', 'Highlight', 'highlight'], ['draw', 'Draw', 'pen'], ['text', 'Text', 'type'], ['eraser', 'Eraser', 'eraser']];
   const EDITORS = '.inkEditor, .freeTextEditor, .highlightEditor';
 
   const options = { highlight: ui.HIGHLIGHT.defaults[0][1], kind: 'pen', ink: ui.INK.defaults[0][1], width: 2, size: 12, font: FONTS[0] };
@@ -30,10 +30,9 @@
   let setTool = () => {};
   let bar = null;
   let manager = null;
-  let selected = false;
   let drawing = false;
+  let selecting = false;
   let erasing = false;
-  let eraser = false;
   let pill = null;
   let dot = null;
   let rubber = null;
@@ -152,16 +151,6 @@
     apply();
   };
 
-  function useEraser(on) {
-    eraser = on;
-    erasing = false;
-    rubber.hidden = true;
-    if (on) manager?.unselectAll();
-    if (on) document.body.dataset.eraser = '';
-    else delete document.body.dataset.eraser;
-    draw();
-  }
-
   // The eraser takes the mark under the pointer. It goes through the editor's own delete, so Undo brings the mark back.
   function erase(box) {
     const editor = manager?.getEditor(box.id);
@@ -184,11 +173,6 @@
 
   function draw() {
     const parts = [];
-    if (tool === 'select') {
-      const remove = action('trash', 'Delete', () => dispatch('delete'));
-      remove.disabled = !selected;
-      parts.push(remove, option('eraser', 'Eraser', eraser, () => useEraser(!eraser)));
-    }
     if (tool === 'highlight') parts.push(colourRow(ui.HIGHLIGHT, 'highlight', 'Highlight colour'));
     if (tool === 'draw') {
       const widths = group('Thickness', 'swatches');
@@ -219,7 +203,7 @@
     viewer = pdfViewer;
     eventBus = bus;
     lib = viewerLib;
-    const modes = { select: lib.AnnotationEditorType.STAMP, highlight: lib.AnnotationEditorType.HIGHLIGHT, draw: lib.AnnotationEditorType.INK, text: lib.AnnotationEditorType.FREETEXT };
+    const modes = { select: lib.AnnotationEditorType.STAMP, highlight: lib.AnnotationEditorType.HIGHLIGHT, draw: lib.AnnotationEditorType.INK, text: lib.AnnotationEditorType.FREETEXT, eraser: lib.AnnotationEditorType.STAMP };
     bar = el('div', 'optbar');
     bar.hidden = true;
     bar.addEventListener('mousedown', (e) => e.preventDefault());
@@ -244,17 +228,22 @@
     eventBus.on('annotationeditorparamschanged', remember);
 
     // Over a page the highlighter is a dot of its colour, except over the words, where pdf.js's own cursor shows that a drag selects them.
-    // A drag that began on the dot keeps it, wherever it goes.
+    // A drag that began on the dot keeps it, wherever it goes, and a drag that began on a word keeps the words' cursor.
     container.addEventListener('pointermove', (e) => {
-      const aim = tool === 'highlight' && !!e.target.closest?.('.textLayer') && !e.target.closest('.textLayer span:not([role="img"])');
+      const aim = tool === 'highlight' && !selecting && !!e.target.closest?.('.textLayer') && !e.target.closest('.textLayer span:not([role="img"])');
       dot.hidden = !(drawing || aim);
       if (!dot.hidden) dot.style.transform = `translate(${e.clientX - 9}px, ${e.clientY - 9}px)`;
     }, true);
     container.addEventListener('pointerleave', () => { if (!drawing) dot.hidden = true; });
-    container.addEventListener('pointerdown', (e) => { drawing = tool === 'highlight' && !dot.hidden && e.button === 0; }, true);
-    window.addEventListener('pointerup', () => { drawing = false; erasing = false; });
     container.addEventListener('pointerdown', (e) => {
-      if (!eraser || e.button !== 0) return;
+      const left = tool === 'highlight' && e.button === 0;
+      drawing = left && !dot.hidden;
+      selecting = left && !drawing && !!e.target.closest?.('.textLayer span:not([role="img"])');
+      if (selecting) document.body.dataset.selecting = '';
+    }, true);
+    window.addEventListener('pointerup', () => { drawing = selecting = erasing = false; delete document.body.dataset.selecting; });
+    container.addEventListener('pointerdown', (e) => {
+      if (tool !== 'eraser' || e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
       erasing = true;
@@ -263,8 +252,8 @@
     }, true);
     container.addEventListener('pointerleave', () => { rubber.hidden = true; });
     container.addEventListener('pointermove', (e) => {
-      rubber.hidden = !eraser;
-      if (eraser) rubber.style.transform = `translate(${e.clientX - 5}px, ${e.clientY - 25}px)`;
+      rubber.hidden = tool !== 'eraser';
+      if (!rubber.hidden) rubber.style.transform = `translate(${e.clientX - 5}px, ${e.clientY - 25}px)`;
       const box = erasing && document.elementFromPoint(e.clientX, e.clientY)?.closest(EDITORS);
       if (box) erase(box);
     }, true);
@@ -302,10 +291,8 @@
       if (next && !tab?.pdf) return;
       if (next) window.workspaceOrganise.leave();
       tool = next;
-      selected = false;
-      drawing = false;
-      eraser = erasing = false;
-      delete document.body.dataset.eraser;
+      drawing = selecting = erasing = false;
+      delete document.body.dataset.selecting;
       rubber.hidden = true;
       dot.hidden = true;
       ui.closePanel();
@@ -316,9 +303,10 @@
       document.body.classList.toggle('tooling', !!tool);
       if (tool) document.body.dataset.tool = tool;
       else delete document.body.dataset.tool;
-      bar.hidden = !tool;
       viewer.annotationEditorMode = { mode: tool ? modes[tool] : lib.AnnotationEditorType.NONE };
+      if (tool === 'eraser') manager?.unselectAll();
       if (tool) { apply(); draw(); } else container.focus();
+      bar.hidden = !tool || !bar.children.length;
     };
     bind('escape', () => {
       if (ui.panelUp()) { ui.closePanel(); draw(); return; }
@@ -328,18 +316,15 @@
     eventBus.on('editingstateschanged', ({ details }) => {
       undoable = !!details.hasSomethingToUndo;
       redoable = !!details.hasSomethingToRedo;
-      const chosen = !!details.hasSelectedEditor;
-      if (chosen !== selected) { selected = chosen; if (tool === 'select') draw(); }
-      if (chosen && tool === 'highlight') manager?.unselectAll();
+      if (details.hasSelectedEditor && tool === 'highlight') manager?.unselectAll();
       sync();
       setTimeout(() => { if (tab?.pdf) count(); });
     });
     // pdf.js puts the tool down when it loads another document.
     eventBus.on('pagesdestroy', () => {
       tool = null;
-      selected = false;
-      eraser = erasing = false;
-      delete document.body.dataset.eraser;
+      erasing = selecting = false;
+      delete document.body.dataset.selecting;
       undoable = redoable = false;
       fonts.clear();
       ui.closePanel();

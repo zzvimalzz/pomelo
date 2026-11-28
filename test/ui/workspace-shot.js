@@ -723,7 +723,7 @@ app.whenReady().then(async () => {
     const win = await openAndWait(fresh(), twelve);
     await sleep(900);
     let d = await dockState(win);
-    check(`${theme}: the dock holds the page group, the tools, More and the zoom group and nothing else`, d.titles.join('|') === 'Drag to move|Previous page (Page Up)|Next page (Page Down)|Select (V)|Highlight (H)|Draw (D)|Text (T)|Pages (P)|More|Zoom out (Ctrl+−)|View options|Zoom in (Ctrl+=)'
+    check(`${theme}: the dock holds the page group, the tools, More and the zoom group and nothing else`, d.titles.join('|') === 'Drag to move|Previous page (Page Up)|Next page (Page Down)|Select (V)|Highlight (H)|Draw (D)|Text (T)|Eraser (E)|Pages (P)|More|Zoom out (Ctrl+−)|View options|Zoom in (Ctrl+=)'
       && d.page === '1' && d.count === '/ 12' && d.zoom === 'Fit page' && d.opacity === '1', JSON.stringify(d));
     await js(win, `document.querySelector('.dock [aria-label="Next page"]').click()`);
     await sleep(400);

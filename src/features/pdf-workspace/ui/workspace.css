@@ -352,23 +352,25 @@ body.focus .well[data-dock="top"] .optbar { top: 116px; }
 /* Over a page the highlighter is the dot annotate.js draws, except over the words, where pdf.js's own cursor shows that a drag selects them. */
 body[data-tool="highlight"] .textLayer.highlighting { cursor: none; }
 body[data-tool="highlight"] .textLayer.highlighting span:not([role="img"]) { cursor: url(../../../../node_modules/pdfjs-dist/web/images/cursor-editorTextHighlight.svg) 24 24, text; }
+body[data-tool="highlight"] .textLayer.highlighting span:not([role="img"]) { padding: 3px 8px; margin: -3px -8px; }
+body[data-selecting] * { cursor: url(../../../../node_modules/pdfjs-dist/web/images/cursor-editorTextHighlight.svg) 24 24, text !important; }
 body[data-tool="highlight"] .textLayer.highlighting.free, body[data-tool="highlight"] .textLayer.highlighting.free span { cursor: none !important; }
 .hdot { position: fixed; left: 0; top: 0; z-index: 50; width: 18px; height: 18px; box-sizing: border-box; border-radius: 50%; border: 1.5px solid rgba(0, 0, 0, .4); box-shadow: 0 0 0 1px rgba(255, 255, 255, .7); opacity: .7; pointer-events: none; }
 .hdot[hidden] { display: none; }
 /* A mark is chosen and moved only with Select, so Draw and Highlight can carry on over a stroke already made. */
-body[data-tool]:not([data-tool="select"]) :is(.inkEditor, .freeTextEditor, .highlightEditor) { pointer-events: none !important; }
+body[data-tool]:not([data-tool="select"]):not([data-tool="eraser"]) :is(.inkEditor, .freeTextEditor, .highlightEditor) { pointer-events: none !important; }
 body[data-tool="text"] .freeTextEditor { pointer-events: auto !important; }
-body[data-tool]:not([data-tool="select"]) .highlightEditor .internal { pointer-events: none !important; }
+body[data-tool]:not([data-tool="select"]):not([data-tool="eraser"]) .highlightEditor .internal { pointer-events: none !important; }
 .editToolbar { pointer-events: auto; }
 .highlightEditor .editToolbar { display: none !important; }
 body[data-tool="highlight"] .selectedEditor, body[data-tool="draw"] .selectedEditor { outline: none !important; }
 body[data-tool="highlight"] .selectedEditor :is(.resizers, .editToolbar), body[data-tool="draw"] .selectedEditor :is(.resizers, .editToolbar) { display: none !important; }
-body[data-eraser] :is(.page, .textLayer, .annotationEditorLayer, .inkEditor, .freeTextEditor, .highlightEditor) { cursor: none !important; }
+body[data-tool="eraser"] :is(.page, .textLayer, .annotationEditorLayer, .inkEditor, .freeTextEditor, .highlightEditor) { cursor: none !important; }
 .ecur { position: fixed; left: 0; top: 0; z-index: 50; width: 30px; height: 30px; color: #1f1f1f; filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff); pointer-events: none; }
 .ecur[hidden] { display: none; }
 .ecur .i { width: 30px; height: 30px; fill: rgba(255, 255, 255, .85); stroke: currentColor; stroke-width: 1.8; }
-body[data-eraser] :is(.inkEditor, .freeTextEditor, .highlightEditor):hover { outline: 2px solid #e5484d; outline-offset: 1px; }
-body[data-eraser] :is(.inkEditor, .freeTextEditor, .highlightEditor) :is(.resizers, .editToolbar) { display: none !important; }
+body[data-tool="eraser"] :is(.inkEditor, .freeTextEditor, .highlightEditor):hover { outline: 2px solid #e5484d; outline-offset: 1px; }
+body[data-tool="eraser"] :is(.inkEditor, .freeTextEditor, .highlightEditor) :is(.resizers, .editToolbar) { display: none !important; }
 .sw.more { background: conic-gradient(#ff5d5d, #ffd84d, #7ee08a, #4dd4ff, #8a7dff, #ff7ad9, #ff5d5d); }
 .optbar .swatches { position: relative; }
 .well .optbar .palette { left: 50%; translate: -50% 0; display: grid; grid-template-columns: repeat(6, 26px); gap: 8px; min-width: 0; padding: 12px; }
@@ -386,10 +388,11 @@ body.focus:not(.tooling) .editpill { display: none; }
 }
 @container (max-width: 440px) {
   .dock .step, .zoomgroup .sm, .tools .sep { display: none; }
-  .tool { padding: 0 5px; }
-  .well[data-dock="left"] .tool, .well[data-dock="right"] .tool { height: 30px; }
+  .tool { padding: 0 3px; }
+  .dock { gap: 0; }
+  .well[data-dock="left"] .tool, .well[data-dock="right"] .tool { height: 26px; }
   .well[data-dock="left"] .tools, .well[data-dock="right"] .tools { gap: 0; }
-  .well[data-dock="left"] .dock, .well[data-dock="right"] .dock { padding: 4px 0; }
+  .well[data-dock="left"] .dock, .well[data-dock="right"] .dock { padding: 2px 0; }
   .tool.on { gap: 0; }
   .tool.on .lbl { max-width: 0; }
   .selchip { padding: 0 9px; }

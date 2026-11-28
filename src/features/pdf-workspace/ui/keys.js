@@ -15,6 +15,7 @@
     highlight: { keys: ['h', 'H'], label: 'H' },
     draw: { keys: ['d', 'D'], label: 'D' },
     text: { keys: ['t', 'T'], label: 'T' },
+    eraser: { keys: ['e', 'E'], label: 'E' },
     find: { keys: ['Ctrl+f', 'Ctrl+F'], label: 'Ctrl+F' },
     documentPanel: { keys: ['Ctrl+d', 'Ctrl+D'], label: 'Ctrl+D' },
     saveCopy: { keys: ['Ctrl+Shift+S'], label: 'Ctrl+Shift+S' },

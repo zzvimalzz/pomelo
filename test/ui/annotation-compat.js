@@ -282,10 +282,10 @@ async function bars() {
   const file = await makeDoc('Bars.pdf');
   const win = await open(fresh(true), file);
   const idle = await state(win);
-  check('the dock has Select, Highlight, Draw and Text, and nothing is on', ['Select (V)', 'Highlight (H)', 'Draw (D)', 'Text (T)'].every((t) => idle.tools.includes(t)) && idle.on === '' && !idle.save, JSON.stringify(idle));
+  check('the dock has Select, Highlight, Draw, Text and Eraser, and nothing is on', ['Select (V)', 'Highlight (H)', 'Draw (D)', 'Text (T)', 'Eraser (E)'].every((t) => idle.tools.includes(t)) && idle.on === '' && !idle.save, JSON.stringify(idle));
   check('the title row has only Save and the document buttons', (await js(win, `!document.getElementById('undobtn') && !document.getElementById('redobtn') && !document.getElementById('clearbtn')`)));
   await tool(win, 'Select');
-  check('Select shows Delete and Eraser', (await barOf(win)) === 'Delete|Eraser', await barOf(win));
+  check('Select and Eraser have no option bar', (await barOf(win)) === '' && (await tool(win, 'Eraser'), (await barOf(win)) === '') && (await tool(win, 'Eraser'), true), await barOf(win));
   await tool(win, 'Highlight');
   check('Highlight shows three colours and More colours', (await barOf(win)) === 'Yellow|Green|Pink|More colours', await barOf(win));
   await tool(win, 'Draw');
@@ -345,6 +345,23 @@ async function behaviour() {
   check('in Highlight nothing is selected, not the new highlight and not one that was pressed', (await js(win, `document.querySelectorAll('.selectedEditor').length`)) === 0);
   await drag(win, [px + pw * 0.15, py + 8], [px + pw * 0.8, py + 24]);
   check('nor is a free-form highlight', (await js(win, `document.querySelectorAll('.selectedEditor').length`)) === 0);
+  const second = (await where(win, 'Second')).line;
+  const sy = (second[1] + second[3]) / 2;
+  mouse(win, 'mouseMove', second[0] + 3, sy);
+  await sleep(300);
+  check('just before the first letter the highlighter is still the words cursor, not the dot', await js(win, `document.querySelector('.hdot').hidden`));
+  const textMarks = async () => (await entries()).filter((e) => e.quads).length;
+  const had = await textMarks();
+  await drag(win, [second[0] + 3, sy], [second[0] + 100, sy]);
+  check('a drag from there takes the first letter in', (await textMarks()) === had + 1);
+  mouse(win, 'mouseMove', second[0] + 20, sy);
+  mouse(win, 'mouseDown', second[0] + 20, sy);
+  mouse(win, 'mouseMove', px + pw * 0.5, py + ph * 0.3);
+  await sleep(300);
+  const away = await js(win, `({ dot: document.querySelector('.hdot').hidden, text: getComputedStyle(document.querySelector('.textLayer')).cursor })`);
+  mouse(win, 'mouseUp', px + pw * 0.5, py + ph * 0.3);
+  await sleep(500);
+  check('a drag that began on a word keeps the words cursor when it leaves the text', away.dot && away.text.includes('cursor-editorTextHighlight'), JSON.stringify(away));
   const [lx, ly] = [line[0] + 40, (line[1] + line[3]) / 2];
   mouse(win, 'mouseMove', lx, ly);
   await sleep(300);
@@ -410,13 +427,13 @@ async function behaviour() {
   const first = await stroke();
   const centre = [first[0] + first[2] / 2, first[1] + first[3] / 2];
   await click(win, ...centre);
-  check('a click on a stroke selects it and turns Delete on', (await js(win, `document.querySelectorAll('.inkEditor.selectedEditor').length`)) === 1 && (await js(win, `[...document.querySelectorAll('.optbar:not([hidden]) button')].every((b) => !b.disabled)`)));
+  check('a click on a stroke selects it', (await js(win, `document.querySelectorAll('.inkEditor.selectedEditor').length`)) === 1);
   await drag(win, centre, [centre[0] + 40, centre[1]]);
   const moved = await js(win, `document.querySelector('.inkEditor.selectedEditor').getBoundingClientRect().left`);
   check('a drag in Select moves it', Math.abs(moved - first[0] - 40) < 6, JSON.stringify([first, moved]));
   const marks = (await entries()).length;
-  await click(win, 'Eraser');
-  check('the Eraser turns on', await js(win, `document.body.dataset.eraser === '' && [...document.querySelectorAll('.optbar button')].find((b) => b.textContent === 'Eraser').getAttribute('aria-pressed') === 'true'`));
+  await tool(win, 'Eraser');
+  check('the Eraser tool is on, and nothing is selected', (await state(win)).on === 'Eraser' && (await js(win, `document.body.dataset.tool === 'eraser' && document.querySelectorAll('.selectedEditor').length === 0`)));
   const hit = await js(win, `(() => { const r = document.querySelector('.inkEditor').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
   mouse(win, 'mouseMove', ...hit);
   await sleep(500);
@@ -449,6 +466,7 @@ async function behaviour() {
   check('a text box takes the font chosen', (await js(win, `document.querySelector('.freeTextEditor')?.dataset.font`)) === 'Times');
   await tool(win, 'Select');
   const written = (await entries()).length;
+  const textHighlights = (await entries()).filter((e) => e.quads).length;
   const before2 = fs.statSync(file).mtimeMs;
   await js(win, `document.getElementById('savebtn').click()`);
   await until('the question about the original', () => js(win, `!!document.querySelector('.card .btn.primary')`), 15000);
@@ -457,7 +475,7 @@ async function behaviour() {
   const saved = see(file);
   const note = saved.annots.find((a) => a.type === 'FreeText');
   check('the saved text box is in that font', !!note && note.da.includes('/TiRo '), note?.da);
-  check('every mark in the window is in the file, the free-form highlight as an ink stroke', saved.annots.length === written && saved.annots.filter((a) => a.type === 'Ink').length === written - 3, JSON.stringify([written, saved.annots.map((a) => a.type)]));
+  check('every mark in the window is in the file, the free-form highlight as an ink stroke', saved.annots.length === written && saved.annots.filter((a) => a.type === 'Ink').length === written - textHighlights - 1, JSON.stringify([written, saved.annots.map((a) => a.type)]));
   await closeAndWait(win);
 }
 
