@@ -285,7 +285,7 @@ async function bars() {
   check('the dock has Select, Highlight, Draw and Text, and nothing is on', ['Select (V)', 'Highlight (H)', 'Draw (D)', 'Text (T)'].every((t) => idle.tools.includes(t)) && idle.on === '' && !idle.save, JSON.stringify(idle));
   check('the title row has only Save and the document buttons', (await js(win, `!document.getElementById('undobtn') && !document.getElementById('redobtn') && !document.getElementById('clearbtn')`)));
   await tool(win, 'Select');
-  check('Select shows Rotate and Delete', (await barOf(win)) === 'Rotate|Delete', await barOf(win));
+  check('Select shows Delete and Eraser', (await barOf(win)) === 'Delete|Eraser', await barOf(win));
   await tool(win, 'Highlight');
   check('Highlight shows three colours and More colours', (await barOf(win)) === 'Yellow|Green|Pink|More colours', await barOf(win));
   await tool(win, 'Draw');
@@ -342,8 +342,9 @@ async function behaviour() {
   mouse(win, 'mouseDown', line[0] + 40, (line[1] + line[3]) / 2);
   mouse(win, 'mouseUp', line[0] + 40, (line[1] + line[3]) / 2);
   await sleep(500);
-  check('a selected highlight has its remove button drawn', (await js(win, `document.querySelectorAll('.editToolbar .deleteButton svg').length`)) === 1);
+  check('in Highlight nothing is selected, not the new highlight and not one that was pressed', (await js(win, `document.querySelectorAll('.selectedEditor').length`)) === 0);
   await drag(win, [px + pw * 0.15, py + 8], [px + pw * 0.8, py + 24]);
+  check('nor is a free-form highlight', (await js(win, `document.querySelectorAll('.selectedEditor').length`)) === 0);
   check('a drag over empty page makes a free-form highlight', (await entries()).some((e) => !e.quads), JSON.stringify(await entries()));
   await tool(win, 'Highlight');
 
@@ -395,13 +396,24 @@ async function behaviour() {
   const first = await stroke();
   const centre = [first[0] + first[2] / 2, first[1] + first[3] / 2];
   await click(win, ...centre);
-  check('a click on a stroke selects it and turns Rotate and Delete on', (await js(win, `document.querySelectorAll('.inkEditor.selectedEditor').length`)) === 1 && (await js(win, `[...document.querySelectorAll('.optbar:not([hidden]) button')].every((b) => !b.disabled)`)));
+  check('a click on a stroke selects it and turns Delete on', (await js(win, `document.querySelectorAll('.inkEditor.selectedEditor').length`)) === 1 && (await js(win, `[...document.querySelectorAll('.optbar:not([hidden]) button')].every((b) => !b.disabled)`)));
   await drag(win, centre, [centre[0] + 40, centre[1]]);
   const moved = await js(win, `document.querySelector('.inkEditor.selectedEditor').getBoundingClientRect().left`);
   check('a drag in Select moves it', Math.abs(moved - first[0] - 40) < 6, JSON.stringify([first, moved]));
-  await click(win, 'Rotate');
-  const turned = await js(win, `(() => { const e = document.querySelector('.inkEditor.selectedEditor'); const r = e.getBoundingClientRect(); return [e.style.rotate, e.dataset.turn, r.height > r.width]; })()`);
-  check('Rotate turns it a quarter clockwise, and a turned mark is taller than wide', turned[0] === '90deg' && turned[1] === '90' && turned[2], JSON.stringify(turned));
+  const marks = (await entries()).length;
+  await click(win, 'Eraser');
+  check('the Eraser turns on', await js(win, `document.body.dataset.eraser === '' && [...document.querySelectorAll('.optbar button')].find((b) => b.textContent === 'Eraser').getAttribute('aria-pressed') === 'true'`));
+  const hit = await js(win, `(() => { const r = document.querySelector('.inkEditor').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
+  mouse(win, 'mouseMove', ...hit);
+  await sleep(200);
+  check('the pointer is an eraser, drawn by the page', await js(win, `!document.querySelector('.ecur').hidden && !!document.querySelector('.ecur svg') && getComputedStyle(document.querySelector('.inkEditor')).cursor === 'none'`));
+  await click(win, ...hit);
+  check('a click on a mark with the Eraser takes it away', (await entries()).length === marks - 1, JSON.stringify([marks, (await entries()).length]));
+  await push(win, 'Undo');
+  check('Undo brings it back', (await entries()).length === marks);
+  await push(win, 'Redo');
+  await drag(win, [px + pw * 0.4, py + ph * 0.3], [px + pw * 0.4, py + ph * 0.75]);
+  check('dragging the Eraser across marks takes each away', (await entries()).length < marks - 1, String((await entries()).length));
   await press(win, 'Escape');
 
   console.log('  Undo, Redo and Clear all');
@@ -432,8 +444,6 @@ async function behaviour() {
   const note = saved.annots.find((a) => a.type === 'FreeText');
   check('the saved text box is in that font', !!note && note.da.includes('/TiRo '), note?.da);
   check('every mark in the window is in the file, the free-form highlight as an ink stroke', saved.annots.length === written && saved.annots.filter((a) => a.type === 'Ink').length === written - 2, JSON.stringify([written, saved.annots.map((a) => a.type)]));
-  const tall = saved.annots.filter((a) => a.type === 'Ink' && a.rect[3] - a.rect[1] > 1.5 * (a.rect[2] - a.rect[0]));
-  check('the stroke that was turned is saved turned', tall.length === 1, JSON.stringify(tall.map((a) => a.rect)));
   await closeAndWait(win);
 }
 

@@ -359,10 +359,15 @@ body[data-tool="highlight"] .textLayer.highlighting.free, body[data-tool="highli
 body[data-tool]:not([data-tool="select"]) :is(.inkEditor, .freeTextEditor, .highlightEditor) { pointer-events: none !important; }
 body[data-tool="text"] .freeTextEditor { pointer-events: auto !important; }
 .editToolbar { pointer-events: auto; }
-.annotationEditorLayer [data-turn] .resizers { display: none; }
-.annotationEditorLayer [data-turn="90"] .editToolbar { rotate: -90deg; }
-.annotationEditorLayer [data-turn="180"] .editToolbar { rotate: -180deg; }
-.annotationEditorLayer [data-turn="270"] .editToolbar { rotate: -270deg; }
+.highlightEditor .editToolbar { display: none !important; }
+body[data-tool="highlight"] .selectedEditor, body[data-tool="draw"] .selectedEditor { outline: none !important; }
+body[data-tool="highlight"] .selectedEditor :is(.resizers, .editToolbar), body[data-tool="draw"] .selectedEditor :is(.resizers, .editToolbar) { display: none !important; }
+body[data-eraser] :is(.page, .textLayer, .annotationEditorLayer, .inkEditor, .freeTextEditor, .highlightEditor) { cursor: none !important; }
+.ecur { position: fixed; left: 0; top: 0; z-index: 50; width: 30px; height: 30px; color: #1f1f1f; filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff); pointer-events: none; }
+.ecur[hidden] { display: none; }
+.ecur .i { width: 30px; height: 30px; fill: rgba(255, 255, 255, .85); stroke: currentColor; stroke-width: 1.8; }
+body[data-eraser] :is(.inkEditor, .freeTextEditor, .highlightEditor):hover { outline: 2px solid #e5484d; outline-offset: 1px; }
+body[data-eraser] :is(.inkEditor, .freeTextEditor, .highlightEditor) :is(.resizers, .editToolbar) { display: none !important; }
 .sw.more { background: conic-gradient(#ff5d5d, #ffd84d, #7ee08a, #4dd4ff, #8a7dff, #ff7ad9, #ff5d5d); }
 .optbar .swatches { position: relative; }
 .well .optbar .palette { left: 50%; translate: -50% 0; display: grid; grid-template-columns: repeat(6, 26px); gap: 8px; min-width: 0; padding: 12px; }

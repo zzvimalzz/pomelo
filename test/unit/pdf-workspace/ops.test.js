@@ -24,7 +24,6 @@ const highlight = { op: 'annot.add', type: 'highlight', page: 2, color: [255, 21
 const ink = { op: 'annot.add', type: 'ink', page: 1, color: [0, 0, 0], opacity: 0.4, thickness: 6, paths: [[0, 0, 10, 10, 20, 5]] };
 const note = { op: 'annot.add', type: 'freetext', page: 1, color: [0, 0, 255], rect: [10, 10, 200, 40], text: 'Café 日本', size: 12, font: 'Times' };
 expect('a highlight, an ink stroke and a text box are allowed, come back as given, and are added in place', JSON.stringify(check([highlight, ink, note])) === JSON.stringify([highlight, ink, note]) && OPS['annot.add'].kind === 'annotate');
-expect('a text box may carry a quarter turn', [0, 90, 180, 270].every((turn) => !refused([{ ...note, turn }])));
 expect('a key a kind of markup may leave out is not carried as undefined', !('opacity' in check([highlight])[0]));
 
 console.log('what is refused');
@@ -61,7 +60,7 @@ const bad = {
   'ink with a stroke of one number': [{ ...ink, paths: [[1]] }], 'ink with a stroke of an odd number of numbers': [{ ...ink, paths: [[1, 2, 3]] }], 'ink with no strokes': [{ ...ink, paths: [] }], 'ink as a flat list': [{ ...ink, paths: [1, 2, 3, 4] }],
   'ink thicker than 100': [{ ...ink, thickness: 101 }], 'ink of no thickness': [{ ...ink, thickness: 0 }], 'ink with a quad': [{ ...ink, quads: [quad] }],
   'a text box with no text': [{ ...note, text: undefined }], 'a text box of blank text': [{ ...note, text: '   ' }], 'a text box with a null character': [{ ...note, text: 'a\0b' }], 'a text box of 5001 characters': [{ ...note, text: 'x'.repeat(5001) }],
-  'a text box with a rectangle of three numbers': [{ ...note, rect: [1, 2, 3] }], 'a text box with a size under 4': [{ ...note, size: 3 }], 'a text box with a size over 200': [{ ...note, size: 201 }], 'a text box with no size': [{ ...note, size: undefined }], 'a text box with no font': [{ ...note, font: undefined }], 'a text box in a font that is not offered': [{ ...note, font: 'Comic Sans' }], 'a highlight with a font': [{ ...highlight, font: 'Times' }], 'a text box turned by 45': [{ ...note, turn: 45 }], 'a text box turned by 360': [{ ...note, turn: 360 }], 'an ink stroke with a turn': [{ ...ink, turn: 90 }],
+  'a text box with a rectangle of three numbers': [{ ...note, rect: [1, 2, 3] }], 'a text box with a size under 4': [{ ...note, size: 3 }], 'a text box with a size over 200': [{ ...note, size: 201 }], 'a text box with no size': [{ ...note, size: undefined }], 'a text box with no font': [{ ...note, font: undefined }], 'a text box in a font that is not offered': [{ ...note, font: 'Comic Sans' }], 'a highlight with a font': [{ ...highlight, font: 'Times' }],
   'a text box with a stroke': [{ ...note, paths: ink.paths }],
   'a colour with two numbers': [{ ...note, color: [0, 0] }], 'a colour with a number over 255': [{ ...note, color: [0, 0, 256] }], 'a colour with a fraction': [{ ...note, color: [0, 0.5, 1] }], 'a colour written as text': [{ ...note, color: '#000000' }],
   'an opacity over 1': [{ ...ink, opacity: 1.5 }], 'an opacity under 0': [{ ...ink, opacity: -0.1 }], 'markup on page 0': [{ ...note, page: 0 }], 'markup on a page that is text': [{ ...note, page: '1' }],

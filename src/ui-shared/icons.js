@@ -46,6 +46,7 @@ window.pomeloUi.icon = (() => {
     flipv: '<path d="M3 12h18" stroke-dasharray="2 2.6"/><path d="M7 9 17 3v6z"/><path d="M7 15l10 6v-6z"/>',
     more: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
     trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
+    eraser: '<path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21"/><path d="M22 21H7M5 11l9 9"/>',
     extract: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M12 18v-6M9 15l3 3 3-3"/>',
     combine: '<path d="M8 3H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h3"/><path d="M16 3h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-3"/><path d="M12 6v12M9 15l3 3 3-3"/>',
     split: '<path d="M12 3v18" stroke-dasharray="2 2.6"/><rect x="3" y="5" width="6" height="14" rx="1.5"/><rect x="15" y="5" width="6" height="14" rx="1.5"/>',

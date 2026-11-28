@@ -16,7 +16,6 @@
   const TOO_LARGE = 'Saving changes to a file this large needs the PDF engine.';
   const TOOLS = [['select', 'Select', 'cursor'], ['highlight', 'Highlight', 'highlight'], ['draw', 'Draw', 'pen'], ['text', 'Text', 'type']];
   const EDITORS = '.inkEditor, .freeTextEditor, .highlightEditor';
-  const TURNABLE = '.inkEditor, .freeTextEditor, .highlightEditor.free';
 
   const options = { highlight: ui.HIGHLIGHT.defaults[0][1], kind: 'pen', ink: ui.INK.defaults[0][1], width: 2, size: 12, font: FONTS[0] };
   const listeners = [];
@@ -33,19 +32,21 @@
   let manager = null;
   let selected = false;
   let drawing = false;
+  let erasing = false;
+  let eraser = false;
   let pill = null;
   let dot = null;
+  let rubber = null;
   const fonts = new Map();
-  const turns = new Map();
 
   // pdf.js names the colours of the picker of a selected highlight; the option is a list of name=colour.
   const colours = ui.HIGHLIGHT.all.slice(0, 8).map(([name, value]) => `${name.toLowerCase()}=${value}`).join(',');
 
   // The entries of the editor that are markup: a form field's value is in the same storage and is not ours to write. A text box carries
-  // the font chosen for it and a mark the turn given to it, which pdf.js keeps neither of.
+  // the font chosen for it, which pdf.js does not keep.
   function entries(pdf) {
     const { map } = pdf.annotationStorage.serializable;
-    return map ? [...map].filter(([, entry]) => typeof entry.annotationType === 'number').map(([id, entry]) => ({ ...entry, font: fonts.get(id) ?? FONTS[0], turn: turns.get(id) ?? 0 })) : [];
+    return map ? [...map].filter(([, entry]) => typeof entry.annotationType === 'number').map(([id, entry]) => ({ ...entry, font: fonts.get(id) ?? FONTS[0] })) : [];
   }
 
   function count() {
@@ -65,11 +66,7 @@
       const viewport = page.getViewport({ scale: 1 });
       const shown = (flat) => { const out = []; for (let i = 0; i < flat.length; i += 2) out.push(...viewport.convertToViewportPoint(flat[i], flat[i + 1])); return out; };
       const base = { op: 'annot.add', page: entry.pageIndex + 1, color: entry.color };
-      const [x0, y0, x1, y1] = entry.rect ? shown(entry.rect) : [0, 0, 0, 0];
-      const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2];
-      // A mark turned in the window is turned about the middle of its box, a quarter turn clockwise at a time.
-      const turned = (flat) => flat.map((v, i) => { const [dx, dy] = i % 2 ? [flat[i - 1] - cx, v - cy] : [v - cx, flat[i + 1] - cy]; return [[dx, dy], [-dy, dx], [-dx, -dy], [dy, -dx]][entry.turn / 90][i % 2] + (i % 2 ? cy : cx); });
-      const stroke = (points) => points.map((line) => turned(shown(Array.from(line))));
+      const stroke = (points) => points.map((line) => shown(Array.from(line)));
       if (entry.annotationType === kinds.HIGHLIGHT && entry.quadPoints) {
         const flat = Array.from(entry.quadPoints);
         ops.push({ ...base, type: 'highlight', opacity: entry.opacity, quads: Array.from({ length: flat.length / 8 }, (_, i) => shown(flat.slice(i * 8, i * 8 + 8))) });
@@ -79,8 +76,7 @@
         ops.push({ ...base, type: 'ink', opacity: entry.opacity, thickness: entry.thickness, paths: stroke(entry.paths.points) });
       } else if (entry.annotationType === kinds.FREETEXT) {
         if (page.userUnit !== 1) throw new Error('A text box cannot be saved on a page that has its own scale.');
-        const [w, h] = (entry.turn / 90) % 2 ? [Math.abs(y1 - y0), Math.abs(x1 - x0)] : [Math.abs(x1 - x0), Math.abs(y1 - y0)];
-        ops.push({ ...base, type: 'freetext', rect: [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], text: entry.value, size: entry.fontSize, font: entry.font, turn: entry.turn });
+        ops.push({ ...base, type: 'freetext', rect: shown(entry.rect), text: entry.value, size: entry.fontSize, font: entry.font });
       } else {
         throw new Error('This kind of markup cannot be saved.');
       }
@@ -156,20 +152,22 @@
     apply();
   };
 
-  function show(box) {
-    const turn = turns.get(box.id) ?? 0;
-    box.style.rotate = `${turn}deg`;
-    if (turn) box.dataset.turn = turn;
-    else delete box.dataset.turn;
+  function useEraser(on) {
+    eraser = on;
+    erasing = false;
+    rubber.hidden = true;
+    if (on) manager?.unselectAll();
+    if (on) document.body.dataset.eraser = '';
+    else delete document.body.dataset.eraser;
+    draw();
   }
 
-  // pdf.js cannot turn a mark, so the box is turned on the page and the turn is written with the mark, a quarter turn clockwise at a time.
-  function rotate() {
-    for (const box of document.querySelectorAll('.selectedEditor')) {
-      if (!box.matches(TURNABLE)) continue;
-      turns.set(box.id, ((turns.get(box.id) ?? 0) + 90) % 360);
-      show(box);
-    }
+  // The eraser takes the mark under the pointer. It goes through the editor's own delete, so Undo brings the mark back.
+  function erase(box) {
+    const editor = manager?.getEditor(box.id);
+    if (!editor) return;
+    manager.setSelected(editor);
+    manager.delete();
   }
 
   function sync() {
@@ -187,10 +185,9 @@
   function draw() {
     const parts = [];
     if (tool === 'select') {
-      const turn = action('rotr', 'Rotate', rotate);
       const remove = action('trash', 'Delete', () => dispatch('delete'));
-      turn.disabled = remove.disabled = !selected;
-      parts.push(turn, remove);
+      remove.disabled = !selected;
+      parts.push(remove, option('eraser', 'Eraser', eraser, () => useEraser(!eraser)));
     }
     if (tool === 'highlight') parts.push(colourRow(ui.HIGHLIGHT, 'highlight', 'Highlight colour'));
     if (tool === 'draw') {
@@ -228,6 +225,9 @@
     bar.addEventListener('mousedown', (e) => e.preventDefault());
     dot = el('div', 'hdot');
     dot.hidden = true;
+    rubber = el('div', 'ecur');
+    rubber.innerHTML = icon('eraser');
+    rubber.hidden = true;
     pill = el('div', 'editpill');
     pill.hidden = true;
     pill.addEventListener('mousedown', (e) => e.preventDefault());
@@ -237,7 +237,7 @@
       pill.append(pill[way]);
     }
     document.querySelector('.well').append(bar, pill);
-    document.body.append(dot);
+    document.body.append(dot, rubber);
     new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
     const remember = ({ source }) => { if (typeof source?.unselectAll === 'function') manager = source; };
     eventBus.on('editingstateschanged', remember);
@@ -252,7 +252,22 @@
     }, true);
     container.addEventListener('pointerleave', () => { if (!drawing) dot.hidden = true; });
     container.addEventListener('pointerdown', (e) => { drawing = tool === 'highlight' && !dot.hidden && e.button === 0; }, true);
-    window.addEventListener('pointerup', () => { drawing = false; });
+    window.addEventListener('pointerup', () => { drawing = false; erasing = false; });
+    container.addEventListener('pointerdown', (e) => {
+      if (!eraser || e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      erasing = true;
+      const box = e.target.closest?.(EDITORS);
+      if (box) erase(box);
+    }, true);
+    container.addEventListener('pointerleave', () => { rubber.hidden = true; });
+    container.addEventListener('pointermove', (e) => {
+      rubber.hidden = !eraser;
+      if (eraser) rubber.style.transform = `translate(${e.clientX - 5}px, ${e.clientY - 25}px)`;
+      const box = erasing && document.elementFromPoint(e.clientX, e.clientY)?.closest(EDITORS);
+      if (box) erase(box);
+    }, true);
     document.addEventListener('pointerdown', (e) => {
       if (ui.panelUp() && !e.target.closest('.palette, .sw.more')) { ui.closePanel(); draw(); }
     }, true);
@@ -264,7 +279,6 @@
           if (!fonts.has(box.id)) fonts.set(box.id, options.font);
           box.dataset.font = fonts.get(box.id);
         }
-        if (turns.has(box.id)) show(box);
       }
       for (const remove of node.matches('.deleteButton') ? [node] : node.querySelectorAll('.deleteButton')) remove.innerHTML = icon('trash');
     };
@@ -290,6 +304,9 @@
       tool = next;
       selected = false;
       drawing = false;
+      eraser = erasing = false;
+      delete document.body.dataset.eraser;
+      rubber.hidden = true;
       dot.hidden = true;
       ui.closePanel();
       for (const [id, b] of buttons) {
@@ -313,6 +330,7 @@
       redoable = !!details.hasSomethingToRedo;
       const chosen = !!details.hasSelectedEditor;
       if (chosen !== selected) { selected = chosen; if (tool === 'select') draw(); }
+      if (chosen && tool === 'highlight') manager?.unselectAll();
       sync();
       setTimeout(() => { if (tab?.pdf) count(); });
     });
@@ -320,14 +338,15 @@
     eventBus.on('pagesdestroy', () => {
       tool = null;
       selected = false;
+      eraser = erasing = false;
+      delete document.body.dataset.eraser;
       undoable = redoable = false;
       fonts.clear();
-      turns.clear();
       ui.closePanel();
       for (const b of buttons.values()) { b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); }
       document.body.classList.remove('tooling');
       delete document.body.dataset.tool;
-      dot.hidden = true;
+      dot.hidden = rubber.hidden = true;
       bar.hidden = true;
       sync();
     });
