@@ -20,11 +20,13 @@
   // The loading task owns the document's memory: a document proxy has no destroy of its own.
   const release = (pdf) => pdf?.loadingTask.destroy();
   const find = (token) => tabs.find((t) => t.doc.token === token);
+  const changed = (tab) => !!tab && (tab.doc.dirty || window.workspaceAnnotate.pending(tab));
 
   function drawTabs() {
     line.hidden = tabs.length > 1;
-    tabStrip.render(tabs.map((t) => t.doc), active?.doc.token);
-    dot.hidden = saveButton.hidden = !active?.doc.dirty;
+    tabStrip.render(tabs.map((t) => ({ ...t.doc, dirty: changed(t) })), active?.doc.token);
+    dot.hidden = saveButton.hidden = !changed(active);
+    window.workspaceAnnotate.sync();
   }
 
   function showFailure(tab) {
@@ -47,12 +49,14 @@
     tab.shown = false;
     release(tab.pdf);
     tab.pdf = null;
+    tab.edited = false;
     tab.error = null;
     if (tab === active) display(tab);
   }
 
   function put(tab) {
     window.workspaceOrganise.use(tab);
+    window.workspaceAnnotate.use(tab);
     viewer.show(tab.pdf, tab.left);
     tab.shown = true;
     window.workspaceProperties.show(tab);
@@ -84,7 +88,10 @@
     document.title = `${tab.doc.name} - Pomelo`;
   }
 
-  function activate(tab) {
+  // The editor draws nothing for a tab that was left and comes back, so markup still held for the tab is written before it is left.
+  async function activate(tab) {
+    if (tab === active) return;
+    if (active && !(await window.workspaceAnnotate.flush(active))) return;
     if (tab === active) return;
     if (active?.shown) {
       active.left = viewer.where();
@@ -122,6 +129,7 @@
   // what was saved (the copy's, after a copy), or null when it was not done (the user said no, or the main process said why in the corner
   // notice).
   async function save(tab, copy = false, closing = false) {
+    if (!(await window.workspaceAnnotate.flush(tab))) return null;
     const { token, name: file } = tab.doc;
     if (!copy && !tab.replaceAsked) {
       const answer = await choose('Replace the original?', `Save over ${file}, or keep it as it is and save a copy.`, [{ label: 'Cancel', value: null }, { label: 'Save a copy', value: 'copy' }, { label: 'Replace', value: 'replace', primary: true }]);
@@ -153,7 +161,7 @@
     const to = targets.length ? await chooseFormat(targets) : null;
     if (!to) return;
     let token = tab.doc.token;
-    if (tab.doc.dirty) {
+    if (changed(tab)) {
       const answer = await choose('Save your changes before converting?', '', [{ label: 'Cancel', value: null }, { label: 'Save a copy', value: 'copy' }, { label: 'Save', value: 'save', primary: true }]);
       token = answer && await save(tab, answer === 'copy');
       if (!token) return;
@@ -169,14 +177,15 @@
 
   async function closeTab(token) {
     const tab = find(token);
-    if (tab && (!tab.doc.dirty || await settle(tab))) close(token);
+    if (tab && (!changed(tab) || await settle(tab))) close(token);
   }
 
   tabStrip.bind({ select: (token) => activate(find(token)), close: closeTab });
+  window.workspaceAnnotate.listen(drawTabs);
   name.onclick = () => window.workspaceProperties.open();
   saveButton.title = `Save (${window.workspaceKeys.label('save')})`;
   saveButton.onclick = () => active && save(active);
-  window.workspaceKeys.bind('save', () => { if (!active?.doc.dirty) return false; save(active); });
+  window.workspaceKeys.bind('save', () => { if (!changed(active)) return false; save(active); });
   window.workspaceKeys.bind('saveCopy', () => { if (!active) return false; save(active, true); });
   window.workspaceDock.setMore([
     { text: 'Convert to…', arrow: true, run: () => active && convert(active) },
@@ -200,7 +209,7 @@
     if (leaving || isOpen()) return;
     leaving = true;
     let go = true;
-    for (const tab of tabs.filter((t) => t.doc.dirty)) {
+    for (const tab of tabs.filter(changed)) {
       activate(tab);
       if (!(go = await settle(tab))) break;
     }
@@ -210,7 +219,8 @@
 
   // Files opened while the window is still starting wait for it, so none is lost between the first state and this listener.
   const ready = (async () => {
-    const { documents, dock, view } = await window.workspaceApi.state();
+    const { documents, dock, view, saveLimit } = await window.workspaceApi.state();
+    window.workspaceAnnotate.setLimit(saveLimit);
     document.querySelector('.well').dataset.dock = dock;
     await viewer.start(document.getElementById('scroller'), document.getElementById('viewer'), view);
     for (const doc of documents) add(doc);

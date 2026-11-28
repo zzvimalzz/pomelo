@@ -723,7 +723,7 @@ app.whenReady().then(async () => {
     const win = await openAndWait(fresh(), twelve);
     await sleep(900);
     let d = await dockState(win);
-    check(`${theme}: the dock holds the page group, the tools, More and the zoom group and nothing else`, d.titles.join('|') === 'Drag to move|Previous page (Page Up)|Next page (Page Down)|Pages (P)|More|Zoom out (Ctrl+−)|View options|Zoom in (Ctrl+=)'
+    check(`${theme}: the dock holds the page group, the tools, More and the zoom group and nothing else`, d.titles.join('|') === 'Drag to move|Previous page (Page Up)|Next page (Page Down)|Select (V)|Highlight (H)|Draw (D)|Text (T)|Eraser (E)|Pages (P)|More|Zoom out (Ctrl+−)|View options|Zoom in (Ctrl+=)'
       && d.page === '1' && d.count === '/ 12' && d.zoom === 'Fit page' && d.opacity === '1', JSON.stringify(d));
     await js(win, `document.querySelector('.dock [aria-label="Next page"]').click()`);
     await sleep(400);
@@ -2576,7 +2576,7 @@ app.whenReady().then(async () => {
   {
     const twelve = await makePdf('Grid twelve.pdf', 12);
     const second = await makePdf('Grid two.pdf', 2);
-    const grid = (win) => js(win, `(() => { const g = document.querySelector('.pgrid'); const b = document.querySelector('.dock .tool'); const bar = document.querySelector('.optbar'); const cells = [...document.querySelectorAll('.cell:not(.hole):not(.leaving)')];
+    const grid = (win) => js(win, `(() => { const g = document.querySelector('.pgrid'); const b = document.querySelector('.dock .tool[aria-label="Pages"]'); const bar = document.querySelector('.optbar'); const cells = [...document.querySelectorAll('.cell:not(.hole):not(.leaving)')];
       return { shown: !g.hidden, organising: document.querySelector('.well').classList.contains('organising'), scroller: getComputedStyle(document.getElementById('scroller')).visibility, cells: cells.length,
         labels: cells.slice(0, 2).map((c) => c.getAttribute('aria-label')).join(), canvases: document.querySelectorAll('.cell canvas').length, selected: cells.filter((c) => c.classList.contains('sel')).map((c) => c.dataset.n).join(),
         aria: cells.filter((c) => c.getAttribute('aria-selected') === 'true').length, focused: document.activeElement.classList.contains('cell') ? document.activeElement.dataset.n : document.activeElement.id,
@@ -2599,7 +2599,7 @@ app.whenReady().then(async () => {
     const clickCell = async (win, n, modifiers = [], times = 1) => { const p = await centre(win, n); await over(win, n, p); await click(win, p, modifiers, times); };
     const sheetsDrawn = (win, n) => until(`${n} thumbnails`, async () => (await grid(win)).canvases >= n);
     const across = (win) => js(win, `(() => { const top = document.querySelector('.cell').offsetTop; return [...document.querySelectorAll('.cell')].filter((c) => c.offsetTop === top).length; })()`);
-    const openGrid = async (win, wait = 500) => { await js(win, `document.querySelector('.dock .tool').click()`); await sleep(wait); };
+    const openGrid = async (win, wait = 500) => { await js(win, `document.querySelector('.dock .tool[aria-label="Pages"]').click()`); await sleep(wait); };
 
     for (const theme of ['light', 'dark']) {
       nativeTheme.themeSource = theme;
@@ -2826,7 +2826,7 @@ app.whenReady().then(async () => {
         const place = await js(win, `(() => { const d = document.querySelector('.dock').getBoundingClientRect(); const o = document.querySelector('.optbar').getBoundingClientRect(); const w = document.querySelector('.well').getBoundingClientRect(); const s = document.querySelector('.optbar .sep').getBoundingClientRect();
           return { above: o.bottom <= d.top, below: o.top >= d.bottom, apart: o.right <= d.left || o.left >= d.right || o.bottom <= d.top || o.top >= d.bottom, inside: o.left >= w.left && o.right <= w.right && o.top >= w.top && o.bottom <= w.bottom,
             centre: Math.abs((o.left + o.right) / 2 - (d.left + d.right) / 2) < 2, wellCentre: Math.abs((o.left + o.right) / 2 - (w.left + w.right) / 2) < 2, low: Math.round(w.bottom - o.bottom), sep: Math.round(s.width) + 'x' + Math.round(s.height),
-            label: document.querySelector('.dock .tool .lbl').getBoundingClientRect().width }; })()`);
+            label: document.querySelector('.dock .tool[aria-label="Pages"] .lbl').getBoundingClientRect().width }; })()`);
         const placed = { bottom: place.above && place.centre, top: place.below && place.centre, left: place.wellCentre && place.low === 16, right: place.wellCentre && place.low === 16 }[side];
         const named = side === 'left' || side === 'right' ? place.label < 2 : place.label > 20;
         check(`with the dock at the ${side}, the bar of selected pages stands ${{ bottom: 'above it', top: 'below it', left: 'at the bottom middle, clear of the grid\'s middle (it floated across it, at y 297 to 339)', right: 'at the bottom middle' }[side]}, its divider upright (it lay flat, 22x1, beside a column), and the tool's name shows only in a row`,

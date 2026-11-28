@@ -735,6 +735,7 @@
     async function toggle() {
       if (wanted) { leave(); return; }
       if (!(await installed()) && !(await window.workspaceDialogs.engineCard())) return;
+      if (!(await window.workspaceAnnotate.flush(tab))) return;
       dot.hidden = true;
       wanted = true;
       sync();

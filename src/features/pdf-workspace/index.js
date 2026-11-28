@@ -4,7 +4,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { createDocuments, sweepSessions } = require('./documents');
+const { createDocuments, sweepSessions, NO_ENGINE_SAVE_LIMIT } = require('./documents');
 const { check, pageRanges, splitParts, PICTURE_EXTENSIONS } = require('./ops');
 const { linkTarget } = require('./links');
 const { addRecent, startFolder } = require('./recent');
@@ -22,7 +22,6 @@ const WHY_NOT_SAVED = {
   locked: ({ name }) => `${name} is open in another program. Close it there, or save a copy.`,
   'read-only': ({ name }) => `${name} is read-only. Save a copy instead.`,
   'no-space': ({ name, drive }) => `There is not enough free space on ${drive} to save ${name}.`,
-  'too-large': () => 'Saving changes to a file this large needs the PDF engine.',
 };
 
 const REASONS = {
@@ -263,10 +262,10 @@ function createWorkspace({ asset, getSettings, setSettings, notify, log, openExt
 
   const registerIpc = () => registerWorkspaceIpc({
     documents,
-    state: () => ({ documents: documents.list(), dock: dock(), view: cleanView(getSettings().pdfView) }),
+    state: () => ({ documents: documents.list(), dock: dock(), view: cleanView(getSettings().pdfView), saveLimit: NO_ENGINE_SAVE_LIMIT }),
     closeDocument,
     openDropped,
-    putRevision: (token, bytes) => revised(documents.putRevision(token, bytes), false),
+    putRevision: (token, bytes) => revised(documents.putRevision(token, bytes), true),
     apply: (token, ops) => revised(documents.apply(token, ops).catch(applyFailed), true),
     properties,
     chooseSources,

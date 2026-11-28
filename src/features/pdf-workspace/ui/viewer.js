@@ -99,7 +99,11 @@
     const linkService = new viewerLib.PDFLinkService({ eventBus });
     const findController = new viewerLib.PDFFindController({ linkService, eventBus });
     const colours = saved.pageColours ?? 'original';
-    const viewer = new viewerLib.PDFViewer({ container, viewer: viewerEl, eventBus, linkService, findController, annotationEditorMode: lib.AnnotationEditorType.DISABLE, removePageBorders: true, pageColors: window.workspaceColours.pageColors(colours) });
+    // The editor is made with its tools put down. Annotations that are in the file are kept out of it: it would let them be changed with no
+    // way to write the change, so they stay as the annotation layer draws them.
+    lib.AnnotationLayer.prototype.hasEditableAnnotations = () => false;
+    lib.AnnotationLayer.prototype.getEditableAnnotations = () => [];
+    const viewer = new viewerLib.PDFViewer({ container, viewer: viewerEl, eventBus, linkService, findController, annotationEditorMode: lib.AnnotationEditorType.NONE, annotationEditorHighlightColors: window.workspaceAnnotate.colours, removePageBorders: true, pageColors: window.workspaceColours.pageColors(colours) });
     window.workspaceColours.watch(viewer, viewerEl, colours, eventBus, lib.OPS);
     linkService.setViewer(viewer);
     // The link never holds the address, so a click, a middle click or a drag takes the page nowhere. pdf.js shows the same for a disabled link.
@@ -116,6 +120,7 @@
     window.workspaceComments.watch(viewer, eventBus, container);
     window.workspaceDock.watch(viewer, eventBus, container);
     window.workspaceOrganise.watch(viewer, eventBus, container);
+    window.workspaceAnnotate.watch(viewer, eventBus, container, lib);
     window.workspaceSidebar.watch(viewer, eventBus, container, linkService, saved.sidebar);
     window.workspaceLinkList.watch(viewer, eventBus, container, followLink);
     window.workspaceSelect.watch(container);
