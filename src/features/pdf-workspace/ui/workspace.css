@@ -316,6 +316,13 @@ body.focus:not(.reveal-dock):not(.tooling) .dockwrap:not(:focus-within) :is(.doc
 .tool.on .lbl { max-width: 90px; }
 .well[data-dock="left"] .tool.on, .well[data-dock="right"] .tool.on { gap: 0; }
 .well[data-dock="left"] .tool.on .lbl, .well[data-dock="right"] .tool.on .lbl { max-width: 0; }
+.optbar .swatches { display: flex; align-items: center; gap: 4px; padding: 0 2px; }
+.optbar .opt[aria-pressed="true"] { background: var(--hover); color: var(--txt); }
+.optbar .size { min-width: 44px; text-align: center; color: var(--txt); font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.thick { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: none; display: grid; place-items: center; cursor: pointer; }
+.thick:hover, .thick[aria-checked="true"] { background: var(--hover); }
+.thick:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.thick i { display: block; border-radius: 50%; background: var(--muted); }
 .engdot { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
 .engdot[hidden] { display: none; }
 .optbar { position: absolute; z-index: 5; left: 50%; bottom: 76px; translate: -50% 0; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; row-gap: 4px; width: max-content; max-width: calc(100% - 24px); box-sizing: border-box; padding: 5px 6px; border-radius: 13px; background: var(--dock); border: 1px solid var(--bar-line); white-space: nowrap; font-weight: 600; color: var(--muted);
@@ -329,14 +336,14 @@ body.focus .well[data-dock="top"] .optbar { top: 116px; }
 .well:has(.dock.folded) .optbar { transform: var(--away); opacity: 0; pointer-events: none; transition: transform .5s var(--in-out), opacity .35s var(--in-out) .1s; }
 .well:has(.dockwrap.dragging) .optbar { opacity: 0; pointer-events: none; transition: opacity .2s; }
 /* With both side panels open the smallest window leaves 366 px for the document. Below 700 px the bar keeps only its icons and drops the
-   hint; below 440 px the chip shows only the number, the dock drops Previous and Next (the page box and the keys remain) so the More button fits, and the fold button stands over the end of the dock instead of beside it. The bar
+   hint; below 440 px the chip shows only the number, the dock drops Previous, Next, Zoom out, Zoom in and the line between the markup tools and Pages (the page box, the zoom value and the keys remain) so the More button fits, and the fold button stands over the end of the dock instead of beside it. The bar
    wraps rather than run off the edge. */
 @container (max-width: 700px) {
   .optbar .opt { gap: 0; padding: 0 7px; font-size: 0; }
   .optbar .hint, .optbar .picked:not(.some) .selgroup { display: none; }
 }
 @container (max-width: 440px) {
-  .dock .step { display: none; }
+  .dock .step, .zoomgroup .sm, .tools .sep { display: none; }
   .tool.on { gap: 0; }
   .tool.on .lbl { max-width: 0; }
   .selchip { padding: 0 9px; }

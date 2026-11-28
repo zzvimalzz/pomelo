@@ -54,6 +54,10 @@ window.pomeloUi.icon = (() => {
     crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>',
     portrait: '<rect x="7" y="3.5" width="10" height="17" rx="2"/>',
     landscape: '<rect x="3.5" y="7" width="17" height="10" rx="2"/>',
+    highlight: '<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>',
+    pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    marker: '<path d="M12 20h9"/><path d="m14 5 5 5-8.5 8.5H5.5v-5z"/>',
+    type: '<path d="M4 7V4h16v3M9 20h6M12 4v16"/>',
   };
   return (name) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
 })();

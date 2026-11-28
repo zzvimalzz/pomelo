@@ -19,6 +19,12 @@ expect('pictures of the usual kinds can be inserted, and no program or archive',
 const info = { op: 'meta.set', title: 'Annual report', author: '', subject: 'Résumé 日本', keywords: 'a, b' };
 expect('the document information is set as four texts, which may be empty, and edits in place', JSON.stringify(check([info])) === JSON.stringify([info]) && OPS['meta.set'].kind === 'direct');
 expect('a text of 1000 characters is allowed', !refused([{ ...info, title: 'x'.repeat(1000) }]));
+const quad = [10, 10, 90, 10, 10, 30, 90, 30];
+const highlight = { op: 'annot.add', type: 'highlight', page: 2, color: [255, 216, 77], quads: [quad] };
+const ink = { op: 'annot.add', type: 'ink', page: 1, color: [0, 0, 0], opacity: 0.4, thickness: 6, paths: [[0, 0, 10, 10, 20, 5]] };
+const note = { op: 'annot.add', type: 'freetext', page: 1, color: [0, 0, 255], rect: [10, 10, 200, 40], text: 'Café 日本', size: 12 };
+expect('a highlight, an ink stroke and a text box are allowed, come back as given, and are added in place', JSON.stringify(check([highlight, ink, note])) === JSON.stringify([highlight, ink, note]) && OPS['annot.add'].kind === 'annotate');
+expect('a key a kind of markup may leave out is not carried as undefined', !('opacity' in check([highlight])[0]));
 
 console.log('what is refused');
 const bad = {
@@ -48,6 +54,17 @@ const bad = {
   'inserting with a source that is not a list': [{ op: 'pages.insert', before: 1, sources: ids[0] }],
   'a blank page with no place': [{ op: 'pages.blank' }], 'a blank page before page 0': [{ op: 'pages.blank', before: 0 }], 'a blank page that takes a size': [{ op: 'pages.blank', before: 1, width: 100 }],
   'extracting no pages': [{ op: 'pages.extract', pages: [] }], 'extracting with a target path': [{ op: 'pages.extract', pages: [1], target: 'C:/x.pdf' }],
+  'markup of an unknown kind': [{ ...highlight, type: 'stamp' }], 'a highlight with no quads': [{ ...highlight, quads: undefined }], 'a highlight with an empty list of quads': [{ ...highlight, quads: [] }],
+  'a quad with seven numbers': [{ ...highlight, quads: [quad.slice(1)] }], 'a quad with a number that is text': [{ ...highlight, quads: [[...quad.slice(1), '1']] }], 'a quad that is not finite': [{ ...highlight, quads: [[...quad.slice(1), Infinity]] }],
+  'a highlight that carries a stroke too': [{ ...highlight, paths: ink.paths }], 'a highlight with a thickness': [{ ...highlight, thickness: 2 }], 'ink with no thickness': [{ ...ink, thickness: undefined }],
+  'ink with a stroke of one number': [{ ...ink, paths: [[1]] }], 'ink with a stroke of an odd number of numbers': [{ ...ink, paths: [[1, 2, 3]] }], 'ink with no strokes': [{ ...ink, paths: [] }], 'ink as a flat list': [{ ...ink, paths: [1, 2, 3, 4] }],
+  'ink thicker than 100': [{ ...ink, thickness: 101 }], 'ink of no thickness': [{ ...ink, thickness: 0 }], 'ink with a quad': [{ ...ink, quads: [quad] }],
+  'a text box with no text': [{ ...note, text: undefined }], 'a text box of blank text': [{ ...note, text: '   ' }], 'a text box with a null character': [{ ...note, text: 'a\0b' }], 'a text box of 5001 characters': [{ ...note, text: 'x'.repeat(5001) }],
+  'a text box with a rectangle of three numbers': [{ ...note, rect: [1, 2, 3] }], 'a text box with a size under 4': [{ ...note, size: 3 }], 'a text box with a size over 200': [{ ...note, size: 201 }], 'a text box with no size': [{ ...note, size: undefined }],
+  'a text box with a stroke': [{ ...note, paths: ink.paths }],
+  'a colour with two numbers': [{ ...note, color: [0, 0] }], 'a colour with a number over 255': [{ ...note, color: [0, 0, 256] }], 'a colour with a fraction': [{ ...note, color: [0, 0.5, 1] }], 'a colour written as text': [{ ...note, color: '#000000' }],
+  'an opacity over 1': [{ ...ink, opacity: 1.5 }], 'an opacity under 0': [{ ...ink, opacity: -0.1 }], 'markup on page 0': [{ ...note, page: 0 }], 'markup on a page that is text': [{ ...note, page: '1' }],
+  'markup with a key it does not take': [{ ...note, author: 'x' }],
   'a good change followed by a bad one': [{ op: 'pages.delete', pages: [1] }, { op: 'pages.delete', pages: [0] }],
 };
 for (const [what, list] of Object.entries(bad)) expect(`${what} is refused`, refused(list));

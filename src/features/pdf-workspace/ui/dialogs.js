@@ -189,11 +189,11 @@
 
   // Resolves true once the PDF engine has been installed from the card, false when the user says Not now. While it installs the card
   // cannot be closed; a failed install says why in the card and the button offers Retry.
-  function engineCard() {
+  function engineCard(heading = 'Editing needs the PDF engine') {
     const { box, close } = frame();
     const badge = el('i', 'badge');
     badge.innerHTML = icon('cpu');
-    const title = el('h3', '', 'Editing needs the PDF engine');
+    const title = el('h3', '', heading);
     title.id = 'dialog-title';
     const head = el('div', 'uhead');
     head.append(badge, title);

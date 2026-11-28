@@ -11,7 +11,7 @@ import sys
 import pymupdf
 
 import helper
-from . import meta, pages
+from . import annots, meta, pages
 
 SECRET_KEYS = ("password",)
 MAX_SECRETS = 64 * 1024
@@ -25,6 +25,7 @@ OPS = {
     "pages.insert": ("new", pages.insert),
     "pages.blank": ("new", pages.blank),
     "pages.extract": ("output", pages.extract),
+    "annot.add": ("annotate", annots.add),
 }
 
 
@@ -75,9 +76,10 @@ def load(path):
         name = op.get("op") if isinstance(op, dict) else None
         if name not in OPS:
             raise ValueError("unknown change %s" % json.dumps(name)[:40])
-        takes = set(inspect.signature(OPS[name][1]).parameters) - {"doc", "secrets"}
-        if set(op) - {"op"} != takes:
-            raise ValueError("%s takes %s" % (name, ", ".join(sorted(takes))))
+        parameters = {k: v for k, v in inspect.signature(OPS[name][1]).parameters.items() if k not in ("doc", "secrets")}
+        needs = {k for k, v in parameters.items() if v.default is inspect.Parameter.empty}
+        if not needs <= set(op) - {"op"} <= set(parameters):
+            raise ValueError("%s takes %s" % (name, ", ".join(sorted(parameters))))
     return data["ops"]
 
 

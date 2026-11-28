@@ -57,6 +57,7 @@ const SUITES = [
   { name: 'protected', file: 'integration/conversion/protected.test.js', tier: 'pdf', timeout: 300 },
   { name: 'python-cli', file: 'integration/python/cli-contract.test.js', tier: 'pdf' },
   { name: 'edit-helper', file: 'integration/pdf-workspace/edit-helper.test.js', tier: 'pdf', timeout: 300 },
+  { name: 'annot-compat', file: 'integration/pdf-workspace/annot-compat.test.js', tier: 'pdf', timeout: 300 },
   { name: 'pdf-layout', file: 'integration/conversion/pdf-layout.test.js', tier: 'pdf', timeout: 600 },
   { name: 'pdf-formats', file: 'integration/conversion/pdf-formats.test.js', tier: 'pdf', timeout: 300 },
   { name: 'pipeline', file: 'ui/pipeline.js', tier: 'ui', electron: true },
@@ -66,6 +67,7 @@ const SUITES = [
   { name: 'toast-shot', file: 'ui/toast-shot.js', tier: 'ui', electron: true },
   { name: 'settings-shot', file: 'ui/settings-shot.js', tier: 'ui', electron: true },
   { name: 'workspace-shot', file: 'ui/workspace-shot.js', tier: 'ui', electron: true, timeout: 900 },
+  { name: 'annotation-compat', file: 'ui/annotation-compat.js', tier: 'ui', electron: true, timeout: 600 },
   { name: 'editor-shot', file: 'ui/editor-shot.js', tier: 'ui', electron: true, timeout: 300 },
   { name: 'downloader-shot', file: 'ui/downloader-shot.js', tier: 'ui', electron: true },
 ];

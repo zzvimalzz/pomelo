@@ -16,7 +16,36 @@ const isSources = (v) => Array.isArray(v) && v.length > 0 && v.length <= MAX_SOU
 
 const isText = (v) => typeof v === 'string' && v.length <= 1000 && !v.includes('\0');
 
+const MAX_QUADS = 5000;
+const MAX_STROKES = 5000;
+const MAX_COORDINATES = 500000;
+const MARKUP_TYPES = ['highlight', 'ink', 'freetext'];
+const optional = (valid) => (v) => v === undefined || valid(v);
+const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
+const isPoints = (v, count) => Array.isArray(v) && v.length >= count && v.length % 2 === 0 && v.every(isNumber);
+const isColour = (v) => Array.isArray(v) && v.length === 3 && v.every((c) => Number.isInteger(c) && c >= 0 && c <= 255);
+const isQuads = (v) => Array.isArray(v) && v.length > 0 && v.length <= MAX_QUADS && v.every((q) => Array.isArray(q) && q.length === 8 && q.every(isNumber));
+const isStrokes = (v) => Array.isArray(v) && v.length > 0 && v.length <= MAX_STROKES && v.every((s) => isPoints(s, 2)) && v.reduce((sum, s) => sum + s.length, 0) <= MAX_COORDINATES;
+const isMarkupText = (v) => typeof v === 'string' && v.trim().length > 0 && v.length <= 5000 && !v.includes('\0');
+
+const MARKUP_FIELDS = { highlight: ['quads'], ink: ['paths', 'thickness'], freetext: ['rect', 'text', 'size'] };
+const markupFits = (op) => {
+  const wanted = MARKUP_FIELDS[op.type];
+  const found = [...new Set(Object.values(MARKUP_FIELDS).flat())].filter((key) => op[key] !== undefined);
+  return !!wanted && wanted.every((key) => found.includes(key)) && found.every((key) => wanted.includes(key));
+};
+
 const OPS = {
+  'annot.add': {
+    kind: 'annotate',
+    fits: markupFits,
+    keys: {
+      type: (v) => MARKUP_TYPES.includes(v), page: (v) => Number.isInteger(v) && v >= 1 && v <= MAX_PAGE, color: isColour,
+      opacity: optional((v) => isNumber(v) && v >= 0 && v <= 1), thickness: optional((v) => isNumber(v) && v > 0 && v <= 100),
+      quads: optional(isQuads), paths: optional(isStrokes), rect: optional((v) => isPoints(v, 4) && v.length === 4),
+      text: optional(isMarkupText), size: optional((v) => isNumber(v) && v >= 4 && v <= 200),
+    },
+  },
   'meta.set': { kind: 'direct', keys: { title: isText, author: isText, subject: isText, keywords: isText } },
   'pages.rotate': { kind: 'direct', keys: { pages: isPages, by: (v) => v === 90 || v === 180 || v === 270 } },
   'pages.delete': { kind: 'rewrite', keys: { pages: isPages } },
@@ -106,8 +135,8 @@ function check(list) {
     if (!schema) throw new Error('unknown change');
     const keys = Object.keys(schema.keys);
     const extra = Object.keys(op).filter((key) => key !== 'op' && !keys.includes(key));
-    if (extra.length || keys.some((key) => !schema.keys[key](op[key]))) throw new Error(`${op.op} takes ${keys.join(' and ')} and nothing else`);
-    return { op: op.op, ...Object.fromEntries(keys.map((key) => [key, op[key]])) };
+    if (extra.length || keys.some((key) => !schema.keys[key](op[key])) || (schema.fits && !schema.fits(op))) throw new Error(`${op.op} takes ${keys.join(' and ')} and nothing else`);
+    return { op: op.op, ...Object.fromEntries(keys.filter((key) => op[key] !== undefined).map((key) => [key, op[key]])) };
   });
 }
 
