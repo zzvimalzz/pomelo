@@ -12,10 +12,11 @@
   const MARKER_WIDTH = 6;
   const MARKER_OPACITY = 0.4;
   const SIZES = { min: 6, max: 72 };
+  const FONTS = ['Helvetica', 'Times', 'Courier'];
   const TOO_LARGE = 'Saving changes to a file this large needs the PDF engine.';
   const TOOLS = [['highlight', 'Highlight', 'highlight'], ['draw', 'Draw', 'pen'], ['text', 'Text', 'type']];
 
-  const options = { highlight: HIGHLIGHTS[0][1], kind: 'pen', ink: INKS[0][1], width: 2, size: 12 };
+  const options = { highlight: HIGHLIGHTS[0][1], kind: 'pen', ink: INKS[0][1], width: 2, size: 12, font: FONTS[0] };
   const listeners = [];
   let tool = null;
   let tab = null;
@@ -27,14 +28,24 @@
   let redoable = false;
   let setTool = () => {};
   let bar = null;
+  let manager = null;
+  const fonts = new Map();
+  const head = { undo: document.getElementById('undobtn'), redo: document.getElementById('redobtn'), clear: document.getElementById('clearbtn') };
+
+  for (const [way, name, text, key] of [['undo', 'undo', 'Undo', 'undo'], ['redo', 'redo', 'Redo', 'redo'], ['clear', 'trash', 'Clear all']]) {
+    head[way].innerHTML = icon(name);
+    head[way].title = key ? `${text} (${label(key)})` : text;
+    head[way].setAttribute('aria-label', text);
+  }
 
   // pdf.js names the colours of its highlight picker; the option is a list of name=colour.
   const colours = HIGHLIGHTS.map(([name, value]) => `${name.toLowerCase()}=${value}`).join(',');
 
-  // The entries of the editor that are markup: a form field's value is in the same storage and is not ours to write.
+  // The entries of the editor that are markup: a form field's value is in the same storage and is not ours to write. A text box carries
+  // the font chosen for it, which pdf.js does not keep.
   function entries(pdf) {
     const { map } = pdf.annotationStorage.serializable;
-    return map ? [...map.values()].filter((entry) => typeof entry.annotationType === 'number') : [];
+    return map ? [...map].filter(([, entry]) => typeof entry.annotationType === 'number').map(([id, entry]) => ({ ...entry, font: fonts.get(id) ?? FONTS[0] })) : [];
   }
 
   function count() {
@@ -61,7 +72,7 @@
         ops.push({ ...base, type: 'ink', opacity: entry.opacity, thickness: entry.thickness, paths: entry.paths.points.map((stroke) => shown(Array.from(stroke))) });
       } else if (entry.annotationType === kinds.FREETEXT) {
         if (page.userUnit !== 1) throw new Error('A text box cannot be saved on a page that has its own scale.');
-        ops.push({ ...base, type: 'freetext', rect: shown(entry.rect), text: entry.value, size: entry.fontSize });
+        ops.push({ ...base, type: 'freetext', rect: shown(entry.rect), text: entry.value, size: entry.fontSize, font: entry.font });
       } else {
         throw new Error('This kind of markup cannot be saved.');
       }
@@ -123,7 +134,27 @@
     }
   }
 
-  const choose = (key, value) => () => { options[key] = value; draw(); apply(); };
+  // A new choice is for the marks still to come. pdf.js applies it to the stroke being drawn and to the selected marks, so for Draw they
+  // are let go first: the first call ends the stroke, which selects it, and the second lets it go.
+  const choose = (key, value) => () => {
+    options[key] = value;
+    if (key === 'font') {
+      for (const box of document.querySelectorAll('.freeTextEditor.selectedEditor')) { fonts.set(box.id, value); box.dataset.font = value; }
+    } else if (tool === 'draw') { manager?.unselectAll(); manager?.unselectAll(); }
+    draw();
+    apply();
+  };
+
+  function clearAll() {
+    for (const name of ['selectAll', 'delete']) eventBus.dispatch('editingaction', { source: viewer, name });
+  }
+
+  function sync() {
+    const grid = !tool && document.body.classList.contains('tooling');
+    head.undo.disabled = grid || !(undoable || tab?.doc.canUndo);
+    head.redo.disabled = grid || !(redoable || tab?.doc.canRedo);
+    head.clear.disabled = grid || !tab?.edited;
+  }
 
   function group(name, kind) {
     const span = el('span', kind);
@@ -189,13 +220,16 @@
     }
     if (tool === 'text') {
       const resize = (by) => () => { options.size = Math.min(SIZES.max, Math.max(SIZES.min, options.size + by)); draw(); apply(); };
-      parts.push(action('minus', 'Smaller', resize(-1)), el('span', 'size', `${options.size} pt`), action('plus', 'Larger', resize(1)), el('span', 'sep'), swatches(INKS, 'ink', 'Text colour'));
+      const faces = group('Font', 'swatches');
+      for (const name of FONTS) {
+        const b = radio('face', name, options.font === name, choose('font', name));
+        b.dataset.font = name;
+        b.textContent = 'Aa';
+        faces.append(b);
+      }
+      parts.push(action('minus', 'Smaller', resize(-1)), el('span', 'size', `${options.size} pt`), action('plus', 'Larger', resize(1)), el('span', 'sep'), swatches(INKS, 'ink', 'Text colour'), el('span', 'sep'), faces);
     }
-    const undo = action('undo', `Undo (${label('undo')})`, () => step('undo'));
-    const redo = action('redo', `Redo (${label('redo')})`, () => step('redo'));
-    undo.disabled = !undoable && !tab?.doc.canUndo;
-    redo.disabled = !redoable && !tab?.doc.canRedo;
-    bar.replaceChildren(...parts, el('span', 'sep'), undo, redo);
+    bar.replaceChildren(...parts);
   }
 
   function watch(pdfViewer, bus, container, viewerLib) {
@@ -207,6 +241,28 @@
     bar.hidden = true;
     bar.addEventListener('mousedown', (e) => e.preventDefault());
     document.querySelector('.well').append(bar);
+    for (const [way, run] of [['undo', () => step('undo')], ['redo', () => step('redo')], ['clear', clearAll]]) {
+      head[way].addEventListener('mousedown', (e) => e.preventDefault());
+      head[way].onclick = run;
+    }
+    new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    const remember = ({ source }) => { if (typeof source?.unselectAll === 'function') manager = source; };
+    eventBus.on('editingstateschanged', remember);
+    eventBus.on('annotationeditorparamschanged', remember);
+    // pdf.js starts a free-form highlight when a drag begins between words, which it cannot give the file and which turns the cursor
+    // over and over; a drag there selects text as it does over a word.
+    container.addEventListener('pointerdown', (e) => {
+      if (tool === 'highlight' && e.target.closest('.textLayer') && !e.target.closest('.textLayer span:not([role="img"]), .textLayer br')) { e.stopPropagation(); manager?.unselectAll(); }
+    }, true);
+    const tag = (node) => {
+      if (node.nodeType !== 1) return;
+      for (const box of node.matches('.freeTextEditor') ? [node] : node.querySelectorAll('.freeTextEditor')) {
+        if (!fonts.has(box.id)) fonts.set(box.id, options.font);
+        box.dataset.font = fonts.get(box.id);
+      }
+      for (const remove of node.matches('.deleteButton') ? [node] : node.querySelectorAll('.deleteButton')) remove.innerHTML = icon('trash');
+    };
+    new MutationObserver((records) => { for (const r of records) r.addedNodes.forEach(tag); }).observe(container, { childList: true, subtree: true });
     const buttons = new Map();
     for (const [id, title, name] of TOOLS) {
       const b = el('button', 'tool');
@@ -239,23 +295,26 @@
     eventBus.on('editingstateschanged', ({ details }) => {
       undoable = !!details.hasSomethingToUndo;
       redoable = !!details.hasSomethingToRedo;
-      if (tool) draw();
+      sync();
       setTimeout(() => { if (tab?.pdf) count(); });
     });
     // pdf.js puts the tool down when it loads another document.
     eventBus.on('pagesdestroy', () => {
       tool = null;
       undoable = redoable = false;
+      fonts.clear();
       for (const b of buttons.values()) { b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); }
       document.body.classList.remove('tooling');
       bar.hidden = true;
+      sync();
     });
   }
 
   window.workspaceAnnotate = {
     watch,
     colours,
-    use: (next) => { tab = next; },
+    use: (next) => { tab = next; sync(); },
+    sync,
     setLimit: (bytes) => { limit = bytes; },
     pending: (target) => !!target?.edited,
     flush,

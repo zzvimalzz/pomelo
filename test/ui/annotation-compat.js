@@ -79,7 +79,7 @@ for a in p.annots():
     for s in (a.vertices or []):
         if isinstance(s, tuple): pts.append(tuple(pymupdf.Point(s) * turn))
         else: pts.extend(tuple(pymupdf.Point(q) * turn) for q in s)
-    notes.append({"type": a.type[1], "rect": shown(a.rect), "colors": a.colors, "opacity": a.opacity, "content": a.info.get("content", ""), "border": a.border, "points": pts, "ap": bool(d.xref_get_key(a.xref, "AP")[0] != "null")})
+    notes.append({"type": a.type[1], "rect": shown(a.rect), "colors": a.colors, "opacity": a.opacity, "content": a.info.get("content", ""), "border": a.border, "points": pts, "ap": bool(d.xref_get_key(a.xref, "AP")[0] != "null"), "da": d.xref_get_key(a.xref, "DA")[1]})
 words = [{"text": w[4], "rect": shown(w[:4])} for w in p.get_text("words")]
 print(json.dumps({"annots": notes, "links": len(p.get_links()), "words": words, "size": [p.rect.width, p.rect.height], "repaired": d.is_repaired, "rotation": p.rotation}))`;
 const see = (file) => {
@@ -279,11 +279,11 @@ async function bars() {
   const idle = await state(win);
   check('the dock has Highlight, Draw and Text, and nothing is on', ['Highlight (H)', 'Draw (D)', 'Text (T)'].every((t) => idle.tools.includes(t)) && idle.on === '' && !idle.save, JSON.stringify(idle));
   await tool(win, 'Highlight');
-  check('Highlight shows five colours, Undo and Redo', (await barOf(win)) === 'Yellow|Green|Blue|Pink|Orange|Undo (Ctrl+Z)|Redo (Ctrl+Y)', await barOf(win));
+  check('Highlight shows five colours', (await barOf(win)) === 'Yellow|Green|Blue|Pink|Orange', await barOf(win));
   await tool(win, 'Draw');
-  check('Draw shows Pen and Marker, four colours, three thicknesses, Undo and Redo', (await barOf(win)) === 'Pen|Marker|Black|Red|Blue|Green|1 pt|2 pt|4 pt|Undo (Ctrl+Z)|Redo (Ctrl+Y)', await barOf(win));
+  check('Draw shows Pen and Marker, four colours and three thicknesses', (await barOf(win)) === 'Pen|Marker|Black|Red|Blue|Green|1 pt|2 pt|4 pt', await barOf(win));
   await tool(win, 'Text');
-  check('Text shows its size with Smaller and Larger, four colours, Undo and Redo', (await barOf(win)) === 'Smaller|12 pt|Larger|Black|Red|Blue|Green|Undo (Ctrl+Z)|Redo (Ctrl+Y)', await barOf(win));
+  check('Text shows its size with Smaller and Larger, four colours and three fonts', (await barOf(win)) === 'Smaller|12 pt|Larger|Black|Red|Blue|Green|Helvetica|Times|Courier', await barOf(win));
   await tool(win, 'Text');
   check('choosing the tool in use again puts it down', (await state(win)).on === '' && (await barOf(win)) === '');
   await press(win, 'h');
@@ -296,18 +296,86 @@ async function bars() {
   check('a highlight puts the dot and the Save button up', (await state(win)).save && (await state(win)).dot);
   const entries = () => js(win, `workspaceViewer.viewer.pdfDocument.annotationStorage.serializable.map?.size ?? 0`);
   const two = await entries();
-  await js(win, `document.querySelector('.optbar:not([hidden]) button[aria-label^="Undo"]').click()`);
+  await js(win, `document.getElementById('undobtn').click()`);
   await sleep(500);
   check('Undo takes the last mark away and the document is still changed', two === 2 && (await entries()) === 1 && (await state(win)).save, JSON.stringify([two, await entries(), await state(win)]));
-  await js(win, `document.querySelector('.optbar:not([hidden]) button[aria-label^="Undo"]').click()`);
+  await js(win, `document.getElementById('undobtn').click()`);
   await sleep(600);
   check('Undo again and there is nothing to save', (await entries()) === 0 && !(await state(win)).save);
   await closeAndWait(win);
 }
 
+async function behaviour() {
+  console.log('choices, the title row, the menus and fonts');
+  const file = await makeDoc('Behaviour.pdf');
+  const win = await open(fresh(true), file);
+  const entries = () => js(win, `[...(workspaceViewer.viewer.pdfDocument.annotationStorage.serializable.map?.values() ?? [])].map((e) => ({ opacity: e.opacity, quads: !!e.quadPoints }))`);
+  const head = () => js(win, `['undobtn', 'redobtn', 'clearbtn'].map((id) => document.getElementById(id).disabled).join()`);
+  const push = (id) => js(win, `document.getElementById(${JSON.stringify(id)}).click()`).then(() => sleep(500));
+  check('the title row has Undo, Redo and Clear all, all off while there is nothing to change', (await head()) === 'true,true,true', await head());
+
+  const at = await where(win);
+  const [px, py, pw, ph] = at.page;
+  await tool(win, 'Highlight');
+  await drag(win, ...along(at.line, 0));
+  const line = at.line;
+  mouse(win, 'mouseMove', line[0] + 40, (line[1] + line[3]) / 2);
+  mouse(win, 'mouseDown', line[0] + 40, (line[1] + line[3]) / 2);
+  mouse(win, 'mouseUp', line[0] + 40, (line[1] + line[3]) / 2);
+  await sleep(500);
+  check('a selected highlight has its remove button drawn', (await js(win, `document.querySelectorAll('.editToolbar .deleteButton svg').length`)) === 1);
+  const cursors = await js(win, `(() => { const layer = document.querySelector('.textLayer'); return [getComputedStyle(layer).cursor, getComputedStyle(layer.querySelector('span')).cursor]; })()`);
+  check('between words the cursor is the one over words', cursors[0] === cursors[1], JSON.stringify(cursors));
+  await drag(win, [px + pw * 0.15, py + 8], [px + pw * 0.8, py + 24]);
+  check('a drag over empty page makes no free-form highlight', (await entries()).every((e) => e.quads), JSON.stringify(await entries()));
+  await tool(win, 'Highlight');
+  const marks = (await entries()).length;
+
+  await tool(win, 'Draw');
+  await drag(win, [px + pw * 0.2, py + ph * 0.4], [px + pw * 0.5, py + ph * 0.45]);
+  await js(win, `[...document.querySelectorAll('.optbar:not([hidden]) button')].find((b) => b.textContent === 'Marker').click()`);
+  await sleep(400);
+  await drag(win, [px + pw * 0.2, py + ph * 0.5], [px + pw * 0.5, py + ph * 0.55]);
+  await js(win, `[...document.querySelectorAll('.optbar:not([hidden]) button')].find((b) => b.textContent === 'Pen').click()`);
+  await sleep(400);
+  const kinds = (await entries()).slice(marks).map((e) => e.opacity).join();
+  check('choosing Marker after a Pen stroke, and Pen after that, leaves each stroke as it was drawn', kinds === '1,0.4', kinds);
+
+  await js(win, `[...document.querySelectorAll('.dock .tool')].find((b) => b.getAttribute('aria-label') === 'More').click()`);
+  await sleep(500);
+  check('the option bar steps aside while a dock menu is open', (await js(win, `getComputedStyle(document.querySelector('.optbar:not([hidden])')).opacity`)) === '0');
+  await press(win, 'Escape');
+  await tool(win, 'Draw');
+
+  check('the title row now has Undo and Clear all on and Redo off', (await head()) === 'false,true,false', await head());
+  const all = (await entries()).length;
+  await push('clearbtn');
+  check('Clear all takes every mark away and leaves nothing to save', (await entries()).length === 0 && !(await state(win)).save, JSON.stringify([await entries(), await state(win)]));
+  await push('undobtn');
+  check('Undo brings them back', (await entries()).length === all, String((await entries()).length));
+
+  await tool(win, 'Text');
+  await js(win, `document.querySelector('.optbar:not([hidden]) button[title="Times"]').click()`);
+  await sleep(300);
+  mouse(win, 'mouseMove', px + pw * 0.2, py + ph * 0.75);
+  mouse(win, 'mouseDown', px + pw * 0.2, py + ph * 0.75);
+  mouse(win, 'mouseUp', px + pw * 0.2, py + ph * 0.75);
+  await sleep(400);
+  await type(win, 'Hello cafe');
+  check('a text box takes the font chosen', (await js(win, `document.querySelector('.freeTextEditor')?.dataset.font`)) === 'Times');
+  const before = fs.statSync(file).mtimeMs;
+  await js(win, `document.getElementById('savebtn').click()`);
+  await until('the question about the original', () => js(win, `!!document.querySelector('.card .btn.primary')`), 15000);
+  await js(win, `[...document.querySelectorAll('.card .btn')].find((b) => b.textContent === 'Replace').click()`);
+  await until('the saved file', () => fs.statSync(file).mtimeMs !== before, 15000);
+  const note = see(file).annots.find((a) => a.type === 'FreeText');
+  check('the saved text box is in that font', !!note && note.da.includes('/TiRo '), note?.da);
+  await closeAndWait(win);
+}
+
 app.whenReady().then(async () => {
   if (!python) console.log('  PDF engine not installed: the engine scenarios are skipped');
-  if (python) { await bars(); await conditions(); await scaledPageText(); await otherTab(); }
+  if (python) { await bars(); await behaviour(); await conditions(); await scaledPageText(); await otherTab(); }
   await withoutEngine();
   console.log(failed() ? `\n${failed()} failed` : '\nall passed');
   finish();

@@ -10,6 +10,7 @@ import pymupdf
 from .pages import pick
 
 KINDS = ("highlight", "ink", "freetext")
+FONTS = {"Helvetica": "helv", "Times": "tiro", "Courier": "cour"}
 
 
 def rgb(color):
@@ -56,19 +57,21 @@ def ink(page, color, opacity, thickness, paths):
     made.update()
 
 
-def freetext(page, color, rect, text, size):
+def freetext(page, color, rect, text, size, font):
     if not isinstance(text, str) or not text.strip() or len(text) > 5000 or "\0" in text:
         raise ValueError("a text box holds 1 to 5000 characters")
     if isinstance(size, bool) or not isinstance(size, (int, float)) or not 4 <= size <= 200:
         raise ValueError("text is between 4 and 200 points high")
+    if font not in FONTS:
+        raise ValueError("unknown font")
     box = bounds(points(page, rect))
     # The text is turned with the page so it reads upright in the displayed page.
-    made = page.add_freetext_annot(box, text, fontsize=size, text_color=rgb(color), fill_color=None, border_width=0, rotate=page.rotation)
+    made = page.add_freetext_annot(box, text, fontsize=size, fontname=FONTS[font], text_color=rgb(color), fill_color=None, border_width=0, rotate=page.rotation)
     if made is None:
         raise ValueError("the text does not fit in its box")
 
 
-def add(doc, type, page, color, opacity=None, thickness=None, quads=None, paths=None, rect=None, text=None, size=None):
+def add(doc, type, page, color, opacity=None, thickness=None, quads=None, paths=None, rect=None, text=None, size=None, font=None):
     if type not in KINDS:
         raise ValueError("unknown kind of markup")
     shown = doc[pick(doc, [page])[0]]
@@ -77,4 +80,4 @@ def add(doc, type, page, color, opacity=None, thickness=None, quads=None, paths=
     elif type == "ink":
         ink(shown, color, opacity, thickness, paths)
     else:
-        freetext(shown, color, rect, text, size)
+        freetext(shown, color, rect, text, size, font)

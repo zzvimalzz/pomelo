@@ -26,6 +26,7 @@
     line.hidden = tabs.length > 1;
     tabStrip.render(tabs.map((t) => ({ ...t.doc, dirty: changed(t) })), active?.doc.token);
     dot.hidden = saveButton.hidden = !changed(active);
+    window.workspaceAnnotate.sync();
   }
 
   function showFailure(tab) {

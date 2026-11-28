@@ -20,6 +20,7 @@ const MAX_QUADS = 5000;
 const MAX_STROKES = 5000;
 const MAX_COORDINATES = 500000;
 const MARKUP_TYPES = ['highlight', 'ink', 'freetext'];
+const MARKUP_FONTS = ['Helvetica', 'Times', 'Courier'];
 const optional = (valid) => (v) => v === undefined || valid(v);
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 const isPoints = (v, count) => Array.isArray(v) && v.length >= count && v.length % 2 === 0 && v.every(isNumber);
@@ -28,7 +29,7 @@ const isQuads = (v) => Array.isArray(v) && v.length > 0 && v.length <= MAX_QUADS
 const isStrokes = (v) => Array.isArray(v) && v.length > 0 && v.length <= MAX_STROKES && v.every((s) => isPoints(s, 2)) && v.reduce((sum, s) => sum + s.length, 0) <= MAX_COORDINATES;
 const isMarkupText = (v) => typeof v === 'string' && v.trim().length > 0 && v.length <= 5000 && !v.includes('\0');
 
-const MARKUP_FIELDS = { highlight: ['quads'], ink: ['paths', 'thickness'], freetext: ['rect', 'text', 'size'] };
+const MARKUP_FIELDS = { highlight: ['quads'], ink: ['paths', 'thickness'], freetext: ['rect', 'text', 'size', 'font'] };
 const markupFits = (op) => {
   const wanted = MARKUP_FIELDS[op.type];
   const found = [...new Set(Object.values(MARKUP_FIELDS).flat())].filter((key) => op[key] !== undefined);
@@ -43,7 +44,7 @@ const OPS = {
       type: (v) => MARKUP_TYPES.includes(v), page: (v) => Number.isInteger(v) && v >= 1 && v <= MAX_PAGE, color: isColour,
       opacity: optional((v) => isNumber(v) && v >= 0 && v <= 1), thickness: optional((v) => isNumber(v) && v > 0 && v <= 100),
       quads: optional(isQuads), paths: optional(isStrokes), rect: optional((v) => isPoints(v, 4) && v.length === 4),
-      text: optional(isMarkupText), size: optional((v) => isNumber(v) && v >= 4 && v <= 200),
+      text: optional(isMarkupText), size: optional((v) => isNumber(v) && v >= 4 && v <= 200), font: optional((v) => MARKUP_FONTS.includes(v)),
     },
   },
   'meta.set': { kind: 'direct', keys: { title: isText, author: isText, subject: isText, keywords: isText } },

@@ -323,6 +323,13 @@ body.focus:not(.reveal-dock):not(.tooling) .dockwrap:not(:focus-within) :is(.doc
 .thick:hover, .thick[aria-checked="true"] { background: var(--hover); }
 .thick:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .thick i { display: block; border-radius: 50%; background: var(--muted); }
+.face { width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: none; color: var(--txt); font-size: 15px; cursor: pointer; }
+.face:hover, .face[aria-checked="true"] { background: var(--hover); }
+.face:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.face[aria-checked="true"] { font-weight: 700; }
+.face[data-font="Helvetica"], .freeTextEditor[data-font="Helvetica"] .internal { font-family: Arial, Helvetica, sans-serif; }
+.face[data-font="Times"], .freeTextEditor[data-font="Times"] .internal { font-family: "Times New Roman", Times, serif; }
+.face[data-font="Courier"], .freeTextEditor[data-font="Courier"] .internal { font-family: "Courier New", Courier, monospace; }
 .engdot { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
 .engdot[hidden] { display: none; }
 .optbar { position: absolute; z-index: 5; left: 50%; bottom: 76px; translate: -50% 0; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; row-gap: 4px; width: max-content; max-width: calc(100% - 24px); box-sizing: border-box; padding: 5px 6px; border-radius: 13px; background: var(--dock); border: 1px solid var(--bar-line); white-space: nowrap; font-weight: 600; color: var(--muted);
@@ -335,6 +342,15 @@ body.focus .well[data-dock="top"] .optbar { top: 116px; }
 .optbar { --away: translateY(130px); transition: transform .6s var(--out) .18s, opacity .45s var(--out) .18s; }
 .well:has(.dock.folded) .optbar { transform: var(--away); opacity: 0; pointer-events: none; transition: transform .5s var(--in-out), opacity .35s var(--in-out) .1s; }
 .well:has(.dockwrap.dragging) .optbar { opacity: 0; pointer-events: none; transition: opacity .2s; }
+.well:has(.dock .menu:not([hidden])) .optbar { opacity: 0; pointer-events: none; transition: opacity .15s; }
+
+/* pdf.js draws the icon of its remove button as a mask, which shows nothing in this window; annotate.js puts the icon in the button. */
+.editToolbar .buttons .basic.deleteButton::before { display: none !important; }
+.editToolbar .deleteButton { display: grid; place-items: center; }
+.editToolbar .deleteButton .i { width: 16px; height: 16px; }
+
+/* The text layer shows the free-highlight cursor between words; every place in it takes the text one. */
+.textLayer.highlighting, .textLayer.highlighting:not(.free) span[role="img"] { cursor: url(../../../../node_modules/pdfjs-dist/web/images/cursor-editorTextHighlight.svg) 24 24, text; }
 /* With both side panels open the smallest window leaves 366 px for the document. Below 700 px the bar keeps only its icons and drops the
    hint; below 440 px the chip shows only the number, the dock drops Previous, Next, Zoom out, Zoom in and the line between the markup tools and Pages (the page box, the zoom value and the keys remain) so the More button fits, and the fold button stands over the end of the dock instead of beside it. The bar
    wraps rather than run off the edge. */

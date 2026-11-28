@@ -56,7 +56,7 @@ for a in p.annots():
         else: pts.extend(tuple(pymupdf.Point(q) * turn) for q in s)
     pix = a.get_pixmap(alpha=False) if a.type[1] != "Link" else None
     notes.append({"type": a.type[1], "rect": shown(a.rect), "colors": a.colors, "opacity": a.opacity, "content": a.info.get("content", ""), "points": pts,
-      "ap": d.xref_get_key(a.xref, "AP")[0] != "null", "ink": bool(pix and any(c != 255 for c in pix.samples[:: pix.n]))})
+      "ap": d.xref_get_key(a.xref, "AP")[0] != "null", "da": d.xref_get_key(a.xref, "DA")[1], "ink": bool(pix and any(c != 255 for c in pix.samples[:: pix.n]))})
 words = [{"text": w[4], "rect": shown(w[:4])} for w in p.get_text("words")]
 print(json.dumps({"annots": notes, "words": words, "size": [p.rect.width, p.rect.height], "repaired": d.is_repaired, "encrypted": d.metadata["encryption"], "rotation": p.rotation}))`;
 
@@ -90,7 +90,7 @@ const SECRET = { password: 'open-me' };
     await run(src, out, list(
       { op: 'annot.add', type: 'highlight', page: 1, color: [255, 216, 77], quads: [quad] },
       { op: 'annot.add', type: 'ink', page: 1, color: [0, 0, 0], thickness: 2, paths: [stroke] },
-      { op: 'annot.add', type: 'freetext', page: 1, color: [200, 0, 0], rect: box, text: 'Hello cafe', size: 14 },
+      { op: 'annot.add', type: 'freetext', page: 1, color: [200, 0, 0], rect: box, text: 'Hello cafe', size: 14, font: 'Helvetica' },
     ), mode === 'locked' ? SECRET : undefined);
     const after = look(out, 'open-me');
     const mine = after.annots.filter((a) => a.type !== 'Link');
@@ -110,16 +110,24 @@ const SECRET = { password: 'open-me' };
   const plain = at('plain-0.pdf');
   for (const [name, text] of [['Latin with accents', 'Café naïve Zoë'], ['Greek', 'Ελληνικά'], ['Cyrillic', 'Привет мир'], ['Chinese', '你好世界'], ['Arabic', 'مرحبا بالعالم'], ['an emoji', 'Hi 😀']]) {
     const out = at(`text-${crypto.randomBytes(3).toString('hex')}.pdf`);
-    const said = await reason(run(plain, out, list({ op: 'annot.add', type: 'freetext', page: 1, color: [0, 0, 0], rect: [60, 400, 400, 440], text, size: 16 })));
+    const said = await reason(run(plain, out, list({ op: 'annot.add', type: 'freetext', page: 1, color: [0, 0, 0], rect: [60, 400, 400, 440], text, size: 16, font: 'Helvetica' })));
     const note = said ? null : look(out).annots.find((a) => a.type === 'FreeText');
     expect(`${name}: it is refused with a reason, or written with an appearance that shows`, said ? said.length > 0 : note.ap && note.content === text && note.ink, said || JSON.stringify(note));
     console.log(`    ${name}: ${said ? `refused (${said.split('\n').pop()})` : `written${note.ink ? ' and drawn' : ' but nothing is drawn'}`}`);
   }
 
+  console.log('the fonts of a text box');
+  for (const [font, resource] of [['Helvetica', 'Helv'], ['Times', 'TiRo'], ['Courier', 'Cour']]) {
+    const out = at(`font-${font}.pdf`);
+    await run(plain, out, list({ op: 'annot.add', type: 'freetext', page: 1, color: [0, 0, 0], rect: [60, 400, 400, 440], text: 'Hello cafe', size: 16, font }));
+    const note = look(out).annots.find((a) => a.type === 'FreeText');
+    expect(`${font} is written in the ${resource} font and drawn`, note.da.includes(`/${resource} `) && note.ink, note.da);
+  }
+
   console.log('what is refused');
   const mistakes = {
     'a page past the end': { op: 'annot.add', type: 'ink', page: 5, color: [0, 0, 0], thickness: 1, paths: [[1, 1, 5, 5]] },
-    'a text box of blank text': { op: 'annot.add', type: 'freetext', page: 1, color: [0, 0, 0], rect: [1, 1, 100, 40], text: ' ', size: 12 },
+    'a text box of blank text': { op: 'annot.add', type: 'freetext', page: 1, color: [0, 0, 0], rect: [1, 1, 100, 40], text: ' ', size: 12, font: 'Helvetica' },
   };
   for (const [what, op] of Object.entries(mistakes)) {
     const fileOp = at(`bad-${crypto.randomBytes(3).toString('hex')}.json`);
