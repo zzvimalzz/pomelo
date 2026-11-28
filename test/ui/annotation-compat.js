@@ -345,6 +345,20 @@ async function behaviour() {
   check('in Highlight nothing is selected, not the new highlight and not one that was pressed', (await js(win, `document.querySelectorAll('.selectedEditor').length`)) === 0);
   await drag(win, [px + pw * 0.15, py + 8], [px + pw * 0.8, py + 24]);
   check('nor is a free-form highlight', (await js(win, `document.querySelectorAll('.selectedEditor').length`)) === 0);
+  const [lx, ly] = [line[0] + 40, (line[1] + line[3]) / 2];
+  mouse(win, 'mouseMove', lx, ly);
+  await sleep(300);
+  const under = await js(win, `(() => { const e = document.elementFromPoint(${lx}, ${ly}); return [!e.closest('.highlightEditor'), document.querySelectorAll('.hovered').length, getComputedStyle(e).cursor !== 'pointer']; })()`);
+  check('a highlight under the highlighter takes no pointer and shows no outline', under.join() === 'true,0,true', under.join());
+  await click(win, 'Pink');
+  await drag(win, ...along(line, 0));
+  const pixels = await win.webContents.capturePage({ x: Math.round(line[0]), y: Math.round(line[1]), width: Math.round(line[2] - line[0]), height: Math.round(line[3] - line[1]) });
+  const bmp = pixels.toBitmap();
+  const { width, height } = pixels.getSize();
+  const colours = new Set();
+  for (let x = 0; x < width; x += 3) { const i = (Math.floor(height * 0.15) * width + x) * 4; colours.add(`${bmp[i + 2]},${bmp[i + 1]},${bmp[i]}`); }
+  check('a second colour laid over the first mixes with it', [...colours].some((c) => { const [r, g, b] = c.split(',').map(Number); return r > 240 && g > 100 && g < 200 && b < 100; }), [...colours].join(' '));
+  await click(win, 'Yellow');
   check('a drag over empty page makes a free-form highlight', (await entries()).some((e) => !e.quads), JSON.stringify(await entries()));
   await tool(win, 'Highlight');
 
@@ -405,7 +419,7 @@ async function behaviour() {
   check('the Eraser turns on', await js(win, `document.body.dataset.eraser === '' && [...document.querySelectorAll('.optbar button')].find((b) => b.textContent === 'Eraser').getAttribute('aria-pressed') === 'true'`));
   const hit = await js(win, `(() => { const r = document.querySelector('.inkEditor').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
   mouse(win, 'mouseMove', ...hit);
-  await sleep(200);
+  await sleep(500);
   check('the pointer is an eraser, drawn by the page', await js(win, `!document.querySelector('.ecur').hidden && !!document.querySelector('.ecur svg') && getComputedStyle(document.querySelector('.inkEditor')).cursor === 'none'`));
   await click(win, ...hit);
   check('a click on a mark with the Eraser takes it away', (await entries()).length === marks - 1, JSON.stringify([marks, (await entries()).length]));
@@ -443,7 +457,7 @@ async function behaviour() {
   const saved = see(file);
   const note = saved.annots.find((a) => a.type === 'FreeText');
   check('the saved text box is in that font', !!note && note.da.includes('/TiRo '), note?.da);
-  check('every mark in the window is in the file, the free-form highlight as an ink stroke', saved.annots.length === written && saved.annots.filter((a) => a.type === 'Ink').length === written - 2, JSON.stringify([written, saved.annots.map((a) => a.type)]));
+  check('every mark in the window is in the file, the free-form highlight as an ink stroke', saved.annots.length === written && saved.annots.filter((a) => a.type === 'Ink').length === written - 3, JSON.stringify([written, saved.annots.map((a) => a.type)]));
   await closeAndWait(win);
 }
 

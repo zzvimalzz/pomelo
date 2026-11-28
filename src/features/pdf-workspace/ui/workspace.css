@@ -358,6 +358,7 @@ body[data-tool="highlight"] .textLayer.highlighting.free, body[data-tool="highli
 /* A mark is chosen and moved only with Select, so Draw and Highlight can carry on over a stroke already made. */
 body[data-tool]:not([data-tool="select"]) :is(.inkEditor, .freeTextEditor, .highlightEditor) { pointer-events: none !important; }
 body[data-tool="text"] .freeTextEditor { pointer-events: auto !important; }
+body[data-tool]:not([data-tool="select"]) .highlightEditor .internal { pointer-events: none !important; }
 .editToolbar { pointer-events: auto; }
 .highlightEditor .editToolbar { display: none !important; }
 body[data-tool="highlight"] .selectedEditor, body[data-tool="draw"] .selectedEditor { outline: none !important; }
