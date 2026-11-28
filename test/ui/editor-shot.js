@@ -750,6 +750,7 @@ app.whenReady().then(async () => {
   check('Adjust shows its five sections with their sliders',(await sections()) === 'Light:Exposure/Contrast/Highlights/Shadows/Whites/Blacks,Colour:Temperature/Tint/Vibrance/Saturation,Colour grading:Balance,Curve:,Colour mixer:Hue/Saturation/Luminance', await sections());
   check('Light and Colour start open and the rest shut',(await js(win, `[...document.querySelectorAll('#view-adjust .sec')].map((s) => s.classList.contains('open')).join()`)) === 'true,true,false,false,false');
   check('the histogram is drawn', await until('the histogram', () => js(win, `(() => { const c = document.querySelector('#view-adjust canvas.hist'); return c.getContext('2d').getImageData(0, 0, c.width, c.height).data.some((v, i) => i % 4 === 3 && v > 0); })()`)));
+  check('the panel scrolls with a thin bar that shows only while the pointer is over it', (await js(win, `(() => { const s = getComputedStyle(document.getElementById('view-adjust')); return [s.scrollbarWidth, s.scrollbarColor.startsWith('rgba(0, 0, 0, 0)')].join(); })()`)) === 'thin,true');
   check('the section reset arrow carries its name', (await js(win, `document.querySelector('#view-adjust .rs').title`)) === 'Reset');
   check('a picture nobody touched shows every slider at its neutral value', (await js(win, `[...document.querySelectorAll('#view-adjust .val')].map((v) => v.textContent).join()`)) === '0.00,0,0,0,0,0,0,0,0,0,0,0,0,0');
   await js(win, `document.querySelector('#view-adjust .sec .tog').click()`);

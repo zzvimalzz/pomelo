@@ -131,7 +131,8 @@ body.busy, body.busy * { cursor: progress; }
 #panel .inner { flex: none; padding: 2px 8px 8px; }
 #tools { margin: 0 8px; }
 .views { position: relative; flex: 1; min-height: 0; margin-top: 6px; }
-.view { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; padding: 4px 8px 20px; }
+.view { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; padding: 4px 8px 20px; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color .35s; }
+.view:hover { scrollbar-color: var(--thumb) transparent; }
 .views[data-turn] .view:not([hidden]) { animation: turn-in .3s var(--out); }
 .views[data-turn="prev"] { --turn: -14px; }
 @keyframes turn-in { from { opacity: 0; transform: translateX(var(--turn, 14px)); } }
