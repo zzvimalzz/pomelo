@@ -16,7 +16,7 @@
   const AIR = 32;
   const CROP_AIR = 48;
   // CSS pixels kept free at the bottom of the crop view for the dock of controls that floats over the well.
-  const CROP_DOCK = 100;
+  const CROP_DOCK = 112;
   const GLIDE_MS = 450;
   const MAX_ZOOM = 8;
   const STEPS = [0.125, 0.25, 1 / 3, 0.5, 2 / 3, 1, 1.5, 2, 3, 4, 6, 8];
@@ -455,7 +455,7 @@
     cropGlide = requestAnimationFrame(step);
   }
 
-  // A small copy of the picture on show as `edit` shows it, for the histogram and Auto; null while there is no picture to read.
+  // A small copy of the picture on show as `edit` shows it, for the histogram; null while there is no picture to read.
   const sample = (edit, longest) => (renderer && !lost && shown?.texture ? renderer.sample(shown, edit, longest) : null);
 
   window.editorView = { show, dispose, change, sample, setCompare, setPanel, setCropping, holdView, releaseView, cropFloor, wheelZoom, ease, glideMs: GLIDE_MS, redraw: want, onDraw: (listener) => drawn.push(listener), showPanel: () => { if (!panelOpen()) setPanel(true); } };

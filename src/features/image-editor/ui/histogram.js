@@ -63,5 +63,5 @@
     return { show };
   }
 
-  window.editorHistogram = { create };
+  window.editorHistogram = { create, smoothed };
 })();

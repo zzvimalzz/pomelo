@@ -9,23 +9,20 @@
     contrast: [-100, 100, 1], highlights: [-100, 100, 1], shadows: [-100, 100, 1], whites: [-100, 100, 1], blacks: [-100, 100, 1],
     temperature: [-100, 100, 1], tint: [-100, 100, 1], vibrance: [-100, 100, 1], saturation: [-100, 100, 1],
   };
-  const neutral = () => ({ ...Object.fromEntries(Object.keys(RANGES).map((key) => [key, 0])), geometry: window.editorGeometry.neutral() });
-  const clamp = (v, low, high) => Math.min(Math.max(v, low), high);
-  const toLinear = (s) => (s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4);
-
-  // The Light values that Auto sets, from the luminance (0 to 1) of every pixel of the picture as it is shown: the darkest and lightest
-  // half percent go to the black and white points, the middle goes to a mid grey, and a flat picture gets a little contrast.
-  function autoLight(lumas) {
-    const sorted = Float32Array.from(lumas).sort();
-    const at = (p) => sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
-    const whole = (value, key) => clamp(Math.round(value), RANGES[key][0], RANGES[key][1]);
-    return {
-      blacks: whole(-(at(0.005) - 0.02) / 0.15 * 100, 'blacks'),
-      whites: whole((0.98 - at(0.995)) / 0.15 * 100, 'whites'),
-      exposure: Math.round(clamp(Math.log2(toLinear(0.46) / Math.max(1e-4, toLinear(at(0.5)))), -2, 2) * 100) / 100,
-      contrast: at(0.75) - at(0.25) < 0.25 ? 10 : 0,
-    };
-  }
+  const BANDS = ['red', 'orange', 'yellow', 'green', 'aqua', 'blue', 'purple', 'magenta'];
+  const REGIONS = ['shadows', 'midtones', 'highlights'];
+  const CHANNELS = ['rgb', 'r', 'g', 'b'];
+  const each = (names, value) => Object.fromEntries(names.map((name) => [name, value()]));
+  const neutral = () => ({
+    ...each(Object.keys(RANGES), () => 0),
+    grading: { ...each(REGIONS, () => ({ hue: 0, amount: 0 })), balance: 0 },
+    curve: each(CHANNELS, () => [[0, 0], [1, 1]]),
+    mixer: each(BANDS, () => ({ hue: 0, sat: 0, lum: 0 })),
+    geometry: window.editorGeometry.neutral(),
+  });
+  const NEUTRAL = JSON.stringify({ ...neutral(), geometry: 0 });
+  // Whether anything but the geometry is off its neutral value.
+  const adjusted = (edit) => JSON.stringify({ ...edit, geometry: 0 }) !== NEUTRAL;
 
   // Undo steps through results, not through every move. A change made with the same control as the last one folds into the last
   // entry, and arriving back at an earlier snapshot (four quarter turns) drops the entries in between.
@@ -64,5 +61,5 @@
     };
   }
 
-  window.editorModel = { RANGES, neutral, autoLight, createHistory };
+  window.editorModel = { RANGES, BANDS, REGIONS, CHANNELS, neutral, adjusted, createHistory };
 })();
