@@ -260,8 +260,13 @@ async function withoutEngine() {
   await until('the question about the original', () => js(win, `!!document.querySelector('.card .btn.primary')`), 15000);
   await js(win, `[...document.querySelectorAll('.card .btn')].find((b) => b.textContent === 'Replace').click()`);
   await until('the saved file', () => !fs.readFileSync(small).equals(bytes), 15000);
-  const saved = see(small);
-  check('pdf.js wrote it: the file holds the highlight after the original bytes, and reads without repair', saved.annots.map((a) => a.type).join() === 'Highlight' && fs.readFileSync(small).subarray(0, bytes.length).equals(bytes) && !saved.repaired);
+  const kept = fs.readFileSync(small).subarray(0, bytes.length).equals(bytes);
+  if (python) {
+    const saved = see(small);
+    check('pdf.js wrote it: the file holds the highlight after the original bytes, and reads without repair', saved.annots.map((a) => a.type).join() === 'Highlight' && kept && !saved.repaired);
+  } else {
+    check('pdf.js wrote it after the original bytes', kept);
+  }
   await closeAndWait(win);
 
   const large = await makeDoc('Large.pdf', { bytes: NO_ENGINE_SAVE_LIMIT + 1024 * 1024 });
