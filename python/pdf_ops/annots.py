@@ -57,21 +57,23 @@ def ink(page, color, opacity, thickness, paths):
     made.update()
 
 
-def freetext(page, color, rect, text, size, font):
+def freetext(page, color, rect, text, size, font, turn):
     if not isinstance(text, str) or not text.strip() or len(text) > 5000 or "\0" in text:
         raise ValueError("a text box holds 1 to 5000 characters")
     if isinstance(size, bool) or not isinstance(size, (int, float)) or not 4 <= size <= 200:
         raise ValueError("text is between 4 and 200 points high")
     if font not in FONTS:
         raise ValueError("unknown font")
+    if turn not in (0, 90, 180, 270):
+        raise ValueError("a text box turns by quarter turns")
     box = bounds(points(page, rect))
-    # The text is turned with the page so it reads upright in the displayed page.
-    made = page.add_freetext_annot(box, text, fontsize=size, fontname=FONTS[font], text_color=rgb(color), fill_color=None, border_width=0, rotate=page.rotation)
+    # The text is turned with the page so it reads upright in the displayed page; PyMuPDF counts the turn anticlockwise, the window clockwise.
+    made = page.add_freetext_annot(box, text, fontsize=size, fontname=FONTS[font], text_color=rgb(color), fill_color=None, border_width=0, rotate=(page.rotation - turn) % 360)
     if made is None:
         raise ValueError("the text does not fit in its box")
 
 
-def add(doc, type, page, color, opacity=None, thickness=None, quads=None, paths=None, rect=None, text=None, size=None, font=None):
+def add(doc, type, page, color, opacity=None, thickness=None, quads=None, paths=None, rect=None, text=None, size=None, font=None, turn=0):
     if type not in KINDS:
         raise ValueError("unknown kind of markup")
     shown = doc[pick(doc, [page])[0]]
@@ -80,4 +82,4 @@ def add(doc, type, page, color, opacity=None, thickness=None, quads=None, paths=
     elif type == "ink":
         ink(shown, color, opacity, thickness, paths)
     else:
-        freetext(shown, color, rect, text, size, font)
+        freetext(shown, color, rect, text, size, font, turn)

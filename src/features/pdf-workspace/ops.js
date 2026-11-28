@@ -29,11 +29,11 @@ const isQuads = (v) => Array.isArray(v) && v.length > 0 && v.length <= MAX_QUADS
 const isStrokes = (v) => Array.isArray(v) && v.length > 0 && v.length <= MAX_STROKES && v.every((s) => isPoints(s, 2)) && v.reduce((sum, s) => sum + s.length, 0) <= MAX_COORDINATES;
 const isMarkupText = (v) => typeof v === 'string' && v.trim().length > 0 && v.length <= 5000 && !v.includes('\0');
 
-const MARKUP_FIELDS = { highlight: ['quads'], ink: ['paths', 'thickness'], freetext: ['rect', 'text', 'size', 'font'] };
+const MARKUP_FIELDS = { highlight: ['quads'], ink: ['paths', 'thickness'], freetext: ['rect', 'text', 'size', 'font', 'turn'] };
 const markupFits = (op) => {
   const wanted = MARKUP_FIELDS[op.type];
   const found = [...new Set(Object.values(MARKUP_FIELDS).flat())].filter((key) => op[key] !== undefined);
-  return !!wanted && wanted.every((key) => found.includes(key)) && found.every((key) => wanted.includes(key));
+  return !!wanted && wanted.every((key) => key === 'turn' || found.includes(key)) && found.every((key) => wanted.includes(key));
 };
 
 const OPS = {
@@ -45,6 +45,7 @@ const OPS = {
       opacity: optional((v) => isNumber(v) && v >= 0 && v <= 1), thickness: optional((v) => isNumber(v) && v > 0 && v <= 100),
       quads: optional(isQuads), paths: optional(isStrokes), rect: optional((v) => isPoints(v, 4) && v.length === 4),
       text: optional(isMarkupText), size: optional((v) => isNumber(v) && v >= 4 && v <= 200), font: optional((v) => MARKUP_FONTS.includes(v)),
+      turn: optional((v) => [0, 90, 180, 270].includes(v)),
     },
   },
   'meta.set': { kind: 'direct', keys: { title: isText, author: isText, subject: isText, keywords: isText } },

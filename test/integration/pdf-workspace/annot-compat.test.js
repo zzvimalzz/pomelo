@@ -124,6 +124,15 @@ const SECRET = { password: 'open-me' };
     expect(`${font} is written in the ${resource} font and drawn`, note.da.includes(`/${resource} `) && note.ink, note.da);
   }
 
+  console.log('a text box turned in the window');
+  for (const turn of [0, 90, 180, 270]) {
+    const out = at(`turn-${turn}.pdf`);
+    const [w, h] = turn % 180 ? [40, 340] : [340, 40];
+    await run(plain, out, list({ op: 'annot.add', type: 'freetext', page: 1, color: [0, 0, 0], rect: [200 - w / 2, 400 - h / 2, 200 + w / 2, 400 + h / 2], text: 'Hello cafe', size: 16, font: 'Helvetica', turn }));
+    const note = look(out).annots.find((a) => a.type === 'FreeText');
+    expect(`a box turned ${turn} degrees keeps its box and its text shows`, note.ink && note.content === 'Hello cafe' && near(note.rect, [200 - w / 2, 400 - h / 2, 200 + w / 2, 400 + h / 2], 3), JSON.stringify(note.rect));
+  }
+
   console.log('what is refused');
   const mistakes = {
     'a page past the end': { op: 'annot.add', type: 'ink', page: 5, color: [0, 0, 0], thickness: 1, paths: [[1, 1, 5, 5]] },

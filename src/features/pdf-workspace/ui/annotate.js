@@ -1,22 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// The Highlight, Draw and Text tools: buttons in the dock, an option bar for the tool in use, and the pdf.js annotation editor that does the
-// drawing. What the editor holds is not written to the file as it is made. Before Save, before the Pages grid and before a copy is made it is
+// The Select, Highlight, Draw and Text tools: buttons in the dock, an option bar for the tool in use, and the pdf.js annotation editor that
+// does the drawing. What the editor holds is not written to the file as it is made. Before Save, before the Pages grid and before a copy is made it is
 // flushed: with the PDF engine each entry becomes an operation (annot.add) and the engine writes the next version; without it pdf.js saves
 // the file itself, for files up to the save limit. A classic script that adds window.workspaceAnnotate.
 (() => {
   const { el, icon } = window.pomeloUi;
   const { label, bind } = window.workspaceKeys;
-  const HIGHLIGHTS = [['Yellow', '#ffd84d'], ['Green', '#7ee08a'], ['Blue', '#7cc4ff'], ['Pink', '#ff9fc0'], ['Orange', '#ffb366']];
-  const INKS = [['Black', '#1c1c1e'], ['Red', '#e84d6f'], ['Blue', '#2b6cd4'], ['Green', '#1e9e5a']];
+  const ui = window.workspaceMarkupBar;
+  const { group, radio, option, action } = ui;
   const WIDTHS = [1, 2, 4];
   const MARKER_WIDTH = 6;
   const MARKER_OPACITY = 0.4;
   const SIZES = { min: 6, max: 72 };
   const FONTS = ['Helvetica', 'Times', 'Courier'];
   const TOO_LARGE = 'Saving changes to a file this large needs the PDF engine.';
-  const TOOLS = [['highlight', 'Highlight', 'highlight'], ['draw', 'Draw', 'pen'], ['text', 'Text', 'type']];
+  const TOOLS = [['select', 'Select', 'cursor'], ['highlight', 'Highlight', 'highlight'], ['draw', 'Draw', 'pen'], ['text', 'Text', 'type']];
+  const EDITORS = '.inkEditor, .freeTextEditor, .highlightEditor';
+  const TURNABLE = '.inkEditor, .freeTextEditor, .highlightEditor.free';
 
-  const options = { highlight: HIGHLIGHTS[0][1], kind: 'pen', ink: INKS[0][1], width: 2, size: 12, font: FONTS[0] };
+  const options = { highlight: ui.HIGHLIGHT.defaults[0][1], kind: 'pen', ink: ui.INK.defaults[0][1], width: 2, size: 12, font: FONTS[0] };
   const listeners = [];
   let tool = null;
   let tab = null;
@@ -29,23 +31,21 @@
   let setTool = () => {};
   let bar = null;
   let manager = null;
+  let selected = false;
+  let drawing = false;
+  let pill = null;
+  let dot = null;
   const fonts = new Map();
-  const head = { undo: document.getElementById('undobtn'), redo: document.getElementById('redobtn'), clear: document.getElementById('clearbtn') };
+  const turns = new Map();
 
-  for (const [way, name, text, key] of [['undo', 'undo', 'Undo', 'undo'], ['redo', 'redo', 'Redo', 'redo'], ['clear', 'trash', 'Clear all']]) {
-    head[way].innerHTML = icon(name);
-    head[way].title = key ? `${text} (${label(key)})` : text;
-    head[way].setAttribute('aria-label', text);
-  }
-
-  // pdf.js names the colours of its highlight picker; the option is a list of name=colour.
-  const colours = HIGHLIGHTS.map(([name, value]) => `${name.toLowerCase()}=${value}`).join(',');
+  // pdf.js names the colours of the picker of a selected highlight; the option is a list of name=colour.
+  const colours = ui.HIGHLIGHT.all.slice(0, 8).map(([name, value]) => `${name.toLowerCase()}=${value}`).join(',');
 
   // The entries of the editor that are markup: a form field's value is in the same storage and is not ours to write. A text box carries
-  // the font chosen for it, which pdf.js does not keep.
+  // the font chosen for it and a mark the turn given to it, which pdf.js keeps neither of.
   function entries(pdf) {
     const { map } = pdf.annotationStorage.serializable;
-    return map ? [...map].filter(([, entry]) => typeof entry.annotationType === 'number').map(([id, entry]) => ({ ...entry, font: fonts.get(id) ?? FONTS[0] })) : [];
+    return map ? [...map].filter(([, entry]) => typeof entry.annotationType === 'number').map(([id, entry]) => ({ ...entry, font: fonts.get(id) ?? FONTS[0], turn: turns.get(id) ?? 0 })) : [];
   }
 
   function count() {
@@ -65,14 +65,22 @@
       const viewport = page.getViewport({ scale: 1 });
       const shown = (flat) => { const out = []; for (let i = 0; i < flat.length; i += 2) out.push(...viewport.convertToViewportPoint(flat[i], flat[i + 1])); return out; };
       const base = { op: 'annot.add', page: entry.pageIndex + 1, color: entry.color };
+      const [x0, y0, x1, y1] = entry.rect ? shown(entry.rect) : [0, 0, 0, 0];
+      const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2];
+      // A mark turned in the window is turned about the middle of its box, a quarter turn clockwise at a time.
+      const turned = (flat) => flat.map((v, i) => { const [dx, dy] = i % 2 ? [flat[i - 1] - cx, v - cy] : [v - cx, flat[i + 1] - cy]; return [[dx, dy], [-dy, dx], [-dx, -dy], [dy, -dx]][entry.turn / 90][i % 2] + (i % 2 ? cy : cx); });
+      const stroke = (points) => points.map((line) => turned(shown(Array.from(line))));
       if (entry.annotationType === kinds.HIGHLIGHT && entry.quadPoints) {
         const flat = Array.from(entry.quadPoints);
         ops.push({ ...base, type: 'highlight', opacity: entry.opacity, quads: Array.from({ length: flat.length / 8 }, (_, i) => shown(flat.slice(i * 8, i * 8 + 8))) });
+      } else if (entry.annotationType === kinds.HIGHLIGHT && entry.outlines) {
+        ops.push({ ...base, type: 'ink', opacity: entry.opacity, thickness: entry.thickness, paths: stroke(entry.outlines.points) });
       } else if (entry.annotationType === kinds.INK) {
-        ops.push({ ...base, type: 'ink', opacity: entry.opacity, thickness: entry.thickness, paths: entry.paths.points.map((stroke) => shown(Array.from(stroke))) });
+        ops.push({ ...base, type: 'ink', opacity: entry.opacity, thickness: entry.thickness, paths: stroke(entry.paths.points) });
       } else if (entry.annotationType === kinds.FREETEXT) {
         if (page.userUnit !== 1) throw new Error('A text box cannot be saved on a page that has its own scale.');
-        ops.push({ ...base, type: 'freetext', rect: shown(entry.rect), text: entry.value, size: entry.fontSize, font: entry.font });
+        const [w, h] = (entry.turn / 90) % 2 ? [Math.abs(y1 - y0), Math.abs(x1 - x0)] : [Math.abs(x1 - x0), Math.abs(y1 - y0)];
+        ops.push({ ...base, type: 'freetext', rect: [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], text: entry.value, size: entry.fontSize, font: entry.font, turn: entry.turn });
       } else {
         throw new Error('This kind of markup cannot be saved.');
       }
@@ -121,6 +129,7 @@
   }
 
   const send = (type, value) => eventBus.dispatch('switchannotationeditorparams', { source: viewer, type, value });
+  const dispatch = (name) => eventBus.dispatch('editingaction', { source: viewer, name });
 
   function apply() {
     const params = lib.AnnotationEditorParamsType;
@@ -132,12 +141,14 @@
       send(params.INK_OPACITY, marker ? MARKER_OPACITY : 1);
       send(params.INK_THICKNESS, marker ? options.width * MARKER_WIDTH : options.width);
     }
+    dot.style.background = options.highlight;
   }
 
   // A new choice is for the marks still to come. pdf.js applies it to the stroke being drawn and to the selected marks, so for Draw they
   // are let go first: the first call ends the stroke, which selects it, and the second lets it go.
   const choose = (key, value) => () => {
     options[key] = value;
+    ui.closePanel();
     if (key === 'font') {
       for (const box of document.querySelectorAll('.freeTextEditor.selectedEditor')) { fonts.set(box.id, value); box.dataset.font = value; }
     } else if (tool === 'draw') { manager?.unselectAll(); manager?.unselectAll(); }
@@ -145,78 +156,53 @@
     apply();
   };
 
-  function clearAll() {
-    for (const name of ['selectAll', 'delete']) eventBus.dispatch('editingaction', { source: viewer, name });
+  function show(box) {
+    const turn = turns.get(box.id) ?? 0;
+    box.style.rotate = `${turn}deg`;
+    if (turn) box.dataset.turn = turn;
+    else delete box.dataset.turn;
+  }
+
+  // pdf.js cannot turn a mark, so the box is turned on the page and the turn is written with the mark, a quarter turn clockwise at a time.
+  function rotate() {
+    for (const box of document.querySelectorAll('.selectedEditor')) {
+      if (!box.matches(TURNABLE)) continue;
+      turns.set(box.id, ((turns.get(box.id) ?? 0) + 90) % 360);
+      show(box);
+    }
   }
 
   function sync() {
     const grid = !tool && document.body.classList.contains('tooling');
-    head.undo.disabled = grid || !(undoable || tab?.doc.canUndo);
-    head.redo.disabled = grid || !(redoable || tab?.doc.canRedo);
-    head.clear.disabled = grid || !tab?.edited;
+    pill.hidden = !tab?.pdf || grid;
+    pill.undo.disabled = !(undoable || tab?.doc.canUndo);
+    pill.redo.disabled = !(redoable || tab?.doc.canRedo);
+    pill.clear.disabled = !tab?.edited;
   }
 
-  function group(name, kind) {
-    const span = el('span', kind);
-    span.setAttribute('role', 'radiogroup');
-    span.setAttribute('aria-label', name);
-    return span;
-  }
+  const colourRow = (set, key, label) => ui.colours({ set, name: tool, label, current: options[key], pick: (value) => choose(key, value)(), redraw: draw });
 
-  function radio(cls, title, checked, pick) {
-    const b = el('button', cls);
-    b.type = 'button';
-    b.setAttribute('role', 'radio');
-    b.setAttribute('aria-checked', String(checked));
-    b.title = title;
-    b.setAttribute('aria-label', title);
-    b.onclick = pick;
-    return b;
-  }
-
-  function swatches(set, key, name) {
-    const span = group(name, 'swatches');
-    for (const [title, value] of set) {
-      const b = radio('sw', title, options[key] === value, choose(key, value));
-      b.style.background = value;
-      span.append(b);
-    }
-    return span;
-  }
-
-  function option(name, title, key, value) {
-    const b = el('button', 'opt');
-    b.type = 'button';
-    b.innerHTML = icon(name);
-    b.append(title);
-    b.setAttribute('aria-pressed', String(options[key] === value));
-    b.onclick = choose(key, value);
-    return b;
-  }
-
-  function action(name, title, run) {
-    const b = el('button', 'sm');
-    b.type = 'button';
-    b.innerHTML = icon(name);
-    b.title = title;
-    b.setAttribute('aria-label', title);
-    b.onclick = run;
-    return b;
-  }
+  const choice = (name, title, key, value) => option(name, title, options[key] === value, choose(key, value));
 
   function draw() {
     const parts = [];
-    if (tool === 'highlight') parts.push(swatches(HIGHLIGHTS, 'highlight', 'Highlight colour'));
+    if (tool === 'select') {
+      const turn = action('rotr', 'Rotate', rotate);
+      const remove = action('trash', 'Delete', () => dispatch('delete'));
+      turn.disabled = remove.disabled = !selected;
+      parts.push(turn, remove);
+    }
+    if (tool === 'highlight') parts.push(colourRow(ui.HIGHLIGHT, 'highlight', 'Highlight colour'));
     if (tool === 'draw') {
       const widths = group('Thickness', 'swatches');
       for (const width of WIDTHS) {
         const b = radio('thick', `${width} pt`, options.width === width, choose('width', width));
-        const dot = el('i');
-        dot.style.width = dot.style.height = `${width * 2 + 3}px`;
-        b.append(dot);
+        const blob = el('i');
+        blob.style.width = blob.style.height = `${width * 2 + 3}px`;
+        b.append(blob);
         widths.append(b);
       }
-      parts.push(option('pen', 'Pen', 'kind', 'pen'), option('marker', 'Marker', 'kind', 'marker'), el('span', 'sep'), swatches(INKS, 'ink', 'Ink colour'), el('span', 'sep'), widths);
+      parts.push(choice('pen', 'Pen', 'kind', 'pen'), choice('marker', 'Marker', 'kind', 'marker'), el('span', 'sep'), colourRow(ui.INK, 'ink', 'Ink colour'), el('span', 'sep'), widths);
     }
     if (tool === 'text') {
       const resize = (by) => () => { options.size = Math.min(SIZES.max, Math.max(SIZES.min, options.size + by)); draw(); apply(); };
@@ -227,7 +213,7 @@
         b.textContent = 'Aa';
         faces.append(b);
       }
-      parts.push(action('minus', 'Smaller', resize(-1)), el('span', 'size', `${options.size} pt`), action('plus', 'Larger', resize(1)), el('span', 'sep'), swatches(INKS, 'ink', 'Text colour'), el('span', 'sep'), faces);
+      parts.push(action('minus', 'Smaller', resize(-1)), el('span', 'size', `${options.size} pt`), action('plus', 'Larger', resize(1)), el('span', 'sep'), colourRow(ui.INK, 'ink', 'Text colour'), el('span', 'sep'), faces);
     }
     bar.replaceChildren(...parts);
   }
@@ -236,29 +222,49 @@
     viewer = pdfViewer;
     eventBus = bus;
     lib = viewerLib;
-    const modes = { highlight: lib.AnnotationEditorType.HIGHLIGHT, draw: lib.AnnotationEditorType.INK, text: lib.AnnotationEditorType.FREETEXT };
+    const modes = { select: lib.AnnotationEditorType.STAMP, highlight: lib.AnnotationEditorType.HIGHLIGHT, draw: lib.AnnotationEditorType.INK, text: lib.AnnotationEditorType.FREETEXT };
     bar = el('div', 'optbar');
     bar.hidden = true;
     bar.addEventListener('mousedown', (e) => e.preventDefault());
-    document.querySelector('.well').append(bar);
-    for (const [way, run] of [['undo', () => step('undo')], ['redo', () => step('redo')], ['clear', clearAll]]) {
-      head[way].addEventListener('mousedown', (e) => e.preventDefault());
-      head[way].onclick = run;
+    dot = el('div', 'hdot');
+    dot.hidden = true;
+    pill = el('div', 'editpill');
+    pill.hidden = true;
+    pill.addEventListener('mousedown', (e) => e.preventDefault());
+    const everything = () => { dispatch('selectAll'); dispatch('delete'); };
+    for (const [way, name, text, run] of [['undo', 'undo', `Undo (${label('undo')})`, () => step('undo')], ['redo', 'redo', `Redo (${label('redo')})`, () => step('redo')], ['clear', 'trash', 'Clear all', everything]]) {
+      pill[way] = action(name, text, run);
+      pill.append(pill[way]);
     }
+    document.querySelector('.well').append(bar, pill);
+    document.body.append(dot);
     new MutationObserver(sync).observe(document.body, { attributes: true, attributeFilter: ['class'] });
     const remember = ({ source }) => { if (typeof source?.unselectAll === 'function') manager = source; };
     eventBus.on('editingstateschanged', remember);
     eventBus.on('annotationeditorparamschanged', remember);
-    // pdf.js starts a free-form highlight when a drag begins between words, which it cannot give the file and which turns the cursor
-    // over and over; a drag there selects text as it does over a word.
-    container.addEventListener('pointerdown', (e) => {
-      if (tool === 'highlight' && e.target.closest('.textLayer') && !e.target.closest('.textLayer span:not([role="img"]), .textLayer br')) { e.stopPropagation(); manager?.unselectAll(); }
+
+    // Over a page the highlighter is a dot of its colour, except over the words, where pdf.js's own cursor shows that a drag selects them.
+    // A drag that began on the dot keeps it, wherever it goes.
+    container.addEventListener('pointermove', (e) => {
+      const aim = tool === 'highlight' && !!e.target.closest?.('.textLayer') && !e.target.closest('.textLayer span:not([role="img"])');
+      dot.hidden = !(drawing || aim);
+      if (!dot.hidden) dot.style.transform = `translate(${e.clientX - 9}px, ${e.clientY - 9}px)`;
     }, true);
+    container.addEventListener('pointerleave', () => { if (!drawing) dot.hidden = true; });
+    container.addEventListener('pointerdown', (e) => { drawing = tool === 'highlight' && !dot.hidden && e.button === 0; }, true);
+    window.addEventListener('pointerup', () => { drawing = false; });
+    document.addEventListener('pointerdown', (e) => {
+      if (ui.panelUp() && !e.target.closest('.palette, .sw.more')) { ui.closePanel(); draw(); }
+    }, true);
+
     const tag = (node) => {
       if (node.nodeType !== 1) return;
-      for (const box of node.matches('.freeTextEditor') ? [node] : node.querySelectorAll('.freeTextEditor')) {
-        if (!fonts.has(box.id)) fonts.set(box.id, options.font);
-        box.dataset.font = fonts.get(box.id);
+      for (const box of node.matches(EDITORS) ? [node] : node.querySelectorAll(EDITORS)) {
+        if (box.matches('.freeTextEditor')) {
+          if (!fonts.has(box.id)) fonts.set(box.id, options.font);
+          box.dataset.font = fonts.get(box.id);
+        }
+        if (turns.has(box.id)) show(box);
       }
       for (const remove of node.matches('.deleteButton') ? [node] : node.querySelectorAll('.deleteButton')) remove.innerHTML = icon('trash');
     };
@@ -282,29 +288,46 @@
       if (next && !tab?.pdf) return;
       if (next) window.workspaceOrganise.leave();
       tool = next;
+      selected = false;
+      drawing = false;
+      dot.hidden = true;
+      ui.closePanel();
       for (const [id, b] of buttons) {
         b.classList.toggle('on', id === tool);
         b.setAttribute('aria-pressed', String(id === tool));
       }
       document.body.classList.toggle('tooling', !!tool);
+      if (tool) document.body.dataset.tool = tool;
+      else delete document.body.dataset.tool;
       bar.hidden = !tool;
       viewer.annotationEditorMode = { mode: tool ? modes[tool] : lib.AnnotationEditorType.NONE };
       if (tool) { apply(); draw(); } else container.focus();
     };
-    bind('escape', () => { if (!tool) return false; setTool(null); });
+    bind('escape', () => {
+      if (ui.panelUp()) { ui.closePanel(); draw(); return; }
+      if (!tool) return false;
+      setTool(null);
+    });
     eventBus.on('editingstateschanged', ({ details }) => {
       undoable = !!details.hasSomethingToUndo;
       redoable = !!details.hasSomethingToRedo;
+      const chosen = !!details.hasSelectedEditor;
+      if (chosen !== selected) { selected = chosen; if (tool === 'select') draw(); }
       sync();
       setTimeout(() => { if (tab?.pdf) count(); });
     });
     // pdf.js puts the tool down when it loads another document.
     eventBus.on('pagesdestroy', () => {
       tool = null;
+      selected = false;
       undoable = redoable = false;
       fonts.clear();
+      turns.clear();
+      ui.closePanel();
       for (const b of buttons.values()) { b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); }
       document.body.classList.remove('tooling');
+      delete document.body.dataset.tool;
+      dot.hidden = true;
       bar.hidden = true;
       sync();
     });

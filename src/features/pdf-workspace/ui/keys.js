@@ -11,6 +11,7 @@
     previousPage: { keys: ['PageUp', 'ArrowLeft', 'ArrowUp'], label: 'Page Up' },
     focusReading: { keys: ['F11'], label: 'F11' },
     pages: { keys: ['p', 'P'], label: 'P' },
+    select: { keys: ['v', 'V'], label: 'V' },
     highlight: { keys: ['h', 'H'], label: 'H' },
     draw: { keys: ['d', 'D'], label: 'D' },
     text: { keys: ['t', 'T'], label: 'T' },
